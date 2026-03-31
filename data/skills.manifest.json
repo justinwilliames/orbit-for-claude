@@ -1,0 +1,3280 @@
+[
+  {
+    "name": "ai-personalization",
+    "title": "AI Personalisation Protocol",
+    "category": "creative-personalisation",
+    "description": "Use this skill whenever Orbit is asked about using AI or LLMs to personalise lifecycle communications at scale — including AI-generated subject lines, dynamic email body copy, predictive send-time optimisation, next-best-action models, AI-powered recommendations, or generative content blocks. Also trigger when evaluating AI personalisation features in ESPs (Braze Sage AI, Iterable AI, Klaviyo AI, etc.), or when the operator wants to move beyond rule-based segmentation toward model-driven personalisation. Distinct from copy-framework (which handles human-written copy) — this skill handles AI as the authoring or decision layer.",
+    "trigger_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "crm-data-model",
+      "segmentation-strategy",
+      "experiment-design"
+    ],
+    "artifact_types": [
+      "ai-personalization-plan",
+      "model-experiment"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "ai-personalization-plan"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "ai-generated",
+      "ai-personalization",
+      "ai-personalization-plan",
+      "ai-powered",
+      "authoring",
+      "beyond",
+      "blocks",
+      "body",
+      "braze",
+      "communications",
+      "content",
+      "copy",
+      "copy-framework",
+      "decision",
+      "distinct",
+      "dynamic",
+      "email",
+      "esps",
+      "etc",
+      "evaluating",
+      "features",
+      "generative",
+      "handles",
+      "human-written",
+      "including",
+      "iterable",
+      "klaviyo",
+      "layer",
+      "lifecycle",
+      "lines",
+      "llms",
+      "model-driven",
+      "model-experiment",
+      "models",
+      "move",
+      "next-best-action",
+      "operator",
+      "optimisation",
+      "personalisation",
+      "personalise",
+      "predictive",
+      "protocol",
+      "recommendations",
+      "rule-based",
+      "sage",
+      "scale",
+      "segmentation",
+      "send-time",
+      "subject",
+      "toward",
+      "trigger",
+      "using",
+      "wants"
+    ]
+  },
+  {
+    "name": "attribution-audit",
+    "title": "Attribution Audit Protocol",
+    "category": "data-infrastructure",
+    "description": "Use this skill whenever Orbit is asked to review, design, or rebuild a marketing attribution model. Trigger on \"we don't know what's driving revenue\", \"is this channel working?\", \"our attribution is broken\", \"how should we measure marketing ROI?\", \"CAC seems off\", or when the operator is making channel investment decisions without reliable attribution data. Also trigger when different teams (marketing, sales, finance) are using different numbers to describe the same thing — definitional misalignment is the root cause of most attribution problems.",
+    "trigger_phrases": [
+      "we don't know what's driving revenue",
+      "is this channel working?",
+      "our attribution is broken",
+      "how should we measure marketing roi?",
+      "cac seems off"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "growth-marketing",
+      "retention-economics"
+    ],
+    "artifact_types": [
+      "attribution-audit",
+      "measurement-gap-analysis"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "audit-summary"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "are",
+      "attribution",
+      "attribution-audit",
+      "audit",
+      "audit-summary",
+      "broken",
+      "cac",
+      "cause",
+      "channel",
+      "data",
+      "decisions",
+      "definitional",
+      "describe",
+      "design",
+      "different",
+      "don",
+      "driving",
+      "finance",
+      "how",
+      "investment",
+      "know",
+      "making",
+      "marketing",
+      "measure",
+      "measurement-gap-analysis",
+      "misalignment",
+      "model",
+      "most",
+      "numbers",
+      "off",
+      "operator",
+      "our",
+      "problems",
+      "protocol",
+      "rebuild",
+      "reliable",
+      "revenue",
+      "review",
+      "roi",
+      "root",
+      "sales",
+      "same",
+      "seems",
+      "teams",
+      "thing",
+      "trigger",
+      "using",
+      "without",
+      "working"
+    ]
+  },
+  {
+    "name": "b2b-lifecycle",
+    "title": "B2B Lifecycle Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked about lifecycle programs for B2B products or services — including multi-stakeholder onboarding, sales and marketing handoff design, account-based lifecycle, champion engagement programs, renewal programs, expansion revenue sequences, or any lifecycle challenge where the buying unit is a company rather than an individual. Also trigger when the operator needs to design programs that work across multiple contacts at the same account, or where sales and CRM must coordinate rather than operate independently. Distinct from lifecycle-design (which defaults to B2C/PLG patterns) — this skill handles the structural differences that B2B requires.",
+    "trigger_phrases": [],
+    "disambiguators": [
+      "business_model"
+    ],
+    "adjacent_skills": [
+      "crm-data-model",
+      "multichannel-orchestration",
+      "retention-economics"
+    ],
+    "artifact_types": [
+      "b2b-program",
+      "account-journey"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "lifecycle-program"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "account",
+      "account-based",
+      "account-journey",
+      "any",
+      "b2b",
+      "b2b-lifecycle",
+      "b2b-program",
+      "b2c/plg",
+      "business",
+      "buying",
+      "challenge",
+      "champion",
+      "company",
+      "contacts",
+      "coordinate",
+      "crm",
+      "defaults",
+      "design",
+      "differences",
+      "distinct",
+      "engagement",
+      "expansion",
+      "handles",
+      "handoff",
+      "including",
+      "independently",
+      "individual",
+      "lifecycle",
+      "lifecycle-design",
+      "lifecycle-program",
+      "marketing",
+      "model",
+      "multi-stakeholder",
+      "multiple",
+      "must",
+      "needs",
+      "onboarding",
+      "operate",
+      "operator",
+      "patterns",
+      "products",
+      "programs",
+      "protocol",
+      "rather",
+      "renewal",
+      "requires",
+      "revenue",
+      "sales",
+      "same",
+      "sequences",
+      "services",
+      "structural",
+      "trigger",
+      "unit",
+      "work"
+    ]
+  },
+  {
+    "name": "braze-documentation-expert",
+    "title": "Braze Documentation Expert",
+    "category": "platform-documentation",
+    "description": "Use this skill whenever a task involves Braze — building Canvases, campaigns, segments, Content Blocks, Liquid personalisation, Connected Content, Currents, or any Braze configuration. Trigger on \"how do I do X in Braze?\", \"build this Canvas\", \"write this Liquid\", \"why isn't this segment working?\", \"set up this webhook\", or any Braze-specific implementation question. This skill operates as a Braze Certified Marketer with deep platform knowledge — not a generic answer, a precise one.",
+    "trigger_phrases": [
+      "how do i do x in braze?",
+      "build this canvas",
+      "write this liquid",
+      "why isn't this segment working?",
+      "set up this webhook"
+    ],
+    "disambiguators": [
+      "platform"
+    ],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "implementation-guide",
+      "platform-runbook"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "braze"
+      ]
+    },
+    "templates": [
+      "implementation-checklist"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "answer",
+      "any",
+      "blocks",
+      "braze",
+      "braze-documentation-expert",
+      "braze-specific",
+      "build",
+      "building",
+      "campaigns",
+      "canvas",
+      "canvases",
+      "certified",
+      "configuration",
+      "connected",
+      "content",
+      "currents",
+      "deep",
+      "documentation",
+      "expert",
+      "generic",
+      "how",
+      "implementation",
+      "implementation-checklist",
+      "implementation-guide",
+      "involves",
+      "isn",
+      "knowledge",
+      "liquid",
+      "marketer",
+      "not",
+      "one",
+      "operates",
+      "personalisation",
+      "platform",
+      "platform-runbook",
+      "precise",
+      "question",
+      "segment",
+      "segments",
+      "set",
+      "trigger",
+      "webhook",
+      "why",
+      "working",
+      "write"
+    ]
+  },
+  {
+    "name": "competitive-intel",
+    "title": "Competitive Intelligence Protocol",
+    "category": "strategy-planning",
+    "description": "Use this skill whenever Orbit is asked to research a specific competitor, map a competitive landscape, or assess a company's strategic direction. Trigger on \"what is [competitor] doing?\", \"who are the main players in [space]?\", \"are we positioned correctly against X?\", \"what's changed in the [category] market?\", or any request for competitor-specific intelligence. Distinct from social-listening (which focuses on customer sentiment) — this skill focuses on competitor strategy, trajectory, and intent. Every finding must connect to a decision.",
+    "trigger_phrases": [
+      "what is [competitor] doing?",
+      "who are the main players in [space]?",
+      "are we positioned correctly against x?",
+      "what's changed in the [category] market?"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "competitive-brief",
+      "landscape-matrix"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "competitive-brief"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "against",
+      "any",
+      "are",
+      "assess",
+      "category",
+      "changed",
+      "company",
+      "competitive",
+      "competitive-brief",
+      "competitive-intel",
+      "competitor",
+      "competitor-specific",
+      "connect",
+      "correctly",
+      "customer",
+      "decision",
+      "direction",
+      "distinct",
+      "doing",
+      "every",
+      "finding",
+      "focuses",
+      "intelligence",
+      "intent",
+      "landscape",
+      "landscape-matrix",
+      "main",
+      "map",
+      "market",
+      "must",
+      "players",
+      "positioned",
+      "protocol",
+      "request",
+      "research",
+      "sentiment",
+      "social-listening",
+      "space",
+      "specific",
+      "strategic",
+      "strategy",
+      "trajectory",
+      "trigger",
+      "who"
+    ]
+  },
+  {
+    "name": "copy-framework",
+    "title": "Lifecycle Copy Framework",
+    "category": "creative-personalisation",
+    "description": "Use this skill whenever Orbit is asked to write, review, or improve lifecycle copy — email subject lines, body copy, CTAs, SMS, push notifications, in-app messages, or any customer-facing CRM communication. Also trigger when personalisation logic or Liquid templating is needed, when tone of voice needs defining, or when existing copy is underperforming and needs diagnosis. This skill owns the words in every lifecycle touchpoint — not just what to say, but how, to whom, and in what structure.",
+    "trigger_phrases": [],
+    "disambiguators": [
+      "channel"
+    ],
+    "adjacent_skills": [
+      "graphic-design",
+      "pre-launch-review"
+    ],
+    "artifact_types": [
+      "messaging-framework",
+      "copy-brief"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "messaging-framework"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "body",
+      "but",
+      "channel",
+      "communication",
+      "copy",
+      "copy-brief",
+      "copy-framework",
+      "crm",
+      "ctas",
+      "customer-facing",
+      "defining",
+      "diagnosis",
+      "email",
+      "every",
+      "existing",
+      "framework",
+      "how",
+      "improve",
+      "in-app",
+      "just",
+      "lifecycle",
+      "lines",
+      "liquid",
+      "logic",
+      "messages",
+      "messaging-framework",
+      "needed",
+      "needs",
+      "not",
+      "notifications",
+      "owns",
+      "personalisation",
+      "push",
+      "review",
+      "say",
+      "sms",
+      "structure",
+      "subject",
+      "templating",
+      "tone",
+      "touchpoint",
+      "trigger",
+      "underperforming",
+      "voice",
+      "whom",
+      "words",
+      "write"
+    ]
+  },
+  {
+    "name": "crm-data-model",
+    "title": "CRM Data Model Design Protocol",
+    "category": "data-infrastructure",
+    "description": "Use this skill whenever Orbit is asked to design, audit, or improve a CRM data model — contact properties, event taxonomy, lifecycle stage logic, identity resolution, or data architecture. Trigger on \"how should we structure our data?\", \"what fields do we need?\", \"our data model is a mess\", \"events aren't consistent\", \"we can't segment properly because our data is wrong\", \"design our contact schema\", or when lifecycle programs are failing because the underlying data doesn't support them. Data model quality is the foundation everything else is built on — a broken data model cannot be fixed by better automation.",
+    "trigger_phrases": [
+      "how should we structure our data?",
+      "what fields do we need?",
+      "our data model is a mess",
+      "events aren't consistent",
+      "we can't segment properly because our data is wrong",
+      "design our contact schema"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "segmentation-strategy",
+      "lifecycle-design",
+      "b2b-lifecycle"
+    ],
+    "artifact_types": [
+      "data-model",
+      "field-mapping"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "data-model"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "architecture",
+      "are",
+      "aren",
+      "audit",
+      "automation",
+      "because",
+      "better",
+      "broken",
+      "built",
+      "can",
+      "cannot",
+      "consistent",
+      "contact",
+      "crm",
+      "crm-data-model",
+      "data",
+      "data-model",
+      "design",
+      "doesn",
+      "else",
+      "event",
+      "events",
+      "everything",
+      "failing",
+      "field-mapping",
+      "fields",
+      "fixed",
+      "foundation",
+      "how",
+      "identity",
+      "improve",
+      "lifecycle",
+      "logic",
+      "mess",
+      "model",
+      "need",
+      "our",
+      "programs",
+      "properly",
+      "properties",
+      "protocol",
+      "quality",
+      "resolution",
+      "schema",
+      "segment",
+      "stage",
+      "structure",
+      "support",
+      "taxonomy",
+      "trigger",
+      "underlying",
+      "wrong"
+    ]
+  },
+  {
+    "name": "deliverability-management",
+    "title": "Deliverability Management Protocol",
+    "category": "data-infrastructure",
+    "description": "Use this skill whenever Orbit is asked about email deliverability, sender reputation, domain or IP warming, inbox placement, bounce rates, complaint rates, blacklisting, or list hygiene. Trigger on \"our emails are going to spam\", \"deliverability is declining\", \"we're setting up a new sending domain\", \"how do we warm a new IP?\", \"our complaint rate is high\", \"we've been blacklisted\", or any question about why emails aren't reaching inboxes. Deliverability is the foundation of all email lifecycle work — nothing else matters if the message doesn't land.",
+    "trigger_phrases": [
+      "our emails are going to spam",
+      "deliverability is declining",
+      "we're setting up a new sending domain",
+      "how do we warm a new ip?",
+      "our complaint rate is high",
+      "we've been blacklisted"
+    ],
+    "disambiguators": [
+      "geography"
+    ],
+    "adjacent_skills": [
+      "pre-launch-review",
+      "copy-framework"
+    ],
+    "artifact_types": [
+      "deliverability-plan",
+      "risk-checklist"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "deliverability-plan"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "all",
+      "any",
+      "are",
+      "aren",
+      "been",
+      "blacklisted",
+      "blacklisting",
+      "bounce",
+      "complaint",
+      "declining",
+      "deliverability",
+      "deliverability-management",
+      "deliverability-plan",
+      "doesn",
+      "domain",
+      "else",
+      "email",
+      "emails",
+      "foundation",
+      "geography",
+      "going",
+      "high",
+      "how",
+      "hygiene",
+      "inbox",
+      "inboxes",
+      "land",
+      "lifecycle",
+      "list",
+      "management",
+      "matters",
+      "message",
+      "new",
+      "nothing",
+      "our",
+      "placement",
+      "protocol",
+      "question",
+      "rate",
+      "rates",
+      "reaching",
+      "reputation",
+      "risk-checklist",
+      "sender",
+      "sending",
+      "setting",
+      "spam",
+      "trigger",
+      "warm",
+      "warming",
+      "why",
+      "work"
+    ]
+  },
+  {
+    "name": "discovery-sprint",
+    "title": "Discovery Sprint Protocol",
+    "category": "strategy-planning",
+    "description": "Use this skill whenever Orbit is asked to run product discovery, understand a user problem, validate a feature idea, or determine what to build before committing to build it. Trigger on \"we think users want X\", \"should we build this?\", \"why aren't users doing X?\", or \"what should the next feature be?\". Also trigger when a feature spec is being written without any user research behind it. This protocol produces a clear problem statement and prioritised solution direction in five structured steps.",
+    "trigger_phrases": [
+      "we think users want x",
+      "should we build this?",
+      "why aren't users doing x?",
+      "what should the next feature be?"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "discovery-plan",
+      "opportunity-map"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "discovery-plan"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "aren",
+      "behind",
+      "build",
+      "clear",
+      "committing",
+      "determine",
+      "direction",
+      "discovery",
+      "discovery-plan",
+      "discovery-sprint",
+      "doing",
+      "feature",
+      "five",
+      "idea",
+      "next",
+      "opportunity-map",
+      "prioritised",
+      "problem",
+      "produces",
+      "product",
+      "protocol",
+      "research",
+      "run",
+      "solution",
+      "spec",
+      "sprint",
+      "statement",
+      "steps",
+      "structured",
+      "think",
+      "trigger",
+      "understand",
+      "user",
+      "users",
+      "validate",
+      "want",
+      "why",
+      "without",
+      "written"
+    ]
+  },
+  {
+    "name": "experiment-design",
+    "title": "Experiment Design Protocol",
+    "category": "measurement-economics",
+    "description": "Use this skill whenever Orbit is asked to design, spec, or review an A/B test, multivariate test, or any experiment. Trigger when the operator asks \"how should we test this?\", wants to validate a hypothesis, needs to know if a change worked, or asks for a measurement framework. Also trigger when someone proposes running a test without specifying sample size, duration, or success criteria — this skill produces the rigorous spec they're missing.",
+    "trigger_phrases": [
+      "how should we test this?"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "lifecycle-reporting",
+      "segmentation-strategy"
+    ],
+    "artifact_types": [
+      "experiment-brief",
+      "test-plan"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "experiment-brief"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "a/b",
+      "any",
+      "change",
+      "criteria",
+      "design",
+      "duration",
+      "experiment",
+      "experiment-brief",
+      "experiment-design",
+      "framework",
+      "how",
+      "hypothesis",
+      "know",
+      "measurement",
+      "missing",
+      "multivariate",
+      "needs",
+      "operator",
+      "produces",
+      "proposes",
+      "protocol",
+      "review",
+      "rigorous",
+      "running",
+      "sample",
+      "size",
+      "someone",
+      "spec",
+      "specifying",
+      "success",
+      "test",
+      "test-plan",
+      "trigger",
+      "validate",
+      "wants",
+      "without",
+      "worked"
+    ]
+  },
+  {
+    "name": "graphic-design",
+    "title": "Graphic Design Protocol",
+    "category": "creative-personalisation",
+    "description": "Use this skill whenever Orbit is asked to design, critique, refine, or direct visual work: brand identity, logo direction, UI polish, lifecycle email creative, CRM headers, dashboards, social cards, diagrams, presentations, ad creative, or image-generation prompts. Trigger on asks like \"critique this UI\", \"make this feel more premium\", \"design an email header\", \"help with the brand direction\", \"what's wrong with this logo\", \"how should this dashboard look\", or \"write a prompt for an image generator\". This protocol makes Orbit operate like a strategic senior designer, not a decorator.",
+    "trigger_phrases": [
+      "critique this ui",
+      "make this feel more premium",
+      "design an email header",
+      "help with the brand direction",
+      "what's wrong with this logo",
+      "how should this dashboard look",
+      "write a prompt for an image generator"
+    ],
+    "disambiguators": [
+      "channel"
+    ],
+    "adjacent_skills": [
+      "copy-framework",
+      "pre-launch-review"
+    ],
+    "artifact_types": [
+      "creative-brief",
+      "design-direction",
+      "visual-spec"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "creative-direction"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "brand",
+      "cards",
+      "channel",
+      "creative",
+      "creative-brief",
+      "creative-direction",
+      "critique",
+      "crm",
+      "dashboard",
+      "dashboards",
+      "decorator",
+      "design",
+      "design-direction",
+      "designer",
+      "diagrams",
+      "direct",
+      "direction",
+      "email",
+      "feel",
+      "generator",
+      "graphic",
+      "graphic-design",
+      "header",
+      "headers",
+      "help",
+      "how",
+      "identity",
+      "image",
+      "image-generation",
+      "lifecycle",
+      "like",
+      "logo",
+      "look",
+      "make",
+      "makes",
+      "more",
+      "not",
+      "operate",
+      "polish",
+      "premium",
+      "presentations",
+      "prompt",
+      "prompts",
+      "protocol",
+      "refine",
+      "senior",
+      "social",
+      "strategic",
+      "trigger",
+      "visual",
+      "visual-spec",
+      "work",
+      "write",
+      "wrong"
+    ]
+  },
+  {
+    "name": "growth-marketing",
+    "title": "Growth Marketing Protocol",
+    "category": "growth-research",
+    "description": "Use this skill whenever Orbit is asked about paid media, paid search, SEO, AEO, ASO, retargeting, audience strategy, or how growth channels connect to lifecycle programs. Trigger on \"how should we run paid social?\", \"set up retargeting for at-risk users\", \"our CAC is too high\", \"how do we rank for X?\", \"optimise our App Store listing\", \"how do we appear in AI search results?\", \"build a lookalike audience from our best customers\", \"suppress existing customers from paid\", or any question about integrating acquisition and retention channels. The central principle of this skill: paid channels acquire users; lifecycle keeps them. The most expensive mistake in growth is paying to acquire users you then fail to retain — or paying to reach users you already own.",
+    "trigger_phrases": [
+      "how should we run paid social?",
+      "set up retargeting for at-risk users",
+      "our cac is too high",
+      "how do we rank for x?",
+      "optimise our app store listing",
+      "how do we appear in ai search results?",
+      "build a lookalike audience from our best customers",
+      "suppress existing customers from paid"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "attribution-audit",
+      "segmentation-strategy",
+      "lifecycle-design"
+    ],
+    "artifact_types": [
+      "growth-plan",
+      "channel-strategy"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "growth-plan"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "acquire",
+      "acquisition",
+      "aeo",
+      "already",
+      "any",
+      "app",
+      "appear",
+      "aso",
+      "at-risk",
+      "audience",
+      "best",
+      "build",
+      "cac",
+      "central",
+      "channel-strategy",
+      "channels",
+      "connect",
+      "customers",
+      "existing",
+      "expensive",
+      "fail",
+      "growth",
+      "growth-marketing",
+      "growth-plan",
+      "high",
+      "how",
+      "integrating",
+      "keeps",
+      "lifecycle",
+      "listing",
+      "lookalike",
+      "marketing",
+      "media",
+      "mistake",
+      "most",
+      "optimise",
+      "our",
+      "own",
+      "paid",
+      "paying",
+      "principle",
+      "programs",
+      "protocol",
+      "question",
+      "rank",
+      "reach",
+      "results",
+      "retain",
+      "retargeting",
+      "retention",
+      "run",
+      "search",
+      "seo",
+      "set",
+      "social",
+      "store",
+      "strategy",
+      "suppress",
+      "too",
+      "trigger",
+      "users",
+      "you"
+    ]
+  },
+  {
+    "name": "hubspot-documentation-expert",
+    "title": "HubSpot Documentation Expert",
+    "category": "platform-documentation",
+    "description": "Use this skill whenever a task involves HubSpot — building Workflows, Sequences, email campaigns, contact properties, lists, pipelines, forms, reports, or any HubSpot CRM and Marketing Hub configuration. Trigger on \"how do I do X in HubSpot?\", \"build this Workflow\", \"set up this sequence\", \"why isn't this list updating?\", \"configure this property\", or any HubSpot-specific implementation question. This skill covers Marketing Hub, Sales Hub, Service Hub, and CRM — with lifecycle marketing as the primary lens.",
+    "trigger_phrases": [
+      "how do i do x in hubspot?",
+      "build this workflow",
+      "set up this sequence",
+      "why isn't this list updating?",
+      "configure this property"
+    ],
+    "disambiguators": [
+      "platform"
+    ],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "implementation-guide",
+      "platform-runbook"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "implementation-checklist"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "build",
+      "building",
+      "campaigns",
+      "configuration",
+      "configure",
+      "contact",
+      "covers",
+      "crm",
+      "documentation",
+      "email",
+      "expert",
+      "forms",
+      "how",
+      "hub",
+      "hubspot",
+      "hubspot-documentation-expert",
+      "hubspot-specific",
+      "implementation",
+      "implementation-checklist",
+      "implementation-guide",
+      "involves",
+      "isn",
+      "lens",
+      "lifecycle",
+      "list",
+      "lists",
+      "marketing",
+      "pipelines",
+      "platform",
+      "platform-runbook",
+      "primary",
+      "properties",
+      "property",
+      "question",
+      "reports",
+      "sales",
+      "sequence",
+      "sequences",
+      "service",
+      "set",
+      "trigger",
+      "updating",
+      "why",
+      "workflow",
+      "workflows"
+    ]
+  },
+  {
+    "name": "iterable-documentation-expert",
+    "title": "Iterable Documentation Expert",
+    "category": "platform-documentation",
+    "description": "Use this skill whenever a task involves Iterable — building Workflows, campaigns, Journeys, lists, templates, Handlebars personalisation, catalog integrations, or any Iterable configuration. Trigger on \"how do I do X in Iterable?\", \"build this Workflow\", \"write this Handlebars expression\", \"why isn't this segment triggering?\", \"set up this event\", or any Iterable-specific implementation question. This skill operates as a deep Iterable platform expert — precise and implementable.",
+    "trigger_phrases": [
+      "how do i do x in iterable?",
+      "build this workflow",
+      "write this handlebars expression",
+      "why isn't this segment triggering?",
+      "set up this event"
+    ],
+    "disambiguators": [
+      "platform"
+    ],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "implementation-guide",
+      "platform-runbook"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "iterable"
+      ]
+    },
+    "templates": [
+      "implementation-checklist"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "build",
+      "building",
+      "campaigns",
+      "catalog",
+      "configuration",
+      "deep",
+      "documentation",
+      "event",
+      "expert",
+      "expression",
+      "handlebars",
+      "how",
+      "implementable",
+      "implementation",
+      "implementation-checklist",
+      "implementation-guide",
+      "integrations",
+      "involves",
+      "isn",
+      "iterable",
+      "iterable-documentation-expert",
+      "iterable-specific",
+      "journeys",
+      "lists",
+      "operates",
+      "personalisation",
+      "platform",
+      "platform-runbook",
+      "precise",
+      "question",
+      "segment",
+      "set",
+      "templates",
+      "trigger",
+      "triggering",
+      "why",
+      "workflow",
+      "workflows",
+      "write"
+    ]
+  },
+  {
+    "name": "journey-mapping",
+    "title": "Customer Journey Mapping Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to map, document, or redesign the customer journey. Trigger on \"map our customer journey\", \"what does the user experience look like end to end?\", \"where are users dropping off?\", \"what touchpoints do we have?\", \"what does the customer feel at each stage?\", or before any significant lifecycle program design begins. Journey mapping is the upstream human work that makes lifecycle automation meaningful — it captures the full customer experience before designing what to send. Distinct from lifecycle-design (which architects automation); this skill maps reality before prescribing intervention.",
+    "trigger_phrases": [
+      "map our customer journey",
+      "what does the user experience look like end to end?",
+      "where are users dropping off?",
+      "what touchpoints do we have?",
+      "what does the customer feel at each stage?"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "crm-data-model",
+      "segmentation-strategy",
+      "lifecycle-design"
+    ],
+    "artifact_types": [
+      "journey-map",
+      "friction-analysis"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "journey-map"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "architects",
+      "are",
+      "automation",
+      "begins",
+      "captures",
+      "customer",
+      "design",
+      "designing",
+      "distinct",
+      "document",
+      "does",
+      "dropping",
+      "each",
+      "end",
+      "experience",
+      "feel",
+      "friction-analysis",
+      "full",
+      "human",
+      "intervention",
+      "journey",
+      "journey-map",
+      "journey-mapping",
+      "lifecycle",
+      "lifecycle-design",
+      "like",
+      "look",
+      "makes",
+      "map",
+      "mapping",
+      "maps",
+      "meaningful",
+      "off",
+      "our",
+      "prescribing",
+      "program",
+      "protocol",
+      "reality",
+      "redesign",
+      "send",
+      "significant",
+      "stage",
+      "touchpoints",
+      "trigger",
+      "upstream",
+      "user",
+      "users",
+      "work"
+    ]
+  },
+  {
+    "name": "lifecycle-audit",
+    "title": "Lifecycle Audit Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to evaluate, review, or audit an existing lifecycle or CRM program. Trigger on \"audit my flows\", \"why is retention declining\", \"what's missing from our lifecycle\", \"is our CRM setup right\", or \"review our email program\". Also trigger when designing a new lifecycle program and needing to first understand what already exists. This protocol produces a structured gap analysis with prioritised recommendations.",
+    "trigger_phrases": [
+      "audit my flows",
+      "why is retention declining",
+      "what's missing from our lifecycle",
+      "is our crm setup right",
+      "review our email program"
+    ],
+    "disambiguators": [
+      "business_model"
+    ],
+    "adjacent_skills": [
+      "segmentation-strategy",
+      "experiment-design",
+      "lifecycle-reporting"
+    ],
+    "artifact_types": [
+      "audit-report",
+      "findings-summary"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "audit-summary"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "already",
+      "analysis",
+      "audit",
+      "audit-report",
+      "audit-summary",
+      "business",
+      "crm",
+      "declining",
+      "designing",
+      "email",
+      "evaluate",
+      "existing",
+      "exists",
+      "findings-summary",
+      "first",
+      "flows",
+      "gap",
+      "lifecycle",
+      "lifecycle-audit",
+      "missing",
+      "model",
+      "needing",
+      "new",
+      "our",
+      "prioritised",
+      "produces",
+      "program",
+      "protocol",
+      "recommendations",
+      "retention",
+      "review",
+      "right",
+      "setup",
+      "structured",
+      "trigger",
+      "understand",
+      "why"
+    ]
+  },
+  {
+    "name": "lifecycle-design",
+    "title": "Lifecycle Program Design Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to build, design, or architect a lifecycle program from scratch — or significantly rebuild an existing one. Trigger on \"design our onboarding flow\", \"build a win-back program\", \"how should we structure our lifecycle?\", \"what should our activation sequence look like?\", or any request to create rather than audit. Distinct from lifecycle-audit (which diagnoses) — this skill constructs. The output is a complete, implementable program architecture: triggers, audiences, sequences, timing, and success criteria.",
+    "trigger_phrases": [
+      "design our onboarding flow",
+      "build a win-back program",
+      "how should we structure our lifecycle?",
+      "what should our activation sequence look like?"
+    ],
+    "disambiguators": [
+      "business_model"
+    ],
+    "adjacent_skills": [
+      "journey-mapping",
+      "crm-data-model",
+      "segmentation-strategy",
+      "program-brief"
+    ],
+    "artifact_types": [
+      "lifecycle-program",
+      "sequence-architecture"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "lifecycle-program"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "activation",
+      "any",
+      "architect",
+      "architecture",
+      "audiences",
+      "audit",
+      "build",
+      "business",
+      "complete",
+      "constructs",
+      "create",
+      "criteria",
+      "design",
+      "diagnoses",
+      "distinct",
+      "existing",
+      "flow",
+      "how",
+      "implementable",
+      "lifecycle",
+      "lifecycle-audit",
+      "lifecycle-design",
+      "lifecycle-program",
+      "like",
+      "look",
+      "model",
+      "onboarding",
+      "one",
+      "our",
+      "output",
+      "program",
+      "protocol",
+      "rather",
+      "rebuild",
+      "request",
+      "scratch",
+      "sequence",
+      "sequence-architecture",
+      "sequences",
+      "significantly",
+      "structure",
+      "success",
+      "timing",
+      "trigger",
+      "triggers",
+      "win-back"
+    ]
+  },
+  {
+    "name": "lifecycle-reporting",
+    "title": "Lifecycle Reporting Framework",
+    "category": "measurement-economics",
+    "description": "Use this skill whenever Orbit is asked to design, build, or improve a lifecycle metrics framework or dashboard. Trigger on \"what should we be measuring?\", \"build me a lifecycle dashboard\", \"how do we report on CRM performance?\", \"our reporting isn't telling us anything useful\", or when lifecycle programs exist without a clear measurement layer. Also trigger when leadership asks for a view of CRM or retention performance and there's no agreed framework. This skill defines what to measure, how to present it, and what to act on.",
+    "trigger_phrases": [
+      "what should we be measuring?",
+      "build me a lifecycle dashboard",
+      "how do we report on crm performance?",
+      "our reporting isn't telling us anything useful"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "experiment-design",
+      "retention-economics"
+    ],
+    "artifact_types": [
+      "dashboard-spec",
+      "reporting-framework"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "reporting-framework"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "act",
+      "agreed",
+      "anything",
+      "build",
+      "clear",
+      "crm",
+      "dashboard",
+      "dashboard-spec",
+      "defines",
+      "design",
+      "exist",
+      "framework",
+      "how",
+      "improve",
+      "isn",
+      "layer",
+      "leadership",
+      "lifecycle",
+      "lifecycle-reporting",
+      "measure",
+      "measurement",
+      "measuring",
+      "metrics",
+      "our",
+      "performance",
+      "present",
+      "programs",
+      "report",
+      "reporting",
+      "reporting-framework",
+      "retention",
+      "telling",
+      "trigger",
+      "useful",
+      "view",
+      "without"
+    ]
+  },
+  {
+    "name": "martech-audit",
+    "title": "Martech Stack Audit Protocol",
+    "category": "data-infrastructure",
+    "description": "Use this skill whenever Orbit is asked to review, assess, or optimise a martech stack. Trigger on \"audit our tech stack\", \"is our martech setup right?\", \"we're having data quality issues\", \"should we replace [tool]?\", \"our integrations are broken\", or \"we're evaluating [new tool]\". Also trigger when a new tool is being evaluated without a clear understanding of what problem it solves in the existing stack. This protocol produces a structured stack assessment with prioritised recommendations grounded in data flow reality, not vendor claims.",
+    "trigger_phrases": [
+      "audit our tech stack",
+      "is our martech setup right?",
+      "we're having data quality issues",
+      "should we replace [tool]?",
+      "our integrations are broken",
+      "we're evaluating [new tool]"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "strategic-stress-test",
+      "project-kickoff"
+    ],
+    "artifact_types": [
+      "martech-audit",
+      "system-diagram"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "audit-summary"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "are",
+      "assess",
+      "assessment",
+      "audit",
+      "audit-summary",
+      "broken",
+      "claims",
+      "clear",
+      "data",
+      "evaluated",
+      "evaluating",
+      "existing",
+      "flow",
+      "grounded",
+      "having",
+      "integrations",
+      "issues",
+      "martech",
+      "martech-audit",
+      "new",
+      "not",
+      "optimise",
+      "our",
+      "prioritised",
+      "problem",
+      "produces",
+      "protocol",
+      "quality",
+      "reality",
+      "recommendations",
+      "replace",
+      "review",
+      "right",
+      "setup",
+      "solves",
+      "stack",
+      "structured",
+      "system-diagram",
+      "tech",
+      "tool",
+      "trigger",
+      "understanding",
+      "vendor",
+      "without"
+    ]
+  },
+  {
+    "name": "multichannel-orchestration",
+    "title": "Multi-Channel Orchestration Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to coordinate communication across more than one channel — email, push, SMS, in-app, webhooks, or direct mail. Trigger on \"how should we use push vs email?\", \"we're over-messaging users\", \"build a multi-channel sequence\", \"how do we frequency cap across channels?\", \"users are getting the same message on every channel\", or when a lifecycle program needs to span more than one touchpoint type. This skill governs the logic layer above individual channels — when to use which channel, how to prevent over-communication, and how to adapt when users don't respond.",
+    "trigger_phrases": [
+      "how should we use push vs email?",
+      "we're over-messaging users",
+      "build a multi-channel sequence",
+      "how do we frequency cap across channels?",
+      "users are getting the same message on every channel"
+    ],
+    "disambiguators": [
+      "business_model",
+      "channel"
+    ],
+    "adjacent_skills": [
+      "copy-framework",
+      "pre-launch-review",
+      "deliverability-management"
+    ],
+    "artifact_types": [
+      "channel-plan",
+      "orchestration-matrix"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "channel-plan"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "above",
+      "adapt",
+      "are",
+      "build",
+      "business",
+      "cap",
+      "channel",
+      "channel-plan",
+      "channels",
+      "communication",
+      "coordinate",
+      "direct",
+      "don",
+      "email",
+      "every",
+      "frequency",
+      "getting",
+      "governs",
+      "how",
+      "in-app",
+      "individual",
+      "layer",
+      "lifecycle",
+      "logic",
+      "mail",
+      "message",
+      "model",
+      "more",
+      "multi-channel",
+      "multichannel-orchestration",
+      "needs",
+      "one",
+      "orchestration",
+      "orchestration-matrix",
+      "over-communication",
+      "over-messaging",
+      "prevent",
+      "program",
+      "protocol",
+      "push",
+      "respond",
+      "same",
+      "sequence",
+      "sms",
+      "span",
+      "touchpoint",
+      "trigger",
+      "type",
+      "users",
+      "webhooks"
+    ]
+  },
+  {
+    "name": "onboarding-design",
+    "title": "Onboarding Design Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to design, audit, or improve a user onboarding experience. Trigger on \"design our onboarding\", \"users aren't activating\", \"too many users sign up and never come back\", \"what should our onboarding flow look like?\", \"how do we get users to the aha moment faster?\", or \"our trial conversion is low\". Activation is the highest-leverage lifecycle stage — this skill owns it entirely, from aha moment definition through to the first moment of retained habit. Distinct from lifecycle-design (which covers all stages) — this skill goes deep on activation only.",
+    "trigger_phrases": [
+      "design our onboarding",
+      "users aren't activating",
+      "too many users sign up and never come back",
+      "what should our onboarding flow look like?",
+      "how do we get users to the aha moment faster?",
+      "our trial conversion is low"
+    ],
+    "disambiguators": [
+      "business_model"
+    ],
+    "adjacent_skills": [
+      "journey-mapping",
+      "lifecycle-design",
+      "copy-framework"
+    ],
+    "artifact_types": [
+      "onboarding-program",
+      "activation-sequence"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "lifecycle-program"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "activating",
+      "activation",
+      "activation-sequence",
+      "aha",
+      "all",
+      "aren",
+      "audit",
+      "back",
+      "business",
+      "come",
+      "conversion",
+      "covers",
+      "deep",
+      "definition",
+      "design",
+      "distinct",
+      "entirely",
+      "experience",
+      "faster",
+      "first",
+      "flow",
+      "get",
+      "goes",
+      "habit",
+      "highest-leverage",
+      "how",
+      "improve",
+      "lifecycle",
+      "lifecycle-design",
+      "lifecycle-program",
+      "like",
+      "look",
+      "low",
+      "many",
+      "model",
+      "moment",
+      "never",
+      "onboarding",
+      "onboarding-design",
+      "onboarding-program",
+      "our",
+      "owns",
+      "protocol",
+      "retained",
+      "sign",
+      "stage",
+      "stages",
+      "too",
+      "trial",
+      "trigger",
+      "user",
+      "users"
+    ]
+  },
+  {
+    "name": "posthog-documentation-expert",
+    "title": "PostHog Documentation Expert",
+    "category": "platform-documentation",
+    "description": "Use this skill whenever a task involves PostHog — event tracking, funnels, retention analysis, session recordings, feature flags, A/B tests (experiments), cohorts, dashboards, or data pipelines. Trigger on \"how do I do X in PostHog?\", \"set up this funnel\", \"why isn't this event tracking?\", \"build this cohort\", \"configure this feature flag\", or any PostHog-specific implementation or analysis question. This skill operates as a deep PostHog platform expert with a lifecycle and product analytics lens.",
+    "trigger_phrases": [
+      "how do i do x in posthog?",
+      "set up this funnel",
+      "why isn't this event tracking?",
+      "build this cohort",
+      "configure this feature flag"
+    ],
+    "disambiguators": [
+      "platform"
+    ],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "implementation-guide",
+      "platform-runbook"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "posthog"
+      ]
+    },
+    "templates": [
+      "implementation-checklist"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "a/b",
+      "analysis",
+      "analytics",
+      "any",
+      "build",
+      "cohort",
+      "cohorts",
+      "configure",
+      "dashboards",
+      "data",
+      "deep",
+      "documentation",
+      "event",
+      "experiments",
+      "expert",
+      "feature",
+      "flag",
+      "flags",
+      "funnel",
+      "funnels",
+      "how",
+      "implementation",
+      "implementation-checklist",
+      "implementation-guide",
+      "involves",
+      "isn",
+      "lens",
+      "lifecycle",
+      "operates",
+      "pipelines",
+      "platform",
+      "platform-runbook",
+      "posthog",
+      "posthog-documentation-expert",
+      "posthog-specific",
+      "product",
+      "question",
+      "recordings",
+      "retention",
+      "session",
+      "set",
+      "tests",
+      "tracking",
+      "trigger",
+      "why"
+    ]
+  },
+  {
+    "name": "pre-launch-review",
+    "title": "Pre-Launch Review Protocol",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to review something before it goes live — any campaign, automation flow, lifecycle program, significant product change, or technical deployment. Trigger on \"review before launch\", \"is this ready to go?\", \"check this before we send\", \"pre-launch checklist\", or any request for pre-send validation. This is the final gate before execution. Any failing item blocks launch until resolved — not escalated, not noted, blocked.",
+    "trigger_phrases": [
+      "review before launch",
+      "is this ready to go?",
+      "check this before we send",
+      "pre-launch checklist"
+    ],
+    "disambiguators": [
+      "channel"
+    ],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "qa-checklist",
+      "launch-decision"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "pre-launch-review"
+    ],
+    "validator_rules": [
+      {
+        "label": "Gate 1",
+        "type": "includes",
+        "value": "Gate 1"
+      },
+      {
+        "label": "Gate 2",
+        "type": "includes",
+        "value": "Gate 2"
+      },
+      {
+        "label": "Gate 3",
+        "type": "includes",
+        "value": "Gate 3"
+      },
+      {
+        "label": "Gate 4",
+        "type": "includes",
+        "value": "Gate 4"
+      },
+      {
+        "label": "Gate 5",
+        "type": "includes",
+        "value": "Gate 5"
+      }
+    ],
+    "keywords": [
+      "any",
+      "automation",
+      "blocked",
+      "blocks",
+      "campaign",
+      "change",
+      "channel",
+      "check",
+      "checklist",
+      "deployment",
+      "escalated",
+      "execution",
+      "failing",
+      "final",
+      "flow",
+      "gate",
+      "goes",
+      "item",
+      "launch",
+      "launch-decision",
+      "lifecycle",
+      "live",
+      "not",
+      "noted",
+      "pre-launch",
+      "pre-launch-review",
+      "pre-send",
+      "product",
+      "program",
+      "protocol",
+      "qa-checklist",
+      "ready",
+      "request",
+      "resolved",
+      "review",
+      "send",
+      "significant",
+      "something",
+      "technical",
+      "trigger",
+      "until",
+      "validation"
+    ]
+  },
+  {
+    "name": "program-brief",
+    "title": "Lifecycle Program Brief",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to document, spec, or create an overview of a lifecycle program — onboarding, activation, retention, win-back, expansion, or any automated CRM sequence. Trigger on \"create a brief for this program\", \"document this flow\", \"write up the spec for this campaign\", \"I need an overview of this program\", or whenever a lifecycle program is being designed from scratch and needs a documented plan before build begins. This skill defines the standard output format for all program documentation — every brief produced by Orbit follows this structure.",
+    "trigger_phrases": [
+      "create a brief for this program",
+      "document this flow",
+      "write up the spec for this campaign",
+      "i need an overview of this program"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "copy-framework",
+      "graphic-design",
+      "pre-launch-review"
+    ],
+    "artifact_types": [
+      "program-brief"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "program-brief"
+    ],
+    "validator_rules": [
+      {
+        "label": "Program name",
+        "type": "includes",
+        "value": "Program name:"
+      },
+      {
+        "label": "Objective section",
+        "type": "includes",
+        "value": "1. OBJECTIVE"
+      },
+      {
+        "label": "Audience section",
+        "type": "includes",
+        "value": "2. AUDIENCE"
+      },
+      {
+        "label": "Success metrics section",
+        "type": "includes",
+        "value": "3. SUCCESS METRICS"
+      },
+      {
+        "label": "Program architecture section",
+        "type": "includes",
+        "value": "4. PROGRAM ARCHITECTURE"
+      },
+      {
+        "label": "Message briefs section",
+        "type": "includes",
+        "value": "5. MESSAGE BRIEFS"
+      }
+    ],
+    "keywords": [
+      "activation",
+      "all",
+      "any",
+      "automated",
+      "begins",
+      "brief",
+      "build",
+      "campaign",
+      "create",
+      "crm",
+      "defines",
+      "designed",
+      "document",
+      "documentation",
+      "documented",
+      "every",
+      "expansion",
+      "flow",
+      "follows",
+      "format",
+      "lifecycle",
+      "need",
+      "needs",
+      "onboarding",
+      "output",
+      "overview",
+      "plan",
+      "produced",
+      "program",
+      "program-brief",
+      "retention",
+      "scratch",
+      "sequence",
+      "spec",
+      "standard",
+      "structure",
+      "trigger",
+      "win-back",
+      "write"
+    ]
+  },
+  {
+    "name": "project-kickoff",
+    "title": "Project Kickoff Protocol",
+    "category": "strategy-planning",
+    "description": "Use this skill whenever Orbit is starting a new project, engagement, or significant workstream from scratch. Trigger on \"kick off this project\", \"we're starting X\", \"help me plan this\", or when a new initiative is brought without an existing plan. Also trigger when a project has been running for weeks but nobody has done the alignment work — a late kickoff is still better than none. This protocol prevents the most common project failures: scope confusion, unclear ownership, and no agreed definition of done.",
+    "trigger_phrases": [
+      "kick off this project",
+      "we're starting x",
+      "help me plan this"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "project-brief",
+      "working-plan"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "project-brief"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "agreed",
+      "alignment",
+      "been",
+      "better",
+      "brought",
+      "but",
+      "common",
+      "confusion",
+      "definition",
+      "done",
+      "engagement",
+      "existing",
+      "failures",
+      "has",
+      "help",
+      "initiative",
+      "kick",
+      "kickoff",
+      "late",
+      "most",
+      "new",
+      "nobody",
+      "none",
+      "off",
+      "ownership",
+      "plan",
+      "prevents",
+      "project",
+      "project-brief",
+      "project-kickoff",
+      "protocol",
+      "running",
+      "scope",
+      "scratch",
+      "significant",
+      "starting",
+      "still",
+      "trigger",
+      "unclear",
+      "weeks",
+      "without",
+      "work",
+      "working-plan",
+      "workstream"
+    ]
+  },
+  {
+    "name": "retention-economics",
+    "title": "Retention Economics Protocol",
+    "category": "measurement-economics",
+    "description": "Use this skill whenever Orbit is asked to build or improve the financial case for lifecycle programs — including LTV modeling, payback period calculation, churn rate impact analysis, unit economics, or ROI modeling for lifecycle investment. Also trigger when leadership asks \"is this worth it?\", when budget requests need justification, when churn rate needs to be translated into revenue impact, or when the operator needs to demonstrate that lifecycle work is a revenue lever, not a cost centre. This skill turns lifecycle metrics into business language that executives, finance, and boards can act on.",
+    "trigger_phrases": [
+      "is this worth it?"
+    ],
+    "disambiguators": [
+      "business_model"
+    ],
+    "adjacent_skills": [
+      "lifecycle-reporting",
+      "experiment-design"
+    ],
+    "artifact_types": [
+      "economics-model",
+      "retention-brief"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "economics-model"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "act",
+      "analysis",
+      "boards",
+      "budget",
+      "build",
+      "business",
+      "calculation",
+      "can",
+      "case",
+      "centre",
+      "churn",
+      "cost",
+      "demonstrate",
+      "economics",
+      "economics-model",
+      "executives",
+      "finance",
+      "financial",
+      "impact",
+      "improve",
+      "including",
+      "investment",
+      "justification",
+      "language",
+      "leadership",
+      "lever",
+      "lifecycle",
+      "ltv",
+      "metrics",
+      "model",
+      "modeling",
+      "need",
+      "needs",
+      "not",
+      "operator",
+      "payback",
+      "period",
+      "programs",
+      "protocol",
+      "rate",
+      "requests",
+      "retention",
+      "retention-brief",
+      "retention-economics",
+      "revenue",
+      "roi",
+      "translated",
+      "trigger",
+      "turns",
+      "unit",
+      "work",
+      "worth"
+    ]
+  },
+  {
+    "name": "segmentation-strategy",
+    "title": "Segmentation Strategy Protocol",
+    "category": "data-infrastructure",
+    "description": "Use this skill whenever Orbit is asked to design, audit, or rebuild audience segmentation. Trigger on \"how should we segment our users?\", \"our segments are too broad\", \"build me an RFM model\", \"define our ICP\", \"our targeting feels off\", or when a lifecycle program is being designed without clear audience architecture behind it. Segmentation is the engine of all targeting — bad segments produce bad results regardless of how good the campaign is.",
+    "trigger_phrases": [
+      "how should we segment our users?",
+      "our segments are too broad",
+      "build me an rfm model",
+      "define our icp",
+      "our targeting feels off"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "crm-data-model",
+      "lifecycle-design",
+      "experiment-design"
+    ],
+    "artifact_types": [
+      "segment-framework",
+      "segment-table"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "segment-brief"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "all",
+      "architecture",
+      "are",
+      "audience",
+      "audit",
+      "bad",
+      "behind",
+      "broad",
+      "build",
+      "campaign",
+      "clear",
+      "define",
+      "design",
+      "designed",
+      "engine",
+      "feels",
+      "good",
+      "how",
+      "icp",
+      "lifecycle",
+      "model",
+      "off",
+      "our",
+      "produce",
+      "program",
+      "protocol",
+      "rebuild",
+      "regardless",
+      "results",
+      "rfm",
+      "segment",
+      "segment-brief",
+      "segment-framework",
+      "segment-table",
+      "segmentation",
+      "segmentation-strategy",
+      "segments",
+      "strategy",
+      "targeting",
+      "too",
+      "trigger",
+      "users",
+      "without"
+    ]
+  },
+  {
+    "name": "sms-playbook",
+    "title": "SMS Playbook",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked about SMS strategy, SMS program design, SMS compliance, opt-in flow design, conversational SMS, or evaluating whether SMS belongs in a lifecycle program. Also trigger when an existing SMS program is generating high opt-out rates, when launching SMS in a new geography, or when the operator needs to design an SMS opt-in mechanism that meets legal requirements. SMS is the highest-engagement and highest-risk channel in the lifecycle stack — it requires its own protocol. Distinct from multichannel-orchestration (which handles how SMS sits within a channel mix) and copy-framework (which handles SMS copy constraints) — this skill covers SMS strategy, legal architecture, and program design end-to-end.",
+    "trigger_phrases": [],
+    "disambiguators": [
+      "geography",
+      "channel"
+    ],
+    "adjacent_skills": [
+      "multichannel-orchestration",
+      "pre-launch-review"
+    ],
+    "artifact_types": [
+      "sms-program",
+      "compliance-plan"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "sms-program"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "architecture",
+      "belongs",
+      "channel",
+      "compliance",
+      "compliance-plan",
+      "constraints",
+      "conversational",
+      "copy",
+      "copy-framework",
+      "covers",
+      "design",
+      "distinct",
+      "end-to-end",
+      "evaluating",
+      "existing",
+      "flow",
+      "generating",
+      "geography",
+      "handles",
+      "high",
+      "highest-engagement",
+      "highest-risk",
+      "how",
+      "its",
+      "launching",
+      "legal",
+      "lifecycle",
+      "mechanism",
+      "meets",
+      "mix",
+      "multichannel-orchestration",
+      "needs",
+      "new",
+      "operator",
+      "opt-in",
+      "opt-out",
+      "own",
+      "playbook",
+      "program",
+      "protocol",
+      "rates",
+      "requirements",
+      "requires",
+      "sits",
+      "sms",
+      "sms-playbook",
+      "sms-program",
+      "stack",
+      "strategy",
+      "trigger",
+      "whether",
+      "within"
+    ]
+  },
+  {
+    "name": "social-listening",
+    "title": "Social Listening Protocol",
+    "category": "growth-research",
+    "description": "Use this skill whenever Orbit is asked to research what customers or users are saying about a product, category, or problem space. Trigger on \"what are customers saying?\", \"what pain points are coming up?\", \"what language do our users use?\", \"monitor sentiment around X\", \"what are people complaining about?\", \"find me customer insights for this copy\", \"what does our target audience talk about online?\", or before writing lifecycle copy to ensure it reflects real customer language. Distinct from competitive-intel (which focuses on competitor strategy) — this skill focuses on customer voice, sentiment, and the language real people use to describe their problems.",
+    "trigger_phrases": [
+      "what are customers saying?",
+      "what pain points are coming up?",
+      "what language do our users use?",
+      "monitor sentiment around x",
+      "what are people complaining about?",
+      "find me customer insights for this copy",
+      "what does our target audience talk about online?"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "copy-framework",
+      "growth-marketing"
+    ],
+    "artifact_types": [
+      "insight-summary",
+      "theme-analysis"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "insight-summary"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "are",
+      "around",
+      "audience",
+      "category",
+      "coming",
+      "competitive-intel",
+      "competitor",
+      "complaining",
+      "copy",
+      "customer",
+      "customers",
+      "describe",
+      "distinct",
+      "does",
+      "ensure",
+      "find",
+      "focuses",
+      "insight-summary",
+      "insights",
+      "language",
+      "lifecycle",
+      "listening",
+      "monitor",
+      "online",
+      "our",
+      "pain",
+      "people",
+      "points",
+      "problem",
+      "problems",
+      "product",
+      "protocol",
+      "real",
+      "reflects",
+      "research",
+      "saying",
+      "sentiment",
+      "social",
+      "social-listening",
+      "space",
+      "strategy",
+      "talk",
+      "target",
+      "theme-analysis",
+      "trigger",
+      "users",
+      "voice",
+      "writing"
+    ]
+  },
+  {
+    "name": "strategic-stress-test",
+    "title": "Strategic Stress-Test Protocol",
+    "category": "strategy-planning",
+    "description": "Use this skill whenever Orbit is asked to evaluate a strategy, business case, investment decision, or significant plan. Trigger when the operator presents an idea they want input on, asks whether something will work, or needs a go/no-go recommendation. This skill turns \"what do you think?\" into a structured pressure test that surfaces risk before it becomes expensive.",
+    "trigger_phrases": [
+      "what do you think?"
+    ],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "strategy-review",
+      "risk-register"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "strategy-review"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "becomes",
+      "business",
+      "case",
+      "decision",
+      "evaluate",
+      "expensive",
+      "go/no-go",
+      "idea",
+      "input",
+      "investment",
+      "needs",
+      "operator",
+      "plan",
+      "presents",
+      "pressure",
+      "protocol",
+      "recommendation",
+      "risk",
+      "risk-register",
+      "significant",
+      "something",
+      "strategic",
+      "strategic-stress-test",
+      "strategy",
+      "strategy-review",
+      "stress-test",
+      "structured",
+      "surfaces",
+      "test",
+      "think",
+      "trigger",
+      "turns",
+      "want",
+      "whether",
+      "work",
+      "you"
+    ]
+  },
+  {
+    "name": "winback-playbook",
+    "title": "Win-Back Playbook",
+    "category": "lifecycle-design-execution",
+    "description": "Use this skill whenever Orbit is asked to design, build, or improve a win-back or re-engagement program. Trigger on \"our churned users aren't coming back\", \"design a win-back sequence\", \"how do we re-engage lapsed users?\", \"our win-back emails aren't working\", \"what should we do with users who haven't logged in for 60 days?\", or when building any program targeted at users who have gone inactive or cancelled. Win-back is the most psychologically nuanced lifecycle program — this skill handles the full playbook from lapse detection through sunset.",
+    "trigger_phrases": [
+      "our churned users aren't coming back",
+      "design a win-back sequence",
+      "how do we re-engage lapsed users?",
+      "our win-back emails aren't working",
+      "what should we do with users who haven't logged in for 60 days?"
+    ],
+    "disambiguators": [
+      "business_model"
+    ],
+    "adjacent_skills": [
+      "segmentation-strategy",
+      "copy-framework",
+      "retention-economics"
+    ],
+    "artifact_types": [
+      "winback-program",
+      "reactivation-playbook"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [
+      "lifecycle-program"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "aren",
+      "back",
+      "build",
+      "building",
+      "business",
+      "cancelled",
+      "churned",
+      "coming",
+      "days",
+      "design",
+      "detection",
+      "emails",
+      "full",
+      "gone",
+      "handles",
+      "haven",
+      "how",
+      "improve",
+      "inactive",
+      "lapse",
+      "lapsed",
+      "lifecycle",
+      "lifecycle-program",
+      "logged",
+      "model",
+      "most",
+      "nuanced",
+      "our",
+      "playbook",
+      "program",
+      "psychologically",
+      "re-engage",
+      "re-engagement",
+      "reactivation-playbook",
+      "sequence",
+      "sunset",
+      "targeted",
+      "trigger",
+      "users",
+      "who",
+      "win-back",
+      "winback-playbook",
+      "winback-program",
+      "working"
+    ]
+  }
+]

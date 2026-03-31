@@ -1,0 +1,24 @@
+{
+  "route_cases": [
+    {
+      "id": "program-brief",
+      "request": "Write a program brief for a Braze onboarding flow for new trial users.",
+      "expected_primary": "program-brief"
+    },
+    {
+      "id": "pre-launch-review",
+      "request": "Run a pre-launch review on this Braze onboarding campaign before we ship it.",
+      "expected_primary": "pre-launch-review"
+    }
+  ],
+  "diagram_invalid_case": {
+    "platform": "braze",
+    "request": "Build a HubSpot workflow with enrollment triggers and if/then branches for a new onboarding sequence.",
+    "expected_status": "invalid_platform_logic"
+  },
+  "brand_revision_case": {
+    "revision_request": "switch to center-lock and reduce art intensity",
+    "expected_layout": "center-lock",
+    "expected_art_intensity": 0.68
+  }
+}

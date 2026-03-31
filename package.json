@@ -1,0 +1,27 @@
+{
+  "name": "orbit-claude-extension",
+  "version": "0.4.2",
+  "private": true,
+  "type": "module",
+  "description": "Orbit - Lifecycle Marketing System for Claude, packaged as a local Claude-first MCP extension.",
+  "scripts": {
+    "start": "node server/index.js",
+    "build:skills-manifest": "node server/build-skill-manifest.js",
+    "check": "node --check server/index.js && node --check server/catalog.js && node --check server/orbit-library.js && node --check server/lifecycle-diagrams.js && node --check server/brand-headers.js && node --check server/brand-kit.js && node --check server/google-genai.js && node --check server/rendering.js && node --check server/setup-validator.js && node --check server/smoke.js && node --check server/evals.js",
+    "smoke": "node server/smoke.js",
+    "evals": "node server/evals.js",
+    "pack": "npx @anthropic-ai/mcpb pack . orbit-lifecycle-marketing-system-for-claude.mcpb"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
+    "@google/genai": "^1.47.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "pdfkit": "^0.18.0",
+    "svg-to-pdfkit": "^0.1.8",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2"
+  }
+}

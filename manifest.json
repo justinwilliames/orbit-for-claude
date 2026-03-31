@@ -1,0 +1,176 @@
+{
+  "manifest_version": "0.3",
+  "name": "orbit-lifecycle-system",
+  "display_name": "Orbit - Lifecycle Marketing System for Claude",
+  "version": "0.4.2",
+  "icon": "icon.png",
+  "icons": [
+    {
+      "src": "icon-light.png",
+      "size": "1024x1024",
+      "theme": "light"
+    },
+    {
+      "src": "icon-dark.png",
+      "size": "1024x1024",
+      "theme": "dark"
+    }
+  ],
+  "description": "Claude-first lifecycle marketing router, brand-kit intake system, setup validator, prompt kit, skill manifest, and visual tooling built from Orbit's 31 protocols.",
+  "long_description": "Orbit gives Claude a local lifecycle marketing operating system. It routes requests to the right Orbit protocol, exposes the full skill library as resources, loads a canonical skill manifest for routing and validation, drafts and writes standardized local brand kits with brand-profile.json plus brand-guidelines.md, validates local setup and brand kits, generates lifecycle program diagrams as deterministic SVG/PNG/PDF exports, and builds brand-safe email header assets using Nano Banana Pro for art generation with local composition for logos and layout.",
+  "author": {
+    "name": "Justin Williames",
+    "url": "https://www.linkedin.com/in/justinwilliames"
+  },
+  "homepage": "https://www.linkedin.com/in/justinwilliames",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {
+        "ORBIT_COMPANY_NAME": "${user_config.company_name}",
+        "ORBIT_DEFAULT_PLATFORM": "${user_config.default_platform}",
+        "ORBIT_DEFAULT_GEOGRAPHY": "${user_config.default_geography}",
+        "ORBIT_BRAND_KIT_DIR": "${user_config.brand_kit_dir}",
+        "ORBIT_DEFAULT_OUTPUT_DIR": "${user_config.default_output_dir}",
+        "ORBIT_GOOGLE_AI_API_KEY": "${user_config.google_ai_api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "company_name": {
+      "type": "string",
+      "title": "Company Name",
+      "description": "Optional default company or brand name used in Orbit outputs.",
+      "default": ""
+    },
+    "default_platform": {
+      "type": "string",
+      "title": "Default Platform",
+      "description": "Optional default lifecycle platform, such as braze, iterable, or hubspot.",
+      "default": ""
+    },
+    "default_geography": {
+      "type": "string",
+      "title": "Default Geography",
+      "description": "Optional default geography or market for compliance-aware recommendations.",
+      "default": ""
+    },
+    "brand_kit_dir": {
+      "type": "directory",
+      "title": "Brand Kit Directory",
+      "description": "Optional folder that contains brand-profile.json and official logo/example assets.",
+      "default": ""
+    },
+    "default_output_dir": {
+      "type": "directory",
+      "title": "Default Output Directory",
+      "description": "Optional folder where Orbit should save rendered diagrams and brand assets.",
+      "default": ""
+    },
+    "google_ai_api_key": {
+      "type": "string",
+      "title": "Google AI API Key",
+      "description": "Optional Google AI Studio key used for Nano Banana Pro image generation.",
+      "sensitive": true,
+      "default": ""
+    }
+  },
+  "tools": [
+    {
+      "name": "orbit_list_skills",
+      "description": "List the Orbit skills by category or surface the whole library."
+    },
+    {
+      "name": "orbit_route_task",
+      "description": "Rank the best-fit Orbit skills for a request and identify the missing disambiguators."
+    },
+    {
+      "name": "orbit_load_skill",
+      "description": "Load an Orbit skill in summary or full mode."
+    },
+    {
+      "name": "orbit_get_template",
+      "description": "Fetch a reusable Orbit template or output format."
+    },
+    {
+      "name": "orbit_compose_sequence",
+      "description": "Suggest a multi-skill Orbit workflow for a goal."
+    },
+    {
+      "name": "orbit_validate_output",
+      "description": "Run a structural validation pass on a draft against an Orbit skill."
+    },
+    {
+      "name": "orbit_check_setup",
+      "description": "Run an Orbit healthcheck for config, output paths, brand kits, and image-generation readiness."
+    },
+    {
+      "name": "orbit_validate_brand_kit",
+      "description": "Validate brand-profile.json, brand-guidelines.md, logo paths, example assets, and preferred layout settings."
+    },
+    {
+      "name": "orbit_build_brand_kit_draft",
+      "description": "Create a reviewable brand-kit draft with brand-profile.json, brand-guidelines.md, and a normalized asset plan."
+    },
+    {
+      "name": "orbit_write_brand_kit",
+      "description": "Write an approved brand-kit draft to disk and copy normalized logo/example assets into the standard folder structure."
+    },
+    {
+      "name": "orbit_update_brand_guidelines",
+      "description": "Update draft or existing brand-guidelines.md content without a full brand-kit re-intake."
+    },
+    {
+      "name": "orbit_build_lifecycle_diagram_spec",
+      "description": "Create a canonical lifecycle diagram spec with nodes, edges, platform badges, and Mermaid output."
+    },
+    {
+      "name": "orbit_update_lifecycle_diagram_spec",
+      "description": "Apply deterministic revisions to an existing lifecycle diagram spec."
+    },
+    {
+      "name": "orbit_render_lifecycle_diagram",
+      "description": "Render a lifecycle diagram spec to SVG, PNG, and PDF."
+    },
+    {
+      "name": "orbit_build_brand_header_spec",
+      "description": "Create a review-ready brand header spec with deterministic layout and Nano Banana Pro art prompting."
+    },
+    {
+      "name": "orbit_update_brand_header_spec",
+      "description": "Apply deterministic revisions to an existing brand header spec."
+    },
+    {
+      "name": "orbit_render_brand_header",
+      "description": "Render a brand header spec into SVG, PNG, and PDF assets with local logo composition."
+    }
+  ],
+  "prompts_generated": true,
+  "keywords": [
+    "lifecycle marketing",
+    "crm",
+    "martech",
+    "retention",
+    "growth marketing",
+    "claude desktop",
+    "mcp",
+    "diagram generation",
+    "brand-safe image generation",
+    "email headers"
+  ],
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": [
+      "darwin",
+      "win32"
+    ],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}
