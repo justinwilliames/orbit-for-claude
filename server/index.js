@@ -57,7 +57,7 @@ const library = loadOrbitLibrary(ROOT_DIR);
 const server = new McpServer({
   name: "orbit-lifecycle-system",
   title: "Orbit - Lifecycle Marketing System for Claude",
-  version: "0.4.2",
+  version: "0.4.3",
   description:
     "Claude-first lifecycle marketing router, brand-kit intake system, prompt kit, skill manifest, setup validator, and visual tooling built from Orbit's 31 protocols."
 });
