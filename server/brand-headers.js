@@ -478,6 +478,37 @@ export async function renderBrandHeader({
     };
   }
 
+  // Ensure copy exists — renderBrandHeaderSvg accesses spec.copy.font_family directly
+  if (!normalizedSpec.copy) {
+    normalizedSpec.copy = {};
+  }
+
+  // Ensure prompt exists — generateBrandArtLayer reads spec.prompt.text
+  if (!normalizedSpec.prompt?.text) {
+    const fallbackPrompt = buildNanoBananaPrompt({
+      goal: normalizedSpec.goal ?? "email header",
+      platform: normalizedSpec.platform ?? "braze",
+      family: normalizedSpec.layout?.family ?? "left-anchor",
+      canvas: normalizedSpec.layout?.canvas ?? BRAND_CANVAS_PRESETS["email-header"],
+      zones: normalizedSpec.layout?.zones ?? buildLayoutZones({
+        family: normalizedSpec.layout?.family ?? "left-anchor",
+        canvas: normalizedSpec.layout?.canvas ?? BRAND_CANVAS_PRESETS["email-header"]
+      }),
+      brandName: normalizedSpec.brand_name ?? "Brand",
+      colors: normalizedSpec.brand_colors ?? {},
+      copy: normalizedSpec.copy,
+      forbiddenTreatments: normalizedSpec.brand_guideline_context?.visualRestrictions ?? [],
+      toneOfVoice: normalizedSpec.brand_guideline_context?.toneOfVoice ?? null,
+      messagingGuidance: normalizedSpec.brand_guideline_context?.messagingGuidance ?? null,
+      emailHeaderRules: normalizedSpec.brand_guideline_context?.emailHeaderRules ?? null
+    });
+    normalizedSpec.prompt = {
+      provider: normalizedSpec.prompt?.provider ?? "nano-banana-pro",
+      model: normalizedSpec.prompt?.model ?? config.googleImageModel,
+      text: fallbackPrompt
+    };
+  }
+
   // Force exactly 1 variation per render call to avoid oversized responses
   const safeVariationCount = 1;
 
