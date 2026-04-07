@@ -77,6 +77,62 @@ const SEQUENCES = [
       "lifecycle-design"
     ],
     note: "Use this when acquisition and lifecycle should be designed as one system."
+  },
+  {
+    id: "build-production-email",
+    title: "Build a production lifecycle email",
+    keywords: ["html", "mjml", "template", "compiled", "email build", "braze email"],
+    skills: [
+      "program-brief",
+      "email-production-system",
+      "email-render-qa",
+      "braze-build-packager"
+    ],
+    note: "Use this when the user wants a real lifecycle email asset rather than just strategy."
+  },
+  {
+    id: "document-and-store-program",
+    title: "Document and store a program",
+    keywords: ["notion", "documentation", "export docs", "library", "save template"],
+    skills: [
+      "program-brief",
+      "template-library-management",
+      "notion-documentation-export"
+    ],
+    note: "Use this when the user wants reusable artifacts and documentation, not just recommendations."
+  },
+  {
+    id: "build-brand-guidelines",
+    title: "Build brand guidelines",
+    keywords: ["brand guidelines", "brand kit", "tone of voice", "logo assets", "brand examples"],
+    skills: ["graphic-design", "copy-framework"],
+    note:
+      "Use this when the user wants Orbit to define a brand system. Run the brand-guidelines intake first instead of inferring the brand."
+  },
+  {
+    id: "design-to-braze-email",
+    title: "Turn a design into a Braze-ready email system",
+    keywords: [
+      "figma",
+      "pdf",
+      "design import",
+      "component map",
+      "reusable components",
+      "turn it into reusable components",
+      "content block",
+      "braze publish",
+      "publish it to braze",
+      "email component"
+    ],
+    skills: [
+      "email-design-ingestion",
+      "design-to-email-componentization",
+      "email-production-system",
+      "email-render-qa",
+      "braze-template-sync"
+    ],
+    note:
+      "Use this when the user wants to start from a Figma or PDF design and end with reusable components or Braze-published email assets."
   }
 ];
 
@@ -128,30 +184,67 @@ export function buildSkillSummary(skill) {
   return lines.join("\n").trim();
 }
 
+// Minimum score a skill must reach to be considered a real match.
+// Prevents generic words like "build" from routing to the wrong skill.
+const MIN_ROUTE_SCORE = 6;
+
 export function routeTask(library, request, limit = 5, defaults = {}) {
   const requestText = String(request ?? "").trim();
   const requestTokens = new Set(tokenize(requestText));
   const taskType = inferTaskType(requestText);
   const signals = detectSignals(requestText, defaults);
+  const requestProfile = buildRequestProfile(requestText, requestTokens, taskType, signals);
 
   const scored = library.skills
-    .map((skill) => scoreSkill(skill, requestText, requestTokens, taskType, signals))
-    .filter((item) => item.score > 0)
+    .map((skill) =>
+      scoreSkill(skill, requestText, requestTokens, taskType, signals, requestProfile)
+    )
+    .filter((item) => item.score >= MIN_ROUTE_SCORE)
     .sort((left, right) => right.score - left.score)
     .slice(0, Math.max(1, limit));
 
   if (scored.length === 0) {
-    scored.push({
-      skill: getSkill(library, "strategic-stress-test"),
-      score: 1,
-      matchedKeywords: [],
-      reasons: ["Fallback to Orbit's strategy router when no stronger signal is present."]
-    });
+    return {
+      taskType,
+      primarySkill: null,
+      no_strong_match: true,
+      message:
+        "No Orbit skill matched this request with sufficient confidence. Try narrowing your request or describing the lifecycle marketing task more specifically.",
+      alternatives: [],
+      rankedMatches: [],
+      disambiguators: [],
+      assumptionsToState: [],
+      recommendedQuestions: [],
+      interactionRecommendation: "ask_user",
+      assistantInstruction:
+        "Ask the user to clarify their request before loading any skill. Do not guess.",
+      adjacentSkills: [],
+      recommendedResources: ["orbit://skills/list"],
+      suggested_orbit_tools: ["orbit_list_skills"],
+      detectedSignals: {
+        platform: signals.platform,
+        platform_source: signals.platformSource,
+        geography: signals.geography,
+        geography_source: signals.geographySource,
+        business_model: signals.businessModel,
+        channel: signals.channel,
+        lifecycle_stage: signals.lifecycleStage,
+        current_state: signals.currentState
+      },
+      suggestedSequence: null
+    };
   }
 
   const primary = scored[0].skill;
   const disambiguators = inferDisambiguators(primary, taskType, signals);
   const assumptionsToState = buildAssumptions(disambiguators, signals);
+  const questionPlan = buildCriticalQuestionPlan({
+    primarySkill: primary,
+    taskType,
+    signals,
+    requestProfile,
+    disambiguators
+  });
   const recommendedResources = [
     `orbit://skills/${primary.name}/summary`,
     `orbit://skills/${primary.name}/full`
@@ -175,6 +268,9 @@ export function routeTask(library, request, limit = 5, defaults = {}) {
     })),
     disambiguators,
     assumptionsToState,
+    recommendedQuestions: questionPlan.questions,
+    interactionRecommendation: questionPlan.recommendation,
+    assistantInstruction: questionPlan.assistantInstruction,
     adjacentSkills: primary.adjacentSkills,
     recommendedResources,
     detectedSignals: {
@@ -189,6 +285,7 @@ export function routeTask(library, request, limit = 5, defaults = {}) {
     },
     suggestedSequence: sequence
       ? {
+          id: sequence.id,
           title: sequence.title,
           skills: sequence.skills,
           note: sequence.note
@@ -199,9 +296,7 @@ export function routeTask(library, request, limit = 5, defaults = {}) {
 
 export function composeSequence(goal, primarySkill) {
   const requestText = String(goal ?? "").toLowerCase();
-  const matchingSequence = SEQUENCES.find((sequence) =>
-    sequence.keywords.some((keyword) => requestText.includes(keyword))
-  );
+  const matchingSequence = findBestSequenceMatch(requestText);
 
   if (matchingSequence) {
     return matchingSequence;
@@ -298,7 +393,7 @@ export function validateOutput(library, skillName, draft) {
   };
 }
 
-function scoreSkill(skill, requestText, requestTokens, taskType, signals) {
+function scoreSkill(skill, requestText, requestTokens, taskType, signals, requestProfile) {
   const matchedKeywords = [];
   let score = 0;
   const reasons = [];
@@ -308,6 +403,20 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals) {
   const skillTitlePhrase = skill.title.toLowerCase();
   const skillNameSimple = skillNamePhrase.replace(/[^a-z0-9]+/g, " ");
   const skillTitleSimple = skillTitlePhrase.replace(/[^a-z0-9]+/g, " ");
+
+  // Exclusion phrases — disqualify this skill immediately if any match.
+  if (skill.exclusionPhrases?.length > 0) {
+    for (const phrase of skill.exclusionPhrases) {
+      if (normalizedRequest.includes(phrase.toLowerCase())) {
+        return {
+          skill,
+          score: 0,
+          matchedKeywords: [],
+          reasons: [`Exclusion phrase matched: "${phrase}"`]
+        };
+      }
+    }
+  }
 
   if (
     normalizedRequest.includes(skillNamePhrase) ||
@@ -333,9 +442,26 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals) {
     }
   }
 
+  const phraseCoverage = computePhraseCoverage(requestProfile.phrases, skill);
+  if (phraseCoverage > 0) {
+    score += phraseCoverage;
+    reasons.push("Matches request phrase patterns beyond simple keyword overlap.");
+  }
+
   if (skill.name.includes(taskType) || skill.category.includes(taskType)) {
     score += 4;
     reasons.push(`Matches task type "${taskType}".`);
+  }
+
+  if (requestProfile.sequenceSkills.includes(skill.name)) {
+    score += 9;
+    reasons.push("Fits a named Orbit workflow sequence for this request.");
+  }
+
+  const intentScore = scoreIntentAffinity(skill, requestProfile);
+  if (intentScore > 0) {
+    score += intentScore;
+    reasons.push("Fits the artifact and workflow intent of the request.");
   }
 
   if (signals.platform) {
@@ -385,12 +511,224 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals) {
     score += 5;
   }
 
+  if (
+    /\b(brand guidelines|brand kit|tone of voice|logo assets?|brand examples?)\b/.test(
+      normalizedRequest
+    ) &&
+    /graphic-design|copy-framework/.test(skill.name)
+  ) {
+    score += 8;
+    reasons.push("The request is asking for brand-guidelines work.");
+  }
+
+  if (
+    /\b(html|mjml|template|plain text|compiled email|email preview|email qa)\b/.test(
+      normalizedRequest
+    ) &&
+    /email-production-system|email-render-qa|content-block-system/.test(skill.name)
+  ) {
+    score += 8;
+    reasons.push("The request includes explicit lifecycle email production signals.");
+  }
+
+  if (
+    /\b(braze pack|canvas build sheet|content block manifest|liquid snippets?)\b/.test(
+      normalizedRequest
+    ) &&
+    /braze-build-packager|braze-documentation-expert/.test(skill.name)
+  ) {
+    score += 8;
+    reasons.push("The request includes Braze packaging or implementation-pack signals.");
+  }
+
+  if (
+    /\b(notion|documentation bundle|library|save template|version template|reuse)\b/.test(
+      normalizedRequest
+    ) &&
+    /template-library-management|notion-documentation-export/.test(skill.name)
+  ) {
+    score += 8;
+    reasons.push("The request includes library or documentation-export signals.");
+  }
+
   return {
     skill,
     score,
     matchedKeywords: [...new Set(matchedKeywords)].sort(),
     reasons
   };
+}
+
+function buildRequestProfile(requestText, requestTokens, taskType, signals) {
+  const normalized = requestText.toLowerCase();
+  const matchingSequence = findBestSequenceMatch(normalized);
+
+  return {
+    taskType,
+    signals,
+    normalized,
+    phrases: extractRequestPhrases(normalized),
+    sequenceSkills: matchingSequence?.skills ?? [],
+    intents: {
+      brandGuidelines: /\b(brand guidelines|brand kit|tone of voice|logo assets?|brand examples?)\b/.test(
+        normalized
+      ),
+      diagram: /\b(diagram|flowchart|journey map|canvas|mermaid)\b/.test(normalized),
+      emailProduction:
+        /\b(mjml|html|compiled email|preview html|email qa|plain text|responsive email)\b/.test(
+          normalized
+        ),
+      brazePack:
+        /\b(braze pack|canvas build sheet|content block manifest|liquid snippets?)\b/.test(
+          normalized
+        ),
+      library:
+        /\b(library|save template|reuse|favorite|version template|content block)\b/.test(
+          normalized
+        ),
+      notion:
+        /\b(notion|documentation bundle|markdown export|program docs|handoff docs)\b/.test(
+          normalized
+        ),
+      production:
+        /\b(build|compile|generate|export|package|save|preview|qa)\b/.test(normalized),
+      discovery:
+        /\b(journey|program|campaign|flow|automation)\b/.test(normalized) &&
+        /\b(create|build|design|plan)\b/.test(normalized)
+    },
+    artifacts: {
+      templates: [...requestTokens].filter((token) => token.includes("template")),
+      contentBlocks: /\b(content block|module|header|footer)\b/.test(normalized),
+      documentation: /\b(brief|spec|runbook|documentation|docs)\b/.test(normalized)
+    }
+  };
+}
+
+function extractRequestPhrases(normalizedRequest) {
+  const words = normalizedRequest
+    .replace(/[^a-z0-9+\-/ ]+/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 2);
+  const phrases = new Set();
+
+  for (let index = 0; index < words.length; index += 1) {
+    phrases.add(words[index]);
+    if (index < words.length - 1) {
+      phrases.add(`${words[index]} ${words[index + 1]}`);
+    }
+    if (index < words.length - 2) {
+      phrases.add(`${words[index]} ${words[index + 1]} ${words[index + 2]}`);
+    }
+  }
+
+  return [...phrases];
+}
+
+function computePhraseCoverage(requestPhrases, skill) {
+  const skillPhrases = [
+    skill.title.toLowerCase(),
+    skill.name.replace(/-/g, " "),
+    ...skill.triggerPhrases
+  ].map((phrase) => phrase.toLowerCase());
+
+  let coverage = 0;
+  for (const requestPhrase of requestPhrases) {
+    if (requestPhrase.length < 4) {
+      continue;
+    }
+
+    if (skillPhrases.some((phrase) => phrase.includes(requestPhrase) || requestPhrase.includes(phrase))) {
+      coverage += requestPhrase.split(" ").length > 1 ? 3 : 1;
+    }
+  }
+
+  return Math.min(8, coverage);
+}
+
+function scoreIntentAffinity(skill, requestProfile) {
+  let score = 0;
+  const { intents, artifacts } = requestProfile;
+
+  if (intents.brandGuidelines && /graphic-design|copy-framework/.test(skill.name)) {
+    score += 8;
+  }
+
+  if (intents.diagram && /graphic-design|journey-mapping|lifecycle-design/.test(skill.name)) {
+    score += 6;
+  }
+
+  if (intents.emailProduction && /email-production-system|email-render-qa/.test(skill.name)) {
+    score += 9;
+  }
+
+  if (intents.brazePack && /braze-build-packager|braze-documentation-expert/.test(skill.name)) {
+    score += 10;
+  }
+
+  if (intents.library && /template-library-management/.test(skill.name)) {
+    score += 7;
+  }
+
+  if (intents.notion && /notion-documentation-export|program-brief/.test(skill.name)) {
+    score += 8;
+  }
+
+  if (intents.discovery && /journey-mapping|lifecycle-design|onboarding-design|program-brief/.test(skill.name)) {
+    score += 6;
+  }
+
+  if (artifacts.contentBlocks && /content-block-system|braze-build-packager/.test(skill.name)) {
+    score += 6;
+  }
+
+  if (intents.emailProduction && skill.name === "email-production-system") {
+    score += 5;
+  }
+
+  if (intents.emailProduction && requestProfile.artifacts.templates.length > 0 && skill.name === "email-production-system") {
+    score += 3;
+  }
+
+  if (
+    (requestProfile.intents.production || intents.emailProduction) &&
+    skill.name === "email-render-qa" &&
+    /\b(qa|review|validate|render|dark mode)\b/.test(requestProfile.normalized)
+  ) {
+    score += 4;
+  }
+
+  if (intents.library && skill.name === "template-library-management") {
+    score += 4;
+  }
+
+  if (artifacts.contentBlocks && skill.name === "content-block-system") {
+    score += 8;
+  }
+
+  if (artifacts.documentation && /program-brief|notion-documentation-export|pre-launch-review/.test(skill.name)) {
+    score += 4;
+  }
+
+  if (intents.production && /build|documentation/.test(skill.category)) {
+    score += 2;
+  }
+
+  return score;
+}
+
+function findBestSequenceMatch(requestText) {
+  const normalized = String(requestText ?? "").toLowerCase();
+  const scoredSequences = SEQUENCES.map((sequence) => ({
+    sequence,
+    score: sequence.keywords.reduce(
+      (total, keyword) => total + (normalized.includes(keyword) ? keyword.split(" ").length : 0),
+      0
+    )
+  }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  return scoredSequences[0]?.sequence ?? null;
 }
 
 function inferDisambiguators(primarySkill, taskType, signals) {
@@ -444,6 +782,108 @@ function buildAssumptions(disambiguators, signals) {
   return assumptions;
 }
 
+function buildCriticalQuestionPlan({
+  primarySkill,
+  taskType,
+  signals,
+  requestProfile,
+  disambiguators
+}) {
+  const questions = [];
+
+  if (disambiguators.includes("platform") && !signals.explicitPlatform) {
+    questions.push(
+      "Which platform are you working in for this task: Braze, Iterable, HubSpot, PostHog, or something else?"
+    );
+  }
+
+  if (disambiguators.includes("business_model") && !signals.businessModel) {
+    questions.push(
+      "Is this motion B2B/account-based, B2C, PLG, sales-led, or something else?"
+    );
+  }
+
+  if (disambiguators.includes("channel") && !signals.channel) {
+    questions.push(
+      "Which channel or artifact should Orbit optimize for first: email, push, SMS, in-app, documentation, or another asset?"
+    );
+  }
+
+  if (disambiguators.includes("lifecycle_stage") && !signals.lifecycleStage) {
+    questions.push(
+      "Which lifecycle stage is this for: onboarding, activation, retention, winback, renewal, expansion, or another stage?"
+    );
+  }
+
+  if (disambiguators.includes("geography") && !signals.explicitGeography) {
+    questions.push(
+      "Which geography or compliance regime should Orbit optimize for here?"
+    );
+  }
+
+  if (disambiguators.includes("current_state") && !signals.currentState) {
+    questions.push(
+      "What already exists today, and what is working, underperforming, or blocked right now?"
+    );
+  }
+
+  if (requestProfile.intents.discovery) {
+    questions.push(
+      "What outcome are you trying to drive, and what primary KPI should Orbit optimize for?"
+    );
+    questions.push(
+      "Who enters this journey or program, and what should Orbit know about the current-state flow, suppressions, or adjacent programs?"
+    );
+    questions.push(
+      "What connected tools, docs, sheets, dashboards, or existing artifacts should Orbit use as source data before designing the flow?"
+    );
+  }
+
+  if (requestProfile.intents.emailProduction) {
+    questions.push(
+      "Do you already have a Figma file, PDF reference, or existing email template Orbit should build from?"
+    );
+    questions.push(
+      "What is the exact audience, CTA, and outcome this email needs to drive?"
+    );
+  }
+
+  if (requestProfile.intents.brandGuidelines) {
+    questions.push(
+      "Do you want Orbit to run the brand-guidelines intake first so it can capture tone of voice, official logos, and brand examples before creating anything?"
+    );
+  }
+
+  if (requestProfile.intents.brazePack) {
+    questions.push(
+      "Are you looking for a local Braze handoff pack, a direct Braze publish, or both?"
+    );
+  }
+
+  const dedupedQuestions = [...new Set(questions)].slice(0, 5);
+  const askUserFirst = dedupedQuestions.length > 0;
+
+  return {
+    questions: dedupedQuestions,
+    recommendation: askUserFirst
+      ? {
+          mode: "ask_user_first",
+          reason:
+            "This request is under-specified enough that Orbit should ask the user a few high-leverage questions before taking action.",
+          proceed_only_if:
+            "The user explicitly wants an assumption-led draft or answers would not materially change the next step."
+        }
+      : {
+          mode: "ready_to_proceed",
+          reason:
+            "The request already includes enough context for Orbit to proceed without blocking on more questions."
+        },
+    assistantInstruction: askUserFirst
+      ? "Before taking action, ask the user the highest-leverage unanswered questions below and wait for their reply. Only skip those questions if the user explicitly wants an assumption-led draft."
+      : "Enough context is present to proceed. If Orbit spots one final high-leverage clarification, keep it brief and ask it before execution."
+  };
+}
+
 function evaluateValidatorRule(rule, text) {
   if (rule.type === "includes") {
     return text.includes(rule.value);
@@ -461,13 +901,13 @@ function inferTaskType(requestText) {
   if (/\b(audit|review|critique|evaluate|stress[- ]?test)\b/.test(normalized)) {
     return "audit";
   }
-  if (/\b(fix|broken|debug|why isn't|why isn’t|troubleshoot)\b/.test(normalized)) {
+  if (/\b(fix|broken|debug|why isn’t|troubleshoot)\b/.test(normalized)) {
     return "troubleshooting";
   }
   if (/\b(brief|spec|document|write up|overview)\b/.test(normalized)) {
     return "documentation";
   }
-  if (/\b(build|create|design|architect|set up|setup|launch|generate)\b/.test(normalized)) {
+  if (/\b(build|create|design|architect|set up|setup|launch|generate|compile|export|package)\b/.test(normalized)) {
     return "build";
   }
   if (/\b(strategy|plan|roadmap|recommend)\b/.test(normalized)) {
@@ -529,5 +969,36 @@ const DEFAULT_ADJACENCY = {
   "social-listening": ["copy-framework", "growth-marketing"],
   "copy-framework": ["graphic-design", "pre-launch-review"],
   "graphic-design": ["copy-framework", "pre-launch-review"],
-  "ai-personalization": ["crm-data-model", "segmentation-strategy", "experiment-design"]
+  "ai-personalization": ["crm-data-model", "segmentation-strategy", "experiment-design"],
+  "email-production-system": [
+    "program-brief",
+    "content-block-system",
+    "email-render-qa",
+    "braze-build-packager"
+  ],
+  "email-render-qa": [
+    "email-production-system",
+    "pre-launch-review",
+    "deliverability-management"
+  ],
+  "content-block-system": [
+    "email-production-system",
+    "template-library-management",
+    "braze-build-packager"
+  ],
+  "braze-build-packager": [
+    "braze-documentation-expert",
+    "content-block-system",
+    "email-render-qa"
+  ],
+  "template-library-management": [
+    "email-production-system",
+    "content-block-system",
+    "notion-documentation-export"
+  ],
+  "notion-documentation-export": [
+    "program-brief",
+    "template-library-management",
+    "braze-build-packager"
+  ]
 };

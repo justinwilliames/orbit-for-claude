@@ -26,8 +26,9 @@ When this skill is active, apply this operating sequence before diving into the 
 1. Classify the task: strategy, audit, build, review, troubleshooting, or documentation.
 2. Confirm the variables that materially change the answer: platform/tool, business model, audience, channel, geography/compliance, and current state.
 3. If a critical variable is missing, ask only if the answer would materially change; otherwise proceed with explicit assumptions.
-4. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
-5. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
+4. Exception: when Orbit is being asked to create or redesign a journey map that will drive a new program, run the program-discovery intake first, present the full program survey to the user, and wait for their direct answers instead of inferring or pre-populating answers unless the user explicitly asks for pre-population.
+5. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
+6. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
 
 ## Response Contract
 

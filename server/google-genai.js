@@ -1,6 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { escapeXml, sha1 } from "./utils.js";
 
+const GEMINI_TIMEOUT_MS = 90_000;
+const GEMINI_MAX_ATTEMPTS = 2;
+
 export async function generateBrandArtLayer({
   config,
   prompt,
@@ -29,7 +32,7 @@ export async function generateBrandArtLayer({
     }))
   ];
 
-  const response = await client.models.generateContent({
+  const requestConfig = {
     model: config.googleImageModel,
     contents: [{ role: "user", parts }],
     config: {
@@ -39,27 +42,63 @@ export async function generateBrandArtLayer({
         imageSize: canvas.imageSize ?? "2K"
       }
     }
-  });
-
-  const firstImagePart = response.candidates?.[0]?.content?.parts?.find(
-    (part) => part.inlineData?.data
-  );
-  if (!firstImagePart?.inlineData?.data) {
-    const error = new Error(
-      `Nano Banana Pro did not return an image. ${response.text ?? "No text response."}`
-    );
-    error.code = "PROVIDER_ERROR";
-    throw error;
-  }
-
-  return {
-    provider: "nano-banana-pro",
-    model: config.googleImageModel,
-    mimeType: firstImagePart.inlineData.mimeType ?? "image/png",
-    buffer: Buffer.from(firstImagePart.inlineData.data, "base64"),
-    base64: firstImagePart.inlineData.data,
-    text: response.text ?? ""
   };
+
+  let lastError;
+  for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await callWithTimeout(
+        () => client.models.generateContent(requestConfig),
+        GEMINI_TIMEOUT_MS
+      );
+
+      const firstImagePart = response.candidates?.[0]?.content?.parts?.find(
+        (part) => part.inlineData?.data
+      );
+      if (!firstImagePart?.inlineData?.data) {
+        const error = new Error(
+          `Nano Banana Pro did not return an image. ${response.text ?? "No text response."}`
+        );
+        error.code = "PROVIDER_ERROR";
+        throw error;
+      }
+
+      return {
+        provider: "nano-banana-pro",
+        model: config.googleImageModel,
+        mimeType: firstImagePart.inlineData.mimeType ?? "image/png",
+        buffer: Buffer.from(firstImagePart.inlineData.data, "base64"),
+        base64: firstImagePart.inlineData.data,
+        text: response.text ?? ""
+      };
+    } catch (err) {
+      lastError = err;
+      if (err.code === "GEMINI_TIMEOUT" && attempt < GEMINI_MAX_ATTEMPTS) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+async function callWithTimeout(fn, timeoutMs) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(
+        `Gemini image generation timed out after ${timeoutMs / 1000}s. ` +
+        "The model may be under heavy load — retry or try again shortly."
+      );
+      err.code = "GEMINI_TIMEOUT";
+      reject(err);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([fn(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function generateMockArtLayer({ prompt, canvas, variationIndex }) {

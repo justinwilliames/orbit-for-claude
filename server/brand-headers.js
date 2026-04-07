@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { generateBrandArtLayer } from "./google-genai.js";
-import { resolveBrandProfile } from "./config.js";
+import { resolveLoosePath, resolveBrandProfile } from "./config.js";
 import {
   extractBrandGuidelineContext,
   loadBrandGuidelines
@@ -18,6 +17,7 @@ import {
   fileExists,
   hashObject,
   inferMimeType,
+  isHexColor,
   normalizeHexColor,
   parseJsonInput,
   pickReadableColor,
@@ -70,8 +70,10 @@ export function buildBrandHeaderSpec({
   if (logos.length === 0) {
     missingInputs.push("official_logo");
   }
-  if (brandExamples.length < 2) {
-    missingInputs.push("brand_examples (minimum 2)");
+  const userColors = profile?.colors ?? {};
+  const hasUserColors = Object.values(userColors).some((v) => v && isHexColor(v));
+  if (!hasUserColors) {
+    missingInputs.push("colors");
   }
 
   const missingFiles = [
@@ -90,9 +92,22 @@ export function buildBrandHeaderSpec({
       missing_inputs: [...new Set(missingInputs)],
       guidance: [
         "Provide at least one official logo file.",
-        "Provide at least two brand example images or email examples.",
+        "Provide brand colours as hex values (e.g. primary, accent, secondary).",
+        "Optional: brand example images improve art direction but are not required.",
         "Optional visual references can refine the art direction."
-      ]
+      ],
+      assistant_instruction:
+        "STOP. Ask the user to provide the missing inputs listed above. Do NOT invent default values, do NOT proceed without them, and do NOT generate any images or SVG yourself. The Orbit MCP server runs locally and handles all rendering — just ask the user for what's missing.",
+      suggested_orbit_tools: dedupeSuggestions([
+        "orbit_start_brand_guidelines_intake",
+        "orbit_build_brand_kit_draft",
+        "orbit_check_setup"
+      ]),
+      suggested_next_steps: buildBrandAssetCoachingSteps({
+        config,
+        missingInputs,
+        hasGuidelines: Boolean(guidelines?.guidelinesPath)
+      })
     };
   }
 
@@ -217,7 +232,8 @@ export function buildBrandHeaderSpec({
       guidelineContext,
       copy: mergedCopy,
       canvas,
-      validation
+      validation,
+      brandExamples
     })
   };
 
@@ -229,11 +245,39 @@ export function buildBrandHeaderSpec({
     composition: spec.composition
   }).slice(0, 12)}`;
 
+  const renderReady = Boolean(config.googleAiApiKey);
   return {
     status: "ok",
     spec,
     warnings: spec.warnings,
-    validation
+    validation,
+    brand_assets_loaded: {
+      logos: logos.length,
+      brand_examples: brandExamples.length,
+      visual_refs: visualRefs.length,
+      brand_kit_dir: effectiveBrandKitDir
+    },
+    assistant_instruction: renderReady
+      ? "The spec is ready. Proceed to action='render' immediately. " +
+        "Do NOT ask for logos, examples, or any other inputs. " +
+        "CRITICAL: After render succeeds, the inline image IS the preview — let it render naturally. " +
+        "Do NOT describe, narrate, or summarise the rendered output. Do NOT tell the user what the image 'looks like'. " +
+        "Files are saved directly to ~/Downloads — do NOT mention saving, do NOT offer to save to Orbit outputs, do NOT ask 'ready to save?'. The render IS the final output. " +
+        "If render fails, report the error — do NOT fabricate a description. " +
+        "Always use the exact brand_name: '" + (profile?.brandName ?? companyName ?? config.companyName ?? "Brand") + "'."
+      : "The spec is ready but the Google AI API key is missing. Tell the user to add ORBIT_GOOGLE_AI_API_KEY in Orbit extension settings and restart Claude. Do NOT ask for logos or brand examples — they are already loaded from the brand kit.",
+    suggested_orbit_tools: dedupeSuggestions([
+      "orbit_render_brand_header",
+      ...(guidelines?.guidelinesPath ? [] : ["orbit_start_brand_guidelines_intake"]),
+      "orbit_check_setup"
+    ]),
+    suggested_next_steps: buildBrandAssetCoachingSteps({
+      config,
+      missingInputs: [],
+      hasGuidelines: Boolean(guidelines?.guidelinesPath),
+      hasExamples: brandExamples.length >= 2
+    }),
+    render_readiness: renderReady ? "ready" : "needs_google_ai_api_key"
   };
 }
 
@@ -430,15 +474,34 @@ export async function renderBrandHeader({
     );
   }
 
-  const references = [
+  const referenceAssets = [
     ...(normalizedSpec.references?.brand_examples ?? []),
     ...(normalizedSpec.references?.visual_refs ?? [])
-  ].map((asset) => loadReferenceImage(asset.path));
+  ];
+  const references = [];
+  const referenceErrors = [];
+  for (const asset of referenceAssets) {
+    try {
+      references.push(loadReferenceImage(asset.path));
+    } catch (err) {
+      referenceErrors.push({ path: asset.path, error: err.message });
+    }
+  }
+  // Hard-fail if zero reference images loaded — the art layer needs brand context
+  if (references.length === 0 && referenceAssets.length > 0) {
+    const error = new Error(
+      `All ${referenceAssets.length} brand reference images failed to load. ` +
+      referenceErrors.map((e) => e.error).join("; ")
+    );
+    error.code = "REFERENCE_IMAGES_FAILED";
+    throw error;
+  }
 
   const specPath = writeJson(
     path.join(outputDir, `${normalizedSpec.export_plan.base_name}.json`),
     normalizedSpec
   );
+  const { generateBrandArtLayer } = await import("./google-genai.js");
   const results = [];
 
   for (let index = 0; index < Math.max(1, Math.min(variationCount, 4)); index += 1) {
@@ -449,6 +512,15 @@ export async function renderBrandHeader({
       canvas: normalizedSpec.layout.canvas,
       variationIndex: index
     });
+    // Validate Gemini actually returned image data
+    if (!artLayer?.base64 || artLayer.base64.length < 100) {
+      const error = new Error(
+        "Gemini returned no usable image data for variation " + (index + 1) +
+        ". The art layer is empty or too small to be a real image."
+      );
+      error.code = "EMPTY_ART_LAYER";
+      throw error;
+    }
     const renderSet = await renderHeaderVariation({
       rootDir,
       spec: normalizedSpec,
@@ -463,6 +535,9 @@ export async function renderBrandHeader({
   return {
     status: "ok",
     spec_path: specPath,
+    reference_images_loaded: references.length,
+    reference_images_requested: referenceAssets.length,
+    reference_errors: referenceErrors.length > 0 ? referenceErrors : undefined,
     variations: results
   };
 }
@@ -507,6 +582,21 @@ async function renderHeaderVariation({
     });
   }
 
+  // Collect file sizes so the calling agent can verify real output was written
+  const fileSizes = {};
+  for (const [format, filePath] of Object.entries(files)) {
+    if (filePath && fs.existsSync(filePath)) {
+      fileSizes[format] = fs.statSync(filePath).size;
+    }
+  }
+  if (noTextFiles) {
+    for (const [format, filePath] of Object.entries(noTextFiles)) {
+      if (filePath && fs.existsSync(filePath)) {
+        fileSizes[`no_text_${format}`] = fs.statSync(filePath).size;
+      }
+    }
+  }
+
   return {
     variation: variationIndex + 1,
     provider: artLayer.provider,
@@ -514,7 +604,8 @@ async function renderHeaderVariation({
     files: {
       ...files,
       no_text: noTextFiles
-    }
+    },
+    file_sizes_bytes: fileSizes
   };
 }
 
@@ -717,20 +808,25 @@ function buildDefaultComposition({ family }) {
 
 function buildVisualSystem({ family, profile, copy }) {
   const colors = profile?.colors ?? {};
+  const hasUserColors = Object.values(colors).some((v) => v && isHexColor(v));
+
+  // Use user-provided colours when available; fall back to neutral rendering defaults
+  // only for technical layout (contrast-safe text), never for brand identity colours.
   const background = normalizeHexColor(
     colors.secondary ?? colors.background ?? DEFAULT_BACKGROUND
   );
   const headline = pickReadableColor(background, [
-    colors.primary,
+    ...(colors.primary ? [colors.primary] : []),
     "#171717",
     "#ffffff"
   ]);
   const support = pickReadableColor(background, [
-    colors.accent,
-    colors.primary,
+    ...(colors.accent ? [colors.accent] : []),
+    ...(colors.primary ? [colors.primary] : []),
     headline === "#171717" ? "#4d4d4d" : "#ffffff"
   ]);
-  const accent = normalizeHexColor(colors.accent ?? colors.primary ?? "#2d2d2d");
+  // Accent: only set if user provided one — do not invent brand colours
+  const accent = normalizeHexColor(colors.accent ?? colors.primary ?? null);
   const headlineContrast = contrastRatio(headline, background) ?? 0;
 
   return {
@@ -738,6 +834,7 @@ function buildVisualSystem({ family, profile, copy }) {
     headline,
     support,
     accent,
+    has_user_colors: hasUserColors,
     text_panel:
       family === "center-lock" || (family === "framed-narrative" && copy?.headline)
         ? {
@@ -803,7 +900,7 @@ function validateBrandHeaderLayout({ canvas, zones, composition, visualSystem, c
   };
 }
 
-function buildHeaderWarnings({ profile, guidelines, guidelineContext, copy, canvas, validation }) {
+function buildHeaderWarnings({ profile, guidelines, guidelineContext, copy, canvas, validation, brandExamples = [] }) {
   const warnings = [
     "Orbit composites the supplied official logo locally instead of asking the model to redraw it.",
     "Only the art-layer prompt and selected reference assets are sent to Google for image generation."
@@ -814,9 +911,21 @@ function buildHeaderWarnings({ profile, guidelines, guidelineContext, copy, canv
       "No brand-profile.json was found, so Orbit is relying entirely on the supplied runtime references."
     );
   }
+  const userColors = profile?.colors ?? {};
+  const hasUserColors = Object.values(userColors).some((v) => v && isHexColor(v));
+  if (!hasUserColors) {
+    warnings.push(
+      "No brand colours are configured in brand-profile.json. Orbit is using neutral rendering defaults — run the brand guidelines intake to set your actual brand colours."
+    );
+  }
   if (!guidelines) {
     warnings.push(
       "No brand-guidelines.md was found, so Orbit is using the brand profile and reference assets without longform brand guidance."
+    );
+  }
+  if (brandExamples.length === 0) {
+    warnings.push(
+      "No brand example images were found. Ask the user if they would like to add example images (screenshots, previous emails, marketing material) to improve art direction, or proceed without them."
     );
   }
 
@@ -907,10 +1016,20 @@ function toAssetRecord(filePath) {
 }
 
 function loadReferenceImage(filePath) {
-  const buffer = fs.readFileSync(filePath);
+  // Resolve with loose whitespace matching (handles U+202F vs U+0020 in macOS screenshots)
+  const resolvedPath = resolveLoosePath(path.dirname(filePath), path.basename(filePath)) ?? filePath;
+  if (!fs.existsSync(resolvedPath)) {
+    const error = new Error(
+      `Brand reference image not found: ${filePath}` +
+      (resolvedPath !== filePath ? ` (also tried: ${resolvedPath})` : "")
+    );
+    error.code = "REFERENCE_IMAGE_NOT_FOUND";
+    throw error;
+  }
+  const buffer = fs.readFileSync(resolvedPath);
   return {
-    path: filePath,
-    mimeType: inferMimeType(filePath),
+    path: resolvedPath,
+    mimeType: inferMimeType(resolvedPath),
     base64: buffer.toString("base64")
   };
 }
@@ -947,7 +1066,8 @@ function resolveRenderColors(spec) {
     background: visualSystem.background ?? DEFAULT_BACKGROUND,
     headline: visualSystem.headline ?? "#171717",
     support: visualSystem.support ?? "#4d4d4d",
-    accent: visualSystem.accent ?? "#2d2d2d"
+    // Accent falls back to headline colour if user didn't provide one — never invents a brand colour
+    accent: visualSystem.accent ?? visualSystem.headline ?? "#171717"
   };
 }
 
@@ -1060,4 +1180,49 @@ function inferBrandHeaderRevision(revisionRequest) {
   }
 
   return inferred;
+}
+
+function buildBrandAssetCoachingSteps({
+  config,
+  missingInputs = [],
+  hasGuidelines = false,
+  hasExamples = false
+}) {
+  const steps = [];
+
+  if (!config.googleAiApiKey) {
+    steps.push(
+      "Add a Google AI API Key in Orbit settings if you want Orbit to render the final image asset."
+    );
+  }
+  if (missingInputs.some((item) => item === "official_logo" || item.startsWith("logo:"))) {
+    steps.push(
+      "Provide at least one official logo file path so Orbit can composite the logo locally."
+    );
+  }
+  if (
+    missingInputs.some((item) => item.startsWith("brand_example:"))
+  ) {
+    steps.push(
+      "Some brand example file paths could not be resolved — check that the files exist at the referenced paths."
+    );
+  } else if (!hasExamples) {
+    steps.push(
+      "Optional: adding brand example images (screenshots, previous emails, marketing material) to ~/Orbit/brand-kit/examples/ will improve art direction."
+    );
+  }
+  if (!hasGuidelines) {
+    steps.push(
+      "If you want Orbit to follow your tone and brand rules more closely, run the brand-guidelines intake before final asset generation."
+    );
+  }
+  steps.push(
+    "Once the setup is in place, Orbit can build the spec, render the asset, and keep the references in your local Orbit brand kit."
+  );
+
+  return dedupeSuggestions(steps);
+}
+
+function dedupeSuggestions(values) {
+  return [...new Set((values ?? []).filter(Boolean))];
 }

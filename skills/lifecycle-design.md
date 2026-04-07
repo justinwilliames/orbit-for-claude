@@ -24,9 +24,11 @@ When this skill is active, apply this operating sequence before diving into the 
 
 1. Classify the task: strategy, audit, build, review, troubleshooting, or documentation.
 2. Confirm the variables that materially change the answer: platform/tool, business model, audience, channel, geography/compliance, and current state.
-3. If a critical variable is missing, ask only if the answer would materially change; otherwise proceed with explicit assumptions.
-4. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
-5. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
+3. Before taking action, stop and decide whether 1-5 direct user questions would materially improve the design. If yes, ask them first and wait.
+4. If a critical variable is missing, ask before acting unless the user explicitly wants an assumption-led scaffold.
+5. Exception: when Orbit is being asked to create a new lifecycle journey, campaign, or program, run the program-discovery intake first, present the full program survey to the user, and wait for their direct answers instead of inferring or pre-populating answers unless the user explicitly asks for pre-population.
+6. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
+7. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
 
 ## Response Contract
 

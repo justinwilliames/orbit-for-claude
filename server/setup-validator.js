@@ -3,9 +3,12 @@ import path from "node:path";
 import {
   loadBrandProfile,
   resolveAgainstDir,
-  resolveOptionalPath
+  resolveLoosePath,
+  resolveOptionalPath,
+  scanBrandKitFolder
 } from "./config.js";
 import { loadBrandGuidelines } from "./brand-kit.js";
+import { loadOrbitPreferences, saveCopyPreferences } from "./preferences.js";
 import { BRAND_LAYOUT_FAMILIES, PLATFORM_OPTIONS } from "./visual-specs.js";
 import { fileExists, isHexColor } from "./utils.js";
 
@@ -13,8 +16,32 @@ const DEFAULT_FEATURES = [
   "core",
   "lifecycle_diagrams",
   "brand_header_spec",
-  "brand_header_render"
+  "brand_header_render",
+  "email_production",
+  "library"
 ];
+
+function buildLocalStorageNotice(config) {
+  const workspaceRoot =
+    config.homeWorkspace?.root ??
+    config.homeWorkspace?.paths?.root ??
+    path.join(config.host?.homeDir ?? "~", "Orbit");
+
+  return {
+    storage_mode: "local_only",
+    workspace_root: workspaceRoot,
+    summary:
+      "Orbit stores templates, brand information, imported references, generated previews, and reusable library items locally on this device.",
+    warning: `Back up ${workspaceRoot} if you want to keep your Orbit state. Moving to a different device starts from a fresh Orbit workspace unless you restore that folder.`,
+    recommended_backup_paths: [
+      workspaceRoot,
+      path.join(workspaceRoot, "brand-kit"),
+      path.join(workspaceRoot, "library"),
+      path.join(workspaceRoot, "outputs"),
+      path.join(workspaceRoot, "imports")
+    ]
+  };
+}
 
 export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [] }) {
   const effectiveRootDir = rootDir ?? config.rootDir;
@@ -25,12 +52,21 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
     config,
     brandKitDir: effectiveBrandKitDir
   });
+  const { preferences } = loadOrbitPreferences({ config });
+  const allowCopyWithoutBrandGuidelines = Boolean(
+    preferences.copy_preferences?.allow_without_brand_guidelines
+  );
 
   const checks = [
     {
       key: "default_output_dir",
       passed: canWriteToDir(config.defaultOutputDir),
       detail: config.defaultOutputDir ?? null
+    },
+    {
+      key: "library_dir",
+      passed: canWriteToDir(config.libraryDir),
+      detail: config.libraryDir ?? null
     },
     {
       key: "default_platform",
@@ -46,6 +82,21 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       key: "google_ai_api_key",
       passed: Boolean(config.googleAiApiKey),
       detail: config.googleAiApiKey ? "configured" : null
+    },
+    {
+      key: "figma_api_token",
+      passed: Boolean(config.figmaApiToken),
+      detail: config.figmaApiToken ? "configured" : null
+    },
+    {
+      key: "braze_api_key",
+      passed: Boolean(config.brazeApiKey),
+      detail: config.brazeApiKey ? "configured" : null
+    },
+    {
+      key: "braze_rest_endpoint",
+      passed: Boolean(config.brazeRestEndpoint),
+      detail: config.brazeRestEndpoint ?? null
     }
   ];
 
@@ -59,6 +110,70 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       blocking_issues: checks[0].passed
         ? []
         : ["Lifecycle diagram exports need a writable output directory."]
+    },
+    library: {
+      status: checks[1].passed ? "ready" : "needs_setup",
+      blocking_issues: checks[1].passed
+        ? []
+        : ["Orbit's library needs a writable library directory."]
+    },
+    email_production: {
+      status: checks[0].passed && checks[1].passed ? "ready" : "needs_setup",
+      blocking_issues: [
+        ...(checks[0].passed ? [] : ["Email production needs a writable default output directory."]),
+        ...(checks[1].passed ? [] : ["Email production needs a writable library directory."])
+      ]
+    },
+    design_import: {
+      status: checks[5].passed ? "ready" : "needs_setup",
+      blocking_issues: checks[5].passed
+        ? []
+        : ["Add a Figma API token before importing Figma email designs."]
+    },
+    braze_publish: {
+      status: checks[6].passed && checks[7].passed ? "ready" : "needs_setup",
+      blocking_issues: [
+        ...(checks[6].passed ? [] : ["Add a Braze API key before publishing templates from Orbit."]),
+        ...(checks[7].passed
+          ? []
+          : ["Add a Braze REST endpoint, such as https://rest.iad-01.braze.com, before publishing."])
+      ]
+    },
+    copy_generation: {
+      status:
+        brandKit.operational_status === "full" && brandKit.tone_of_voice_defined
+          ? "ready"
+          : allowCopyWithoutBrandGuidelines
+            ? "ready_with_assumptions"
+            : "needs_setup",
+      blocking_issues: allowCopyWithoutBrandGuidelines
+        ? []
+        : [
+            ...(brandKit.guidelines_path
+              ? []
+              : [
+                  "Create brand guidelines before Orbit writes copy. Run the brand-guidelines intake first."
+                ]),
+            ...(brandKit.tone_of_voice_defined
+              ? []
+              : [
+                  "Define Tone Of Voice in brand-guidelines.md before requesting copy from Orbit."
+                ])
+          ],
+      guidance:
+        brandKit.guidelines_path && brandKit.tone_of_voice_defined
+          ? [
+              "Orbit can write copy with the configured brand guidelines and tone of voice."
+            ]
+          : allowCopyWithoutBrandGuidelines
+            ? [
+                "Orbit will proceed with explicit brand assumptions because the user chose to skip brand-guidelines setup.",
+                "You can still run orbit_start_brand_guidelines_intake later if you want Orbit to stop assuming the brand voice."
+              ]
+          : [
+              "Orbit should pause copy generation until the brand-guidelines intake is completed.",
+              "Use orbit_start_brand_guidelines_intake to collect voice, brand considerations, logos, and references."
+            ]
     },
     brand_header_spec: {
       status:
@@ -105,10 +220,22 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
     (feature) => featureReadiness[feature]?.blocking_issues ?? []
   );
 
+  const homeWorkspaceRoot = config.homeWorkspace?.root ?? null;
+  const bootstrapRequired = homeWorkspaceRoot ? !fs.existsSync(homeWorkspaceRoot) : false;
+
   return {
     status: requestedBlockers.length === 0 ? "ready" : "needs_setup",
+    bootstrap_required: bootstrapRequired,
     requested_features: requested,
     brand_kit_state: brandKit.operational_status,
+    // Prominent local path guidance — always use these paths, never hardcode alternatives
+    local_paths: {
+      brand_kit_dir: effectiveBrandKitDir,
+      default_output_dir: config.defaultOutputDir ?? null,
+      library_dir: config.libraryDir ?? null,
+      workspace_root: config.homeWorkspace?.root ?? null,
+      note: "Always use these exact paths. Never substitute sandbox, temp, or fabricated paths."
+    },
     host: config.host,
     config_snapshot: {
       company_name: config.companyName ?? null,
@@ -116,7 +243,16 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       default_geography: config.defaultGeography ?? null,
       brand_kit_dir: effectiveBrandKitDir,
       default_output_dir: config.defaultOutputDir ?? null,
-      google_ai_api_key: config.googleAiApiKey ? "configured" : "missing"
+      library_dir: config.libraryDir ?? null,
+      google_ai_api_key: config.googleAiApiKey ? "configured" : "missing",
+      figma_api_token: config.figmaApiToken ? "configured" : "missing",
+      braze_api_key: config.brazeApiKey ? "configured" : "missing",
+      braze_rest_endpoint: config.brazeRestEndpoint ?? null
+    },
+    home_workspace: config.homeWorkspace,
+    local_storage_notice: buildLocalStorageNotice(config),
+    copy_preferences: {
+      allow_without_brand_guidelines: allowCopyWithoutBrandGuidelines
     },
     checks,
     missing,
@@ -129,16 +265,16 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
         effectiveRootDir,
         "starter-brand-kit",
         "brand-guidelines.template.md"
-      )
+      ),
+      library_dir: config.libraryDir
     },
     next_steps: dedupe([
       ...requestedBlockers,
       ...(brandKit.operational_status === "full"
         ? []
-        : [
-            "Copy the starter brand kit into your own assets folder and update the paths.",
-            "Point Orbit's Brand Kit Directory setting to that folder."
-          ]),
+        : bootstrapRequired
+          ? ["Run orbit_bootstrap_home_workspace to create your local Orbit workspace, then run orbit_start_brand_guidelines_intake to set up your brand kit."]
+          : ["Run orbit_start_brand_guidelines_intake to set up your brand kit."]),
       ...(brandKit.operational_status === "profile_only"
         ? [
             "Add brand-guidelines.md or use Orbit's brand-kit draft tools to make the kit fully operational."
@@ -161,7 +297,7 @@ export function validateBrandKit({ config, brandKitDir }) {
       missing: ["brand_kit_dir"],
       warnings: ["No Brand Kit Directory is configured."],
       guidance: [
-        "Set Brand Kit Directory in Claude Desktop or provide logo/example paths at call time."
+        "Run orbit_bootstrap_home_workspace to create the local workspace, then run orbit_start_brand_guidelines_intake to set up your brand kit."
       ]
     };
   }
@@ -239,9 +375,20 @@ export function validateBrandKit({ config, brandKitDir }) {
     missing.push("brand_name");
   }
 
-  const resolvedPrimaryLogo = parsedProfile?.primaryLogo
-    ? resolveAgainstDir(effectiveBrandKitDir, parsedProfile.primaryLogo)
+  // Dynamic discovery: scan logos/ and examples/ folders for actual files on disk
+  const discoveredLogos = scanBrandKitFolder(effectiveBrandKitDir, "logos");
+  const discoveredExamples = scanBrandKitFolder(effectiveBrandKitDir, "examples");
+
+  // Primary logo: use loose path resolution (handles Unicode whitespace variants),
+  // then fall back to first discovered logo on disk
+  let resolvedPrimaryLogo = parsedProfile?.primaryLogo
+    ? resolveLoosePath(effectiveBrandKitDir, parsedProfile.primaryLogo)
     : null;
+  if (!resolvedPrimaryLogo) {
+    resolvedPrimaryLogo = discoveredLogos[0]
+      ? resolveAgainstDir(effectiveBrandKitDir, discoveredLogos[0])
+      : null;
+  }
   checks.push({
     key: "primary_logo",
     passed: Boolean(resolvedPrimaryLogo && fileExists(resolvedPrimaryLogo)),
@@ -251,13 +398,30 @@ export function validateBrandKit({ config, brandKitDir }) {
     missing.push("primary_logo");
   }
 
-  const exampleAssets = (parsedProfile?.exampleAssets ?? []).map((asset) =>
-    resolveAgainstDir(effectiveBrandKitDir, asset)
-  );
+  // Example assets: loose-resolve profile paths (handles U+202F vs U+0020),
+  // then fall back to discovered examples if profile paths don't resolve
+  let exampleAssets = (parsedProfile?.exampleAssets ?? []).map((asset) =>
+    resolveLoosePath(effectiveBrandKitDir, asset)
+  ).filter(Boolean);
+  if (exampleAssets.length === 0 && discoveredExamples.length > 0) {
+    exampleAssets = discoveredExamples.map((rel) =>
+      resolveAgainstDir(effectiveBrandKitDir, rel)
+    );
+  }
   checks.push({
     key: "example_assets",
     passed: exampleAssets.length >= 2 && exampleAssets.every((asset) => fileExists(asset)),
     detail: exampleAssets
+  });
+  checks.push({
+    key: "discovered_logos",
+    passed: discoveredLogos.length > 0,
+    detail: discoveredLogos
+  });
+  checks.push({
+    key: "discovered_examples",
+    passed: discoveredExamples.length > 0,
+    detail: discoveredExamples
   });
   if (exampleAssets.length < 2) {
     missing.push("example_assets (minimum 2)");
@@ -325,6 +489,21 @@ export function validateBrandKit({ config, brandKitDir }) {
     );
   }
 
+  const toneOfVoiceText = guidelines?.sections?.["Tone Of Voice"] ?? "";
+  const toneOfVoiceDefined = Boolean(
+    toneOfVoiceText && !/^TBD[:\s-]/i.test(toneOfVoiceText.trim())
+  );
+  checks.push({
+    key: "tone_of_voice_defined",
+    passed: !guidelines?.guidelinesPath || toneOfVoiceDefined,
+    detail: toneOfVoiceDefined ? "defined" : null
+  });
+  if (guidelines?.guidelinesPath && !toneOfVoiceDefined) {
+    warnings.push(
+      "brand-guidelines.md exists, but the Tone Of Voice section is still missing or marked TBD."
+    );
+  }
+
   const operationalStatus =
     missing.length > 0
       ? "incomplete"
@@ -338,6 +517,7 @@ export function validateBrandKit({ config, brandKitDir }) {
     brand_kit_dir: effectiveBrandKitDir,
     profile_path: profilePath,
     guidelines_path: guidelines?.guidelinesPath ?? null,
+    tone_of_voice_defined: toneOfVoiceDefined,
     profile_summary: profileSummary,
     checks,
     missing: dedupe(missing),
@@ -353,17 +533,122 @@ export function validateBrandKit({ config, brandKitDir }) {
         : [
             "Fix the missing brand profile fields or files listed above.",
             "Use the starter-brand-kit template as the baseline structure."
+          ],
+    copy_guidance:
+      guidelines?.guidelinesPath && toneOfVoiceDefined
+        ? ["Copy generation can proceed with the configured brand voice."]
+        : [
+            "Orbit should ask whether to set up brand guidelines before writing net-new copy.",
+            "If the user declines, Orbit can proceed with explicit assumptions and optionally remember that choice."
           ]
   };
 }
 
-function canWriteToDir(dirPath) {
-  if (!dirPath) {
-    return false;
+// Persist the user's decision to skip brand-guidelines for copy writing.
+// Call this separately after checkCopyReadiness — not inside the check itself.
+export function saveCopyReadinessPreference({ config, libraryDir, allowWithoutBrandGuidelines }) {
+  return saveCopyPreferences({ config, libraryDir, allowWithoutBrandGuidelines });
+}
+
+export function checkCopyReadiness({
+  config,
+  rootDir,
+  brandKitDir,
+  libraryDir,
+  allowWithoutBrandGuidelines = false
+}) {
+  const setup = checkSetup({
+    config,
+    rootDir,
+    brandKitDir,
+    requestedFeatures: ["copy_generation"]
+  });
+  const readiness = setup.feature_readiness.copy_generation;
+
+  if (readiness.status === "ready" || readiness.status === "ready_with_assumptions") {
+    return {
+      status: readiness.status,
+      assistant_instruction:
+        readiness.status === "ready"
+          ? "Brand guidelines and tone of voice are ready. Orbit can write copy. Also suggest the next useful Orbit step, such as drafting variants or turning the copy into an email template."
+          : "Proceed with explicit assumptions and remind the user that Orbit is using a saved skip-guidelines preference. Also suggest that Orbit can still set up brand guidelines later if they want to lock the tone of voice.",
+      brand_kit_validation: setup.brand_kit_validation,
+      copy_preferences: setup.copy_preferences ?? null,
+      guidance: readiness.guidance ?? [],
+      suggested_orbit_tools:
+        readiness.status === "ready"
+          ? [
+              "orbit_build_email_template_spec",
+              "orbit_generate_mjml_template",
+              "orbit_preview_email_template"
+            ]
+          : ["orbit_start_brand_guidelines_intake", "orbit_build_email_template_spec"],
+      suggested_next_steps:
+        readiness.status === "ready"
+          ? [
+              "Orbit can write the copy now using the configured tone of voice.",
+              "If this copy belongs in an email, Orbit can turn it into a reusable email template and preview it next.",
+              "If you want variants, ask Orbit for subject line, preheader, CTA, or body-copy options next."
+            ]
+          : [
+              "Orbit can write copy now with explicit assumptions because the user chose to skip brand-guidelines setup.",
+              "If you want Orbit to stop making tone-of-voice assumptions later, run orbit_start_brand_guidelines_intake.",
+              "If this copy belongs in an email, Orbit can still turn it into an MJML/HTML template after the copy draft."
+            ]
+    };
   }
 
+  if (allowWithoutBrandGuidelines) {
+    return {
+      status: "ready_with_assumptions",
+      assistant_instruction:
+        "The user chose to skip brand-guidelines setup. Proceed with explicit brand assumptions and state that Orbit is writing copy without a configured brand voice. Also suggest that Orbit can still set up brand guidelines later.",
+      brand_kit_validation: setup.brand_kit_validation,
+      copy_preferences: null,
+      guidance: [
+        "Proceed with explicit assumptions and avoid claiming this copy reflects an approved brand voice.",
+        "If the user wants Orbit to remember this choice, call saveCopyReadinessPreference after returning this result."
+      ],
+      suggested_orbit_tools: ["orbit_start_brand_guidelines_intake", "orbit_build_email_template_spec"],
+      suggested_next_steps: [
+        "Orbit can draft the copy now with explicit assumptions.",
+        "If you want a proper tone of voice later, run orbit_start_brand_guidelines_intake.",
+        "If the copy belongs in an email, Orbit can turn it into a reusable MJML/HTML template next."
+      ]
+    };
+  }
+
+  return {
+    status: "needs_confirmation",
+    assistant_instruction:
+      "Pause and ask whether the user wants to set up brand guidelines first. If they say no, call orbit_check_copy_readiness again with allow_without_brand_guidelines=true and remember_choice=true if they want Orbit to remember that choice. Make the next Orbit steps explicit so the user knows both paths are supported.",
+    question_prompt:
+      "Brand guidelines and Tone Of Voice are not set up yet. Do you want to create them first, or should Orbit proceed with explicit assumptions and remember that choice for future copy requests?",
+    brand_kit_validation: setup.brand_kit_validation,
+    copy_preferences: setup.copy_preferences ?? null,
+    guidance: [
+      "If the user says yes, run orbit_start_brand_guidelines_intake.",
+      "If the user says no, Orbit can proceed with explicit assumptions and optionally remember that preference."
+    ],
+    suggested_orbit_tools: ["orbit_start_brand_guidelines_intake", "orbit_build_email_template_spec"],
+    suggested_next_steps: [
+      "Reply yes and Orbit will walk through tone of voice, brand constraints, logos, and examples.",
+      "Reply no and Orbit can proceed with explicit assumptions for this copy request.",
+      "If the copy belongs in an email, Orbit can turn the approved copy into a reusable template after this step."
+    ]
+  };
+}
+
+function canWriteToDir(dirPath) {
+  if (!dirPath) return false;
   try {
-    fs.mkdirSync(dirPath, { recursive: true });
+    if (!fs.existsSync(dirPath)) {
+      // Dir not created yet — check if parent is writable instead.
+      const parent = path.dirname(dirPath);
+      if (!fs.existsSync(parent)) return false;
+      fs.accessSync(parent, fs.constants.W_OK);
+      return true;
+    }
     fs.accessSync(dirPath, fs.constants.W_OK);
     return true;
   } catch {

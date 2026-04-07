@@ -1,27 +1,32 @@
 {
   "name": "orbit-claude-extension",
-  "version": "0.4.3",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Orbit - Lifecycle Marketing System for Claude, packaged as a local Claude-first MCP extension.",
   "scripts": {
     "start": "node server/index.js",
     "build:skills-manifest": "node server/build-skill-manifest.js",
-    "check": "node --check server/index.js && node --check server/catalog.js && node --check server/orbit-library.js && node --check server/lifecycle-diagrams.js && node --check server/brand-headers.js && node --check server/brand-kit.js && node --check server/google-genai.js && node --check server/rendering.js && node --check server/setup-validator.js && node --check server/smoke.js && node --check server/evals.js",
+    "build:extension": "node scripts/build-extension.js",
+    "check": "node -e \"const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));const m=JSON.parse(require('fs').readFileSync('manifest.json','utf8'));if(p.version!==m.version){process.stderr.write('Version mismatch: package.json '+p.version+' vs manifest.json '+m.version+'\\n');process.exit(1)}console.log('Version check OK: '+p.version)\" && node --check server/index.js && node --check server/catalog.js && node --check server/orbit-library.js && node --check server/lifecycle-diagrams.js && node --check server/brand-headers.js && node --check server/brand-kit.js && node --check server/google-genai.js && node --check server/rendering.js && node --check server/setup-validator.js && node --check server/production-specs.js && node --check server/template-library.js && node --check server/preferences.js && node --check server/email-qa.js && node --check server/email-templates.js && node --check server/program-workspaces.js && node --check server/braze-pack.js && node --check server/notion-export.js && node --check server/connected-sources.js && node --check server/design-import.js && node --check server/email-components.js && node --check server/braze-sync.js && node --check server/home-workspace.js && node --check server/smoke.js && node --check server/evals.js && node --check scripts/build-extension.js",
     "smoke": "node server/smoke.js",
     "evals": "node server/evals.js",
-    "pack": "npx @anthropic-ai/mcpb pack . orbit-lifecycle-marketing-system-for-claude.mcpb"
+    "pack": "npm run build:extension && npx @anthropic-ai/mcpb pack .mcpb-build orbit-lifecycle-marketing-system-for-claude.mcpb"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
     "@google/genai": "^1.47.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@resvg/resvg-wasm": "^2.6.2",
+    "cheerio": "^1.2.0",
+    "html-to-text": "^9.0.5",
+    "mjml": "^4.18.0",
     "pdfkit": "^0.18.0",
     "svg-to-pdfkit": "^0.1.8",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@anthropic-ai/mcpb": "^2.1.2"
+    "@anthropic-ai/mcpb": "^2.1.2",
+    "esbuild": "^0.25.10"
   }
 }

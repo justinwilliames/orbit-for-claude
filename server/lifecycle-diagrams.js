@@ -18,6 +18,12 @@ import {
   writeJson,
   writeText
 } from "./utils.js";
+import {
+  buildOrbitSvgTypographyStyles,
+  getOrbitLogoPath,
+  registerOrbitPdfFonts,
+  renderOrbitSvgBrandBadge
+} from "./orbit-branding.js";
 import { renderSvgBundle } from "./rendering.js";
 
 const FALLBACK_LANES = [
@@ -30,6 +36,12 @@ const FALLBACK_LANES = [
   "system",
   "exit"
 ];
+
+const FLOWCHART_DIAGRAM_TYPES = new Set([
+  "braze-canvas-flow",
+  "traditional-flowchart",
+  "canvas-flowchart"
+]);
 
 export function buildLifecycleDiagramSpec({
   library,
@@ -162,6 +174,15 @@ export function updateLifecycleDiagramSpec({
     if (patch.if_no_action) {
       target.if_no_action = String(patch.if_no_action).trim();
     }
+    if (patch.send_condition) {
+      target.send_condition = String(patch.send_condition).trim();
+    }
+    if (patch.yes_label) {
+      target.yes_label = String(patch.yes_label).trim();
+    }
+    if (patch.no_label) {
+      target.no_label = String(patch.no_label).trim();
+    }
     appliedChanges.push(`Updated step ${stepIndex}.`);
   }
 
@@ -210,7 +231,15 @@ export async function renderLifecycleDiagram({
 }) {
   const theme = VISUAL_STYLE_PRESETS[stylePreset] ?? VISUAL_STYLE_PRESETS["orbit-default"];
   const laidOut = layoutDiagram(spec);
-  const svg = renderDiagramSvg({ spec: laidOut, theme });
+  const brandTheme = isDarkPage(theme.page) ? "dark" : "light";
+  const svg = renderDiagramSvg({
+    spec: laidOut,
+    theme,
+    branding: {
+      rootDir,
+      theme: brandTheme
+    }
+  });
   const baseName = slugify(spec.title || spec.id || "lifecycle-diagram");
   const outputBasePath = `${outputDir}/${baseName}`;
 
@@ -226,7 +255,16 @@ export async function renderLifecycleDiagram({
 
   if (formats.includes("pdf")) {
     const pdfPath = `${outputBasePath}.pdf`;
-    await writeLifecyclePdf({ spec: laidOut, theme, outputPath: pdfPath });
+    await writeLifecyclePdf({
+      spec: laidOut,
+      theme,
+      outputPath: pdfPath,
+      branding: {
+        rootDir,
+        logoPath: getOrbitLogoPath({ rootDir, theme: brandTheme }),
+        theme: brandTheme
+      }
+    });
     files.pdf = pdfPath;
   }
 
@@ -266,6 +304,70 @@ function createLifecycleDiagramFromSource({
     warnings.push("No explicit segment or entry-filter rules were found.");
   }
 
+  const resolvedDiagramType = resolveDiagramType({
+    platform,
+    diagramType,
+    parsed,
+    requestText
+  });
+
+  const graphBuilder = isFlowchartDiagram(resolvedDiagramType)
+    ? buildCanvasFlowchartGraph
+    : buildSwimlaneGraph;
+  const { nodes, edges, laneList } = graphBuilder({
+    platform,
+    parsed,
+    route,
+    requestText
+  });
+
+  if (resolvedDiagramType === "braze-canvas-flow") {
+    warnings.push(
+      "Orbit inserted decision gates before each send so the diagram mirrors Braze Canvas re-evaluation and action paths."
+    );
+  }
+
+  const platformMatches = collectPlatformFunctionMatches(requestText, platform);
+  const spec = {
+    version: "1.1.0",
+    type: "lifecycle_diagram",
+    title,
+    platform,
+    diagram_type: resolvedDiagramType,
+    source_request: requestText,
+    source_data: parsed,
+    route:
+      route ??
+      routeTask(library, requestText, 5, defaults),
+    validation: {
+      platform_function_matches: platformMatches,
+      supported_functions: PLATFORM_FUNCTIONS[platform].map((item) => item.name),
+      step_count: parsed.steps.length,
+      segment_count: parsed.segments.length
+    },
+    revision_history: revisionHistory,
+    lanes: laneList,
+    nodes,
+    edges,
+    warnings,
+    mermaid: buildMermaid({ title, nodes, edges, diagramType: resolvedDiagramType })
+  };
+
+  spec.id = `lifecycle-diagram-${hashObject({
+    platform,
+    title,
+    nodes: spec.nodes.map((node) => node.id),
+    edges: spec.edges
+  }).slice(0, 12)}`;
+
+  return {
+    status: "ok",
+    spec,
+    warnings
+  };
+}
+
+function buildSwimlaneGraph({ platform, parsed, route, requestText }) {
   const nodes = [];
   const edges = [];
   const lanes = new Map();
@@ -276,7 +378,10 @@ function createLifecycleDiagramFromSource({
     subtitle: parsed.entry_trigger ?? "User qualifies for the lifecycle program.",
     type: "entry",
     lane: "entry",
-    metadata: { trigger: parsed.entry_trigger ?? null }
+    metadata: {
+      trigger: parsed.entry_trigger ?? null,
+      node_role: "entry"
+    }
   });
   nodes.push(entryNode);
   registerLane(lanes, entryNode.lane, "Entry");
@@ -289,7 +394,10 @@ function createLifecycleDiagramFromSource({
       subtitle: segment.logic ?? "Audience qualification rule",
       type: "segment",
       lane: "segment",
-      metadata: { segment: segment.logic ?? segment.label }
+      metadata: {
+        segment: segment.logic ?? segment.label,
+        node_role: "segment"
+      }
     });
     registerLane(lanes, node.lane, "Segmentation");
     return node;
@@ -312,7 +420,7 @@ function createLifecycleDiagramFromSource({
     subtitle: parsed.exit_condition ?? "User hits the target behavior or exit criteria.",
     type: "exit",
     lane: "exit",
-    metadata: {}
+    metadata: { node_role: "exit" }
   });
   registerLane(lanes, exitNode.lane, "Exit");
 
@@ -332,7 +440,9 @@ function createLifecycleDiagramFromSource({
       lane: "email",
       channel: "email",
       metadata: {
-        platform_function: defaultPlatformFunction(platform, "action", "email")
+        platform_function: defaultPlatformFunction(platform, "action", "email"),
+        node_role: "step_action",
+        step_index: 1
       }
     });
     stepNodes.push(applyPlatformBadge(inferredNode, platform));
@@ -370,7 +480,7 @@ function createLifecycleDiagramFromSource({
         subtitle: node.metadata.if_no_action,
         type: "exit",
         lane: "exit",
-        metadata: {}
+        metadata: { node_role: "exit" }
       });
       registerLane(lanes, branchExit.lane, "Exit");
       nodes.push(branchExit);
@@ -391,44 +501,197 @@ function createLifecycleDiagramFromSource({
   });
   nodes.push(exitNode);
 
-  const laneList = buildLaneList(lanes, nodes);
-  const platformMatches = collectPlatformFunctionMatches(requestText, platform);
-  const spec = {
-    version: "1.1.0",
-    type: "lifecycle_diagram",
-    title,
-    platform,
-    diagram_type: diagramType || inferDiagramType(parsed),
-    source_request: requestText,
-    source_data: parsed,
-    route:
-      route ??
-      routeTask(library, requestText, 5, defaults),
-    validation: {
-      platform_function_matches: platformMatches,
-      supported_functions: PLATFORM_FUNCTIONS[platform].map((item) => item.name),
-      step_count: parsed.steps.length,
-      segment_count: parsed.segments.length
-    },
-    revision_history: revisionHistory,
-    lanes: laneList,
+  return {
     nodes,
     edges,
-    warnings,
-    mermaid: buildMermaid({ title, nodes, edges })
+    laneList: buildLaneList(lanes, nodes)
   };
+}
 
-  spec.id = `lifecycle-diagram-${hashObject({
-    platform,
-    title,
-    nodes: spec.nodes.map((node) => node.id),
-    edges: spec.edges
-  }).slice(0, 12)}`;
+function buildCanvasFlowchartGraph({ platform, parsed, route, requestText }) {
+  const nodes = [];
+  const edges = [];
+  const lanes = new Map();
+  registerLane(lanes, "main", platform === "braze" ? "Braze Canvas Flow" : "Program Flow");
+  registerLane(lanes, "exit", "Exit");
+
+  const entryNode = applyPlatformBadge(
+    createNode({
+      id: "entry",
+      label: "Entry Trigger",
+      subtitle: parsed.entry_trigger ?? "User qualifies for the lifecycle program.",
+      type: "entry",
+      lane: "main",
+      metadata: {
+        trigger: parsed.entry_trigger ?? null,
+        node_role: "entry"
+      }
+    }),
+    platform
+  );
+  nodes.push(entryNode);
+
+  let cursorId = entryNode.id;
+  const segmentNodes = parsed.segments.map((segment, index) =>
+    applyPlatformBadge(
+      createNode({
+        id: `segment-${index + 1}`,
+        label: segment.label ?? `Segment ${index + 1}`,
+        subtitle: segment.logic ?? "Audience qualification rule",
+        type: "segment",
+        lane: "main",
+        metadata: {
+          segment: segment.logic ?? segment.label,
+          node_role: "segment"
+        }
+      }),
+      platform
+    )
+  );
+
+  for (const segmentNode of segmentNodes) {
+    nodes.push(segmentNode);
+    edges.push({
+      from: cursorId,
+      to: segmentNode.id,
+      label: cursorId === "entry" ? "qualifies" : "still matches",
+      kind: "segment"
+    });
+    cursorId = segmentNode.id;
+  }
+
+  const baseSteps =
+    parsed.steps.length > 0
+      ? parsed.steps
+      : [
+          normalizeStepInput({
+            step: "1",
+            trigger: "entry",
+            channel: "email",
+            goal:
+              route.primarySkill === "graphic-design"
+                ? "Design the lifecycle asset"
+                : "Build the lifecycle touchpoint"
+          })
+        ];
+
+  const exitNode = applyPlatformBadge(
+    createNode({
+      id: "exit-success",
+      label: "Target Met / Exit",
+      subtitle: parsed.exit_condition ?? "User hits the target behavior or exit criteria.",
+      type: "exit",
+      lane: "exit",
+      metadata: { node_role: "exit" }
+    }),
+    platform
+  );
+
+  const gateNodes = [];
+  const stepNodes = [];
+
+  for (let index = 0; index < baseSteps.length; index += 1) {
+    const step = normalizeStepInput(baseSteps[index]);
+    const gateNode = applyPlatformBadge(
+      createNode({
+        id: `step-${index + 1}-gate`,
+        label: buildStepGateLabel(step, index),
+        subtitle: buildStepGateSubtitle(step),
+        type: "decision",
+        lane: "main",
+        metadata: {
+          node_role: "eligibility_gate",
+          gate_for_step: index + 1,
+          send_condition: step.send_condition || null,
+          platform_function:
+            platform === "braze"
+              ? index === 0 && parsed.segments.length > 0
+                ? "Audience Paths"
+                : "Action Paths"
+              : defaultPlatformFunction(platform, "decision", step.channel || inferChannel(step.goal))
+        }
+      }),
+      platform
+    );
+    const stepNode = createStepNode(step, index, platform, { lane: "main" });
+    gateNodes.push(gateNode);
+    stepNodes.push(stepNode);
+    nodes.push(gateNode, stepNode);
+  }
+
+  for (let index = 0; index < stepNodes.length; index += 1) {
+    const step = baseSteps[index];
+    const gateNode = gateNodes[index];
+    const stepNode = stepNodes[index];
+    const previousActionNode = index > 0 ? stepNodes[index - 1] : null;
+    const inboundLabel =
+      index === 0
+        ? parsed.entry_trigger || step.trigger || "enter canvas"
+        : step.trigger ||
+          previousActionNode?.metadata.if_no_action ||
+          "re-evaluate before next step";
+
+    edges.push({
+      from: index === 0 ? cursorId : previousActionNode.id,
+      to: gateNode.id,
+      label: inboundLabel,
+      kind: "default"
+    });
+    edges.push({
+      from: gateNode.id,
+      to: stepNode.id,
+      label: step.yes_label || "Yes",
+      kind: "branch"
+    });
+
+    const noTarget =
+      index < gateNodes.length - 1 ? gateNodes[index + 1].id : exitNode.id;
+    edges.push({
+      from: gateNode.id,
+      to: noTarget,
+      label: step.no_label || buildNoBranchLabel(step, index, stepNodes.length),
+      kind: "branch"
+    });
+
+    if (index === stepNodes.length - 1) {
+      edges.push({
+        from: stepNode.id,
+        to: exitNode.id,
+        label: parsed.exit_condition ?? "target met or program ends",
+        kind: "exit"
+      });
+      continue;
+    }
+
+    const nextGate = gateNodes[index + 1];
+    const postActionLabel =
+      step.if_no_action || baseSteps[index + 1].trigger || "wait and re-evaluate";
+    edges.push({
+      from: stepNode.id,
+      to: nextGate.id,
+      label: postActionLabel,
+      kind: "default"
+    });
+
+    if (step.if_no_action && /exit|suppress|stop|remove/i.test(step.if_no_action)) {
+      edges.push({
+        from: stepNode.id,
+        to: exitNode.id,
+        label: step.if_no_action,
+        kind: "branch"
+      });
+    }
+  }
+
+  nodes.push(exitNode);
 
   return {
-    status: "ok",
-    spec,
-    warnings
+    nodes,
+    edges,
+    laneList: [
+      { id: "main", title: lanes.get("main"), order: 0 },
+      { id: "exit", title: lanes.get("exit"), order: 1 }
+    ]
   };
 }
 
@@ -479,7 +742,15 @@ function parseLifecycleTable(lines) {
         trigger: row["trigger / delay"] || row.trigger || row.delay || "",
         channel: row.channel || "",
         goal: row["goal of this step"] || row.goal || "",
-        if_no_action: row["if no action"] || row["if no action?"] || ""
+        if_no_action: row["if no action"] || row["if no action?"] || "",
+        send_condition:
+          row["send condition"] ||
+          row["yes criteria"] ||
+          row["yes condition"] ||
+          row["eligibility"] ||
+          "",
+        yes_label: row["yes label"] || "",
+        no_label: row["no label"] || ""
       });
     });
 }
@@ -495,7 +766,8 @@ function parseListSteps(lines) {
       trigger: index === 0 ? "entry" : "",
       channel: inferChannel(line),
       goal: line.replace(/^(- |\* |\d+\.|step\s+\d+[:.]?\s*)/i, "").trim(),
-      if_no_action: inferIfNoAction(line)
+      if_no_action: inferIfNoAction(line),
+      send_condition: inferSendCondition(line)
     })
   );
 }
@@ -511,10 +783,10 @@ function extractSegments(lines) {
     }));
 }
 
-function createStepNode(step, index, platform) {
+function createStepNode(step, index, platform, overrides = {}) {
   const channel = inferChannel(step.channel || step.goal || step.trigger);
   const stepType = inferNodeType(step, channel);
-  const lane = stepType === "decision" ? "decision" : channel || "system";
+  const lane = overrides.lane ?? (stepType === "decision" ? "decision" : channel || "system");
   const node = createNode({
     id: `step-${index + 1}`,
     label: buildStepLabel(step, index),
@@ -526,6 +798,11 @@ function createStepNode(step, index, platform) {
       trigger: step.trigger || null,
       goal: step.goal || null,
       if_no_action: step.if_no_action || null,
+      send_condition: step.send_condition || null,
+      yes_label: step.yes_label || null,
+      no_label: step.no_label || null,
+      node_role: "step_action",
+      step_index: index + 1,
       platform_function:
         detectPlatformFunction(step.goal || step.trigger || "", platform)?.name ??
         defaultPlatformFunction(platform, stepType, channel)
@@ -590,24 +867,59 @@ function registerLane(lanes, laneId, title) {
   }
 }
 
-function inferDiagramType(parsed) {
+function resolveDiagramType({ platform, diagramType, parsed, requestText }) {
+  if (diagramType) {
+    return diagramType;
+  }
+
+  const normalized = String(requestText ?? "").toLowerCase();
+  if (/\bphase\b|\bswimlane\b|\blane map\b/.test(normalized)) {
+    return inferDiagramType(parsed, platform, false);
+  }
+  if (/\bflowchart\b|\bcanvas\b|\byes\/no\b|\bdecision gate\b/.test(normalized)) {
+    return platform === "braze" ? "braze-canvas-flow" : "traditional-flowchart";
+  }
+
+  return inferDiagramType(parsed, platform, true);
+}
+
+function inferDiagramType(parsed, platform, preferFlowchart = true) {
+  if (preferFlowchart && platform === "braze") {
+    return "braze-canvas-flow";
+  }
   if (parsed.segments.length > 0) {
     return "segment-branch";
   }
   return "program-flow";
 }
 
-function buildMermaid({ title, nodes, edges }) {
-  const lines = ["---", `title: ${title}`, "---", "flowchart LR"];
+function isFlowchartDiagram(diagramType) {
+  return FLOWCHART_DIAGRAM_TYPES.has(diagramType);
+}
+
+function buildMermaid({ title, nodes, edges, diagramType }) {
+  const lines = [
+    "---",
+    `title: ${title}`,
+    "---",
+    `flowchart ${isFlowchartDiagram(diagramType) ? "TD" : "LR"}`
+  ];
   for (const node of nodes) {
     const platformFunction = node.metadata?.platform_function
       ? `\\n${node.metadata.platform_function}`
       : "";
     const label = `${node.label}${node.subtitle ? `\\n${node.subtitle}` : ""}${platformFunction}`;
-    lines.push(`  ${node.id}["${label.replace(/"/g, '\\"')}"]`);
+    const escaped = label.replace(/"/g, '\\"');
+    if (node.type === "decision") {
+      lines.push(`  ${node.id}{"${escaped}"}`);
+    } else if (node.type === "exit") {
+      lines.push(`  ${node.id}(("${escaped}"))`);
+    } else {
+      lines.push(`  ${node.id}["${escaped}"]`);
+    }
   }
   for (const edge of edges) {
-    const connector = edge.kind === "branch" ? "-->|" : "-->";
+    const connector = edge.kind === "branch" ? "-.->" : "-->";
     const label = edge.label ? `|${edge.label.replace(/"/g, '\\"')}|` : "";
     lines.push(`  ${edge.from} ${connector}${label} ${edge.to}`);
   }
@@ -615,11 +927,12 @@ function buildMermaid({ title, nodes, edges }) {
 }
 
 function layoutDiagram(spec) {
+  const flowchartMode = isFlowchartDiagram(spec.diagram_type);
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({
-    rankdir: "LR",
-    ranksep: 120,
-    nodesep: 48,
+    rankdir: flowchartMode ? "TB" : "LR",
+    ranksep: flowchartMode ? 100 : 120,
+    nodesep: flowchartMode ? 72 : 48,
     marginx: 48,
     marginy: 48
   });
@@ -652,6 +965,16 @@ function layoutDiagram(spec) {
 
   const laidOutNodes = spec.nodes.map((node) => {
     const graphNode = graph.node(node.id);
+    if (flowchartMode) {
+      return {
+        ...node,
+        x: leftPadding + graphNode.x,
+        y: topPadding + graphNode.y,
+        width: graphNode.width,
+        height: graphNode.height
+      };
+    }
+
     const laneOrder = laneIndex.get(node.lane) ?? 0;
     return {
       ...node,
@@ -663,12 +986,24 @@ function layoutDiagram(spec) {
   });
 
   const maxX = Math.max(...laidOutNodes.map((node) => node.x + node.width / 2), 900);
-  const canvas = {
-    width: maxX + 80,
-    height: topPadding + spec.lanes.length * laneHeight + 140,
-    laneHeight,
-    topPadding
-  };
+  const maxY = Math.max(...laidOutNodes.map((node) => node.y + node.height / 2), 540);
+  const canvas = flowchartMode
+    ? {
+        width: maxX + 80,
+        height: maxY + 110,
+        laneHeight,
+        topPadding,
+        direction: "TB",
+        showLanes: false
+      }
+    : {
+        width: maxX + 80,
+        height: topPadding + spec.lanes.length * laneHeight + 140,
+        laneHeight,
+        topPadding,
+        direction: "LR",
+        showLanes: true
+      };
 
   return {
     ...spec,
@@ -677,20 +1012,32 @@ function layoutDiagram(spec) {
   };
 }
 
-function renderDiagramSvg({ spec, theme }) {
-  const laneBlocks = spec.lanes.map((lane) => renderLane(lane, spec.canvas, theme));
+function renderDiagramSvg({ spec, theme, branding }) {
+  const laneBlocks = spec.canvas.showLanes
+    ? spec.lanes.map((lane) => renderLane(lane, spec.canvas, theme))
+    : [];
   const nodeMap = new Map(spec.nodes.map((node) => [node.id, node]));
-  const edges = spec.edges.map((edge) => renderEdge(edge, nodeMap, theme));
+  const edges = spec.edges.map((edge) => renderEdge(edge, nodeMap, theme, spec.canvas));
   const nodes = spec.nodes.map((node) => renderNode(node, theme));
   const legend = renderLegend(spec, theme);
+  const orbitBadge = renderOrbitSvgBrandBadge({
+    rootDir: branding?.rootDir,
+    theme: branding?.theme ?? "light",
+    x: spec.canvas.width - 220,
+    y: 20
+  });
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${spec.canvas.width}" height="${spec.canvas.height}" viewBox="0 0 ${spec.canvas.width} ${spec.canvas.height}">`,
+    buildOrbitSvgTypographyStyles({
+      rootDir: branding?.rootDir
+    }),
     `<rect width="${spec.canvas.width}" height="${spec.canvas.height}" fill="${theme.page}"/>`,
     ...laneBlocks,
     ...edges,
     ...nodes,
     legend,
+    orbitBadge,
     "</svg>"
   ].join("");
 }
@@ -699,32 +1046,37 @@ function renderLane(lane, canvas, theme) {
   const y = canvas.topPadding + lane.order * canvas.laneHeight;
   return [
     `<rect x="32" y="${y}" width="${canvas.width - 64}" height="${canvas.laneHeight - 12}" rx="20" fill="${theme.laneFill}" stroke="${theme.laneStroke}" stroke-width="1.5"/>`,
-    `<text x="56" y="${y + 28}" font-size="18" font-weight="700" fill="${theme.text}">${escapeXml(
+    `<text class="orbit-display orbit-bold" x="56" y="${y + 28}" font-size="18" fill="${theme.text}">${escapeXml(
       lane.title
     )}</text>`
   ].join("");
 }
 
-function renderEdge(edge, nodeMap, theme) {
+function renderEdge(edge, nodeMap, theme, canvas) {
   const source = nodeMap.get(edge.from);
   const target = nodeMap.get(edge.to);
   if (!source || !target) {
     return "";
   }
 
-  const startX = source.x + source.width / 2;
-  const startY = source.y;
-  const endX = target.x - target.width / 2;
-  const endY = target.y;
+  const vertical = canvas?.direction === "TB";
+  const startX = vertical ? source.x : source.x + source.width / 2;
+  const startY = vertical ? source.y + source.height / 2 : source.y;
+  const endX = vertical ? target.x : target.x - target.width / 2;
+  const endY = vertical ? target.y - target.height / 2 : target.y;
   const midX = Math.round((startX + endX) / 2);
-  const path = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
-  const labelY = Math.round((startY + endY) / 2) - 8;
+  const midY = Math.round((startY + endY) / 2);
+  const path = vertical
+    ? `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`
+    : `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+  const labelX = vertical ? endX + 14 : midX;
+  const labelY = vertical ? midY - 6 : Math.round((startY + endY) / 2) - 8;
   const edgeStroke = edge.kind === "branch" ? `stroke-dasharray="8 6"` : "";
 
   return [
     `<path d="${path}" fill="none" stroke="${theme.edge}" stroke-width="2.4" marker-end="url(#arrow)" ${edgeStroke}/>`,
     edge.label
-      ? `<text x="${midX}" y="${labelY}" text-anchor="middle" font-size="12" fill="${theme.mutedText}" font-weight="600">${escapeXml(
+      ? `<text class="orbit-ui orbit-strong" x="${labelX}" y="${labelY}" text-anchor="${vertical ? "start" : "middle"}" font-size="12" fill="${theme.mutedText}">${escapeXml(
           edge.label
         )}</text>`
       : ""
@@ -773,14 +1125,14 @@ function renderNodeText({ node, labelLines, subtitleLines, functionLines, theme 
     (functionLines.length > 0 ? 8 : 0);
   const parts = labelLines.map(
     (line, index) =>
-      `<text x="${node.x}" y="${labelStartY + index * 24}" text-anchor="middle" font-size="18" font-weight="700" fill="${theme.text}">${escapeXml(
+      `<text class="orbit-display orbit-bold" x="${node.x}" y="${labelStartY + index * 24}" text-anchor="middle" font-size="18" fill="${theme.text}">${escapeXml(
         line
       )}</text>`
   );
 
   subtitleLines.forEach((line, index) => {
     parts.push(
-      `<text x="${node.x}" y="${node.y + 14 + index * 16}" text-anchor="middle" font-size="12.5" fill="${theme.mutedText}">${escapeXml(
+      `<text class="orbit-ui" x="${node.x}" y="${node.y + 14 + index * 16}" text-anchor="middle" font-size="12.5" fill="${theme.mutedText}">${escapeXml(
         line
       )}</text>`
     );
@@ -788,7 +1140,7 @@ function renderNodeText({ node, labelLines, subtitleLines, functionLines, theme 
 
   functionLines.forEach((line, index) => {
     parts.push(
-      `<text x="${node.x}" y="${node.y + 42 + subtitleLines.length * 16 + index * 14}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${theme.edge}">${escapeXml(
+      `<text class="orbit-mono orbit-strong" x="${node.x}" y="${node.y + 42 + subtitleLines.length * 16 + index * 14}" text-anchor="middle" font-size="11.5" fill="${theme.edge}">${escapeXml(
         line
       )}</text>`
     );
@@ -802,7 +1154,7 @@ function renderBadge({ x, y, badge }) {
   return [
     `<g transform="translate(${x - width}, ${y})">`,
     `<rect width="${width}" height="24" rx="12" fill="${badge.color}" opacity="0.95"/>`,
-    `<text x="${width / 2}" y="16.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1a1a1a">${escapeXml(
+    `<text class="orbit-display orbit-bold" x="${width / 2}" y="16.5" text-anchor="middle" font-size="11.5" fill="#1a1a1a">${escapeXml(
       badge.label
     )}</text>`,
     "</g>"
@@ -834,9 +1186,39 @@ function renderLegend(spec, theme) {
     `<path d="M 0 0 L 10 5 L 0 10 z" fill="${theme.edge}"/>`,
     `</marker>`,
     `</defs>`,
-    `<text x="56" y="${baseY - 12}" font-size="14" font-weight="700" fill="${theme.mutedText}">Legend</text>`,
+    `<text class="orbit-display orbit-bold" x="56" y="${baseY - 12}" font-size="14" fill="${theme.mutedText}">Legend</text>`,
     ...nodes
   ].join("");
+}
+
+function buildStepGateLabel(step, index) {
+  const explicit = step.send_condition || "";
+  if (explicit) {
+    return explicit.slice(0, 84);
+  }
+
+  const goal = String(step.goal ?? "").trim();
+  if (/upgrade|plan|tier|subscription|pro\b/i.test(goal)) {
+    return `Step ${index + 1} Gate: Still on the pre-upgrade path?`;
+  }
+  if (/invite|team|workspace/i.test(goal)) {
+    return `Step ${index + 1} Gate: Still missing the activation milestone?`;
+  }
+  return `Step ${index + 1} Gate: User still eligible for this send?`;
+}
+
+function buildStepGateSubtitle(step) {
+  return (
+    step.trigger ||
+    "Re-evaluate audience, events, and profile state before sending the next message."
+  ).slice(0, 110);
+}
+
+function buildNoBranchLabel(step, index, totalSteps) {
+  if (index === totalSteps - 1) {
+    return step.no_label || "No - suppress / exit";
+  }
+  return step.no_label || "No - state changed, move to next eligible path";
 }
 
 function buildStepLabel(step, index) {
@@ -870,6 +1252,11 @@ function inferNodeType(step, channel) {
 
 function inferIfNoAction(text) {
   const match = String(text ?? "").match(/if no action[:\-]?\s*(.+)$/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+function inferSendCondition(text) {
+  const match = String(text ?? "").match(/(?:if|when)\s+(.+?)(?:\s*[->-]\s*|$)/i);
   return match?.[1]?.trim() ?? "";
 }
 
@@ -1074,19 +1461,31 @@ function normalizeStepInput(step) {
     trigger: String(step.trigger ?? "").trim(),
     channel: String(step.channel ?? "").trim(),
     goal: String(step.goal ?? "").trim(),
-    if_no_action: String(step.if_no_action ?? "").trim()
+    if_no_action: String(step.if_no_action ?? "").trim(),
+    send_condition: String(step.send_condition ?? "").trim(),
+    yes_label: String(step.yes_label ?? "").trim(),
+    no_label: String(step.no_label ?? "").trim()
   };
 }
 
 function deriveSourceDataFromSpec(spec) {
   const steps = spec.nodes
-    .filter((node) => node.id.startsWith("step-") && node.type !== "exit")
+    .filter(
+      (node) =>
+        node.metadata?.node_role === "step_action" ||
+        (node.id.startsWith("step-") &&
+          !node.id.endsWith("-gate") &&
+          node.type !== "exit")
+    )
     .map((node, index) => ({
       step: String(index + 1),
       trigger: node.metadata?.trigger ?? "",
       channel: node.channel ?? "",
       goal: node.metadata?.goal ?? node.label,
-      if_no_action: node.metadata?.if_no_action ?? ""
+      if_no_action: node.metadata?.if_no_action ?? "",
+      send_condition: node.metadata?.send_condition ?? "",
+      yes_label: node.metadata?.yes_label ?? "",
+      no_label: node.metadata?.no_label ?? ""
     }));
 
   const segments = spec.nodes
@@ -1106,39 +1505,108 @@ function deriveSourceDataFromSpec(spec) {
   };
 }
 
-async function writeLifecyclePdf({ spec, theme, outputPath }) {
+async function writeLifecyclePdf({ spec, theme, outputPath, branding }) {
   await new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: [Math.round(spec.canvas.width), Math.round(spec.canvas.height)],
       margin: 0,
       autoFirstPage: true
     });
+    const fonts = registerOrbitPdfFonts({
+      doc,
+      rootDir: branding?.rootDir ?? null
+    });
     const stream = fs.createWriteStream(outputPath);
     doc.pipe(stream);
 
     doc.rect(0, 0, spec.canvas.width, spec.canvas.height).fill(theme.page);
 
-    for (const lane of spec.lanes) {
-      drawLanePdf(doc, lane, spec.canvas, theme);
+    if (spec.canvas.showLanes) {
+      for (const lane of spec.lanes) {
+        drawLanePdf(doc, lane, spec.canvas, theme, fonts);
+      }
     }
 
     const nodeMap = new Map(spec.nodes.map((node) => [node.id, node]));
     for (const edge of spec.edges) {
-      drawEdgePdf(doc, edge, nodeMap, theme);
+      drawEdgePdf(doc, edge, nodeMap, theme, spec.canvas, fonts);
     }
 
     for (const node of spec.nodes) {
-      drawNodePdf(doc, node, theme);
+      drawNodePdf(doc, node, theme, fonts);
     }
 
-    drawLegendPdf(doc, spec, theme);
+    drawLegendPdf(doc, spec, theme, fonts);
+    drawOrbitPdfBrandBadge(doc, spec, branding, fonts);
     doc.end();
     stream.on("finish", resolve);
     stream.on("error", reject);
   });
 }
 
-function drawLanePdf(doc, lane, canvas, theme) {
+function drawOrbitPdfBrandBadge(doc, spec, branding, fonts) {
+  const badgeWidth = 168;
+  const badgeHeight = 42;
+  const x = spec.canvas.width - badgeWidth - 20;
+  const y = 20;
+  const fill = branding?.theme === "dark" ? "#1b1b1b" : "#ffffff";
+  const stroke = branding?.theme === "dark" ? "#565656" : "#d8d2c7";
+  const text = branding?.theme === "dark" ? "#f4f4f4" : "#171717";
+
+  doc
+    .save()
+    .lineWidth(1.1)
+    .fillColor(fill)
+    .strokeColor(stroke)
+    .roundedRect(x, y, badgeWidth, badgeHeight, 16)
+    .fillAndStroke()
+    .restore();
+
+  if (branding?.logoPath && fs.existsSync(branding.logoPath)) {
+    doc.image(branding.logoPath, x + 12, y + 10, {
+      width: 22,
+      height: 22
+    });
+  }
+
+  doc
+    .fillColor(text)
+    .font(fonts.display)
+    .fontSize(12.5)
+    .text("Built in Orbit", x + 42, y + 10, {
+      width: badgeWidth - 50,
+      align: "left"
+    });
+  doc
+    .fillColor(text)
+    .opacity(0.72)
+    .font(fonts.ui)
+    .fontSize(9.5)
+    .text("Lifecycle Marketing Operating System for Claude", x + 42, y + 24, {
+      width: badgeWidth - 50,
+      align: "left"
+    });
+  doc.opacity(1);
+}
+
+function isDarkPage(value) {
+  const normalized = String(value ?? "").toLowerCase();
+  if (!normalized.startsWith("#") || (normalized.length !== 7 && normalized.length !== 4)) {
+    return false;
+  }
+
+  const expanded =
+    normalized.length === 4
+      ? `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`
+      : normalized;
+  const r = Number.parseInt(expanded.slice(1, 3), 16);
+  const g = Number.parseInt(expanded.slice(3, 5), 16);
+  const b = Number.parseInt(expanded.slice(5, 7), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance < 0.48;
+}
+
+function drawLanePdf(doc, lane, canvas, theme, fonts) {
   const y = canvas.topPadding + lane.order * canvas.laneHeight;
   doc
     .save()
@@ -1150,58 +1618,77 @@ function drawLanePdf(doc, lane, canvas, theme) {
     .restore();
   doc
     .fillColor(theme.text)
-    .font("Helvetica-Bold")
+    .font(fonts.display)
     .fontSize(18)
     .text(lane.title, 56, y + 12, { width: 260, align: "left" });
 }
 
-function drawEdgePdf(doc, edge, nodeMap, theme) {
+function drawEdgePdf(doc, edge, nodeMap, theme, canvas, fonts) {
   const source = nodeMap.get(edge.from);
   const target = nodeMap.get(edge.to);
   if (!source || !target) {
     return;
   }
 
-  const startX = source.x + source.width / 2;
-  const startY = source.y;
-  const endX = target.x - target.width / 2;
-  const endY = target.y;
+  const vertical = canvas?.direction === "TB";
+  const startX = vertical ? source.x : source.x + source.width / 2;
+  const startY = vertical ? source.y + source.height / 2 : source.y;
+  const endX = vertical ? target.x : target.x - target.width / 2;
+  const endY = vertical ? target.y - target.height / 2 : target.y;
   const midX = Math.round((startX + endX) / 2);
+  const midY = Math.round((startY + endY) / 2);
 
   doc.save().lineWidth(2.4).strokeColor(theme.edge);
   if (edge.kind === "branch") {
     doc.dash(8, { space: 6 });
   }
-  doc
-    .moveTo(startX, startY)
-    .bezierCurveTo(midX, startY, midX, endY, endX, endY)
-    .stroke();
+  if (vertical) {
+    doc
+      .moveTo(startX, startY)
+      .bezierCurveTo(startX, midY, endX, midY, endX, endY)
+      .stroke();
+  } else {
+    doc
+      .moveTo(startX, startY)
+      .bezierCurveTo(midX, startY, midX, endY, endX, endY)
+      .stroke();
+  }
   doc.undash();
-  drawArrowheadPdf(doc, endX, endY, theme.edge);
+  drawArrowheadPdf(doc, endX, endY, theme.edge, vertical);
   doc.restore();
 
   if (edge.label) {
     doc
       .fillColor(theme.mutedText)
-      .font("Helvetica-Bold")
+      .font(fonts.ui)
       .fontSize(11)
-      .text(edge.label, midX - 90, Math.round((startY + endY) / 2) - 18, {
-        width: 180,
-        align: "center"
-      });
+      .text(
+        edge.label,
+        vertical ? endX + 12 : midX - 90,
+        vertical ? midY - 10 : Math.round((startY + endY) / 2) - 18,
+        vertical
+          ? {
+              width: 180,
+              align: "left"
+            }
+          : {
+              width: 180,
+              align: "center"
+            }
+      );
   }
 }
 
-function drawArrowheadPdf(doc, x, y, color) {
-  doc
-    .save()
-    .fillColor(color)
-    .polygon([x, y], [x - 10, y - 4], [x - 10, y + 4])
-    .fill()
-    .restore();
+function drawArrowheadPdf(doc, x, y, color, vertical = false) {
+  doc.save().fillColor(color);
+  if (vertical) {
+    doc.polygon([x, y], [x - 4, y - 10], [x + 4, y - 10]).fill().restore();
+    return;
+  }
+  doc.polygon([x, y], [x - 10, y - 4], [x - 10, y + 4]).fill().restore();
 }
 
-function drawNodePdf(doc, node, theme) {
+function drawNodePdf(doc, node, theme, fonts) {
   const x = node.x - node.width / 2;
   const y = node.y - node.height / 2;
   const fill = theme[node.type] ?? theme.action;
@@ -1224,7 +1711,7 @@ function drawNodePdf(doc, node, theme) {
   doc.restore();
 
   if (node.badge) {
-    drawBadgePdf(doc, x + node.width - 12, y + 12, node.badge);
+    drawBadgePdf(doc, x + node.width - 12, y + 12, node.badge, fonts);
   }
 
   const labelLines = wrapText(node.label, 22);
@@ -1236,7 +1723,7 @@ function drawNodePdf(doc, node, theme) {
     (subtitleLines.length > 0 ? 10 : 0) -
     (functionLines.length > 0 ? 8 : 0);
 
-  doc.fillColor(theme.text).font("Helvetica-Bold").fontSize(16);
+  doc.fillColor(theme.text).font(fonts.display).fontSize(16);
   for (const line of labelLines) {
     doc.text(line, x + 16, cursorY, {
       width: node.width - 32,
@@ -1245,7 +1732,7 @@ function drawNodePdf(doc, node, theme) {
     cursorY += 18;
   }
 
-  doc.fillColor(theme.mutedText).font("Helvetica").fontSize(10.5);
+  doc.fillColor(theme.mutedText).font(fonts.ui).fontSize(10.5);
   for (const line of subtitleLines) {
     doc.text(line, x + 18, cursorY + 4, {
       width: node.width - 36,
@@ -1255,7 +1742,7 @@ function drawNodePdf(doc, node, theme) {
   }
 
   if (functionLines.length > 0) {
-    doc.fillColor(theme.edge).font("Helvetica-Bold").fontSize(10);
+    doc.fillColor(theme.edge).font(fonts.mono).fontSize(10);
     for (const line of functionLines) {
       doc.text(line, x + 18, cursorY + 6, {
         width: node.width - 36,
@@ -1266,7 +1753,7 @@ function drawNodePdf(doc, node, theme) {
   }
 }
 
-function drawBadgePdf(doc, x, y, badge) {
+function drawBadgePdf(doc, x, y, badge, fonts) {
   const width = Math.max(86, badge.label.length * 7.2);
   doc
     .save()
@@ -1276,12 +1763,12 @@ function drawBadgePdf(doc, x, y, badge) {
     .restore();
   doc
     .fillColor("#1a1a1a")
-    .font("Helvetica-Bold")
+    .font(fonts.display)
     .fontSize(10.5)
     .text(badge.label, x - width, y + 7, { width, align: "center" });
 }
 
-function drawLegendPdf(doc, spec, theme) {
+function drawLegendPdf(doc, spec, theme, fonts) {
   const items = [
     ["Entry", theme.entry],
     ["Action", theme.action],
@@ -1292,7 +1779,7 @@ function drawLegendPdf(doc, spec, theme) {
   const baseY = spec.canvas.height - 64;
   doc
     .fillColor(theme.mutedText)
-    .font("Helvetica-Bold")
+    .font(fonts.display)
     .fontSize(14)
     .text("Legend", 56, baseY - 22, { width: 120 });
 
@@ -1308,7 +1795,7 @@ function drawLegendPdf(doc, spec, theme) {
       .restore();
     doc
       .fillColor(theme.text)
-      .font("Helvetica")
+      .font(fonts.ui)
       .fontSize(12.5)
       .text(label, x + 38, baseY + 6, { width: 80 });
   });

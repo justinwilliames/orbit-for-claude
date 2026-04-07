@@ -1,28 +1,12 @@
 {
-  "brand_name": "Your Brand",
-  "primary_logo": "logos/primary-logo.svg",
-  "alternate_logo": "logos/alternate-logo.svg",
-  "colors": {
-    "primary": "#1f1f1f",
-    "accent": "#c67c4e",
-    "secondary": "#f5f2ea"
-  },
-  "example_assets": [
-    "examples/email-header-1.png",
-    "examples/email-header-2.png"
-  ],
-  "fonts": [
-    "Helvetica Neue",
-    "Arial"
-  ],
-  "forbidden_treatments": [
-    "Do not recreate the logo.",
-    "Do not use off-brand gradients.",
-    "Do not place text over noisy art."
-  ],
-  "preferred_header_families": [
-    "left-anchor"
-  ],
+  "brand_name": "",
+  "primary_logo": "",
+  "alternate_logo": "",
+  "colors": {},
+  "example_assets": [],
+  "fonts": [],
+  "forbidden_treatments": [],
+  "preferred_header_families": [],
   "default_canvas": {
     "width": 1200,
     "height": 400

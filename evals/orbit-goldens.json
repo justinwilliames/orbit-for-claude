@@ -1,0 +1,23 @@
+{
+  "notion_brief_contains": [
+    "# Program Brief",
+    "## Objective",
+    "## Audience"
+  ],
+  "braze_build_sheet_contains": [
+    "Built in Orbit",
+    "## Source Brief",
+    "```md",
+    "# Program Brief"
+  ],
+  "composed_module_contains": [
+    "Universal Header"
+  ],
+  "notion_index_contains": [
+    "Built in Orbit",
+    "Lifecycle Marketing Operating System for Claude"
+  ],
+  "vector_pdf_forbidden_tokens": [
+    "PNG"
+  ]
+}

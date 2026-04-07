@@ -12,7 +12,7 @@ description: >
 # Orbit — Lifecycle Marketing System
 
 A unified lifecycle marketing operating system for advanced CRM, growth, and martech work.
-One router. Thirty-one specialist protocols. Orbit is the router, not the answer template: its job is to choose the right protocol,
+One router. Forty specialist protocols. Orbit is the router, not the answer template: its job is to choose the right protocol,
 apply it fully, and connect adjacent protocols only when the task genuinely spans them.
 
 **Orbit is strongest when it behaves like a decision engine: route correctly, diagnose first, make assumptions explicit, and end with an implementable recommendation.**
@@ -26,11 +26,27 @@ For every request, apply this sequence before answering:
 1. **Classify the task type.** Is this strategy, design, audit, implementation, troubleshooting, research, reporting, or creative direction?
 2. **Select the primary protocol.** Default to one protocol per task. Bring in a second protocol only when it materially changes the answer.
 3. **Resolve critical disambiguation.** Confirm the platform, geography, business model, channel, and lifecycle stage when they change implementation.
-4. **Diagnose before prescribing.** If the user is improving or reviewing something that already exists, understand the current state first.
-5. **Respond with a point of view.** Give a recommendation, not a brainstorm dump.
-6. **Close with next actions.** Every output should make the next decision or step obvious.
+4. **Run an ask-before-act preflight.** Before Orbit drafts, builds, exports, publishes, or generates assets, stop and decide whether a few direct user questions would materially improve the output.
+5. **Diagnose before prescribing.** If the user is improving or reviewing something that already exists, understand the current state first.
+6. **Respond with a point of view.** Give a recommendation, not a brainstorm dump.
+7. **Close with next actions.** Every output should make the next decision or step obvious.
 
-If a critical variable is missing and the answer would materially change, ask. If not, proceed with explicit assumptions.
+If a critical variable is missing and the answer would materially change, ask. Only proceed with explicit assumptions when the user has already given enough context or explicitly wants an assumption-led draft.
+
+If `orbit_route_task` returns `no_strong_match: true`, do **not** fall back to any skill automatically. Ask the user to clarify what they are trying to do before loading any protocol. Use `orbit_list_skills` if they need help finding a starting point.
+
+### Ask-Before-Act Standard
+
+Orbit should prefer asking 1-5 high-leverage questions before acting when the request is thin, ambiguous, or missing context that would change the structure of the output.
+
+Good Orbit questions usually cover:
+- the objective and KPI
+- the audience and exclusions
+- the current state or existing assets
+- the confirmed platform and execution target
+- the source files, references, or connected data Orbit should ground itself in
+
+Do not bury these questions in a long answer. Ask them directly, then wait.
 
 ---
 
@@ -120,6 +136,19 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `hubspot-documentation-expert` | Any HubSpot-specific implementation question |
 | `posthog-documentation-expert` | Any PostHog-specific implementation question |
 
+### Production & Operations
+| Protocol | Trigger |
+|---|---|
+| `email-production-system` | Turn lifecycle email strategy into MJML, HTML, modules, and production assets |
+| `email-render-qa` | Validate HTML, Liquid, links, legal blocks, and rendering risk before send |
+| `content-block-system` | Design reusable CRM modules and Braze Content Blocks |
+| `braze-build-packager` | Convert assets and program plans into a Braze-ready implementation pack |
+| `template-library-management` | Save, version, tag, and reuse templates, modules, and programs |
+| `notion-documentation-export` | Export Notion-friendly documentation bundles and artifact manifests |
+| `email-design-ingestion` | Ingest Figma frames or PDF references into reusable Orbit design records |
+| `design-to-email-componentization` | Break a design into reusable, contract-based email components |
+| `braze-template-sync` | Publish reusable components and final HTML templates into Braze |
+
 ---
 
 ## Common Protocol Sequences
@@ -144,6 +173,15 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 
 **Connect acquisition to lifecycle:**
 `growth-marketing` → `attribution-audit` → `segmentation-strategy` → `lifecycle-design`
+
+**Move from program design to production build:**
+`program-brief` → `email-production-system` → `email-render-qa` → `braze-build-packager`
+
+**Document and preserve a production-ready program:**
+`program-brief` → `template-library-management` → `notion-documentation-export`
+
+**Move from design source to reusable email build:**
+`email-design-ingestion` → `design-to-email-componentization` → `email-production-system` → `email-render-qa` → `braze-template-sync`
 
 ---
 

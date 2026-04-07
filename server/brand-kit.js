@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isLocalPath } from "./config.js";
 import {
   hashObject,
   inferMimeType,
@@ -24,8 +25,122 @@ export const BRAND_GUIDELINE_SECTIONS = [
   "Open Questions / TBD"
 ];
 
-export function buildBrandKitDraft({
+export const BRAND_GUIDELINES_INTAKE_STEPS = [
+  {
+    id: "brand-foundation",
+    title: "Brand Foundation",
+    purpose:
+      "Capture the baseline brand story, audience, and voice before Orbit drafts anything.",
+    questions: [
+      {
+        id: "brand_overview",
+        label: "Brand overview",
+        prompt:
+          "In 1-2 sentences, what is the brand and what should Orbit understand about it?"
+      },
+      {
+        id: "audience_and_promise",
+        label: "Audience and promise",
+        prompt:
+          "Who is the audience, and what promise or impression should the brand communicate to them?"
+      },
+      {
+        id: "tone_of_voice",
+        label: "Tone of voice",
+        prompt:
+          "What tone of voice should Orbit follow? Include adjectives, language cues, and any words or styles to avoid if useful."
+      }
+    ]
+  },
+  {
+    id: "brand-considerations",
+    title: "Brand Considerations",
+    purpose:
+      "Capture the visual rules and constraints Orbit must respect instead of inventing them.",
+    questions: [
+      {
+        id: "visual_system",
+        label: "Visual system",
+        prompt:
+          "What are the important brand considerations Orbit should respect visually? Mention imagery, texture, spacing, composition, density, motion, or overall style cues."
+      },
+      {
+        id: "color_and_typography",
+        label: "Color and typography",
+        prompt:
+          "What colors and type choices are part of the brand system? You can give hex codes, font names, or a plain-language summary."
+      },
+      {
+        id: "brand_dos",
+        label: "Brand dos and don'ts",
+        prompt:
+          "What should Orbit always do, and what should it never do, when representing the brand?"
+      },
+      {
+        id: "email_header_rules",
+        label: "Email header rules",
+        prompt:
+          "Are there email or header-specific rules, such as no text in image, no gradients, logo sizing, or safe-space rules?"
+      }
+    ]
+  },
+  {
+    id: "logo-assets",
+    title: "Logo Assets",
+    purpose:
+      "Collect the official logo files Orbit must use for brand-safe creative output.",
+    questions: [
+      {
+        id: "logo_paths",
+        label: "Primary logo",
+        prompt:
+          "Upload your primary logo file using the attachment/upload button on your message."
+      },
+      {
+        id: "alternate_logo_path",
+        label: "Alternate logo",
+        prompt:
+          "If you have an alternate logo lockup, icon, or reversed logo, upload it now. Skip if not applicable."
+      },
+      {
+        id: "logos_and_safe_usage",
+        label: "Logo safe usage",
+        prompt:
+          "Any logo-safe-usage rules Orbit should follow, such as clear space, minimum size, or prohibited treatments?"
+      }
+    ]
+  },
+  {
+    id: "brand-examples",
+    title: "Brand Examples",
+    purpose:
+      "Collect approved reference examples so Orbit follows the real brand rather than guessing.",
+    questions: [
+      {
+        id: "brand_example_paths",
+        label: "Brand example file paths",
+        prompt:
+          "Please provide local file paths for at least two approved brand examples Orbit should learn from."
+      },
+      {
+        id: "approved_references",
+        label: "Approved reference notes",
+        prompt:
+          "Any notes on why these references are approved or what Orbit should emulate from them?"
+      },
+      {
+        id: "preferred_header_families",
+        label: "Preferred header layout family",
+        prompt:
+          "If you have a preferred Orbit header layout family, note it here: left-anchor, center-lock, split-stage, or framed-narrative."
+      }
+    ]
+  }
+];
+
+export function startBrandGuidelinesIntake({
   config,
+  intakeState,
   brandKitDir,
   brandName,
   companyName,
@@ -49,10 +164,154 @@ export function buildBrandKitDraft({
   defaultCanvas,
   visualStyle
 }) {
-  const resolvedBrandKitDir = normalizeOptionalPath(brandKitDir ?? config?.brandKitDir);
-  const resolvedLogoPaths = dedupeResolvedPaths(logoPaths);
-  const resolvedBrandExamplePaths = dedupeResolvedPaths(brandExamplePaths);
-  const resolvedAlternateLogoPath = normalizeOptionalPath(alternateLogoPath);
+  const state = mergeBrandKitIntakeState({
+    current: intakeState,
+    incoming: {
+      brandKitDir,
+      brandName,
+      companyName,
+      logoPaths,
+      brandExamplePaths,
+      alternateLogoPath,
+      colors,
+      fonts,
+      brandOverview,
+      audienceAndPromise,
+      visualSystem,
+      logosAndSafeUsage,
+      colorAndTypography,
+      toneOfVoice,
+      brandDos,
+      brandDonts,
+      emailHeaderRules,
+      approvedReferences,
+      openQuestions,
+      preferredHeaderFamilies,
+      defaultCanvas,
+      visualStyle
+    },
+    defaultBrandKitDir: config?.brandKitDir
+  });
+
+  const evaluation = evaluateBrandGuidelinesIntake(state);
+  if (!evaluation.isComplete) {
+    return buildBrandGuidelinesIntakeResponse(evaluation);
+  }
+
+  const draftResult = buildBrandKitDraft({
+    config,
+    ...state,
+    allowTbdDraft: true
+  });
+
+  return {
+    status: "ready_for_draft",
+    workflow: "step_by_step_brand_guidelines_intake",
+    brand_name: state.brandName ?? state.companyName ?? "TBD Brand Name",
+    assistant_instruction:
+      "The required intake is complete. Show the draft to the user for review, make any requested edits, and only write files after approval.",
+    progress: {
+      total_steps: BRAND_GUIDELINES_INTAKE_STEPS.length,
+      completed_steps: BRAND_GUIDELINES_INTAKE_STEPS.map((step) => step.id),
+      remaining_steps: [],
+      completion_percent: 100
+    },
+    intake_state: serializeBrandKitIntakeState(state),
+    intake_state_json: JSON.stringify(serializeBrandKitIntakeState(state)),
+    guidance: [
+      "Do not skip the review step. Confirm the draft before calling orbit_write_brand_kit.",
+      "If the user wants changes, keep updating the intake answers or use orbit_update_brand_guidelines on the draft."
+    ],
+    draft: draftResult.draft,
+    warnings: draftResult.draft?.warnings ?? []
+  };
+}
+
+export function buildBrandKitDraft({
+  config,
+  brandKitDir,
+  brandName,
+  companyName,
+  logoPaths = [],
+  brandExamplePaths = [],
+  alternateLogoPath,
+  colors = {},
+  fonts = [],
+  brandOverview,
+  audienceAndPromise,
+  visualSystem,
+  logosAndSafeUsage,
+  colorAndTypography,
+  toneOfVoice,
+  brandDos = [],
+  brandDonts = [],
+  emailHeaderRules = [],
+  approvedReferences = [],
+  openQuestions = [],
+  preferredHeaderFamilies = [],
+  defaultCanvas,
+  visualStyle,
+  allowTbdDraft = false
+}) {
+  const normalizedInput = mergeBrandKitIntakeState({
+    incoming: {
+      brandKitDir,
+      brandName,
+      companyName,
+      logoPaths,
+      brandExamplePaths,
+      alternateLogoPath,
+      colors,
+      fonts,
+      brandOverview,
+      audienceAndPromise,
+      visualSystem,
+      logosAndSafeUsage,
+      colorAndTypography,
+      toneOfVoice,
+      brandDos,
+      brandDonts,
+      emailHeaderRules,
+      approvedReferences,
+      openQuestions,
+      preferredHeaderFamilies,
+      defaultCanvas,
+      visualStyle
+    },
+    defaultBrandKitDir: config?.brandKitDir
+  });
+  const {
+    brandKitDir: resolvedBrandKitDir,
+    brandName: resolvedBrandName,
+    companyName: resolvedCompanyName,
+    logoPaths: resolvedLogoPaths,
+    brandExamplePaths: resolvedBrandExamplePaths,
+    alternateLogoPath: resolvedAlternateLogoPath,
+    colors: resolvedColors,
+    fonts: resolvedFonts,
+    brandOverview: resolvedBrandOverview,
+    audienceAndPromise: resolvedAudienceAndPromise,
+    visualSystem: resolvedVisualSystem,
+    logosAndSafeUsage: resolvedLogosAndSafeUsage,
+    colorAndTypography: resolvedColorAndTypography,
+    toneOfVoice: resolvedToneOfVoice,
+    brandDos: resolvedBrandDos,
+    brandDonts: resolvedBrandDonts,
+    emailHeaderRules: resolvedEmailHeaderRules,
+    approvedReferences: resolvedApprovedReferences,
+    openQuestions: resolvedOpenQuestions,
+    preferredHeaderFamilies: resolvedPreferredFamilies,
+    defaultCanvas: resolvedDefaultCanvas,
+    visualStyle: resolvedVisualStyle
+  } = normalizedInput;
+
+  if (!allowTbdDraft) {
+    const evaluation = evaluateBrandGuidelinesIntake(normalizedInput);
+    if (!evaluation.isComplete) {
+      return buildBrandGuidelinesIntakeResponse(evaluation);
+    }
+  }
+
   const missingInputs = [];
 
   if (resolvedLogoPaths.length === 0) {
@@ -89,19 +348,23 @@ export function buildBrandKitDraft({
     };
   }
 
-  const normalizedBrandName = cleanString(brandName) ?? cleanString(companyName);
-  const invalidColorKeys = Object.entries(colors ?? {})
+  const normalizedBrandName =
+    cleanString(resolvedBrandName) ?? cleanString(resolvedCompanyName);
+  const invalidColorKeys = Object.entries(resolvedColors ?? {})
     .filter(([, value]) => cleanString(value) && !isHexColor(value))
     .map(([key]) => key);
-  const normalizedColors = normalizeColorMap(colors);
-  const normalizedFonts = normalizeStringArray(fonts);
-  const normalizedBrandDos = normalizeStringArray(brandDos);
-  const normalizedBrandDonts = normalizeStringArray(brandDonts);
-  const normalizedEmailHeaderRules = normalizeStringArray(emailHeaderRules);
-  const normalizedApprovedReferences = normalizeStringArray(approvedReferences);
-  const normalizedOpenQuestions = normalizeStringArray(openQuestions);
-  const normalizedPreferredFamilies = normalizeStringArray(preferredHeaderFamilies);
-  const resolvedCanvas = normalizeCanvas(defaultCanvas) ?? { width: 1200, height: 400 };
+  const normalizedColors = normalizeColorMap(resolvedColors);
+  const normalizedFonts = normalizeStringArray(resolvedFonts);
+  const normalizedBrandDos = normalizeStringArray(resolvedBrandDos);
+  const normalizedBrandDonts = normalizeStringArray(resolvedBrandDonts);
+  const normalizedEmailHeaderRules = normalizeStringArray(resolvedEmailHeaderRules);
+  const normalizedApprovedReferences = normalizeStringArray(resolvedApprovedReferences);
+  const normalizedOpenQuestions = normalizeStringArray(resolvedOpenQuestions);
+  const normalizedPreferredFamilies = normalizeStringArray(resolvedPreferredFamilies);
+  const resolvedCanvas = normalizeCanvas(resolvedDefaultCanvas) ?? {
+    width: 1200,
+    height: 400
+  };
 
   const assetPlan = buildAssetPlan({
     logoPaths: resolvedLogoPaths,
@@ -119,16 +382,16 @@ export function buildBrandKitDraft({
   if (normalizedFonts.length === 0) {
     missingInfo.push("fonts");
   }
-  if (!cleanString(brandOverview)) {
+  if (!cleanString(resolvedBrandOverview)) {
     missingInfo.push("brand_overview");
   }
-  if (!cleanString(audienceAndPromise)) {
+  if (!cleanString(resolvedAudienceAndPromise)) {
     missingInfo.push("audience_and_promise");
   }
-  if (!cleanString(visualSystem) && !cleanString(visualStyle)) {
+  if (!cleanString(resolvedVisualSystem) && !cleanString(resolvedVisualStyle)) {
     missingInfo.push("visual_system");
   }
-  if (!cleanString(toneOfVoice)) {
+  if (!cleanString(resolvedToneOfVoice)) {
     missingInfo.push("tone_of_voice");
   }
   if (normalizedBrandDos.length === 0 && normalizedBrandDonts.length === 0) {
@@ -165,14 +428,14 @@ export function buildBrandKitDraft({
   ];
   const guidelinesMarkdown = buildBrandGuidelinesTemplate({
     brandName: draftProfile.brand_name,
-    brandOverview,
-    audienceAndPromise,
-    visualSystem: cleanString(visualSystem) ?? cleanString(visualStyle),
-    logosAndSafeUsage,
+    brandOverview: resolvedBrandOverview,
+    audienceAndPromise: resolvedAudienceAndPromise,
+    visualSystem: cleanString(resolvedVisualSystem) ?? cleanString(resolvedVisualStyle),
+    logosAndSafeUsage: resolvedLogosAndSafeUsage,
     colorAndTypography:
-      cleanString(colorAndTypography) ??
+      cleanString(resolvedColorAndTypography) ??
       buildColorTypographySummary(draftProfile.colors, draftProfile.fonts),
-    toneOfVoice,
+    toneOfVoice: resolvedToneOfVoice,
     brandDos: normalizedBrandDos,
     brandDonts: normalizedBrandDonts,
     emailHeaderRules: normalizedEmailHeaderRules,
@@ -191,7 +454,7 @@ export function buildBrandKitDraft({
   }
   if (!resolvedBrandKitDir) {
     warnings.push(
-      "No brand_kit_dir target is configured yet. The write step must provide one or use Orbit's Brand Kit Directory setting."
+      "No brand_kit_dir target is configured yet. Run orbit_bootstrap_home_workspace first, or provide a brand_kit_dir in the write step."
     );
   }
   if (normalizedBrandDos.length === 0) {
@@ -244,7 +507,7 @@ export function writeBrandKit({ config, draft, brandKitDir }) {
       status: "needs_inputs",
       missing_inputs: ["brand_kit_dir"],
       guidance: [
-        "Provide a target brand_kit_dir or set Orbit's Brand Kit Directory setting before writing the kit."
+        "Provide a target brand_kit_dir or run orbit_bootstrap_home_workspace to create the default workspace."
       ]
     };
   }
@@ -584,6 +847,300 @@ export function extractBrandGuidelineContext(guidelines) {
   };
 }
 
+function mergeBrandKitIntakeState({ current, incoming = {}, defaultBrandKitDir }) {
+  const parsedCurrent =
+    typeof current === "string" ? parseJsonInput(current, "brand intake state") : current;
+  const state = parsedCurrent && typeof parsedCurrent === "object" ? parsedCurrent : {};
+
+  // Reject any brandKitDir that isn't a real local path (e.g. Claude sandbox paths
+  // like /home/claude/... that the model may fabricate). Fall back to the default.
+  const rawBrandKitDir = normalizeOptionalPath(
+    incoming.brandKitDir ?? state.brandKitDir ?? defaultBrandKitDir
+  );
+  const resolvedBrandKitDir =
+    rawBrandKitDir && isLocalPath(rawBrandKitDir)
+      ? rawBrandKitDir
+      : normalizeOptionalPath(defaultBrandKitDir) ?? null;
+
+  return {
+    brandKitDir: resolvedBrandKitDir,
+    _rejected_brand_kit_dir:
+      rawBrandKitDir && !isLocalPath(rawBrandKitDir) ? rawBrandKitDir : undefined,
+    brandName: cleanString(incoming.brandName) ?? cleanString(state.brandName),
+    companyName: cleanString(incoming.companyName) ?? cleanString(state.companyName),
+    logoPaths: dedupeResolvedPaths(
+      mergeArrays(state.logoPaths, incoming.logoPaths).map((item) =>
+        normalizeOptionalPath(item)
+      )
+    ),
+    brandExamplePaths: dedupeResolvedPaths(
+      mergeArrays(state.brandExamplePaths, incoming.brandExamplePaths).map((item) =>
+        normalizeOptionalPath(item)
+      )
+    ),
+    alternateLogoPath: normalizeOptionalPath(
+      incoming.alternateLogoPath ?? state.alternateLogoPath
+    ),
+    colors: {
+      ...normalizeColorMap(state.colors),
+      ...normalizeColorMap(incoming.colors)
+    },
+    fonts: dedupeStrings(mergeArrays(state.fonts, incoming.fonts)),
+    brandOverview: cleanString(incoming.brandOverview) ?? cleanString(state.brandOverview),
+    audienceAndPromise:
+      cleanString(incoming.audienceAndPromise) ?? cleanString(state.audienceAndPromise),
+    visualSystem: cleanString(incoming.visualSystem) ?? cleanString(state.visualSystem),
+    logosAndSafeUsage:
+      cleanString(incoming.logosAndSafeUsage) ?? cleanString(state.logosAndSafeUsage),
+    colorAndTypography:
+      cleanString(incoming.colorAndTypography) ??
+      cleanString(state.colorAndTypography),
+    toneOfVoice: cleanString(incoming.toneOfVoice) ?? cleanString(state.toneOfVoice),
+    brandDos: dedupeStrings(mergeArrays(state.brandDos, incoming.brandDos)),
+    brandDonts: dedupeStrings(mergeArrays(state.brandDonts, incoming.brandDonts)),
+    emailHeaderRules: dedupeStrings(
+      mergeArrays(state.emailHeaderRules, incoming.emailHeaderRules)
+    ),
+    approvedReferences: dedupeStrings(
+      mergeArrays(state.approvedReferences, incoming.approvedReferences)
+    ),
+    openQuestions: dedupeStrings(mergeArrays(state.openQuestions, incoming.openQuestions)),
+    preferredHeaderFamilies: dedupeStrings(
+      mergeArrays(state.preferredHeaderFamilies, incoming.preferredHeaderFamilies)
+    ),
+    defaultCanvas:
+      normalizeCanvas(incoming.defaultCanvas) ?? normalizeCanvas(state.defaultCanvas),
+    visualStyle: cleanString(incoming.visualStyle) ?? cleanString(state.visualStyle)
+  };
+}
+
+function evaluateBrandGuidelinesIntake(state) {
+  const validLogoPaths = state.logoPaths.filter((filePath) => fileExists(filePath));
+  const invalidLogoPaths = state.logoPaths.filter((filePath) => !fileExists(filePath));
+  const validBrandExamplePaths = state.brandExamplePaths.filter((filePath) =>
+    fileExists(filePath)
+  );
+  const invalidBrandExamplePaths = state.brandExamplePaths.filter(
+    (filePath) => !fileExists(filePath)
+  );
+  const hasBrandConsiderationsIdentity =
+    Boolean(state.visualSystem) ||
+    Boolean(state.visualStyle) ||
+    Boolean(state.colorAndTypography) ||
+    Object.keys(state.colors).length > 0 ||
+    state.fonts.length > 0;
+  const hasBrandConsiderationsConstraints =
+    Boolean(state.logosAndSafeUsage) ||
+    state.brandDos.length > 0 ||
+    state.brandDonts.length > 0 ||
+    state.emailHeaderRules.length > 0;
+
+  const steps = BRAND_GUIDELINES_INTAKE_STEPS.map((step) => {
+    if (step.id === "brand-foundation") {
+      const missingFields = [];
+      if (!state.brandOverview) {
+        missingFields.push("brand_overview");
+      }
+      if (!state.audienceAndPromise) {
+        missingFields.push("audience_and_promise");
+      }
+      if (!state.toneOfVoice) {
+        missingFields.push("tone_of_voice");
+      }
+
+      return {
+        ...step,
+        complete: missingFields.length === 0,
+        missing_fields: missingFields
+      };
+    }
+
+    if (step.id === "brand-considerations") {
+      const missingFields = [];
+      if (!hasBrandConsiderationsIdentity) {
+        missingFields.push("visual_system_or_color_and_typography");
+      }
+      if (!hasBrandConsiderationsConstraints) {
+        missingFields.push("brand_dos_donts_or_email_header_rules");
+      }
+
+      return {
+        ...step,
+        complete: missingFields.length === 0,
+        missing_fields: missingFields
+      };
+    }
+
+    if (step.id === "logo-assets") {
+      const missingFields = [];
+      if (validLogoPaths.length === 0) {
+        missingFields.push("logo_paths (minimum 1)");
+      }
+      for (const filePath of invalidLogoPaths) {
+        missingFields.push(`logo:${filePath}`);
+      }
+
+      return {
+        ...step,
+        complete: missingFields.length === 0,
+        missing_fields: missingFields
+      };
+    }
+
+    const missingFields = [];
+    if (validBrandExamplePaths.length < 2) {
+      missingFields.push("brand_example_paths (minimum 2)");
+    }
+    for (const filePath of invalidBrandExamplePaths) {
+      missingFields.push(`brand_example:${filePath}`);
+    }
+
+    return {
+      ...step,
+      complete: missingFields.length === 0,
+      missing_fields: missingFields
+    };
+  });
+
+  return {
+    state,
+    steps,
+    isComplete: steps.every((step) => step.complete),
+    currentStep: steps.find((step) => !step.complete) ?? null,
+    validLogoPaths,
+    invalidLogoPaths,
+    validBrandExamplePaths,
+    invalidBrandExamplePaths
+  };
+}
+
+function getBrandFieldValue(state, questionId) {
+  const map = {
+    brand_overview: state.brandOverview,
+    audience_and_promise: state.audienceAndPromise,
+    tone_of_voice: state.toneOfVoice,
+    visual_system: state.visualSystem,
+    color_and_typography: state.colorAndTypography,
+    brand_dos: state.brandDos?.length > 0 ? state.brandDos.join(", ") : null,
+    email_header_rules: state.emailHeaderRules?.length > 0 ? state.emailHeaderRules.join(", ") : null,
+    logo_paths: state.logoPaths?.length > 0 ? state.logoPaths.join(", ") : null,
+    alternate_logo_path: state.alternateLogoPath,
+    logos_and_safe_usage: state.logosAndSafeUsage,
+    brand_example_paths: state.brandExamplePaths?.length > 0 ? state.brandExamplePaths.join(", ") : null,
+    approved_references: state.approvedReferences?.length > 0 ? state.approvedReferences.join(", ") : null,
+    preferred_header_families: state.preferredHeaderFamilies?.length > 0 ? state.preferredHeaderFamilies.join(", ") : null
+  };
+  const val = map[questionId];
+  return (val !== null && val !== undefined && String(val).trim()) ? String(val).trim() : null;
+}
+
+function buildBrandGuidelinesIntakeResponse(evaluation) {
+  const { state, steps, currentStep, invalidLogoPaths, invalidBrandExamplePaths } =
+    evaluation;
+  const brandLabel = state.brandName ?? state.companyName ?? "this brand";
+  const completedSteps = steps.filter((step) => step.complete).map((step) => step.id);
+  const remainingSteps = steps.filter((step) => !step.complete).map((step) => step.id);
+  const stepNumber = completedSteps.length + 1;
+  const totalSteps = steps.length;
+
+  // Split current step questions into pre-filled and still-needed
+  const prefilledQuestions = currentStep
+    ? currentStep.questions.filter((q) => getBrandFieldValue(state, q.id) !== null)
+    : [];
+  const pendingQuestions = currentStep
+    ? currentStep.questions.filter((q) => getBrandFieldValue(state, q.id) === null)
+    : [];
+
+  const questionPrompt = currentStep
+    ? [
+        `**Brand Kit — Step ${stepNumber} of ${totalSteps}: ${currentStep.title}**`,
+        "",
+        prefilledQuestions.length > 0
+          ? [
+              `I've pre-filled the following from context — please confirm or correct:`,
+              "",
+              ...prefilledQuestions.map(
+                (q) => `- **${q.label}**: ${getBrandFieldValue(state, q.id)}`
+              ),
+              ""
+            ].join("\n")
+          : null,
+        pendingQuestions.length > 0
+          ? [
+              pendingQuestions.length === 1 && prefilledQuestions.length > 0
+                ? `Just one more question for this step:`
+                : `Please answer ${pendingQuestions.length === 1 ? "this question" : "these questions"} before Orbit drafts anything:`,
+              "",
+              ...pendingQuestions.map((q, index) => `${index + 1}. ${q.prompt}`),
+              ""
+            ].join("\n")
+          : null,
+        currentStep?.id === "brand-examples"
+          ? "Use local file paths for any brand example assets."
+          : null
+      ].filter(Boolean).join("\n")
+    : null;
+
+  return {
+    status: "needs_inputs",
+    workflow: "step_by_step_brand_guidelines_intake",
+    brand_name: state.brandName ?? state.companyName ?? null,
+    assistant_instruction:
+      "Show the question_prompt text to the user exactly as written. Do not infer or answer any pending questions. Wait for the user's reply, then call orbit_start_brand_guidelines_intake again with their answers and intake_state_json passed through unchanged.",
+    current_step: currentStep
+      ? {
+          id: currentStep.id,
+          step_label: `Step ${stepNumber} of ${totalSteps}`,
+          title: currentStep.title,
+          missing_fields: currentStep.missing_fields,
+          prefilled_fields: prefilledQuestions.map((q) => q.id),
+          pending_fields: pendingQuestions.map((q) => q.id)
+        }
+      : null,
+    missing_inputs: currentStep?.missing_fields ?? [],
+    invalid_asset_paths: {
+      logo_paths: invalidLogoPaths,
+      brand_example_paths: invalidBrandExamplePaths
+    },
+    ...(state._rejected_brand_kit_dir
+      ? {
+          path_warning: `The brand_kit_dir "${state._rejected_brand_kit_dir}" was rejected as a non-local path. Using the configured local path instead: "${state.brandKitDir}". Do not pass non-local paths.`
+        }
+      : {}),
+    question_prompt: questionPrompt,
+    intake_state_json: JSON.stringify(serializeBrandKitIntakeState(state)),
+    next_action:
+      `Show Step ${stepNumber} of ${totalSteps} to the user. Wait for their answers. Then call orbit_start_brand_guidelines_intake again with those answers and intake_state_json.`
+  };
+}
+
+function serializeBrandKitIntakeState(state) {
+  return {
+    brandKitDir: state.brandKitDir ?? null,
+    brandName: state.brandName ?? null,
+    companyName: state.companyName ?? null,
+    logoPaths: state.logoPaths,
+    brandExamplePaths: state.brandExamplePaths,
+    alternateLogoPath: state.alternateLogoPath ?? null,
+    colors: state.colors,
+    fonts: state.fonts,
+    brandOverview: state.brandOverview ?? null,
+    audienceAndPromise: state.audienceAndPromise ?? null,
+    visualSystem: state.visualSystem ?? null,
+    logosAndSafeUsage: state.logosAndSafeUsage ?? null,
+    colorAndTypography: state.colorAndTypography ?? null,
+    toneOfVoice: state.toneOfVoice ?? null,
+    brandDos: state.brandDos,
+    brandDonts: state.brandDonts,
+    emailHeaderRules: state.emailHeaderRules,
+    approvedReferences: state.approvedReferences,
+    openQuestions: state.openQuestions,
+    preferredHeaderFamilies: state.preferredHeaderFamilies,
+    defaultCanvas: state.defaultCanvas ?? null,
+    visualStyle: state.visualStyle ?? null
+  };
+}
+
 function buildAssetPlan({ logoPaths, alternateLogoPath, brandExamplePaths }) {
   const logos = [];
   const primaryLogoPath = logoPaths[0];
@@ -886,6 +1443,14 @@ function normalizeStringArray(value) {
   return value
     .map((item) => cleanString(item))
     .filter(Boolean);
+}
+
+function mergeArrays(left, right) {
+  return [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])];
+}
+
+function dedupeStrings(items) {
+  return [...new Set(normalizeStringArray(items))];
 }
 
 function normalizeOptionalPath(value) {

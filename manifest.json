@@ -1,8 +1,8 @@
 {
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
-  "display_name": "Orbit - Lifecycle Marketing System for Claude",
-  "version": "0.4.3",
+  "display_name": "Orbit",
+  "version": "0.8.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -16,8 +16,8 @@
       "theme": "dark"
     }
   ],
-  "description": "Claude-first lifecycle marketing router, brand-kit intake system, setup validator, prompt kit, skill manifest, and visual tooling built from Orbit's 31 protocols.",
-  "long_description": "Orbit gives Claude a local lifecycle marketing operating system. It routes requests to the right Orbit protocol, exposes the full skill library as resources, loads a canonical skill manifest for routing and validation, drafts and writes standardized local brand kits with brand-profile.json plus brand-guidelines.md, validates local setup and brand kits, generates lifecycle program diagrams as deterministic SVG/PNG/PDF exports, and builds brand-safe email header assets using Nano Banana Pro for art generation with local composition for logos and layout.",
+  "description": "Lifecycle marketing operating system for Claude with guided discovery, auto-created ~/Orbit workspace, reusable email components, Figma import, and Braze-ready publishing.",
+  "long_description": "Orbit gives Claude a local lifecycle marketing operating system. It routes requests to the right Orbit protocol, exposes the full skill library as resources, loads a canonical skill manifest for routing and validation, creates and maintains a local ~/Orbit workspace automatically on first run without requiring folder setup, runs a step-by-step brand-guidelines intake before drafting brand kits with brand-profile.json plus brand-guidelines.md, runs a discovery-first workflow for journeys, programs, and campaigns so Orbit grounds the work in objectives, KPIs, audience context, connected data sources, and execution constraints before building flows, validates local setup and brand kits, imports Figma email designs and PDF references, infers reusable email components with a controlled taxonomy plus reusable props-and-slots contracts, generates component-first MJML lifecycle emails with HTML previews and QA, saves reusable templates, components, and programs into a local library, syncs Braze Content Blocks and HTML email templates via API, packages Braze-ready implementation bundles, and exports Notion-friendly documentation.",
   "author": {
     "name": "Justin Williames",
     "url": "https://www.linkedin.com/in/justinwilliames"
@@ -35,9 +35,10 @@
         "ORBIT_COMPANY_NAME": "${user_config.company_name}",
         "ORBIT_DEFAULT_PLATFORM": "${user_config.default_platform}",
         "ORBIT_DEFAULT_GEOGRAPHY": "${user_config.default_geography}",
-        "ORBIT_BRAND_KIT_DIR": "${user_config.brand_kit_dir}",
-        "ORBIT_DEFAULT_OUTPUT_DIR": "${user_config.default_output_dir}",
-        "ORBIT_GOOGLE_AI_API_KEY": "${user_config.google_ai_api_key}"
+        "ORBIT_GOOGLE_AI_API_KEY": "${user_config.google_ai_api_key}",
+        "ORBIT_FIGMA_API_TOKEN": "${user_config.figma_api_token}",
+        "ORBIT_BRAZE_API_KEY": "${user_config.braze_api_key}",
+        "ORBIT_BRAZE_REST_ENDPOINT": "${user_config.braze_rest_endpoint}"
       }
     }
   },
@@ -60,23 +61,31 @@
       "description": "Optional default geography or market for compliance-aware recommendations.",
       "default": ""
     },
-    "brand_kit_dir": {
-      "type": "directory",
-      "title": "Brand Kit Directory",
-      "description": "Optional folder that contains brand-profile.json and official logo/example assets.",
-      "default": ""
-    },
-    "default_output_dir": {
-      "type": "directory",
-      "title": "Default Output Directory",
-      "description": "Optional folder where Orbit should save rendered diagrams and brand assets.",
-      "default": ""
-    },
     "google_ai_api_key": {
       "type": "string",
       "title": "Google AI API Key",
       "description": "Optional Google AI Studio key used for Nano Banana Pro image generation.",
       "sensitive": true,
+      "default": ""
+    },
+    "figma_api_token": {
+      "type": "string",
+      "title": "Figma API Token",
+      "description": "Optional token used to import structured email designs from Figma.",
+      "sensitive": true,
+      "default": ""
+    },
+    "braze_api_key": {
+      "type": "string",
+      "title": "Braze API Key",
+      "description": "Optional Braze REST API key used to publish Content Blocks and HTML email templates.",
+      "sensitive": true,
+      "default": ""
+    },
+    "braze_rest_endpoint": {
+      "type": "string",
+      "title": "Braze REST Endpoint",
+      "description": "Optional Braze REST API endpoint, for example https://rest.iad-01.braze.com.",
       "default": ""
     }
   },
@@ -110,12 +119,28 @@
       "description": "Run an Orbit healthcheck for config, output paths, brand kits, and image-generation readiness."
     },
     {
+      "name": "orbit_bootstrap_home_workspace",
+      "description": "Create Orbit's default ~/Orbit workspace and fill in any missing starter folders or files."
+    },
+    {
+      "name": "orbit_check_copy_readiness",
+      "description": "Use this before writing copy. If brand guidelines or Tone Of Voice are missing, Orbit should ask whether to set them up first or proceed with explicit assumptions and remember that choice."
+    },
+    {
+      "name": "orbit_start_program_discovery",
+      "description": "Use this first when the user asks Orbit to create a journey, program, or campaign. It returns a required intake survey for objectives, KPIs, audience, current state, connected data, and build constraints before Orbit drafts the flow. On the first pass, Orbit should present the survey directly to the user rather than pre-populating discovery answers unless the user explicitly asks for that."
+    },
+    {
       "name": "orbit_validate_brand_kit",
       "description": "Validate brand-profile.json, brand-guidelines.md, logo paths, example assets, and preferred layout settings."
     },
     {
+      "name": "orbit_start_brand_guidelines_intake",
+      "description": "Use this first whenever a user asks Orbit to create brand guidelines or a brand kit. It runs a required step-by-step intake and returns only the next questions to ask."
+    },
+    {
       "name": "orbit_build_brand_kit_draft",
-      "description": "Create a reviewable brand-kit draft with brand-profile.json, brand-guidelines.md, and a normalized asset plan."
+      "description": "Create a reviewable brand-kit draft with brand-profile.json, brand-guidelines.md, and a normalized asset plan after the guided intake is complete."
     },
     {
       "name": "orbit_write_brand_kit",
@@ -148,6 +173,98 @@
     {
       "name": "orbit_render_brand_header",
       "description": "Render a brand header spec into SVG, PNG, and PDF assets with local logo composition."
+    },
+    {
+      "name": "orbit_build_program_workspace",
+      "description": "Create a file-backed Orbit workspace tying together brief, message plan, lifecycle diagram, and downstream production artifacts."
+    },
+    {
+      "name": "orbit_import_figma_email_design",
+      "description": "Import a Figma email design into Orbit as a structured design record."
+    },
+    {
+      "name": "orbit_import_pdf_email_reference",
+      "description": "Import a PDF as a lower-confidence reference-mode design source."
+    },
+    {
+      "name": "orbit_suggest_email_component_map",
+      "description": "Infer reusable email components from a design import and map them to Orbit's canonical taxonomy."
+    },
+    {
+      "name": "orbit_update_email_component_map",
+      "description": "Apply deterministic revisions to an inferred email component map."
+    },
+    {
+      "name": "orbit_approve_email_component_map",
+      "description": "Approve an email component map before code generation or Braze publishing."
+    },
+    {
+      "name": "orbit_build_message_plan",
+      "description": "Create a channel-by-channel message inventory with dependencies, personalization needs, and CTA mapping."
+    },
+    {
+      "name": "orbit_build_email_template_spec",
+      "description": "Create a canonical Orbit email template spec before code generation."
+    },
+    {
+      "name": "orbit_generate_mjml_template",
+      "description": "Generate canonical MJML from an approved Orbit email template spec."
+    },
+    {
+      "name": "orbit_compile_email_template",
+      "description": "Compile Orbit MJML to HTML and plain text with a compile report."
+    },
+    {
+      "name": "orbit_preview_email_template",
+      "description": "Create desktop, mobile, and dark-mode preview HTML files for an Orbit email."
+    },
+    {
+      "name": "orbit_validate_email_template",
+      "description": "Run Orbit email QA for markup, links, fallback logic, legal blocks, and Braze-safe structure."
+    },
+    {
+      "name": "orbit_generate_email_components",
+      "description": "Generate reusable MJML/HTML email components from an approved component map."
+    },
+    {
+      "name": "orbit_assemble_email_template_from_components",
+      "description": "Assemble a final MJML/HTML email from approved reusable Orbit components."
+    },
+    {
+      "name": "orbit_sync_braze_content_blocks",
+      "description": "Publish reusable Orbit email components to Braze Content Blocks."
+    },
+    {
+      "name": "orbit_sync_braze_email_template",
+      "description": "Publish a compiled Orbit HTML email template to Braze."
+    },
+    {
+      "name": "orbit_publish_email_to_braze",
+      "description": "Sync Braze Content Blocks first, then publish the final Braze HTML email template."
+    },
+    {
+      "name": "orbit_build_braze_pack",
+      "description": "Package Orbit production artifacts into a Braze-ready implementation bundle."
+    },
+    {
+      "name": "orbit_export_notion_bundle",
+      "description": "Create a Notion-friendly Markdown bundle with lifecycle docs and artifact references."
+    },
+    {
+      "name": "orbit_save_library_item",
+      "description": "Save an email template, email component, module, or program artifact into Orbit's local library."
+    },
+    {
+      "name": "orbit_list_library_items",
+      "description": "Search or browse Orbit's local template, component, module, and program library."
+    },
+    {
+      "name": "orbit_load_library_item",
+      "description": "Load a saved Orbit library item with its artifact payload and saved files."
+    },
+    {
+      "name": "orbit_update_library_item",
+      "description": "Update metadata for a saved Orbit library item."
     }
   ],
   "prompts_generated": true,
@@ -161,13 +278,22 @@
     "mcp",
     "diagram generation",
     "brand-safe image generation",
-    "email headers"
+    "email headers",
+    "figma import",
+    "mjml",
+    "email html",
+    "braze",
+    "braze api",
+    "email components",
+    "notion export",
+    "template library"
   ],
   "compatibility": {
     "claude_desktop": ">=1.0.0",
     "platforms": [
       "darwin",
-      "win32"
+      "win32",
+      "linux"
     ],
     "runtimes": {
       "node": ">=20.0.0"

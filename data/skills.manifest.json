@@ -5,6 +5,7 @@
     "category": "creative-personalisation",
     "description": "Use this skill whenever Orbit is asked about using AI or LLMs to personalise lifecycle communications at scale — including AI-generated subject lines, dynamic email body copy, predictive send-time optimisation, next-best-action models, AI-powered recommendations, or generative content blocks. Also trigger when evaluating AI personalisation features in ESPs (Braze Sage AI, Iterable AI, Klaviyo AI, etc.), or when the operator wants to move beyond rule-based segmentation toward model-driven personalisation. Distinct from copy-framework (which handles human-written copy) — this skill handles AI as the authoring or decision layer.",
     "trigger_phrases": [],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "crm-data-model",
@@ -120,6 +121,7 @@
       "how should we measure marketing roi?",
       "cac seems off"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "growth-marketing",
@@ -224,6 +226,7 @@
     "category": "lifecycle-design-execution",
     "description": "Use this skill whenever Orbit is asked about lifecycle programs for B2B products or services — including multi-stakeholder onboarding, sales and marketing handoff design, account-based lifecycle, champion engagement programs, renewal programs, expansion revenue sequences, or any lifecycle challenge where the buying unit is a company rather than an individual. Also trigger when the operator needs to design programs that work across multiple contacts at the same account, or where sales and CRM must coordinate rather than operate independently. Distinct from lifecycle-design (which defaults to B2C/PLG patterns) — this skill handles the structural differences that B2B requires.",
     "trigger_phrases": [],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model"
     ],
@@ -332,6 +335,106 @@
     ]
   },
   {
+    "name": "braze-build-packager",
+    "title": "Braze Build Packager",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to convert lifecycle strategy and message assets into a Braze-ready handoff pack — Canvas build sheet, Content Block manifest, Liquid snippets, naming conventions, QA checklist, or implementation packet. Trigger on \"package this for Braze\", \"build the Braze handoff\", \"create the implementation pack\", or whenever a team needs a clean build-ready bundle rather than just advice.",
+    "trigger_phrases": [
+      "package this for braze",
+      "build the braze handoff",
+      "create the implementation pack"
+    ],
+    "exclusion_phrases": [
+      "should i use braze",
+      "how does braze work",
+      "braze vs",
+      "what is braze",
+      "strategy for braze",
+      "best practices for braze"
+    ],
+    "disambiguators": [
+      "implementation_target"
+    ],
+    "adjacent_skills": [
+      "braze-documentation-expert",
+      "content-block-system",
+      "email-render-qa"
+    ],
+    "artifact_types": [
+      "braze-build-pack",
+      "canvas-build-sheet"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "braze"
+      ]
+    },
+    "templates": [
+      "braze-build-pack"
+    ],
+    "validator_rules": [
+      {
+        "label": "Canvas build sheet",
+        "type": "regex",
+        "value": "(canvas|build sheet)",
+        "flags": "i"
+      },
+      {
+        "label": "Content blocks",
+        "type": "regex",
+        "value": "(content block)",
+        "flags": "i"
+      },
+      {
+        "label": "Liquid",
+        "type": "regex",
+        "value": "(liquid|personalization)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "advice",
+      "assets",
+      "block",
+      "braze",
+      "braze-build-pack",
+      "braze-build-packager",
+      "braze-ready",
+      "build",
+      "build-ready",
+      "bundle",
+      "canvas",
+      "canvas-build-sheet",
+      "checklist",
+      "clean",
+      "content",
+      "conventions",
+      "convert",
+      "create",
+      "handoff",
+      "implementation",
+      "just",
+      "lifecycle",
+      "liquid",
+      "manifest",
+      "message",
+      "naming",
+      "needs",
+      "pack",
+      "package",
+      "packager",
+      "packet",
+      "rather",
+      "sheet",
+      "snippets",
+      "strategy",
+      "target",
+      "team",
+      "trigger"
+    ]
+  },
+  {
     "name": "braze-documentation-expert",
     "title": "Braze Documentation Expert",
     "category": "platform-documentation",
@@ -343,6 +446,7 @@
       "why isn't this segment working?",
       "set up this webhook"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "platform"
     ],
@@ -435,6 +539,89 @@
     ]
   },
   {
+    "name": "braze-template-sync",
+    "title": "Braze Template Sync",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to publish reusable email components or final HTML email templates into Braze. Trigger on \"push this to Braze\", \"publish content blocks\", \"sync template to Braze\", \"create the Braze template\", or any request to move Orbit assets into Braze via API.",
+    "trigger_phrases": [
+      "push this to braze",
+      "publish content blocks",
+      "sync template to braze",
+      "create the braze template"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "implementation_target"
+    ],
+    "adjacent_skills": [
+      "braze-documentation-expert",
+      "content-block-system",
+      "braze-build-packager",
+      "template-library-management"
+    ],
+    "artifact_types": [
+      "braze-sync-record",
+      "publish-log"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "braze"
+      ]
+    },
+    "templates": [
+      "braze-sync-record"
+    ],
+    "validator_rules": [
+      {
+        "label": "Braze",
+        "type": "regex",
+        "value": "(braze|content block|template)",
+        "flags": "i"
+      },
+      {
+        "label": "Sync result",
+        "type": "regex",
+        "value": "(sync|publish|id)",
+        "flags": "i"
+      },
+      {
+        "label": "Status",
+        "type": "regex",
+        "value": "(status|warning|failure)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "api",
+      "assets",
+      "blocks",
+      "braze",
+      "braze-sync-record",
+      "braze-template-sync",
+      "components",
+      "content",
+      "create",
+      "email",
+      "final",
+      "html",
+      "implementation",
+      "move",
+      "publish",
+      "publish-log",
+      "push",
+      "request",
+      "reusable",
+      "sync",
+      "target",
+      "template",
+      "templates",
+      "trigger",
+      "via"
+    ]
+  },
+  {
     "name": "competitive-intel",
     "title": "Competitive Intelligence Protocol",
     "category": "strategy-planning",
@@ -445,6 +632,7 @@
       "are we positioned correctly against x?",
       "what's changed in the [category] market?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [],
     "artifact_types": [
@@ -532,11 +720,102 @@
     ]
   },
   {
+    "name": "content-block-system",
+    "title": "Content Block System",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to design reusable CRM modules, Braze Content Blocks, shared headers/footers, promo strips, legal blocks, or an email module library. Trigger on \"what should be a Content Block?\", \"create reusable modules\", \"build the email block system\", \"design the footer/header library\", or whenever production reuse and consistency matter.",
+    "trigger_phrases": [
+      "what should be a content block?",
+      "create reusable modules",
+      "build the email block system",
+      "design the footer/header library"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "channel"
+    ],
+    "adjacent_skills": [
+      "email-production-system",
+      "braze-build-packager",
+      "template-library-management"
+    ],
+    "artifact_types": [
+      "content-block-library",
+      "module-plan"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "content-block-plan"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "block",
+      "blocks",
+      "braze",
+      "build",
+      "channel",
+      "consistency",
+      "content",
+      "content-block-library",
+      "content-block-plan",
+      "content-block-system",
+      "create",
+      "crm",
+      "design",
+      "email",
+      "footer/header",
+      "headers/footers",
+      "legal",
+      "library",
+      "matter",
+      "module",
+      "module-plan",
+      "modules",
+      "production",
+      "promo",
+      "reusable",
+      "reuse",
+      "shared",
+      "strips",
+      "system",
+      "trigger"
+    ]
+  },
+  {
     "name": "copy-framework",
     "title": "Lifecycle Copy Framework",
     "category": "creative-personalisation",
     "description": "Use this skill whenever Orbit is asked to write, review, or improve lifecycle copy — email subject lines, body copy, CTAs, SMS, push notifications, in-app messages, or any customer-facing CRM communication. Also trigger when personalisation logic or Liquid templating is needed, when tone of voice needs defining, or when existing copy is underperforming and needs diagnosis. This skill owns the words in every lifecycle touchpoint — not just what to say, but how, to whom, and in what structure.",
     "trigger_phrases": [],
+    "exclusion_phrases": [],
     "disambiguators": [
       "channel"
     ],
@@ -649,6 +928,7 @@
       "we can't segment properly because our data is wrong",
       "design our contact schema"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "segmentation-strategy",
@@ -764,6 +1044,7 @@
       "our complaint rate is high",
       "we've been blacklisted"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "geography"
     ],
@@ -868,6 +1149,89 @@
     ]
   },
   {
+    "name": "design-to-email-componentization",
+    "title": "Design To Email Componentization",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to turn a Figma frame, PDF reference, or existing email layout into reusable email components. Trigger on \"import this Figma email\", \"turn this design into components\", \"break this email into reusable modules\", \"componentize this layout\", or any request to move from a visual design into reusable MJML/HTML building blocks.",
+    "trigger_phrases": [
+      "import this figma email",
+      "turn this design into components",
+      "break this email into reusable modules",
+      "componentize this layout"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "design_source"
+    ],
+    "adjacent_skills": [
+      "email-design-ingestion",
+      "content-block-system",
+      "email-production-system",
+      "template-library-management"
+    ],
+    "artifact_types": [
+      "component-map",
+      "email-component-contract"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "component-map"
+    ],
+    "validator_rules": [
+      {
+        "label": "Component map",
+        "type": "regex",
+        "value": "(component map|component|canonical)",
+        "flags": "i"
+      },
+      {
+        "label": "Reuse",
+        "type": "regex",
+        "value": "(reuse|library|contract)",
+        "flags": "i"
+      },
+      {
+        "label": "Approval",
+        "type": "regex",
+        "value": "(approval|approve)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "blocks",
+      "break",
+      "building",
+      "component-map",
+      "componentization",
+      "componentize",
+      "components",
+      "design",
+      "design-to-email-componentization",
+      "email",
+      "email-component-contract",
+      "existing",
+      "figma",
+      "frame",
+      "import",
+      "layout",
+      "mjml/html",
+      "modules",
+      "move",
+      "pdf",
+      "reference",
+      "request",
+      "reusable",
+      "source",
+      "trigger",
+      "turn",
+      "visual"
+    ]
+  },
+  {
     "name": "discovery-sprint",
     "title": "Discovery Sprint Protocol",
     "category": "strategy-planning",
@@ -878,6 +1242,7 @@
       "why aren't users doing x?",
       "what should the next feature be?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [],
     "artifact_types": [
@@ -961,6 +1326,267 @@
     ]
   },
   {
+    "name": "email-design-ingestion",
+    "title": "Email Design Ingestion",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to ingest a Figma email design, PDF reference, or other visual email source before rebuilding it in code. Trigger on \"import this design\", \"use this Figma file\", \"read this PDF email\", \"ingest this email layout\", or any request to start from a visual source instead of a written brief.",
+    "trigger_phrases": [
+      "import this design",
+      "use this figma file",
+      "read this pdf email",
+      "ingest this email layout"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "design_source"
+    ],
+    "adjacent_skills": [
+      "design-to-email-componentization",
+      "email-production-system",
+      "template-library-management"
+    ],
+    "artifact_types": [
+      "design-import-record",
+      "source-artifact-set"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "design-import-record"
+    ],
+    "validator_rules": [
+      {
+        "label": "Source type",
+        "type": "regex",
+        "value": "(figma|pdf|source)",
+        "flags": "i"
+      },
+      {
+        "label": "Confidence",
+        "type": "regex",
+        "value": "(confidence|reference|warning)",
+        "flags": "i"
+      },
+      {
+        "label": "Artifacts",
+        "type": "regex",
+        "value": "(artifact|import|record)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "brief",
+      "code",
+      "design",
+      "design-import-record",
+      "email",
+      "email-design-ingestion",
+      "figma",
+      "file",
+      "import",
+      "ingest",
+      "ingestion",
+      "instead",
+      "layout",
+      "other",
+      "pdf",
+      "read",
+      "rebuilding",
+      "reference",
+      "request",
+      "source",
+      "source-artifact-set",
+      "start",
+      "trigger",
+      "visual",
+      "written"
+    ]
+  },
+  {
+    "name": "email-production-system",
+    "title": "Email Production System",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to turn a lifecycle email idea into a production-ready asset — HTML, MJML, module structure, plain-text fallback, responsive email layout, or email-safe implementation guidance. Trigger on \"build this email\", \"generate the HTML\", \"write MJML\", \"create the email template\", \"turn this message brief into code\", or whenever strategy needs to become a real lifecycle email asset.",
+    "trigger_phrases": [
+      "build this email",
+      "generate the html",
+      "write mjml",
+      "create the email template",
+      "turn this message brief into code"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "channel"
+    ],
+    "adjacent_skills": [
+      "program-brief",
+      "copy-framework",
+      "graphic-design",
+      "email-render-qa"
+    ],
+    "artifact_types": [
+      "email-template-spec",
+      "mjml-template",
+      "compiled-html"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "email-template-spec"
+    ],
+    "validator_rules": [
+      {
+        "label": "MJML source",
+        "type": "regex",
+        "value": "(mjml|module|plain text)",
+        "flags": "i"
+      },
+      {
+        "label": "HTML output",
+        "type": "regex",
+        "value": "(html|compiled)",
+        "flags": "i"
+      },
+      {
+        "label": "CTA",
+        "type": "regex",
+        "value": "(cta|call to action)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "asset",
+      "become",
+      "brief",
+      "build",
+      "channel",
+      "code",
+      "compiled-html",
+      "create",
+      "email",
+      "email-production-system",
+      "email-safe",
+      "email-template-spec",
+      "fallback",
+      "generate",
+      "guidance",
+      "html",
+      "idea",
+      "implementation",
+      "layout",
+      "lifecycle",
+      "message",
+      "mjml",
+      "mjml-template",
+      "module",
+      "needs",
+      "plain-text",
+      "production",
+      "production-ready",
+      "real",
+      "responsive",
+      "strategy",
+      "structure",
+      "system",
+      "template",
+      "trigger",
+      "turn",
+      "write"
+    ]
+  },
+  {
+    "name": "email-render-qa",
+    "title": "Email Render QA",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to QA an email before send — HTML rendering, dark mode, personalisation fallbacks, links, accessibility, unsubscribe/legal blocks, or Braze-safe markup. Trigger on \"QA this email\", \"check the HTML\", \"will this render safely?\", \"validate the Liquid\", \"review for dark mode\", or any request for lifecycle email validation before build handoff or launch.",
+    "trigger_phrases": [
+      "qa this email",
+      "check the html",
+      "will this render safely?",
+      "validate the liquid",
+      "review for dark mode"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "channel"
+    ],
+    "adjacent_skills": [
+      "email-production-system",
+      "pre-launch-review",
+      "deliverability-management"
+    ],
+    "artifact_types": [
+      "email-qa-report",
+      "deliverability-checklist"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "email-qa-report"
+    ],
+    "validator_rules": [
+      {
+        "label": "QA findings",
+        "type": "regex",
+        "value": "(qa|finding|issue|warning)",
+        "flags": "i"
+      },
+      {
+        "label": "Links",
+        "type": "regex",
+        "value": "(link|utm|unsubscribe)",
+        "flags": "i"
+      },
+      {
+        "label": "Fallbacks",
+        "type": "regex",
+        "value": "(fallback|default)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "accessibility",
+      "any",
+      "blocks",
+      "braze-safe",
+      "build",
+      "channel",
+      "check",
+      "dark",
+      "deliverability-checklist",
+      "email",
+      "email-qa-report",
+      "email-render-qa",
+      "fallbacks",
+      "handoff",
+      "html",
+      "launch",
+      "lifecycle",
+      "links",
+      "liquid",
+      "markup",
+      "mode",
+      "personalisation",
+      "render",
+      "rendering",
+      "request",
+      "review",
+      "safely",
+      "send",
+      "trigger",
+      "unsubscribe/legal",
+      "validate",
+      "validation"
+    ]
+  },
+  {
     "name": "experiment-design",
     "title": "Experiment Design Protocol",
     "category": "measurement-economics",
@@ -968,6 +1594,7 @@
     "trigger_phrases": [
       "how should we test this?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "lifecycle-reporting",
@@ -1064,6 +1691,7 @@
       "how should this dashboard look",
       "write a prompt for an image generator"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "channel"
     ],
@@ -1185,6 +1813,7 @@
       "build a lookalike audience from our best customers",
       "suppress existing customers from paid"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "attribution-audit",
@@ -1305,6 +1934,7 @@
       "why isn't this list updating?",
       "configure this property"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "platform"
     ],
@@ -1409,6 +2039,7 @@
       "why isn't this segment triggering?",
       "set up this event"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "platform"
     ],
@@ -1507,6 +2138,7 @@
       "what touchpoints do we have?",
       "what does the customer feel at each stage?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "crm-data-model",
@@ -1618,6 +2250,7 @@
       "is our crm setup right",
       "review our email program"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model"
     ],
@@ -1718,6 +2351,7 @@
       "how should we structure our lifecycle?",
       "what should our activation sequence look like?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model"
     ],
@@ -1828,6 +2462,7 @@
       "how do we report on crm performance?",
       "our reporting isn't telling us anything useful"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "experiment-design",
@@ -1922,6 +2557,7 @@
       "our integrations are broken",
       "we're evaluating [new tool]"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "strategic-stress-test",
@@ -2027,6 +2663,7 @@
       "how do we frequency cap across channels?",
       "users are getting the same message on every channel"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model",
       "channel"
@@ -2131,6 +2768,91 @@
     ]
   },
   {
+    "name": "notion-documentation-export",
+    "title": "Notion Documentation Export",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to create Notion-ready documentation for a lifecycle program — markdown bundles, program summaries, message plans, build checklists, preview manifests, or import-friendly handoff docs. Trigger on \"export this to Notion\", \"create the documentation bundle\", \"make this import-ready\", or whenever a lifecycle program needs clean documentation outside the build tool.",
+    "trigger_phrases": [
+      "export this to notion",
+      "create the documentation bundle",
+      "make this import-ready"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "implementation_target"
+    ],
+    "adjacent_skills": [
+      "program-brief",
+      "template-library-management",
+      "braze-build-packager"
+    ],
+    "artifact_types": [
+      "notion-export-bundle",
+      "documentation-pack"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "notion-export-bundle"
+    ],
+    "validator_rules": [
+      {
+        "label": "Index document",
+        "type": "regex",
+        "value": "(index|overview)",
+        "flags": "i"
+      },
+      {
+        "label": "Message plan",
+        "type": "regex",
+        "value": "(message plan)",
+        "flags": "i"
+      },
+      {
+        "label": "Artifact links",
+        "type": "regex",
+        "value": "(artifact|preview|diagram)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "build",
+      "bundle",
+      "bundles",
+      "checklists",
+      "clean",
+      "create",
+      "docs",
+      "documentation",
+      "documentation-pack",
+      "export",
+      "handoff",
+      "implementation",
+      "import-friendly",
+      "import-ready",
+      "lifecycle",
+      "make",
+      "manifests",
+      "markdown",
+      "message",
+      "needs",
+      "notion",
+      "notion-documentation-export",
+      "notion-export-bundle",
+      "notion-ready",
+      "outside",
+      "plans",
+      "preview",
+      "program",
+      "summaries",
+      "target",
+      "tool",
+      "trigger"
+    ]
+  },
+  {
     "name": "onboarding-design",
     "title": "Onboarding Design Protocol",
     "category": "lifecycle-design-execution",
@@ -2143,6 +2865,7 @@
       "how do we get users to the aha moment faster?",
       "our trial conversion is low"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model"
     ],
@@ -2259,6 +2982,7 @@
       "build this cohort",
       "configure this feature flag"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "platform"
     ],
@@ -2361,6 +3085,7 @@
       "check this before we send",
       "pre-launch checklist"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "channel"
     ],
@@ -2463,6 +3188,7 @@
       "write up the spec for this campaign",
       "i need an overview of this program"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "copy-framework",
@@ -2567,6 +3293,7 @@
       "we're starting x",
       "help me plan this"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [],
     "artifact_types": [
@@ -2661,6 +3388,7 @@
     "trigger_phrases": [
       "is this worth it?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model"
     ],
@@ -2772,6 +3500,7 @@
       "define our icp",
       "our targeting feels off"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "crm-data-model",
@@ -2871,6 +3600,7 @@
     "category": "lifecycle-design-execution",
     "description": "Use this skill whenever Orbit is asked about SMS strategy, SMS program design, SMS compliance, opt-in flow design, conversational SMS, or evaluating whether SMS belongs in a lifecycle program. Also trigger when an existing SMS program is generating high opt-out rates, when launching SMS in a new geography, or when the operator needs to design an SMS opt-in mechanism that meets legal requirements. SMS is the highest-engagement and highest-risk channel in the lifecycle stack — it requires its own protocol. Distinct from multichannel-orchestration (which handles how SMS sits within a channel mix) and copy-framework (which handles SMS copy constraints) — this skill covers SMS strategy, legal architecture, and program design end-to-end.",
     "trigger_phrases": [],
+    "exclusion_phrases": [],
     "disambiguators": [
       "geography",
       "channel"
@@ -2989,6 +3719,7 @@
       "find me customer insights for this copy",
       "what does our target audience talk about online?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [
       "copy-framework",
@@ -3090,6 +3821,7 @@
     "trigger_phrases": [
       "what do you think?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [],
     "artifact_types": [
@@ -3169,6 +3901,98 @@
     ]
   },
   {
+    "name": "template-library-management",
+    "title": "Template Library Management",
+    "category": "production-operations",
+    "description": "Use this skill whenever Orbit is asked to save, version, tag, favourite, deprecate, or reuse lifecycle email templates, modules, or program artifacts. Trigger on \"save this template\", \"add to the library\", \"version this module\", \"favourite this asset\", \"what can we reuse?\", or any request to turn outputs into a reusable production library.",
+    "trigger_phrases": [
+      "save this template",
+      "add to the library",
+      "version this module",
+      "favourite this asset",
+      "what can we reuse?"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [
+      "implementation_target"
+    ],
+    "adjacent_skills": [
+      "email-production-system",
+      "content-block-system",
+      "notion-documentation-export"
+    ],
+    "artifact_types": [
+      "library-entry",
+      "reuse-catalog"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "library-entry"
+    ],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "add",
+      "any",
+      "artifacts",
+      "asset",
+      "can",
+      "deprecate",
+      "email",
+      "favourite",
+      "implementation",
+      "library",
+      "library-entry",
+      "lifecycle",
+      "management",
+      "module",
+      "modules",
+      "outputs",
+      "production",
+      "program",
+      "request",
+      "reusable",
+      "reuse",
+      "reuse-catalog",
+      "save",
+      "tag",
+      "target",
+      "template",
+      "template-library-management",
+      "templates",
+      "trigger",
+      "turn",
+      "version"
+    ]
+  },
+  {
     "name": "winback-playbook",
     "title": "Win-Back Playbook",
     "category": "lifecycle-design-execution",
@@ -3180,6 +4004,7 @@
       "our win-back emails aren't working",
       "what should we do with users who haven't logged in for 60 days?"
     ],
+    "exclusion_phrases": [],
     "disambiguators": [
       "business_model"
     ],
@@ -3275,6 +4100,97 @@
       "winback-playbook",
       "winback-program",
       "working"
+    ]
+  },
+  {
+    "name": "smart-header-builder",
+    "title": "Smart Header Builder",
+    "category": "brand-creative",
+    "description": "Use this skill whenever a user asks Orbit to generate, create, build, or design a brand header, email header, email banner, or brand image. Trigger on asks like 'make me a header', 'generate a brand header', 'create an email banner', 'build a header for my welcome email', 'design a header for this campaign', or any request that will end with a call to orbit_brand_header. This skill wraps the full header generation flow — setup validation, intelligent brand example selection, spec building, rendering, and preview — so the user never needs to think about example paths or tool sequencing.",
+    "trigger_phrases": [
+      "make me a header",
+      "generate a brand header",
+      "create an email banner",
+      "build a header for my welcome email",
+      "design a header for this campaign",
+      "create a brand header",
+      "generate an email header",
+      "build a brand image",
+      "make an email header"
+    ],
+    "exclusion_phrases": [
+      "brand kit setup",
+      "brand guidelines",
+      "critique this header",
+      "review this design"
+    ],
+    "disambiguators": [
+      "generate",
+      "create",
+      "build",
+      "design",
+      "make"
+    ],
+    "adjacent_skills": [
+      "graphic-design",
+      "copy-framework",
+      "lifecycle-design"
+    ],
+    "artifact_types": [
+      "brand-header",
+      "email-header",
+      "brand-image"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "setup validation",
+        "type": "regex",
+        "value": "(orbit_check_setup|setup|brand.?kit)",
+        "flags": "i"
+      },
+      {
+        "label": "example selection",
+        "type": "regex",
+        "value": "(selected.*example|example.*select|brand.?example)",
+        "flags": "i"
+      },
+      {
+        "label": "header spec or render",
+        "type": "regex",
+        "value": "(orbit_brand_header|brand.?header|render|spec)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "banner",
+      "brand-creative",
+      "brand-example",
+      "brand-header",
+      "brand-image",
+      "build",
+      "campaign",
+      "canvas",
+      "create",
+      "design",
+      "email-banner",
+      "email-header",
+      "example-selection",
+      "generate",
+      "header",
+      "image",
+      "lifecycle",
+      "make",
+      "render",
+      "smart-header-builder"
     ]
   }
 ]

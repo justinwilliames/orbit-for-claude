@@ -1,8 +1,11 @@
 .DS_Store
 skills/.DS_Store
-orbit-lifecycle-os-chatgpt.md
+# Platform-specific instruction files not needed in the bundle (file deleted — entry retained for safety)
+docs/other-platforms/
 npm-debug.log*
+# Local dev outputs — never ship
 outputs/
+.mcpb-build/
 *.mcpb
 node_modules/@anthropic-ai/mcpb/
 node_modules/**/.github/

@@ -31,6 +31,42 @@ export function writeText(filePath, text) {
   return filePath;
 }
 
+export function readText(filePath) {
+  return fs.readFileSync(filePath, "utf8");
+}
+
+export function maybeReadTextFile(value) {
+  if (typeof value !== "string") {
+    return value ?? null;
+  }
+
+  if (fileExists(value)) {
+    return readText(value);
+  }
+
+  return value;
+}
+
+export function tryReadText(filePath) {
+  if (!fileExists(filePath)) {
+    return null;
+  }
+
+  try {
+    return readText(filePath);
+  } catch {
+    return null;
+  }
+}
+
+export function safeParseJson(text, fallback = null) {
+  try {
+    return JSON.parse(String(text ?? ""));
+  } catch {
+    return fallback;
+  }
+}
+
 export function fileExists(filePath) {
   try {
     fs.accessSync(filePath, fs.constants.R_OK);
@@ -68,6 +104,14 @@ export function inferMimeType(filePath) {
       return "image/gif";
     case ".svg":
       return "image/svg+xml";
+    case ".ttf":
+      return "font/ttf";
+    case ".otf":
+      return "font/otf";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
     default:
       return "application/octet-stream";
   }
@@ -113,6 +157,15 @@ export function wrapText(text, maxChars) {
   }
 
   return lines;
+}
+
+export function truncateText(text, maxChars = 400) {
+  const normalized = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trim()}...`;
 }
 
 export function escapeXml(value) {

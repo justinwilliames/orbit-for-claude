@@ -186,6 +186,7 @@ function buildSkillRecord(filePath, manifest) {
     description: manifest.description ?? record.data.description ?? "",
     category: manifest.category,
     triggerPhrases: manifest.trigger_phrases ?? [],
+    exclusionPhrases: manifest.exclusion_phrases ?? [],
     disambiguators: manifest.disambiguators ?? [],
     adjacentSkills: manifest.adjacent_skills ?? [],
     artifactTypes: manifest.artifact_types ?? [],

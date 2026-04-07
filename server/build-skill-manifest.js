@@ -93,6 +93,17 @@ const CATEGORY_GROUPS = {
     "iterable-documentation-expert",
     "hubspot-documentation-expert",
     "posthog-documentation-expert"
+  ],
+  "production-operations": [
+    "email-production-system",
+    "email-render-qa",
+    "content-block-system",
+    "braze-build-packager",
+    "template-library-management",
+    "notion-documentation-export",
+    "email-design-ingestion",
+    "design-to-email-componentization",
+    "braze-template-sync"
   ]
 };
 
@@ -119,6 +130,55 @@ const ADJACENCY_MAP = {
   "copy-framework": ["graphic-design", "pre-launch-review"],
   "graphic-design": ["copy-framework", "pre-launch-review"],
   "ai-personalization": ["crm-data-model", "segmentation-strategy", "experiment-design"]
+  ,
+  "email-production-system": [
+    "program-brief",
+    "copy-framework",
+    "graphic-design",
+    "email-render-qa"
+  ],
+  "email-render-qa": [
+    "email-production-system",
+    "pre-launch-review",
+    "deliverability-management"
+  ],
+  "content-block-system": [
+    "email-production-system",
+    "braze-build-packager",
+    "template-library-management"
+  ],
+  "braze-build-packager": [
+    "braze-documentation-expert",
+    "content-block-system",
+    "email-render-qa"
+  ],
+  "template-library-management": [
+    "email-production-system",
+    "content-block-system",
+    "notion-documentation-export"
+  ],
+  "notion-documentation-export": [
+    "program-brief",
+    "template-library-management",
+    "braze-build-packager"
+  ],
+  "email-design-ingestion": [
+    "design-to-email-componentization",
+    "email-production-system",
+    "template-library-management"
+  ],
+  "design-to-email-componentization": [
+    "email-design-ingestion",
+    "content-block-system",
+    "email-production-system",
+    "template-library-management"
+  ],
+  "braze-template-sync": [
+    "braze-documentation-expert",
+    "content-block-system",
+    "braze-build-packager",
+    "template-library-management"
+  ]
 };
 
 const DISAMBIGUATOR_GROUPS = {
@@ -143,7 +203,20 @@ const DISAMBIGUATOR_GROUPS = {
     "multichannel-orchestration",
     "sms-playbook",
     "graphic-design",
-    "pre-launch-review"
+    "pre-launch-review",
+    "email-production-system",
+    "email-render-qa",
+    "content-block-system"
+  ]),
+  implementation_target: new Set([
+    "braze-build-packager",
+    "notion-documentation-export",
+    "template-library-management",
+    "braze-template-sync"
+  ]),
+  design_source: new Set([
+    "email-design-ingestion",
+    "design-to-email-componentization"
   ])
 };
 
@@ -163,7 +236,26 @@ const PLATFORM_SENSITIVITY = {
   "posthog-documentation-expert": {
     requires_confirmation: true,
     supported_platforms: ["posthog"]
+  },
+  "braze-build-packager": {
+    requires_confirmation: true,
+    supported_platforms: ["braze"]
+  },
+  "braze-template-sync": {
+    requires_confirmation: true,
+    supported_platforms: ["braze"]
   }
+};
+
+const EXCLUSION_PHRASES = {
+  "braze-build-packager": [
+    "should i use braze",
+    "how does braze work",
+    "braze vs",
+    "what is braze",
+    "strategy for braze",
+    "best practices for braze"
+  ]
 };
 
 const TEMPLATE_MAP = {
@@ -197,7 +289,16 @@ const TEMPLATE_MAP = {
   "braze-documentation-expert": ["implementation-checklist"],
   "iterable-documentation-expert": ["implementation-checklist"],
   "hubspot-documentation-expert": ["implementation-checklist"],
-  "posthog-documentation-expert": ["implementation-checklist"]
+  "posthog-documentation-expert": ["implementation-checklist"],
+  "email-production-system": ["email-template-spec"],
+  "email-render-qa": ["email-qa-report"],
+  "content-block-system": ["content-block-plan"],
+  "braze-build-packager": ["braze-build-pack"],
+  "template-library-management": ["library-entry"],
+  "notion-documentation-export": ["notion-export-bundle"],
+  "email-design-ingestion": ["design-import-record"],
+  "design-to-email-componentization": ["component-map"],
+  "braze-template-sync": ["braze-sync-record"]
 };
 
 const ARTIFACT_TYPES = {
@@ -231,7 +332,16 @@ const ARTIFACT_TYPES = {
   "braze-documentation-expert": ["implementation-guide", "platform-runbook"],
   "iterable-documentation-expert": ["implementation-guide", "platform-runbook"],
   "hubspot-documentation-expert": ["implementation-guide", "platform-runbook"],
-  "posthog-documentation-expert": ["implementation-guide", "platform-runbook"]
+  "posthog-documentation-expert": ["implementation-guide", "platform-runbook"],
+  "email-production-system": ["email-template-spec", "mjml-template", "compiled-html"],
+  "email-render-qa": ["email-qa-report", "deliverability-checklist"],
+  "content-block-system": ["content-block-library", "module-plan"],
+  "braze-build-packager": ["braze-build-pack", "canvas-build-sheet"],
+  "template-library-management": ["library-entry", "reuse-catalog"],
+  "notion-documentation-export": ["notion-export-bundle", "documentation-pack"],
+  "email-design-ingestion": ["design-import-record", "source-artifact-set"],
+  "design-to-email-componentization": ["component-map", "email-component-contract"],
+  "braze-template-sync": ["braze-sync-record", "publish-log"]
 };
 
 const DEFAULT_VALIDATOR_RULES = [
@@ -280,6 +390,41 @@ const SPECIAL_VALIDATOR_RULES = {
     { label: "Gate 3", type: "includes", value: "Gate 3" },
     { label: "Gate 4", type: "includes", value: "Gate 4" },
     { label: "Gate 5", type: "includes", value: "Gate 5" }
+  ],
+  "email-production-system": [
+    { label: "MJML source", type: "regex", value: "(mjml|module|plain text)", flags: "i" },
+    { label: "HTML output", type: "regex", value: "(html|compiled)", flags: "i" },
+    { label: "CTA", type: "regex", value: "(cta|call to action)", flags: "i" }
+  ],
+  "email-render-qa": [
+    { label: "QA findings", type: "regex", value: "(qa|finding|issue|warning)", flags: "i" },
+    { label: "Links", type: "regex", value: "(link|utm|unsubscribe)", flags: "i" },
+    { label: "Fallbacks", type: "regex", value: "(fallback|default)", flags: "i" }
+  ],
+  "braze-build-packager": [
+    { label: "Canvas build sheet", type: "regex", value: "(canvas|build sheet)", flags: "i" },
+    { label: "Content blocks", type: "regex", value: "(content block)", flags: "i" },
+    { label: "Liquid", type: "regex", value: "(liquid|personalization)", flags: "i" }
+  ],
+  "notion-documentation-export": [
+    { label: "Index document", type: "regex", value: "(index|overview)", flags: "i" },
+    { label: "Message plan", type: "regex", value: "(message plan)", flags: "i" },
+    { label: "Artifact links", type: "regex", value: "(artifact|preview|diagram)", flags: "i" }
+  ],
+  "email-design-ingestion": [
+    { label: "Source type", type: "regex", value: "(figma|pdf|source)", flags: "i" },
+    { label: "Confidence", type: "regex", value: "(confidence|reference|warning)", flags: "i" },
+    { label: "Artifacts", type: "regex", value: "(artifact|import|record)", flags: "i" }
+  ],
+  "design-to-email-componentization": [
+    { label: "Component map", type: "regex", value: "(component map|component|canonical)", flags: "i" },
+    { label: "Reuse", type: "regex", value: "(reuse|library|contract)", flags: "i" },
+    { label: "Approval", type: "regex", value: "(approval|approve)", flags: "i" }
+  ],
+  "braze-template-sync": [
+    { label: "Braze", type: "regex", value: "(braze|content block|template)", flags: "i" },
+    { label: "Sync result", type: "regex", value: "(sync|publish|id)", flags: "i" },
+    { label: "Status", type: "regex", value: "(status|warning|failure)", flags: "i" }
   ]
 };
 
@@ -321,6 +466,7 @@ const entries = skillFiles.map((fileName) => {
     category: SKILL_TO_CATEGORY.get(name) ?? "other",
     description,
     trigger_phrases: triggerPhrases,
+    exclusion_phrases: EXCLUSION_PHRASES[name] ?? [],
     disambiguators,
     adjacent_skills: ADJACENCY_MAP[name] ?? [],
     artifact_types: artifactTypes,

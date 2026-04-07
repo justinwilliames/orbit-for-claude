@@ -22,10 +22,13 @@ A structured protocol for writing and evaluating customer-facing lifecycle copy 
 When this skill is active, apply this operating sequence before diving into the domain content:
 
 1. Classify the task: strategy, audit, build, review, troubleshooting, or documentation.
-2. Confirm the variables that materially change the answer: platform/tool, business model, audience, channel, geography/compliance, and current state.
-3. If a critical variable is missing, ask only if the answer would materially change; otherwise proceed with explicit assumptions.
-4. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
-5. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
+2. Before writing net-new copy, confirm whether brand guidelines and Tone Of Voice are configured. If they are missing, first ask whether the user wants to set them up. If the user declines, proceed with explicit brand assumptions and remember that choice rather than inventing a fake approved brand voice.
+3. Confirm the variables that materially change the answer: platform/tool, business model, audience, channel, geography/compliance, and current state.
+4. Before taking action, stop and decide whether 1-5 direct user questions would materially improve the copy. If yes, ask them first and wait.
+5. If a critical variable is missing, ask before acting unless the user explicitly wants an assumption-led draft.
+6. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
+7. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
+8. When Orbit is missing brand voice setup, make the next Orbit action explicit so the user knows whether to start guidelines intake or proceed with assumptions.
 
 ## Response Contract
 
@@ -41,6 +44,7 @@ Default response shape for this skill:
 - Mark estimates as estimates.
 - If laws, vendor features, deliverability rules, or platform UIs may have changed, flag that they should be verified before execution.
 - If the task clearly crosses into another Orbit protocol, name the adjacent protocol and use it deliberately instead of stretching this skill past its boundary.
+- Do not invent a brand voice from prior knowledge or category stereotypes. If brand guidelines or Tone Of Voice are missing, ask whether to collect them first; if the user declines, proceed with explicit assumptions and label them as assumptions.
 
 ## Core Principles
 
