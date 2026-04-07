@@ -1751,10 +1751,10 @@ function registerTools() {
       title: "Brand Header",
       description:
         "Build, update, or render a brand-safe email header. Requires a Gemini API key (ORBIT_GOOGLE_AI_API_KEY). " +
-        "Runs LOCALLY — reads logos, calls Gemini for the art layer, composites the logo, writes files to ~/Downloads. Never generate SVG/HTML yourself. " +
+        "Runs LOCALLY — sends logo + brand examples to Gemini, writes PNG to ~/Downloads. Never generate images yourself. " +
         "action='build': create a new spec (requires: goal). If status='needs_inputs', ask the user for the missing items. " +
         "action='update': revise an existing spec (requires: spec_json). " +
-        "action='render': render a spec and return an inline image preview. " +
+        "action='render': render a spec via Gemini and return an inline image preview. " +
         "action='save': copy files to Orbit outputs (only when the user explicitly asks). " +
         "After render: show the inline image, then ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.",
       inputSchema: {
@@ -1765,24 +1765,16 @@ function registerTools() {
         logo_paths: z.array(z.string()).optional(),
         brand_example_paths: z.array(z.string()).optional(),
         visual_ref_paths: z.array(z.string()).optional(),
-        layout_family: z.enum(["left-anchor", "center-lock", "split-stage", "framed-narrative"]).optional(),
         canvas_preset: z.enum(["email-header", "email-header-wide", "email-square"]).optional(),
         copy: z.object({
           headline: z.string().optional(),
-          support_line: z.string().optional(),
-          text_in_image: z.boolean().optional(),
-          text_rendering: z.enum(["composited", "generative"]).optional().describe("How headline/support_line text is rendered. 'composited' (default): text is overlaid locally via SVG. 'generative': Gemini renders the text directly into the generated image, matching brand typography."),
-          font_family: z.string().optional()
+          support_line: z.string().optional()
         }).optional(),
         company_name: z.string().optional(),
         spec_json: z.string().optional(),
         revision_request: z.string().optional(),
-        logo_scale: z.number().min(0.7).max(1.25).optional(),
-        art_intensity: z.number().min(0.45).max(1).optional(),
-        logo_align: z.enum(["start", "center", "end"]).optional(),
         output_dir: z.string().optional(),
-        preview_dir: z.string().optional().describe("Source directory for action=save. Defaults to ~/Downloads."),
-        formats: z.array(z.enum(["svg", "png", "pdf"])).optional()
+        preview_dir: z.string().optional().describe("Source directory for action=save. Defaults to ~/Downloads.")
       }
     },
     async ({
@@ -1793,24 +1785,19 @@ function registerTools() {
       logo_paths: logoPaths,
       brand_example_paths: brandExamplePaths,
       visual_ref_paths: visualRefPaths,
-      layout_family: layoutFamily,
       canvas_preset: canvasPreset,
       copy,
       company_name: companyName,
       spec_json: specJson,
       revision_request: revisionRequest,
-      logo_scale: logoScale,
-      art_intensity: artIntensity,
-      logo_align: logoAlign,
       output_dir: outputDir,
-      preview_dir: previewDir,
-      formats
+      preview_dir: previewDir
     }) => {
       if (action === "save") {
         const sourceDir = previewDir ?? path.join(os.homedir(), "Downloads");
         if (!fs.existsSync(sourceDir)) return makeJsonToolResponse({ status: "error", code: "not_found", message: `Source directory not found: ${sourceDir}` });
         const targetDir = ensureDir(outputDir ?? resolveOutputDir(runtimeConfig, "brand-headers"));
-        const files = fs.readdirSync(sourceDir).filter((f) => !f.startsWith(".") && /\.(png|svg|pdf|json)$/.test(f));
+        const files = fs.readdirSync(sourceDir).filter((f) => !f.startsWith(".") && /\.(png|json)$/.test(f));
         const saved = [];
         for (const file of files) {
           const src = path.join(sourceDir, file);
@@ -1837,7 +1824,6 @@ function registerTools() {
           brandExamplePaths,
           visualRefPaths,
           copy,
-          layoutFamily,
           canvasPreset,
           companyName
         }));
@@ -1853,11 +1839,7 @@ function registerTools() {
           goal,
           platform,
           brandKitDir,
-          layoutFamily,
           canvasPreset,
-          logoScale,
-          artIntensity,
-          logoAlign,
           companyName,
           copy
         }));
@@ -1879,13 +1861,11 @@ function registerTools() {
       ensureDir(downloadsDir);
       try {
         const result = await renderBrandHeader({
-          rootDir: ROOT_DIR,
           config: runtimeConfig,
           spec,
-          outputDir: downloadsDir,
-          formats
+          outputDir: downloadsDir
         });
-        const pngPath = result.variation?.files?.png;
+        const pngPath = result.output_file;
         if (!pngPath || !fs.existsSync(pngPath) || fs.statSync(pngPath).size < 100) {
           return makeJsonToolResponse({
             status: "error",
@@ -1906,7 +1886,7 @@ function registerTools() {
                 action: "render",
                 output_dir: downloadsDir,
                 output_file: pngPath,
-                file_size_bytes: result.variation.file_sizes_bytes
+                file_size_bytes: result.file_size_bytes
               }, null, 2)
             },
             {

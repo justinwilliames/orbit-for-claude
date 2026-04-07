@@ -578,8 +578,7 @@ const brandHeader = buildBrandHeaderSpec({
   platform: "braze",
   copy: {
     headline: "Join the onboarding workshop",
-    support_line: "Short live session for new trial teams",
-    text_in_image: true
+    support_line: "Short live session for new trial teams"
   }
 });
 const updatedHeader = updateBrandHeaderSpec({
@@ -588,36 +587,25 @@ const updatedHeader = updateBrandHeaderSpec({
   revisionRequest: fixture.brand_revision_case.revision_request
 });
 results.push({
+  id: "brand-header:build",
+  passed:
+    brandHeader.status === "ok" &&
+    brandHeader.spec.type === "brand_header" &&
+    brandHeader.spec.version === "2.0.0" &&
+    Boolean(brandHeader.spec.prompt?.text) &&
+    Boolean(brandHeader.spec.canvas) &&
+    Boolean(brandHeader.spec.export_plan),
+  expected: "ok status, v2 spec with prompt, canvas, and export_plan",
+  actual: `${brandHeader.status} / v${brandHeader.spec?.version} / prompt=${Boolean(brandHeader.spec?.prompt?.text)} / canvas=${Boolean(brandHeader.spec?.canvas)}`
+});
+results.push({
   id: "brand-header:update",
   passed:
     updatedHeader.status === "ok" &&
-    updatedHeader.spec.layout.family === fixture.brand_revision_case.expected_layout &&
-    updatedHeader.spec.composition.art_intensity ===
-      fixture.brand_revision_case.expected_art_intensity,
-  expected: `${fixture.brand_revision_case.expected_layout} / ${fixture.brand_revision_case.expected_art_intensity}`,
-  actual: `${updatedHeader.spec.layout.family} / ${updatedHeader.spec.composition.art_intensity}`
-});
-results.push({
-  id: "brand-header:guidelines-applied",
-  passed:
-    Boolean(brandHeader.spec.brand_guidelines_path) &&
-    brandHeader.spec.prompt.text.includes("Reflect this tone of voice") &&
-    brandHeader.spec.warnings.some((warning) =>
-      warning.includes("advises against text in image")
-    ) &&
-    brandHeader.render_readiness === "needs_google_ai_api_key" &&
-    (brandHeader.suggested_next_steps ?? []).some((step) =>
-      step.includes("Google AI API Key")
-    ),
-  expected: "guidelines path, prompt tone, and text-in-image warning",
-  actual: JSON.stringify({
-    guidelinesPath: brandHeader.spec.brand_guidelines_path,
-    promptIncludesTone: brandHeader.spec.prompt.text.includes("Reflect this tone of voice"),
-    warnsOnTextInImage: brandHeader.spec.warnings.some((warning) =>
-      warning.includes("advises against text in image")
-    ),
-    renderReadiness: brandHeader.render_readiness
-  })
+    updatedHeader.spec.type === "brand_header" &&
+    updatedHeader.spec.revision_history.length > 0,
+  expected: "ok status with revision history",
+  actual: `${updatedHeader.status} / revisions=${updatedHeader.spec?.revision_history?.length}`
 });
 
 const workspaceBuildNeedsDiscovery = buildProgramWorkspace({

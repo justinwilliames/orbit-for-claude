@@ -306,23 +306,20 @@ const brandBuild = buildBrandHeaderSpec({
   platform: "braze",
   copy: {
     headline: "Join the onboarding workshop",
-    support_line: "Short live session for new trial teams",
-    text_in_image: true
+    support_line: "Short live session for new trial teams"
   }
 });
 const brandUpdate = updateBrandHeaderSpec({
   config,
   spec: brandBuild.spec,
-  revisionRequest: "switch to center-lock and reduce art intensity"
+  revisionRequest: "make it more dramatic"
 });
 const brandRenderOne = await renderBrandHeader({
-  rootDir: ROOT_DIR,
   config,
   spec: brandUpdate.spec,
   outputDir: path.join(outputDir, "headers-one")
 });
 const brandRenderTwo = await renderBrandHeader({
-  rootDir: ROOT_DIR,
   config,
   spec: brandUpdate.spec,
   outputDir: path.join(outputDir, "headers-two")
@@ -671,7 +668,6 @@ try {
   // Temporarily disable mock to verify real API key gate
   delete process.env.ORBIT_TEST_MOCK_IMAGES;
   await renderBrandHeader({
-    rootDir: ROOT_DIR,
     config: { ...config, googleAiApiKey: null },
     spec: brandUpdate.spec,
     outputDir: path.join(outputDir, "headers-error")
@@ -685,9 +681,9 @@ try {
 const diagramSvgStable =
   fs.readFileSync(diagramRenderOne.files.svg, "utf8") ===
   fs.readFileSync(diagramRenderTwo.files.svg, "utf8");
-const brandSvgStable =
-  fs.readFileSync(brandRenderOne.variation.files.svg, "utf8") ===
-  fs.readFileSync(brandRenderTwo.variation.files.svg, "utf8");
+const brandPngStable =
+  fs.statSync(brandRenderOne.output_file).size ===
+  fs.statSync(brandRenderTwo.output_file).size;
 
 console.log(
   JSON.stringify(
@@ -773,30 +769,13 @@ console.log(
       brandHeader: {
         status: brandBuild.status,
         updatedStatus: brandUpdate.status,
-        guidelinesPath: brandBuild.spec.brand_guidelines_path,
-        renderReadiness: brandBuild.render_readiness,
+        version: brandBuild.spec.version,
         warningCount: brandBuild.spec.warnings.length,
-        warnsOnTextInImage: brandBuild.spec.warnings.some((warning) =>
-          warning.includes("advises against text in image")
-        ),
-        suggestsGoogleKey: (brandBuild.suggested_next_steps ?? []).some((step) =>
-          step.includes("Google AI API Key")
-        ),
-        promptIncludesTone: brandBuild.spec.prompt.text.includes(
-          "Reflect this tone of voice"
-        ),
-        promptIncludesHeaderRules: brandBuild.spec.prompt.text.includes(
-          "Apply these email header rules"
-        ),
-        layoutFamily: brandUpdate.spec.layout.family,
-        artIntensity: brandUpdate.spec.composition.art_intensity,
-        svgExists: fs.existsSync(brandRenderOne.variation.files.svg),
-        pngExists: fs.existsSync(brandRenderOne.variation.files.png),
-        pdfExists: fs.existsSync(brandRenderOne.variation.files.pdf),
-        noTextPngExists: fs.existsSync(
-          brandRenderOne.variation.files.no_text.png
-        ),
-        stableSvg: brandSvgStable,
+        hasPrompt: Boolean(brandBuild.spec.prompt?.text),
+        hasCanvas: Boolean(brandBuild.spec.canvas),
+        hasExportPlan: Boolean(brandBuild.spec.export_plan),
+        pngExists: fs.existsSync(brandRenderOne.output_file),
+        stablePng: brandPngStable,
         configurationErrorMessage
       },
       production: {

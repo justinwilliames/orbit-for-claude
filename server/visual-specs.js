@@ -258,72 +258,48 @@ export const BRAND_HEADER_SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   title: "Orbit Brand Header Spec",
   type: "object",
-  required: ["version", "type", "platform", "goal", "layout", "prompt"],
+  required: ["version", "type", "platform", "goal", "canvas", "prompt"],
   properties: {
     version: { type: "string" },
     type: { const: "brand_header" },
-    workflow_state: { type: "string" },
     goal: { type: "string" },
     platform: { enum: PLATFORM_OPTIONS },
-    company_name: { type: "string" },
     brand_name: { type: "string" },
-    layout: {
+    canvas: {
       type: "object",
-      required: ["family", "canvas", "zones"],
+      required: ["width", "height"],
       properties: {
-        family: { enum: BRAND_LAYOUT_FAMILIES },
-        canvas: {
-          type: "object",
-          required: ["width", "height"],
-          properties: {
-            width: { type: "number" },
-            height: { type: "number" },
-            preset: { type: "string" }
-          }
-        },
-        zones: { type: "object" }
+        width: { type: "number" },
+        height: { type: "number" },
+        preset: { type: "string" }
       }
     },
-    source_inputs: { type: "object" },
-    composition: { type: "object" },
-    visual_system: { type: "object" },
-    validation: { type: "object" },
-    revision_history: {
-      type: "array",
-      items: { type: "string" }
+    copy: {
+      type: "object",
+      properties: {
+        headline: { type: "string" },
+        support_line: { type: "string" }
+      }
     },
     references: {
       type: "object",
       properties: {
-        official_logos: {
-          type: "array",
-          items: { type: "object" }
-        },
-        brand_examples: {
-          type: "array",
-          items: { type: "object" }
-        },
-        visual_refs: {
-          type: "array",
-          items: { type: "object" }
-        }
+        official_logos: { type: "array", items: { type: "object" } },
+        brand_examples: { type: "array", items: { type: "object" } },
+        visual_refs: { type: "array", items: { type: "object" } }
       }
     },
     prompt: {
       type: "object",
-      required: ["provider", "model", "text"],
+      required: ["provider", "text"],
       properties: {
         provider: { type: "string" },
-        model: { type: "string" },
         text: { type: "string" }
       }
     },
-    provider_payload: { type: "object" },
     export_plan: { type: "object" },
-    warnings: {
-      type: "array",
-      items: { type: "string" }
-    }
+    revision_history: { type: "array", items: { type: "string" } },
+    warnings: { type: "array", items: { type: "string" } }
   }
 };
 

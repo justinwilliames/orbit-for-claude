@@ -96,7 +96,7 @@ Call `orbit_brand_header` with:
 - `goal`: the user's stated goal or your synthesised version of it
 - `brand_example_paths`: the array of selected example paths from Step 3
 - `brand_kit_dir`: from Step 1
-- Any other parameters the user specified (platform, layout_family, canvas_preset, copy, company_name)
+- Any other parameters the user specified (platform, canvas_preset, copy, company_name)
 
 If the response status is `needs_inputs`, stop and ask the user for the missing items listed. Do not invent defaults.
 
