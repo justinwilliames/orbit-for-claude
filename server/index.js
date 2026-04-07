@@ -1751,14 +1751,15 @@ function registerTools() {
       title: "Brand Header",
       description:
         "Build, update, or render a brand-safe email header. " +
-        "IMPORTANT: The Orbit MCP server runs LOCALLY and has full filesystem access — it reads logos, calls Gemini, and writes files directly. Never tell the user to 'run it locally' or open a different session. Never generate SVG/HTML yourself — always use this tool. " +
-        "ANTI-HALLUCINATION RULES: (1) NEVER describe, narrate, or summarise rendered output — not before, not after. The inline image speaks for itself. Do NOT tell the user what the image 'looks like', what layout it uses, what colours appear, or what elements are visible. Just show it. " +
-        "(2) ALWAYS use the exact brand name from the brand kit or spec — never abbreviate, paraphrase, or invent nicknames. " +
-        "(3) After render succeeds, files are already saved to ~/Downloads. Do NOT offer to 'save' them, do NOT mention an Orbit outputs folder, do NOT ask 'ready to save?' or 'shall I save it?'. The render IS the final deliverable. Simply ask if the user wants any changes. " +
+        "The Orbit MCP server runs LOCALLY with full filesystem access — it reads logos, calls Gemini, and writes files directly. Never tell the user to 'run it locally'. Never generate SVG/HTML yourself — always use this tool. " +
         "action='build': create a new spec from a goal and brand inputs (requires: goal). If status='needs_inputs', stop and ask the user for the missing items — do not invent defaults. " +
         "action='update': apply deterministic revisions to an existing spec (requires: spec_json). " +
-        "action='render': render a spec, save files directly to ~/Downloads, and return an inline image preview. Do NOT narrate the image. " +
-        "action='save': copy rendered files to the Orbit outputs directory. Only use if the user explicitly asks for this — never offer it proactively.",
+        "action='render': render a spec to ~/Downloads and return an inline image preview. " +
+        "action='save': copy files to Orbit outputs directory (ONLY when user explicitly requests it). " +
+        "POST-RENDER RULES (action='render'): " +
+        "(1) NEVER describe, narrate, or summarise the rendered image. Do NOT mention layout, colours, panels, art style, or composition. The user can see the image — let it speak for itself. " +
+        "(2) NEVER offer to save files. NEVER mention an outputs folder. NEVER say 'say save it'. Files are already in ~/Downloads — that IS the deliverable. " +
+        "(3) After showing the image, say ONE sentence asking if they want changes. Nothing more.",
       inputSchema: {
         action: z.enum(["build", "update", "render", "save"]),
         goal: z.string().optional(),
@@ -1898,56 +1899,54 @@ function registerTools() {
           variationCount,
           formats
         });
-        // Build MCP response with inline image previews
-        const contentBlocks = [];
+        // Collect rendered PNGs
         const previewPngs = [];
         for (const variation of result.variations) {
           const pngPath = variation.files?.png;
           if (pngPath && fs.existsSync(pngPath)) {
-            previewPngs.push(pngPath);
-            const pngData = fs.readFileSync(pngPath).toString("base64");
-            contentBlocks.push({
-              type: "image",
-              data: pngData,
-              mimeType: "image/png"
-            });
+            const stat = fs.statSync(pngPath);
+            if (stat.size > 100) {
+              previewPngs.push(pngPath);
+            }
           }
         }
-        // Verify at least one PNG was actually written with real data
         if (previewPngs.length === 0) {
           return makeJsonToolResponse({
             status: "error",
             code: "no_output",
             message: "Render completed but no PNG files were produced. The image generation may have returned empty data.",
-            guidance: "STOP. Tell the user the render produced no output files. Do NOT attempt to generate images yourself. Do NOT describe or narrate what the image 'would have' looked like. Report this error exactly as-is."
+            guidance: "STOP. Tell the user the render failed — no image was produced. Do NOT generate images yourself."
           });
         }
-        // Open only the first preview PNG in the default macOS viewer
-        if (process.platform === "darwin" && previewPngs.length > 0) {
+        // Open the preview PNG in macOS viewer
+        if (process.platform === "darwin") {
           execFile("open", [previewPngs[0]], (err) => {
-            if (err) { /* best-effort — don't block the response */ }
+            if (err) { /* best-effort */ }
           });
         }
+        // IMPORTANT: text guidance block FIRST so Claude reads instructions before seeing image data
+        const contentBlocks = [
+          {
+            type: "text",
+            text: JSON.stringify({
+              status: "ok",
+              action: "render",
+              output_dir: downloadsDir,
+              output_files: previewPngs,
+              file_sizes_bytes: result.variations.map((v) => v.file_sizes_bytes),
+              assistant_instruction: "MANDATORY RESPONSE RULES — VIOLATIONS WILL PRODUCE A BAD USER EXPERIENCE: " +
+                "(1) Show the inline image below and NOTHING ELSE about it. NEVER describe, narrate, or summarise what the image looks like. No mentioning layout, colours, panels, or composition. The user has eyes. " +
+                "(2) NEVER mention saving, downloading, or an outputs folder. Files are ALREADY in ~/Downloads. Do NOT offer to save, do NOT say 'say save it', do NOT mention action=save. " +
+                "(3) Your ENTIRE response after the image should be ONE sentence: ask if they want any changes. That's it."
+            }, null, 2)
+          }
+        ];
+        // Then add the inline image preview (single image only)
+        const pngData = fs.readFileSync(previewPngs[0]).toString("base64");
         contentBlocks.push({
-          type: "text",
-          text: JSON.stringify({
-            status: "ok",
-            action: "render",
-            output_dir: downloadsDir,
-            spec_path: result.spec_path,
-            variation_count: result.variations.length,
-            reference_images_loaded: result.reference_images_loaded,
-            reference_images_requested: result.reference_images_requested,
-            reference_errors: result.reference_errors,
-            output_files: previewPngs,
-            file_sizes_bytes: result.variations.map((v) => v.file_sizes_bytes),
-            guidance: "RENDER COMPLETE. Files saved to ~/Downloads. " +
-              "STRICT RULES FOR YOUR RESPONSE: " +
-              "(1) Do NOT describe, narrate, or summarise the image. Do NOT mention layout, colours, elements, or composition. The user can see the inline image. " +
-              "(2) Do NOT offer to save. Do NOT mention an outputs folder. Files are already in Downloads. " +
-              "(3) Simply confirm it's in Downloads and ask if they want any changes. Keep your response to 1-2 sentences max. " +
-              "(4) Use the exact brand_name from the spec — never abbreviate or paraphrase it."
-          }, null, 2)
+          type: "image",
+          data: pngData,
+          mimeType: "image/png"
         });
         return { content: contentBlocks };
       } catch (error) {

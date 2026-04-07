@@ -258,14 +258,10 @@ export function buildBrandHeaderSpec({
       brand_kit_dir: effectiveBrandKitDir
     },
     assistant_instruction: renderReady
-      ? "The spec is ready. Proceed to action='render' immediately. " +
-        "Do NOT ask for logos, examples, or any other inputs. " +
-        "CRITICAL: After render succeeds, the inline image IS the preview — let it render naturally. " +
-        "Do NOT describe, narrate, or summarise the rendered output. Do NOT tell the user what the image 'looks like'. " +
-        "Files are saved directly to ~/Downloads — do NOT mention saving, do NOT offer to save to Orbit outputs, do NOT ask 'ready to save?'. The render IS the final output. " +
-        "If render fails, report the error — do NOT fabricate a description. " +
-        "Always use the exact brand_name: '" + (profile?.brandName ?? companyName ?? config.companyName ?? "Brand") + "'."
-      : "The spec is ready but the Google AI API key is missing. Tell the user to add ORBIT_GOOGLE_AI_API_KEY in Orbit extension settings and restart Claude. Do NOT ask for logos or brand examples — they are already loaded from the brand kit.",
+      ? "Spec ready. Call action='render' now with this spec. Do NOT ask for more inputs. " +
+        "After render: show the inline image, then ask if user wants changes. That's your entire response. " +
+        "NEVER describe the image. NEVER offer to save. Files go to ~/Downloads automatically."
+      : "The spec is ready but the Google AI API key is missing. Tell the user to add ORBIT_GOOGLE_AI_API_KEY in Orbit extension settings and restart Claude.",
     suggested_orbit_tools: dedupeSuggestions([
       "orbit_render_brand_header",
       ...(guidelines?.guidelinesPath ? [] : ["orbit_start_brand_guidelines_intake"]),
