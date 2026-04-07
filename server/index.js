@@ -319,7 +319,7 @@ function registerResources() {
     {
       title: "Orbit Image Generation Privacy",
       description:
-        "What Orbit sends to Google for Nano Banana Pro rendering and what stays local.",
+        "What Orbit sends to Google for Gemini image generation and what stays local.",
       mimeType: "text/markdown"
     },
     async (uri) =>
@@ -1174,7 +1174,7 @@ function registerTools() {
     {
       title: "Check Orbit Setup",
       description:
-        "Run a healthcheck for Orbit config, brand-kit readiness, output paths, and Nano Banana Pro setup. Always call this before any brand kit or file operation. The response contains local_paths with the correct local filesystem paths to use — never substitute hardcoded, sandbox, or fabricated paths.",
+        "Run a healthcheck for Orbit config, brand-kit readiness, output paths, and Gemini image generation setup. Always call this before any brand kit or file operation. The response contains local_paths with the correct local filesystem paths to use — never substitute hardcoded, sandbox, or fabricated paths.",
       inputSchema: {
         requested_features: z
           .array(
@@ -1750,16 +1750,13 @@ function registerTools() {
     {
       title: "Brand Header",
       description:
-        "Build, update, or render a brand-safe email header. " +
-        "The Orbit MCP server runs LOCALLY with full filesystem access — it reads logos, calls Gemini, and writes files directly. Never tell the user to 'run it locally'. Never generate SVG/HTML yourself — always use this tool. " +
-        "action='build': create a new spec from a goal and brand inputs (requires: goal). If status='needs_inputs', stop and ask the user for the missing items — do not invent defaults. " +
-        "action='update': apply deterministic revisions to an existing spec (requires: spec_json). " +
-        "action='render': render a spec to ~/Downloads and return an inline image preview. " +
-        "action='save': copy files to Orbit outputs directory (ONLY when user explicitly requests it). " +
-        "POST-RENDER RULES (action='render'): " +
-        "(1) NEVER describe, narrate, or summarise the rendered image. Do NOT mention layout, colours, panels, art style, or composition. The user can see the image — let it speak for itself. " +
-        "(2) NEVER offer to save files. NEVER mention an outputs folder. NEVER say 'say save it'. Files are already in ~/Downloads — that IS the deliverable. " +
-        "(3) After showing the image, say ONE sentence asking if they want changes. Nothing more.",
+        "Build, update, or render a brand-safe email header. Requires a Gemini API key (ORBIT_GOOGLE_AI_API_KEY). " +
+        "Runs LOCALLY — reads logos, calls Gemini for the art layer, composites the logo, writes files to ~/Downloads. Never generate SVG/HTML yourself. " +
+        "action='build': create a new spec (requires: goal). If status='needs_inputs', ask the user for the missing items. " +
+        "action='update': revise an existing spec (requires: spec_json). " +
+        "action='render': render a spec and return an inline image preview. " +
+        "action='save': copy files to Orbit outputs (only when the user explicitly asks). " +
+        "After render: show the inline image, then ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.",
       inputSchema: {
         action: z.enum(["build", "update", "render", "save"]),
         goal: z.string().optional(),
@@ -1774,6 +1771,7 @@ function registerTools() {
           headline: z.string().optional(),
           support_line: z.string().optional(),
           text_in_image: z.boolean().optional(),
+          text_rendering: z.enum(["composited", "generative"]).optional().describe("How headline/support_line text is rendered. 'composited' (default): text is overlaid locally via SVG. 'generative': Gemini renders the text directly into the generated image, matching brand typography."),
           font_family: z.string().optional()
         }).optional(),
         company_name: z.string().optional(),
@@ -1784,7 +1782,6 @@ function registerTools() {
         logo_align: z.enum(["start", "center", "end"]).optional(),
         output_dir: z.string().optional(),
         preview_dir: z.string().optional().describe("Source directory for action=save. Defaults to ~/Downloads."),
-        variation_count: z.number().int().min(1).max(4).optional(),
         formats: z.array(z.enum(["svg", "png", "pdf"])).optional()
       }
     },
@@ -1807,14 +1804,12 @@ function registerTools() {
       logo_align: logoAlign,
       output_dir: outputDir,
       preview_dir: previewDir,
-      variation_count: variationCount,
       formats
     }) => {
       if (action === "save") {
         const sourceDir = previewDir ?? path.join(os.homedir(), "Downloads");
         if (!fs.existsSync(sourceDir)) return makeJsonToolResponse({ status: "error", code: "not_found", message: `Source directory not found: ${sourceDir}` });
         const targetDir = ensureDir(outputDir ?? resolveOutputDir(runtimeConfig, "brand-headers"));
-        // Copy brand-header files (matching the export_plan base_name pattern) to outputs
         const files = fs.readdirSync(sourceDir).filter((f) => !f.startsWith(".") && /\.(png|svg|pdf|json)$/.test(f));
         const saved = [];
         for (const file of files) {
@@ -1833,7 +1828,7 @@ function registerTools() {
       }
       if (action === "build") {
         if (!goal) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "goal is required for action=build" });
-        const result = buildBrandHeaderSpec({
+        return makeJsonToolResponse(buildBrandHeaderSpec({
           config: runtimeConfig,
           goal,
           platform,
@@ -1845,14 +1840,13 @@ function registerTools() {
           layoutFamily,
           canvasPreset,
           companyName
-        });
-        return makeJsonToolResponse(result);
+        }));
       }
       if (action === "update") {
         if (!specJson) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "spec_json is required for action=update" });
         const { value: spec, error: specError } = parseToolJson(specJson, "spec_json");
         if (specError) return specError;
-        const result = updateBrandHeaderSpec({
+        return makeJsonToolResponse(updateBrandHeaderSpec({
           config: runtimeConfig,
           spec,
           revisionRequest,
@@ -1866,25 +1860,18 @@ function registerTools() {
           logoAlign,
           companyName,
           copy
-        });
-        return makeJsonToolResponse(result);
+        }));
       }
-      // action === "render" — render to temp dir and return inline preview
+      // action === "render"
       if (!specJson) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "spec_json is required for action=render" });
       const { value: spec, error: specError } = parseToolJson(specJson, "spec_json");
       if (specError) return specError;
 
-      // Gate on Gemini API key — do NOT proceed to render without it
       if (!runtimeConfig.googleAiApiKey) {
         return makeJsonToolResponse({
-          status: "needs_configuration",
+          status: "error",
           code: "missing_google_ai_api_key",
-          message: "Gemini API key is required for image generation. Orbit uses Gemini to generate the art layer from brand examples, then composites the logo on top.",
-          options: [
-            "Add a Google AI API key: set ORBIT_GOOGLE_AI_API_KEY in your environment, then restart Claude Code.",
-            "If the user explicitly confirms they want an SVG-only fallback (no Gemini art generation), re-call action='render' with image_provider override set to 'mock'."
-          ],
-          guidance: "STOP. Tell the user they need a Gemini API key for full image generation. Offer the SVG fallback ONLY if the user explicitly asks for it. Do NOT generate SVG markup yourself — always use this tool."
+          message: "Gemini API key is not configured. Set ORBIT_GOOGLE_AI_API_KEY in your environment and restart Claude Code."
         });
       }
 
@@ -1896,72 +1883,50 @@ function registerTools() {
           config: runtimeConfig,
           spec,
           outputDir: downloadsDir,
-          variationCount,
           formats
         });
-        // Collect rendered PNGs
-        const previewPngs = [];
-        for (const variation of result.variations) {
-          const pngPath = variation.files?.png;
-          if (pngPath && fs.existsSync(pngPath)) {
-            const stat = fs.statSync(pngPath);
-            if (stat.size > 100) {
-              previewPngs.push(pngPath);
-            }
-          }
-        }
-        if (previewPngs.length === 0) {
+        const pngPath = result.variation?.files?.png;
+        if (!pngPath || !fs.existsSync(pngPath) || fs.statSync(pngPath).size < 100) {
           return makeJsonToolResponse({
             status: "error",
             code: "no_output",
-            message: "Render completed but no PNG files were produced. The image generation may have returned empty data.",
-            guidance: "STOP. Tell the user the render failed — no image was produced. Do NOT generate images yourself."
+            message: "Render completed but no PNG was produced."
           });
         }
-        // Open the preview PNG in macOS viewer
         if (process.platform === "darwin") {
-          execFile("open", [previewPngs[0]], (err) => {
-            if (err) { /* best-effort */ }
-          });
+          execFile("open", [pngPath], () => {});
         }
-        // IMPORTANT: text guidance block FIRST so Claude reads instructions before seeing image data
-        const contentBlocks = [
-          {
-            type: "text",
-            text: JSON.stringify({
-              status: "ok",
-              action: "render",
-              output_dir: downloadsDir,
-              output_files: previewPngs,
-              file_sizes_bytes: result.variations.map((v) => v.file_sizes_bytes),
-              assistant_instruction: "MANDATORY RESPONSE RULES — VIOLATIONS WILL PRODUCE A BAD USER EXPERIENCE: " +
-                "(1) Show the inline image below and NOTHING ELSE about it. NEVER describe, narrate, or summarise what the image looks like. No mentioning layout, colours, panels, or composition. The user has eyes. " +
-                "(2) NEVER mention saving, downloading, or an outputs folder. Files are ALREADY in ~/Downloads. Do NOT offer to save, do NOT say 'say save it', do NOT mention action=save. " +
-                "(3) Your ENTIRE response after the image should be ONE sentence: ask if they want any changes. That's it."
-            }, null, 2)
-          }
-        ];
-        // Then add the inline image preview (single image only)
-        const pngData = fs.readFileSync(previewPngs[0]).toString("base64");
-        contentBlocks.push({
-          type: "image",
-          data: pngData,
-          mimeType: "image/png"
-        });
-        return { content: contentBlocks };
+        const pngData = fs.readFileSync(pngPath).toString("base64");
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                status: "ok",
+                action: "render",
+                output_dir: downloadsDir,
+                output_file: pngPath,
+                file_size_bytes: result.variation.file_sizes_bytes
+              }, null, 2)
+            },
+            {
+              type: "image",
+              data: pngData,
+              mimeType: "image/png"
+            }
+          ]
+        };
       } catch (error) {
-        const isConfigError = ["CONFIGURATION_ERROR", "REFERENCE_IMAGES_FAILED", "REFERENCE_IMAGE_NOT_FOUND"].includes(error.code);
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
-              status: isConfigError ? "configuration_error" : "error",
+              status: "error",
               code: error.code ?? "render_error",
-              message: error.message,
-              guidance: "STOP. Tell the user the render failed and show the exact error message. Do NOT attempt to generate SVG or image markup yourself. Do NOT describe or narrate what the output 'would have' looked like — no image was produced."
+              message: error.message
             }, null, 2)
           }],
-          isError: !isConfigError
+          isError: true
         };
       }
     }

@@ -131,7 +131,7 @@ export function buildBrandHeaderSpec({
     visualSystem,
     copy: mergedCopy
   });
-  const prompt = buildNanoBananaPrompt({
+  const prompt = buildArtPrompt({
     goal,
     platform: normalizedPlatform,
     family,
@@ -150,9 +150,8 @@ export function buildBrandHeaderSpec({
   });
 
   const spec = {
-    version: "1.1.0",
+    version: "1.2.0",
     type: "brand_header",
-    workflow_state: "review_required",
     platform: normalizedPlatform,
     goal: String(goal ?? "").trim(),
     company_name: companyName ?? config.companyName ?? null,
@@ -161,18 +160,6 @@ export function buildBrandHeaderSpec({
     brand_guidelines_path: guidelines?.guidelinesPath ?? null,
     brand_guideline_context: guidelineContext,
     brand_colors: profile?.colors ?? {},
-    source_inputs: {
-      goal: String(goal ?? "").trim(),
-      platform: normalizedPlatform,
-      brand_kit_dir: effectiveBrandKitDir,
-      logo_paths: logos,
-      brand_example_paths: brandExamples,
-      visual_ref_paths: visualRefs,
-      layout_family: family,
-      canvas_preset: canvas.preset,
-      copy: mergedCopy,
-      company_name: companyName ?? config.companyName ?? null
-    },
     layout: {
       family,
       canvas,
@@ -187,42 +174,16 @@ export function buildBrandHeaderSpec({
     },
     copy: mergedCopy,
     validation,
-    privacy: {
-      remote_provider_used: true,
-      summary:
-        "Orbit sends only the art-layer prompt and selected reference assets to Google for generation. It does not send the full Orbit library.",
-      remote_payload_scope: [
-        "prompt text",
-        "selected brand example images",
-        "selected visual reference images"
-      ]
-    },
-    deterministic_rules: [
-      "Official logos are composited locally from the supplied asset files.",
-      "Important text and logo placement are controlled by fixed layout coordinates.",
-      "The image model generates only the art or background layer.",
-      "Orbit never asks the model to redraw the official logo."
-    ],
     prompt: {
-      provider: "nano-banana-pro",
-      model: config.googleImageModel,
+      provider: "gemini",
       text: prompt
-    },
-    provider_payload: {
-      model: config.googleImageModel,
-      responseModalities: ["TEXT", "IMAGE"],
-      imageConfig: {
-        aspectRatio: canvas.providerAspectRatio,
-        imageSize: canvas.imageSize
-      },
-      reference_image_count: brandExamples.length + visualRefs.length,
-      privacy_note:
-        "Only the prompt plus selected reference images are sent to Google for image generation."
     },
     export_plan: {
       base_name: `${slugify(profile?.brandName ?? companyName ?? "brand")}-${slugify(goal) || "header"}`,
       formats: ["png", "svg", "pdf"],
-      no_text_variant: Boolean(mergedCopy.text_in_image && mergedCopy.headline),
+      no_text_variant: mergedCopy.text_rendering === "generative"
+        ? false
+        : Boolean(mergedCopy.text_in_image && mergedCopy.headline),
       alt_text: `${profile?.brandName ?? companyName ?? "Brand"} email header for ${goal}`
     },
     revision_history: [],
@@ -245,7 +206,6 @@ export function buildBrandHeaderSpec({
     composition: spec.composition
   }).slice(0, 12)}`;
 
-  const renderReady = Boolean(config.googleAiApiKey);
   return {
     status: "ok",
     spec,
@@ -256,24 +216,7 @@ export function buildBrandHeaderSpec({
       brand_examples: brandExamples.length,
       visual_refs: visualRefs.length,
       brand_kit_dir: effectiveBrandKitDir
-    },
-    assistant_instruction: renderReady
-      ? "Spec ready. Call action='render' now with this spec. Do NOT ask for more inputs. " +
-        "After render: show the inline image, then ask if user wants changes. That's your entire response. " +
-        "NEVER describe the image. NEVER offer to save. Files go to ~/Downloads automatically."
-      : "The spec is ready but the Google AI API key is missing. Tell the user to add ORBIT_GOOGLE_AI_API_KEY in Orbit extension settings and restart Claude.",
-    suggested_orbit_tools: dedupeSuggestions([
-      "orbit_render_brand_header",
-      ...(guidelines?.guidelinesPath ? [] : ["orbit_start_brand_guidelines_intake"]),
-      "orbit_check_setup"
-    ]),
-    suggested_next_steps: buildBrandAssetCoachingSteps({
-      config,
-      missingInputs: [],
-      hasGuidelines: Boolean(guidelines?.guidelinesPath),
-      hasExamples: brandExamples.length >= 2
-    }),
-    render_readiness: renderReady ? "ready" : "needs_google_ai_api_key"
+    }
   };
 }
 
@@ -458,55 +401,28 @@ export async function renderBrandHeader({
   config,
   spec,
   outputDir,
-  variationCount = 1,
   formats = ["svg", "png", "pdf"]
 }) {
   const normalizedSpec =
     typeof spec === "string" ? parseJsonInput(spec, "brand header spec") : spec;
 
-  // Ensure export_plan exists — older specs or round-tripped JSON may omit it
-  if (!normalizedSpec.export_plan) {
-    normalizedSpec.export_plan = {
-      base_name: `${slugify(normalizedSpec.brand_name ?? "brand")}-${slugify(normalizedSpec.goal) || "header"}`,
-      formats: formats ?? ["png", "svg", "pdf"],
-      no_text_variant: Boolean(normalizedSpec.copy?.text_in_image && normalizedSpec.copy?.headline),
-      alt_text: `${normalizedSpec.brand_name ?? "Brand"} email header for ${normalizedSpec.goal ?? "email"}`
-    };
+  if (!normalizedSpec.prompt?.text) {
+    throw new Error("Spec is missing prompt.text — rebuild the spec with action='build' first.");
   }
-
-  // Ensure copy exists — renderBrandHeaderSvg accesses spec.copy.font_family directly
+  if (!normalizedSpec.layout?.canvas) {
+    throw new Error("Spec is missing layout.canvas — rebuild the spec with action='build' first.");
+  }
   if (!normalizedSpec.copy) {
     normalizedSpec.copy = {};
   }
-
-  // Ensure prompt exists — generateBrandArtLayer reads spec.prompt.text
-  if (!normalizedSpec.prompt?.text) {
-    const fallbackPrompt = buildNanoBananaPrompt({
-      goal: normalizedSpec.goal ?? "email header",
-      platform: normalizedSpec.platform ?? "braze",
-      family: normalizedSpec.layout?.family ?? "left-anchor",
-      canvas: normalizedSpec.layout?.canvas ?? BRAND_CANVAS_PRESETS["email-header"],
-      zones: normalizedSpec.layout?.zones ?? buildLayoutZones({
-        family: normalizedSpec.layout?.family ?? "left-anchor",
-        canvas: normalizedSpec.layout?.canvas ?? BRAND_CANVAS_PRESETS["email-header"]
-      }),
-      brandName: normalizedSpec.brand_name ?? "Brand",
-      colors: normalizedSpec.brand_colors ?? {},
-      copy: normalizedSpec.copy,
-      forbiddenTreatments: normalizedSpec.brand_guideline_context?.visualRestrictions ?? [],
-      toneOfVoice: normalizedSpec.brand_guideline_context?.toneOfVoice ?? null,
-      messagingGuidance: normalizedSpec.brand_guideline_context?.messagingGuidance ?? null,
-      emailHeaderRules: normalizedSpec.brand_guideline_context?.emailHeaderRules ?? null
-    });
-    normalizedSpec.prompt = {
-      provider: normalizedSpec.prompt?.provider ?? "nano-banana-pro",
-      model: normalizedSpec.prompt?.model ?? config.googleImageModel,
-      text: fallbackPrompt
+  if (!normalizedSpec.export_plan) {
+    normalizedSpec.export_plan = {
+      base_name: `${slugify(normalizedSpec.brand_name ?? "brand")}-${slugify(normalizedSpec.goal) || "header"}`,
+      formats: formats ?? ["png"],
+      no_text_variant: false,
+      alt_text: `${normalizedSpec.brand_name ?? "Brand"} email header for ${normalizedSpec.goal ?? "email"}`
     };
   }
-
-  // Force exactly 1 variation per render call to avoid oversized responses
-  const safeVariationCount = 1;
 
   const validation = validateBrandHeaderSpec(normalizedSpec);
   if (!validation.passed) {
@@ -543,43 +459,37 @@ export async function renderBrandHeader({
     normalizedSpec
   );
   const { generateBrandArtLayer } = await import("./google-genai.js");
-  const results = [];
 
-  for (let index = 0; index < safeVariationCount; index += 1) {
-    const artLayer = await generateBrandArtLayer({
-      config,
-      prompt: normalizedSpec.prompt.text,
-      referenceImages: references,
-      canvas: normalizedSpec.layout.canvas,
-      variationIndex: index
-    });
-    // Validate Gemini actually returned image data
-    if (!artLayer?.base64 || artLayer.base64.length < 100) {
-      const error = new Error(
-        "Gemini returned no usable image data for variation " + (index + 1) +
-        ". The art layer is empty or too small to be a real image."
-      );
-      error.code = "EMPTY_ART_LAYER";
-      throw error;
-    }
-    const renderSet = await renderHeaderVariation({
-      rootDir,
-      spec: normalizedSpec,
-      artLayer,
-      outputDir,
-      variationIndex: index,
-      formats
-    });
-    results.push(renderSet);
+  const artLayer = await generateBrandArtLayer({
+    config,
+    prompt: normalizedSpec.prompt.text,
+    referenceImages: references,
+    canvas: normalizedSpec.layout.canvas,
+    variationIndex: 0
+  });
+  if (!artLayer?.base64 || artLayer.base64.length < 100) {
+    const error = new Error(
+      "Gemini returned no usable image data. The art layer is empty or too small."
+    );
+    error.code = "EMPTY_ART_LAYER";
+    throw error;
   }
+
+  const result = await renderHeaderVariation({
+    rootDir,
+    spec: normalizedSpec,
+    artLayer,
+    outputDir,
+    variationIndex: 0,
+    formats
+  });
 
   return {
     status: "ok",
     spec_path: specPath,
     reference_images_loaded: references.length,
-    reference_images_requested: referenceAssets.length,
     reference_errors: referenceErrors.length > 0 ? referenceErrors : undefined,
-    variations: results
+    variation: result
   };
 }
 
@@ -678,7 +588,7 @@ function renderBrandHeaderSvg({ spec, artLayer, omitText = false }) {
     logoDataUri
       ? `<image href="${logoDataUri}" x="${logoPlacement.x}" y="${logoPlacement.y}" width="${logoPlacement.width}" height="${logoPlacement.height}" preserveAspectRatio="xMinYMid meet"/>`
       : "",
-    !omitText
+    !omitText && spec.copy?.text_rendering !== "generative"
       ? renderHeaderCopy({ spec, zones, fontFamily, colors })
       : "",
     `</svg>`
@@ -729,7 +639,7 @@ function renderHeaderCopy({ spec, zones, fontFamily, colors }) {
   return parts.join("");
 }
 
-function buildNanoBananaPrompt({
+function buildArtPrompt({
   goal,
   platform,
   family,
@@ -743,12 +653,30 @@ function buildNanoBananaPrompt({
   messagingGuidance,
   emailHeaderRules
 }) {
-  const quietZones = [
-    `Leave the logo zone at x=${Math.round(zones.logo.x)} y=${Math.round(zones.logo.y)} width=${Math.round(zones.logo.width)} height=${Math.round(zones.logo.height)} visually quiet for a separately composited official logo.`,
-    copy?.headline
-      ? `Leave the text zone at x=${Math.round(zones.text.x)} y=${Math.round(zones.text.y)} width=${Math.round(zones.text.width)} height=${Math.round(zones.text.height)} clear enough for local text overlay.`
-      : null
-  ].filter(Boolean);
+  const isGenerativeText = copy?.text_rendering === "generative";
+
+  const quietZones = isGenerativeText
+    ? [
+        `Keep the ${family === "split-stage" ? "left" : "top-left"} area visually quiet and uncluttered — a logo will be composited there separately.`
+      ]
+    : [
+        `Keep the ${family === "split-stage" ? "left" : "top-left"} area visually quiet and uncluttered — a logo will be composited there separately.`,
+        copy?.headline
+          ? `Keep a clear, low-contrast region in the ${family === "center-lock" ? "center" : "left"} for text that will be overlaid separately.`
+          : null
+      ].filter(Boolean);
+
+  const textZone = zones.text;
+  const textInstruction = isGenerativeText
+    ? [
+        `Render the following text directly into the image. Study the supplied brand example images carefully and replicate the exact font style, weight, size, colour, spacing, and typographic treatment visible in those references.`,
+        copy?.headline ? `Headline: "${copy.headline}".` : null,
+        copy?.support_line ? `Support line: "${copy.support_line}".` : null,
+        textZone
+          ? `Position the headline and support line within the text zone at x=${textZone.x} y=${textZone.y} width=${textZone.width} height=${textZone.height}. Do not leave this area blank.`
+          : null
+      ].filter(Boolean).join(" ")
+    : "Do not render any text in the image. Reserve clean space for separately composited text and logo.";
 
   return [
     `Create a premium lifecycle email header backplate for ${brandName ?? "the brand"}.`,
@@ -766,7 +694,7 @@ function buildNanoBananaPrompt({
       ? `Avoid these forbidden brand treatments: ${forbiddenTreatments.join(", ")}.`
       : null,
     "Generate only the art or background layer. Do not include logos, wordmarks, watermarks, UI chrome, or legal marks.",
-    "Do not render any text in the image. Reserve clean space for separately composited text and logo.",
+    textInstruction,
     "Prefer crisp, high-contrast shapes and inbox-safe clarity over busy scenes or tiny details."
   ]
     .filter(Boolean)
@@ -834,7 +762,7 @@ function resolveCanvas(profile, canvasPreset) {
     aspectRatio,
     providerAspectRatio,
     emailWidth: preset.emailWidth,
-    imageSize: width >= 1200 ? "2K" : "1K"
+    imageSize: undefined
   };
 }
 
@@ -972,13 +900,18 @@ function buildHeaderWarnings({ profile, guidelines, guidelineContext, copy, canv
 
   if (canvas.providerAspectRatio !== canvas.aspectRatio) {
     warnings.push(
-      `Nano Banana Pro art is requested at ${canvas.providerAspectRatio} and cropped into the ${canvas.aspectRatio} final canvas.`
+      `Gemini art is generated at ${canvas.providerAspectRatio} and cropped into the ${canvas.aspectRatio} final canvas.`
     );
   }
 
   if (copy.text_in_image && copy.headline) {
     warnings.push(
       "A no-text fallback should ship with the text-in-image variant for email accessibility."
+    );
+  }
+  if (copy.text_rendering === "generative" && (!copy.headline && !copy.support_line)) {
+    warnings.push(
+      "text_rendering is set to 'generative' but neither headline nor support_line is provided — Gemini has no text to render."
     );
   }
   if (copy.text_in_image && guidelineContext.flags.avoidTextInImage) {
@@ -1011,10 +944,12 @@ function normalizeCopy(copy) {
     };
   }
 
+  const tr = cleanString(copy.text_rendering);
   return {
     headline: cleanString(copy.headline),
     support_line: cleanString(copy.support_line),
     text_in_image: Boolean(copy.text_in_image),
+    text_rendering: tr === "generative" ? "generative" : "composited",
     font_family: cleanString(copy.font_family)
   };
 }
@@ -1036,6 +971,10 @@ function normalizeCopyPatch(copy) {
   }
   if (Object.prototype.hasOwnProperty.call(copy, "font_family")) {
     patch.font_family = cleanString(copy.font_family);
+  }
+  if (Object.prototype.hasOwnProperty.call(copy, "text_rendering")) {
+    const tr = cleanString(copy.text_rendering);
+    patch.text_rendering = tr === "generative" ? "generative" : "composited";
   }
   return patch;
 }
@@ -1231,11 +1170,6 @@ function buildBrandAssetCoachingSteps({
 }) {
   const steps = [];
 
-  if (!config.googleAiApiKey) {
-    steps.push(
-      "Add a Google AI API Key in Orbit settings if you want Orbit to render the final image asset."
-    );
-  }
   if (missingInputs.some((item) => item === "official_logo" || item.startsWith("logo:"))) {
     steps.push(
       "Provide at least one official logo file path so Orbit can composite the logo locally."

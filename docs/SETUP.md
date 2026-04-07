@@ -43,7 +43,7 @@ You do not need to pick folders during normal setup. Orbit fills in missing fold
 - `Default Geography`
   - Optional default for compliance-aware recommendations.
 - `Google AI API Key`
-  - Required only for brand-header rendering with Nano Banana Pro.
+  - Required for brand-header rendering with Gemini.
 - `Figma API Token`
   - Required only for importing structured email designs from Figma.
 - `Braze API Key`
@@ -99,7 +99,7 @@ For v1, asset ingestion uses local file paths rather than chat-uploaded files.
 - `orbit_sync_braze_email_template`
 - `orbit_publish_email_to_braze`
 
-Orbit uses Nano Banana Pro only for the art layer of brand-header rendering. Orbit keeps logo placement, safe zones, and text placement deterministic in code.
+Orbit uses Gemini only for the art layer of brand-header rendering. Orbit keeps logo placement, safe zones, and text placement deterministic in code.
 
 ## Recommended First-Run Flow
 

@@ -1,8 +1,67 @@
 import { GoogleGenAI } from "@google/genai";
-import { escapeXml, sha1 } from "./utils.js";
 
 const GEMINI_TIMEOUT_MS = 90_000;
 const GEMINI_MAX_ATTEMPTS = 2;
+
+// Preferred image-capable models in priority order (best first).
+// resolveImageModel() queries the API for the live model list and picks the
+// highest-priority match.  If the API call fails we fall back to the first
+// entry that the caller's config names, then to the hardcoded default.
+const IMAGE_MODEL_PRIORITY = [
+  "gemini-2.5-flash-preview-image-generation",
+  "gemini-2.5-flash-image",
+  "gemini-2.0-flash-exp"
+];
+const HARDCODED_FALLBACK_MODEL = "gemini-2.5-flash-preview-image-generation";
+
+// Cache so we only hit the models endpoint once per process lifetime.
+let _resolvedModel = null;
+
+/**
+ * Query the Gemini API for available models and pick the best
+ * image-generation-capable one.  Returns the model ID string.
+ */
+export async function resolveImageModel(apiKey) {
+  if (_resolvedModel) return _resolvedModel;
+  if (!apiKey) return HARDCODED_FALLBACK_MODEL;
+
+  try {
+    const client = new GoogleGenAI({ apiKey });
+    const response = await client.models.list();
+    const models = response?.models ?? response ?? [];
+    const available = new Set();
+    for (const model of models) {
+      const id = model.name?.replace(/^models\//, "") ?? model.id ?? "";
+      if (id) available.add(id);
+    }
+
+    for (const preferred of IMAGE_MODEL_PRIORITY) {
+      if (available.has(preferred)) {
+        _resolvedModel = preferred;
+        return _resolvedModel;
+      }
+    }
+
+    // No priority match — look for any model whose name contains "image"
+    for (const model of models) {
+      const id = model.name?.replace(/^models\//, "") ?? model.id ?? "";
+      if (/image/i.test(id) && !/deprecated/i.test(model.description ?? "")) {
+        _resolvedModel = id;
+        return _resolvedModel;
+      }
+    }
+  } catch {
+    // API unreachable at startup — fall through to hardcoded default
+  }
+
+  _resolvedModel = HARDCODED_FALLBACK_MODEL;
+  return _resolvedModel;
+}
+
+/** Clear the cached model (useful for tests). */
+export function resetModelCache() {
+  _resolvedModel = null;
+}
 
 export async function generateBrandArtLayer({
   config,
@@ -11,16 +70,21 @@ export async function generateBrandArtLayer({
   canvas,
   variationIndex = 0
 }) {
-  if (config.imageProvider === "mock") {
-    return generateMockArtLayer({ prompt, canvas, variationIndex });
+  // Test-only: generate a placeholder art layer without calling Gemini.
+  // Activated by ORBIT_TEST_MOCK_IMAGES=1 (set in the smoke test runner).
+  if (process.env.ORBIT_TEST_MOCK_IMAGES === "1") {
+    return generateTestArtLayer({ canvas, variationIndex });
   }
 
   if (!config.googleAiApiKey) {
-    const error = new Error("Missing ORBIT_GOOGLE_AI_API_KEY for Nano Banana Pro rendering.");
+    const error = new Error(
+      "Gemini API key is not configured. Set ORBIT_GOOGLE_AI_API_KEY in your environment and restart Claude Code."
+    );
     error.code = "CONFIGURATION_ERROR";
     throw error;
   }
 
+  const model = await resolveImageModel(config.googleAiApiKey);
   const client = new GoogleGenAI({ apiKey: config.googleAiApiKey });
   const parts = [
     { text: `${prompt}\n\nVariation index: ${variationIndex + 1}` },
@@ -33,13 +97,12 @@ export async function generateBrandArtLayer({
   ];
 
   const requestConfig = {
-    model: config.googleImageModel,
+    model,
     contents: [{ role: "user", parts }],
     config: {
       responseModalities: ["TEXT", "IMAGE"],
       imageConfig: {
-        aspectRatio: canvas.providerAspectRatio ?? canvas.aspectRatio,
-        imageSize: canvas.imageSize ?? "2K"
+        aspectRatio: canvas.providerAspectRatio ?? canvas.aspectRatio
       }
     }
   };
@@ -57,15 +120,15 @@ export async function generateBrandArtLayer({
       );
       if (!firstImagePart?.inlineData?.data) {
         const error = new Error(
-          `Nano Banana Pro did not return an image. ${response.text ?? "No text response."}`
+          `Gemini (${model}) did not return an image. ${response.text ?? "No text response."}`
         );
         error.code = "PROVIDER_ERROR";
         throw error;
       }
 
       return {
-        provider: "nano-banana-pro",
-        model: config.googleImageModel,
+        provider: "gemini",
+        model,
         mimeType: firstImagePart.inlineData.mimeType ?? "image/png",
         buffer: Buffer.from(firstImagePart.inlineData.data, "base64"),
         base64: firstImagePart.inlineData.data,
@@ -101,37 +164,28 @@ async function callWithTimeout(fn, timeoutMs) {
   }
 }
 
-function generateMockArtLayer({ prompt, canvas, variationIndex }) {
+function generateTestArtLayer({ canvas, variationIndex }) {
   const palette = [
     ["#f7d5c8", "#f0efe7", "#d6e7f7"],
     ["#d8ebdf", "#efe3d1", "#f7d2cb"],
     ["#dfe7f8", "#efe5d6", "#f7e8c6"]
   ][variationIndex % 3];
-  const noiseSeed = sha1(`${prompt}:${variationIndex}`).slice(0, 8);
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">`,
-    "<defs>",
-    `  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">`,
-    `    <stop offset="0%" stop-color="${palette[0]}"/>`,
-    `    <stop offset="55%" stop-color="${palette[1]}"/>`,
-    `    <stop offset="100%" stop-color="${palette[2]}"/>`,
-    "  </linearGradient>",
-    `  <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="1" seed="${variationIndex + 3}"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="table" tableValues="0 0.03"/></feComponentTransfer></filter>`,
-    "</defs>",
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}">`,
+    `<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">`,
+    `<stop offset="0%" stop-color="${palette[0]}"/>`,
+    `<stop offset="100%" stop-color="${palette[2]}"/>`,
+    `</linearGradient></defs>`,
     `<rect width="${canvas.width}" height="${canvas.height}" fill="url(#bg)"/>`,
-    `<rect width="${canvas.width}" height="${canvas.height}" fill="#ffffff" filter="url(#grain)"/>`,
-    `<circle cx="${canvas.width * 0.78}" cy="${canvas.height * 0.35}" r="${canvas.height * 0.42}" fill="#ffffff" opacity="0.32"/>`,
-    `<circle cx="${canvas.width * 0.18}" cy="${canvas.height * 0.82}" r="${canvas.height * 0.28}" fill="#ffffff" opacity="0.24"/>`,
-    `<text x="${canvas.width - 28}" y="${canvas.height - 18}" font-size="12" fill="#6b675f" text-anchor="end">mock art ${escapeXml(noiseSeed)}</text>`,
-    "</svg>"
+    `</svg>`
   ].join("");
 
   return {
-    provider: "mock",
-    model: "mock",
+    provider: "test-mock",
+    model: "test-mock",
     mimeType: "image/svg+xml",
     buffer: Buffer.from(svg),
     base64: Buffer.from(svg).toString("base64"),
-    text: "Mock image provider output"
+    text: "Test mock art layer"
   };
 }

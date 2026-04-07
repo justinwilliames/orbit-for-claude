@@ -32,12 +32,6 @@ export function loadRuntimeConfig(rootDir) {
     defaultOutputDir,
     libraryDir,
     googleAiApiKey: cleanString(process.env.ORBIT_GOOGLE_AI_API_KEY),
-    imageProvider:
-      cleanString(process.env.ORBIT_IMAGE_PROVIDER)?.toLowerCase() ??
-      "nano-banana-pro",
-    googleImageModel:
-      cleanString(process.env.ORBIT_GOOGLE_IMAGE_MODEL) ??
-      "gemini-3-pro-image-preview",
     figmaApiToken: cleanString(process.env.ORBIT_FIGMA_API_TOKEN),
     figmaApiBaseUrl:
       cleanString(process.env.ORBIT_FIGMA_API_BASE_URL) ?? "https://api.figma.com/v1",

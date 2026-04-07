@@ -64,7 +64,7 @@
     "google_ai_api_key": {
       "type": "string",
       "title": "Google AI API Key",
-      "description": "Optional Google AI Studio key used for Nano Banana Pro image generation.",
+      "description": "Google AI API key for Gemini image generation. Required for brand header rendering.",
       "sensitive": true,
       "default": ""
     },
@@ -164,7 +164,7 @@
     },
     {
       "name": "orbit_build_brand_header_spec",
-      "description": "Create a review-ready brand header spec with deterministic layout and Nano Banana Pro art prompting."
+      "description": "Create a review-ready brand header spec with deterministic layout and Gemini art prompting."
     },
     {
       "name": "orbit_update_brand_header_spec",

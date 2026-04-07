@@ -61,7 +61,7 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
 const GOLDENS_PATH = path.join(ROOT_DIR, "evals", "orbit-goldens.json");
 
-process.env.ORBIT_IMAGE_PROVIDER = "mock";
+process.env.ORBIT_TEST_MOCK_IMAGES = "1";
 const goldens = JSON.parse(fs.readFileSync(GOLDENS_PATH, "utf8"));
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-smoke-"));
@@ -668,22 +668,26 @@ await mockApi.close();
 
 let configurationErrorMessage = null;
 try {
+  // Temporarily disable mock to verify real API key gate
+  delete process.env.ORBIT_TEST_MOCK_IMAGES;
   await renderBrandHeader({
     rootDir: ROOT_DIR,
-    config: { ...config, imageProvider: "nano-banana-pro", googleAiApiKey: null },
+    config: { ...config, googleAiApiKey: null },
     spec: brandUpdate.spec,
     outputDir: path.join(outputDir, "headers-error")
   });
 } catch (error) {
   configurationErrorMessage = error.message;
+} finally {
+  process.env.ORBIT_TEST_MOCK_IMAGES = "1";
 }
 
 const diagramSvgStable =
   fs.readFileSync(diagramRenderOne.files.svg, "utf8") ===
   fs.readFileSync(diagramRenderTwo.files.svg, "utf8");
 const brandSvgStable =
-  fs.readFileSync(brandRenderOne.variations[0].files.svg, "utf8") ===
-  fs.readFileSync(brandRenderTwo.variations[0].files.svg, "utf8");
+  fs.readFileSync(brandRenderOne.variation.files.svg, "utf8") ===
+  fs.readFileSync(brandRenderTwo.variation.files.svg, "utf8");
 
 console.log(
   JSON.stringify(
@@ -786,11 +790,11 @@ console.log(
         ),
         layoutFamily: brandUpdate.spec.layout.family,
         artIntensity: brandUpdate.spec.composition.art_intensity,
-        svgExists: fs.existsSync(brandRenderOne.variations[0].files.svg),
-        pngExists: fs.existsSync(brandRenderOne.variations[0].files.png),
-        pdfExists: fs.existsSync(brandRenderOne.variations[0].files.pdf),
+        svgExists: fs.existsSync(brandRenderOne.variation.files.svg),
+        pngExists: fs.existsSync(brandRenderOne.variation.files.png),
+        pdfExists: fs.existsSync(brandRenderOne.variation.files.pdf),
         noTextPngExists: fs.existsSync(
-          brandRenderOne.variations[0].files.no_text.png
+          brandRenderOne.variation.files.no_text.png
         ),
         stableSvg: brandSvgStable,
         configurationErrorMessage
