@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { resolveLoosePath, resolveBrandProfile } from "./config.js";
 import {
@@ -424,4 +426,49 @@ function buildWarnings({ profile, guidelines, guidelineContext, brandExamples, c
   }
 
   return warnings;
+}
+
+// ---------------------------------------------------------------------------
+// Preview image helper — resizes via macOS sips for inline MCP display
+// ---------------------------------------------------------------------------
+
+const PREVIEW_MAX_BYTES = 150_000; // ~150 KB base64 target
+const PREVIEW_MAX_WIDTH = 800;
+
+/**
+ * Create a compressed preview PNG from the full-resolution render.
+ * Returns { previewBase64, previewPath } or null if compression fails.
+ * The full-res file is never modified.
+ */
+export function createPreviewImage(fullPngPath) {
+  try {
+    const tmpDir = os.tmpdir();
+    const previewPath = path.join(tmpDir, `orbit-preview-${Date.now()}.png`);
+    fs.copyFileSync(fullPngPath, previewPath);
+
+    // Resize to max width, preserving aspect ratio (sips is macOS-native)
+    if (process.platform === "darwin") {
+      execFileSync("sips", [
+        "--resampleWidth", String(PREVIEW_MAX_WIDTH),
+        previewPath
+      ], { timeout: 10_000, stdio: "ignore" });
+    }
+
+    const previewBuffer = fs.readFileSync(previewPath);
+
+    // If still too large after resize, skip inline preview
+    const base64 = previewBuffer.toString("base64");
+    if (base64.length > PREVIEW_MAX_BYTES * 1.37) {
+      // 1.37 ≈ base64 expansion factor; file is still too big
+      fs.unlinkSync(previewPath);
+      return null;
+    }
+
+    // Clean up temp file
+    try { fs.unlinkSync(previewPath); } catch { /* ignore */ }
+
+    return { previewBase64: base64 };
+  } catch {
+    return null;
+  }
 }

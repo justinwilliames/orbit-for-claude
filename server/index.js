@@ -16,6 +16,7 @@ import {
 } from "./catalog.js";
 import {
   buildBrandHeaderSpec,
+  createPreviewImage,
   renderBrandHeader,
   updateBrandHeaderSpec
 } from "./brand-headers.js";
@@ -1754,9 +1755,9 @@ function registerTools() {
         "Runs LOCALLY — sends logo + brand examples to Gemini, writes PNG to ~/Downloads. Never generate images yourself. " +
         "action='build': create a new spec (requires: goal). If status='needs_inputs', ask the user for the missing items. " +
         "action='update': revise an existing spec (requires: spec_json). " +
-        "action='render': render a spec via Gemini and return an inline image preview. " +
+        "action='render': render a spec via Gemini and return an inline image preview with a download link. " +
         "action='save': copy files to Orbit outputs (only when the user explicitly asks). " +
-        "After render: show the inline image, then ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.",
+        "After render: show the inline image preview, then show the download_link as a clickable markdown link (format: [⬇ Download full-resolution image](file://...)), then ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.",
       inputSchema: {
         action: z.enum(["build", "update", "render", "save"]),
         goal: z.string().optional(),
@@ -1873,29 +1874,38 @@ function registerTools() {
             message: "Render completed but no PNG was produced."
           });
         }
-        if (process.platform === "darwin") {
-          execFile("open", [pngPath], () => {});
+        // Build a compressed preview for inline display
+        const preview = createPreviewImage(pngPath);
+        const fileUrl = `file://${pngPath.replace(/ /g, "%20")}`;
+        const content = [
+          {
+            type: "text",
+            text: JSON.stringify({
+              status: "ok",
+              action: "render",
+              output_file: pngPath,
+              file_size_bytes: result.file_size_bytes,
+              download_link: fileUrl,
+              assistant_instruction: `Show the inline image preview above, then provide a clickable markdown link: [⬇ Download full-resolution image](${fileUrl}). Ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.`
+            }, null, 2)
+          }
+        ];
+        if (preview?.previewBase64) {
+          content.push({
+            type: "image",
+            data: preview.previewBase64,
+            mimeType: "image/png"
+          });
+        } else {
+          // Preview too large — fall back to full image
+          const pngData = fs.readFileSync(pngPath).toString("base64");
+          content.push({
+            type: "image",
+            data: pngData,
+            mimeType: "image/png"
+          });
         }
-        const pngData = fs.readFileSync(pngPath).toString("base64");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                status: "ok",
-                action: "render",
-                output_dir: downloadsDir,
-                output_file: pngPath,
-                file_size_bytes: result.file_size_bytes
-              }, null, 2)
-            },
-            {
-              type: "image",
-              data: pngData,
-              mimeType: "image/png"
-            }
-          ]
-        };
+        return { content };
       } catch (error) {
         return {
           content: [{
