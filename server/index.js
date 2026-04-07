@@ -1922,13 +1922,11 @@ function registerTools() {
             guidance: "STOP. Tell the user the render produced no output files. Do NOT attempt to generate images yourself. Do NOT describe or narrate what the image 'would have' looked like. Report this error exactly as-is."
           });
         }
-        // Open the first preview PNG in the default macOS viewer so the user can actually see it
-        if (process.platform === "darwin") {
-          for (const pngPath of previewPngs) {
-            execFile("open", [pngPath], (err) => {
-              if (err) { /* best-effort — don't block the response */ }
-            });
-          }
+        // Open only the first preview PNG in the default macOS viewer
+        if (process.platform === "darwin" && previewPngs.length > 0) {
+          execFile("open", [previewPngs[0]], (err) => {
+            if (err) { /* best-effort — don't block the response */ }
+          });
         }
         contentBlocks.push({
           type: "text",

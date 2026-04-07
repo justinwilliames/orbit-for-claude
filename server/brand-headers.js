@@ -467,6 +467,20 @@ export async function renderBrandHeader({
 }) {
   const normalizedSpec =
     typeof spec === "string" ? parseJsonInput(spec, "brand header spec") : spec;
+
+  // Ensure export_plan exists — older specs or round-tripped JSON may omit it
+  if (!normalizedSpec.export_plan) {
+    normalizedSpec.export_plan = {
+      base_name: `${slugify(normalizedSpec.brand_name ?? "brand")}-${slugify(normalizedSpec.goal) || "header"}`,
+      formats: formats ?? ["png", "svg", "pdf"],
+      no_text_variant: Boolean(normalizedSpec.copy?.text_in_image && normalizedSpec.copy?.headline),
+      alt_text: `${normalizedSpec.brand_name ?? "Brand"} email header for ${normalizedSpec.goal ?? "email"}`
+    };
+  }
+
+  // Force exactly 1 variation per render call to avoid oversized responses
+  const safeVariationCount = 1;
+
   const validation = validateBrandHeaderSpec(normalizedSpec);
   if (!validation.passed) {
     throw new Error(
@@ -504,7 +518,7 @@ export async function renderBrandHeader({
   const { generateBrandArtLayer } = await import("./google-genai.js");
   const results = [];
 
-  for (let index = 0; index < Math.max(1, Math.min(variationCount, 4)); index += 1) {
+  for (let index = 0; index < safeVariationCount; index += 1) {
     const artLayer = await generateBrandArtLayer({
       config,
       prompt: normalizedSpec.prompt.text,
