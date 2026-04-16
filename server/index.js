@@ -1666,7 +1666,8 @@ function registerTools() {
         "Build, update, or render a lifecycle program flow diagram with nodes, edges, badges, and Mermaid output. " +
         "action='build': create a new spec from a natural-language request (requires: request). " +
         "action='update': apply deterministic revisions to an existing spec (requires: spec_json). " +
-        "action='render': render a spec to SVG, PNG, and PDF files (requires: spec_json). " +
+        "action='render': render a spec to SVG, PNG, PDF, and interactive HTML files (requires: spec_json). " +
+        "The HTML output is a self-contained, hover-interactive artifact styled to match the Orbit homepage demo. " +
         "For Braze, default to a Canvas-style flowchart with decision gates before each send.",
       inputSchema: {
         action: z.enum(["build", "update", "render"]),
@@ -1702,7 +1703,7 @@ function registerTools() {
         })).optional(),
         style_preset: z.enum(["orbit-default", "presentation", "minimal"]).optional(),
         output_dir: z.string().optional(),
-        formats: z.array(z.enum(["svg", "png", "pdf"])).optional()
+        formats: z.array(z.enum(["svg", "png", "pdf", "html"])).optional()
       }
     },
     async ({

@@ -227,7 +227,7 @@ export async function renderLifecycleDiagram({
   spec,
   stylePreset = "orbit-default",
   outputDir,
-  formats = ["svg", "png", "pdf"]
+  formats = ["svg", "png", "pdf", "html"]
 }) {
   const theme = VISUAL_STYLE_PRESETS[stylePreset] ?? VISUAL_STYLE_PRESETS["orbit-default"];
   const laidOut = layoutDiagram(spec);
@@ -243,7 +243,7 @@ export async function renderLifecycleDiagram({
   const baseName = slugify(spec.title || spec.id || "lifecycle-diagram");
   const outputBasePath = `${outputDir}/${baseName}`;
 
-  const bundleFormats = formats.filter((format) => format !== "pdf");
+  const bundleFormats = formats.filter((format) => format !== "pdf" && format !== "html");
   const files = await renderSvgBundle({
     rootDir,
     svg,
@@ -266,6 +266,13 @@ export async function renderLifecycleDiagram({
       }
     });
     files.pdf = pdfPath;
+  }
+
+  if (formats.includes("html")) {
+    const htmlPath = `${outputBasePath}.html`;
+    const html = renderDiagramInteractiveHtml({ spec: laidOut });
+    fs.writeFileSync(htmlPath, html, "utf8");
+    files.html = htmlPath;
   }
 
   const specPath = writeJson(`${outputBasePath}.json`, laidOut);
@@ -1799,4 +1806,495 @@ function drawLegendPdf(doc, spec, theme, fonts) {
       .fontSize(12.5)
       .text(label, x + 38, baseY + 6, { width: 80 });
   });
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * Interactive HTML renderer
+ *
+ * Emits a standalone HTML file that mirrors the styling and hover
+ * interactivity of the Orbit homepage demo. Each step node in the
+ * lifecycle spec becomes a card with icon + title + subtitle, and
+ * every card has a hover popover that surfaces full metadata:
+ * segmentation expressions, audience filters, Liquid snippets,
+ * timing, and platform function. Zero runtime dependencies; the
+ * file is self-contained and opens in any modern browser.
+ * ────────────────────────────────────────────────────────────── */
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Map the spec's node.type to a demo-style visual category. */
+function htmlNodeVariant(node) {
+  const role = node?.metadata?.node_role;
+  if (role === "entry" || node.type === "entry") return "trigger";
+  if (role === "exit" || node.type === "exit") return "exit";
+  if (node.type === "decision") return "decision";
+  if (node.type === "delay" || node.type === "wait") return "delay";
+  if (node.type === "segment") return "segment";
+  return "message";
+}
+
+function htmlNodeIcon(variant) {
+  switch (variant) {
+    case "trigger": return "▶";
+    case "decision": return "⇆";
+    case "delay": return "⏱";
+    case "segment": return "◎";
+    case "exit": return "◉";
+    default: return "✉";
+  }
+}
+
+/** Flatten node.metadata into {k, v} pairs for the popover detail panel. */
+function htmlNodeMetaPairs(node) {
+  const md = node?.metadata ?? {};
+  const pairs = [];
+  const push = (k, v) => {
+    if (v === null || v === undefined) return;
+    const str = typeof v === "string" ? v : typeof v === "number" ? String(v) : null;
+    if (!str || !str.trim()) return;
+    pairs.push({ k, v: str.trim() });
+  };
+  push("Channel", md.channel);
+  push("Trigger", md.trigger);
+  push("Goal", md.goal);
+  push("Send condition", md.send_condition);
+  push("Audience", md.audience);
+  push("Filter", md.filter);
+  push("Segment", md.segment);
+  push("If no action", md.if_no_action);
+  push("Yes", md.yes_label);
+  push("No", md.no_label);
+  push("Platform function", md.platform_function);
+  push("Delay", md.delay);
+  push("Timing", md.timing);
+  push("Holdout", md.holdout);
+  push("Suppression", md.suppression);
+  return pairs;
+}
+
+function htmlNodeCode(node) {
+  const md = node?.metadata ?? {};
+  // Prefer explicit Liquid snippets if Orbit captured them; otherwise
+  // synthesize a compact condition from segmentation expressions.
+  if (typeof md.liquid === "string" && md.liquid.trim()) return md.liquid.trim();
+  if (typeof md.expression === "string" && md.expression.trim()) return md.expression.trim();
+  if (md.segment && typeof md.segment === "string" && md.segment.includes(" ")) {
+    return md.segment.trim();
+  }
+  return null;
+}
+
+function htmlNodeSubtitle(node) {
+  return node.subtitle || node.metadata?.trigger || node.metadata?.channel || "";
+}
+
+function renderDiagramInteractiveHtml({ spec }) {
+  const title = spec?.title ?? "Lifecycle Diagram";
+  const nodes = Array.isArray(spec?.nodes) ? spec.nodes : [];
+  const edges = Array.isArray(spec?.edges) ? spec.edges : [];
+
+  // Build a linear top-down order following the edges from the first node.
+  // This works for the common Orbit canvas where there's one entry and
+  // edges flow forward. Branches (decision -> yes/no) render side-by-side
+  // when a node has multiple outbound edges.
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const outgoing = new Map();
+  for (const e of edges) {
+    if (!outgoing.has(e.from)) outgoing.set(e.from, []);
+    outgoing.get(e.from).push(e);
+  }
+
+  const entryNode = nodes.find((n) => (n.metadata?.node_role === "entry") || n.type === "entry") ?? nodes[0];
+  const rendered = new Set();
+  /** @type {Array<{kind: 'step', node: any} | {kind: 'branch', branches: any[][]}>} */
+  const rows = [];
+
+  function walk(startId) {
+    let currentId = startId;
+    while (currentId && !rendered.has(currentId)) {
+      const node = nodeById.get(currentId);
+      if (!node) break;
+      rendered.add(currentId);
+      const outs = outgoing.get(currentId) ?? [];
+
+      if (outs.length <= 1) {
+        rows.push({ kind: "step", node });
+        currentId = outs[0]?.to ?? null;
+        continue;
+      }
+
+      // Multi-out: decision branch. Walk each outgoing path until it
+      // converges or terminates, then continue from the convergence.
+      rows.push({ kind: "step", node });
+      const branches = outs.map((edge) => {
+        const chain = [];
+        let cursor = edge.to;
+        while (cursor && !rendered.has(cursor)) {
+          const cursorNode = nodeById.get(cursor);
+          if (!cursorNode) break;
+          // Stop at the next multi-out or when we hit an already-rendered node
+          if ((outgoing.get(cursor) ?? []).length > 1) break;
+          rendered.add(cursor);
+          chain.push({ node: cursorNode, edgeLabel: edge.label });
+          const nextEdges = outgoing.get(cursor) ?? [];
+          cursor = nextEdges[0]?.to ?? null;
+        }
+        return chain;
+      });
+      rows.push({ kind: "branch", branches });
+      // After a branch, we stop — downstream convergence is rare in
+      // Orbit specs and the linear follow-up is generally captured
+      // inside each branch chain.
+      currentId = null;
+    }
+  }
+
+  if (entryNode) walk(entryNode.id);
+
+  // Any nodes not reached by the walk (disconnected or unusual specs)
+  // get appended as linear rows so nothing is lost.
+  for (const node of nodes) {
+    if (!rendered.has(node.id)) {
+      rendered.add(node.id);
+      rows.push({ kind: "step", node });
+    }
+  }
+
+  function renderStepCard(node, extra = {}) {
+    const variant = htmlNodeVariant(node);
+    const icon = htmlNodeIcon(variant);
+    const subtitle = htmlNodeSubtitle(node);
+    const pairs = htmlNodeMetaPairs(node);
+    const code = htmlNodeCode(node);
+    const sub = extra.subLabel || subtitle;
+
+    const metaHtml = pairs.length
+      ? `<dl class="meta">${pairs
+          .map((p) => `<div><dt>${escapeHtml(p.k)}</dt><dd>${escapeHtml(p.v)}</dd></div>`)
+          .join("")}</dl>`
+      : "";
+    const codeHtml = code ? `<pre>${escapeHtml(code)}</pre>` : "";
+
+    return `
+<div class="step" data-variant="${variant}" tabindex="0">
+  <button type="button" class="step-card" aria-expanded="false" aria-label="${escapeHtml(node.label || "Step")} details">
+    <span class="step-icon" aria-hidden="true">${icon}</span>
+    <span class="step-body">
+      <span class="step-title">${escapeHtml(node.label || "Step")}</span>
+      ${sub ? `<span class="step-sub">${escapeHtml(sub)}</span>` : ""}
+    </span>
+  </button>
+  <div class="popover" role="tooltip">
+    <p class="popover-heading">${escapeHtml(node.label || "Step")}</p>
+    ${subtitle ? `<p class="popover-body">${escapeHtml(subtitle)}</p>` : ""}
+    ${metaHtml}
+    ${codeHtml}
+  </div>
+</div>`;
+  }
+
+  const rowsHtml = rows.map((row, idx) => {
+    const connector = idx > 0 ? `<div class="connector"></div>` : "";
+    if (row.kind === "step") {
+      return `${connector}<div class="row row-single">${renderStepCard(row.node)}</div>`;
+    }
+    // Branch row
+    const nonEmpty = row.branches.filter((b) => b.length > 0);
+    if (nonEmpty.length === 0) return "";
+    const maxLen = Math.max(...nonEmpty.map((b) => b.length));
+    const columns = nonEmpty
+      .map((chain, ci) => {
+        const label = chain[0]?.edgeLabel || (ci === 0 ? "Path A" : `Path ${String.fromCharCode(65 + ci)}`);
+        const cards = [];
+        for (let r = 0; r < maxLen; r += 1) {
+          const entry = chain[r];
+          if (entry) {
+            if (r > 0) cards.push(`<div class="connector"></div>`);
+            cards.push(renderStepCard(entry.node));
+          } else {
+            cards.push(`<div class="branch-empty" aria-hidden="true"></div>`);
+          }
+        }
+        return `
+<div class="branch-col">
+  <p class="branch-label">${escapeHtml(label)}</p>
+  ${cards.join("")}
+</div>`;
+      })
+      .join("");
+    return `
+<div class="branch-connector" aria-hidden="true">
+  <svg viewBox="0 0 100 30" preserveAspectRatio="none">
+    <path d="M 50 0 L 50 15 L ${100 / nonEmpty.length / 2} 15 L ${100 / nonEmpty.length / 2} 30" fill="none" stroke="currentColor" stroke-width="0.5" vector-effect="non-scaling-stroke" />
+    <path d="M 50 0 L 50 15 L ${100 - 100 / nonEmpty.length / 2} 15 L ${100 - 100 / nonEmpty.length / 2} 30" fill="none" stroke="currentColor" stroke-width="0.5" vector-effect="non-scaling-stroke" />
+  </svg>
+</div>
+<div class="row row-branch" data-cols="${nonEmpty.length}">${columns}</div>`;
+  }).join("");
+
+  const safeTitle = escapeHtml(title);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${safeTitle} · Orbit</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --bg-muted: #f5f5f6;
+    --chrome: #fafafa;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.16);
+    --text: #0a0a0b;
+    --text-muted: #6b7280;
+    --text-dim: #9ca3af;
+    --accent: #6366f1;
+    --accent-soft: rgba(99,102,241,0.08);
+    --card-bg: #ffffff;
+    --popover-bg: #ffffff;
+    --popover-shadow: 0 18px 48px -16px rgba(15,15,20,0.24);
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0b;
+      --bg-muted: #111113;
+      --chrome: rgba(255,255,255,0.02);
+      --border: rgba(255,255,255,0.10);
+      --border-strong: rgba(255,255,255,0.16);
+      --text: #fafafa;
+      --text-muted: #a3a3a8;
+      --text-dim: #6b7280;
+      --accent: #818cf8;
+      --accent-soft: rgba(129,140,248,0.10);
+      --card-bg: rgba(255,255,255,0.02);
+      --popover-bg: #14141a;
+      --popover-shadow: 0 18px 48px -16px rgba(0,0,0,0.55);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-muted);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .shell {
+    max-width: 1024px;
+    margin: 0 auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+  .chrome {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--chrome);
+    border-bottom: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+  }
+  .chrome-dots { display: flex; gap: 6px; }
+  .chrome-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); }
+  .chrome-brand { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text); letter-spacing: 0.02em; }
+  .chrome-brand::before { content: ""; width: 14px; height: 14px; background: var(--accent); border-radius: 50%; display: inline-block; }
+  .chrome-label { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--text-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .diagram { padding: 28px 20px 36px; }
+  .diagram-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+  }
+  .rows { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .row { display: flex; justify-content: center; width: 100%; }
+  .row-single { max-width: 420px; margin: 0 auto; }
+  .row-branch { display: grid; gap: 20px; width: 100%; max-width: 820px; }
+  .row-branch[data-cols="2"] { grid-template-columns: 1fr 1fr; }
+  .row-branch[data-cols="3"] { grid-template-columns: 1fr 1fr 1fr; }
+  .branch-col { display: flex; flex-direction: column; gap: 0; }
+  .branch-label {
+    text-align: center;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+  }
+  .branch-empty { height: 64px; }
+  .connector { width: 1px; height: 20px; background: var(--border-strong); margin: 0 auto; }
+  .branch-connector { color: var(--border-strong); height: 24px; width: 100%; max-width: 820px; margin: 0 auto; }
+  .branch-connector svg { display: block; width: 100%; height: 100%; }
+  .step { position: relative; width: 100%; }
+  .step-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .step-card:hover, .step-card:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .step[data-variant="trigger"] .step-card { background: #0a0a0b; color: #fafafa; border-color: #0a0a0b; }
+  .step[data-variant="trigger"] .step-sub { color: #9ca3af; }
+  .step[data-variant="trigger"] .step-icon { background: #fafafa; color: #0a0a0b; }
+  .step[data-variant="decision"] .step-card { background: var(--accent-soft); border-color: var(--accent); }
+  .step[data-variant="decision"] .step-icon { color: var(--accent); background: var(--bg); }
+  .step[data-variant="delay"] .step-card { border-style: dashed; background: transparent; }
+  .step[data-variant="delay"] .step-title { color: var(--text-muted); }
+  .step[data-variant="exit"] .step-card { border-color: var(--border-strong); }
+  .step-icon {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--bg-muted);
+    color: var(--text-muted);
+  }
+  .step-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .step-title { font-size: 14px; font-weight: 600; line-height: 1.25; }
+  .step-sub { font-size: 12px; color: var(--text-muted); line-height: 1.3; }
+  .popover {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 40;
+    width: 300px;
+    padding: 16px;
+    background: var(--popover-bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow: var(--popover-shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    right: -320px; /* default: anchor to the right of the card */
+  }
+  .row-branch .branch-col:first-child .popover { right: auto; left: calc(100% + 16px); }
+  .row-branch .branch-col:last-child .popover { right: calc(100% + 16px); left: auto; }
+  .row-branch .branch-col:not(:first-child):not(:last-child) .popover { right: auto; left: 50%; top: auto; bottom: calc(100% + 12px); transform: translateX(-50%); }
+  @media (max-width: 720px) {
+    .popover { position: absolute; top: calc(100% + 8px); left: 0; right: 0; transform: none; width: 100%; }
+    .row-branch .branch-col:first-child .popover,
+    .row-branch .branch-col:last-child .popover,
+    .row-branch .branch-col:not(:first-child):not(:last-child) .popover { top: calc(100% + 8px); left: 0; right: 0; transform: none; }
+  }
+  .step:hover > .popover,
+  .step:focus-within > .popover { opacity: 1; pointer-events: auto; }
+  .popover-heading { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); margin: 0 0 8px; }
+  .popover-body { font-size: 12.5px; line-height: 1.5; color: var(--text-muted); margin: 0 0 12px; }
+  .meta { margin: 0 0 12px; padding: 0; }
+  .meta > div { display: flex; gap: 12px; margin-bottom: 6px; font-size: 11px; align-items: baseline; }
+  .meta dt { flex: 0 0 96px; color: var(--text-dim); font-weight: 500; margin: 0; text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .meta dd { flex: 1; margin: 0; color: var(--text); font-family: var(--font-mono); font-size: 10.5px; word-break: break-word; line-height: 1.4; }
+  pre {
+    margin: 0;
+    padding: 10px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: var(--text);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  footer.orbit-foot {
+    text-align: center;
+    padding: 16px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    letter-spacing: 0.04em;
+  }
+  footer.orbit-foot a { color: var(--accent); text-decoration: none; }
+  footer.orbit-foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="chrome">
+    <div class="chrome-dots">
+      <span class="chrome-dot"></span>
+      <span class="chrome-dot"></span>
+      <span class="chrome-dot"></span>
+    </div>
+    <div class="chrome-brand">Orbit</div>
+    <div class="chrome-label">Lifecycle Diagram</div>
+  </div>
+  <div class="diagram">
+    <div class="diagram-header">
+      <span>${safeTitle}</span>
+      <span>Hover any step for detail</span>
+    </div>
+    <div class="rows">
+      ${rowsHtml}
+    </div>
+  </div>
+  <footer class="orbit-foot">
+    Generated by <a href="https://get.yourorbit.team" target="_blank" rel="noopener">Orbit</a> — Lifecycle Marketing OS for Claude
+  </footer>
+</div>
+<script>
+  // Keyboard accessibility: Enter/Space opens + closes popover, Esc closes all
+  document.querySelectorAll('.step-card').forEach(function (btn) {
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        var step = btn.closest('.step');
+        var expanded = btn.getAttribute('aria-expanded') === 'true';
+        document.querySelectorAll('.step-card[aria-expanded="true"]').forEach(function (o) { o.setAttribute('aria-expanded', 'false'); });
+        btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        if (!expanded) step.focus();
+      }
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.step-card[aria-expanded="true"]').forEach(function (o) { o.setAttribute('aria-expanded', 'false'); });
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    }
+  });
+</script>
+</body>
+</html>`;
 }
