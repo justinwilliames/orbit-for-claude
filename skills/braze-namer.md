@@ -80,4 +80,4 @@ Based on selections, recommend appropriate Braze tags:
 
 ## Web Version
 
-This tool is also available as a free web app at [yourorbit.team/brazenamer](https://yourorbit.team/brazenamer).
+This tool is also available as a free web app at [namer.yourorbit.team](https://namer.yourorbit.team).
