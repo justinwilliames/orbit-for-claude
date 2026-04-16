@@ -22,7 +22,7 @@
     "name": "Justin Williames",
     "url": "https://www.linkedin.com/in/justinwilliames"
   },
-  "homepage": "https://www.linkedin.com/in/justinwilliames",
+  "homepage": "https://get.yourorbit.team",
   "server": {
     "type": "node",
     "entry_point": "server/index.js",
@@ -92,11 +92,11 @@
   "tools": [
     {
       "name": "orbit_list_skills",
-      "description": "List the Orbit skills by category or surface the whole library."
+      "description": "List the Orbit skill library or filter it by category."
     },
     {
       "name": "orbit_route_task",
-      "description": "Rank the best-fit Orbit skills for a request and identify the missing disambiguators."
+      "description": "Rank the best-fit Orbit skills for a request, identify missing disambiguators, and suggest the highest-leverage user questions Orbit should ask before"
     },
     {
       "name": "orbit_load_skill",
@@ -116,95 +116,71 @@
     },
     {
       "name": "orbit_check_setup",
-      "description": "Run an Orbit healthcheck for config, output paths, brand kits, and image-generation readiness."
+      "description": "Run a healthcheck for Orbit config, brand-kit readiness, output paths, and Gemini image generation setup."
     },
     {
       "name": "orbit_bootstrap_home_workspace",
-      "description": "Create Orbit's default ~/Orbit workspace and fill in any missing starter folders or files."
+      "description": "Create Orbit's default ~/Orbit working structure on first run and fill in any missing folders or starter files without overwriting existing user conte"
     },
     {
       "name": "orbit_check_copy_readiness",
-      "description": "Use this before writing copy. If brand guidelines or Tone Of Voice are missing, Orbit should ask whether to set them up first or proceed with explicit assumptions and remember that choice."
-    },
-    {
-      "name": "orbit_start_program_discovery",
-      "description": "Use this first when the user asks Orbit to create a journey, program, or campaign. It returns a required intake survey for objectives, KPIs, audience, current state, connected data, and build constraints before Orbit drafts the flow. On the first pass, Orbit should present the survey directly to the user rather than pre-populating discovery answers unless the user explicitly asks for that."
+      "description": "Use this before writing copy."
     },
     {
       "name": "orbit_validate_brand_kit",
-      "description": "Validate brand-profile.json, brand-guidelines.md, logo paths, example assets, and preferred layout settings."
+      "description": "Validate brand-profile.json, logo paths, example assets, and preferred layout settings."
+    },
+    {
+      "name": "orbit_save_logo_file",
+      "description": "Copies an uploaded or temp-path logo file to the permanent brand kit logos directory."
     },
     {
       "name": "orbit_start_brand_guidelines_intake",
-      "description": "Use this first whenever a user asks Orbit to create brand guidelines or a brand kit. It runs a required step-by-step intake and returns only the next questions to ask."
+      "description": "Required first step before creating brand guidelines or a brand kit."
     },
     {
       "name": "orbit_build_brand_kit_draft",
-      "description": "Create a reviewable brand-kit draft with brand-profile.json, brand-guidelines.md, and a normalized asset plan after the guided intake is complete."
+      "description": "Create a reviewable brand-kit draft with brand-profile.json, brand-guidelines.md, and a normalized asset plan."
     },
     {
       "name": "orbit_write_brand_kit",
-      "description": "Write an approved brand-kit draft to disk and copy normalized logo/example assets into the standard folder structure."
+      "description": "Write an approved brand-kit draft to disk, including brand-profile.json, brand-guidelines.md, and copied asset files."
     },
     {
       "name": "orbit_update_brand_guidelines",
-      "description": "Update draft or existing brand-guidelines.md content without a full brand-kit re-intake."
+      "description": "Update draft or existing brand-guidelines.md content without requiring a full brand-kit re-intake."
     },
     {
-      "name": "orbit_build_lifecycle_diagram_spec",
-      "description": "Create a canonical lifecycle diagram spec with nodes, edges, platform badges, and Mermaid output."
+      "name": "orbit_lifecycle_diagram",
+      "description": "Build, update, or render a lifecycle program flow diagram with nodes, edges, badges, and Mermaid output."
     },
     {
-      "name": "orbit_update_lifecycle_diagram_spec",
-      "description": "Apply deterministic revisions to an existing lifecycle diagram spec."
+      "name": "orbit_brand_header",
+      "description": "Build, update, or render a brand-safe email header."
     },
     {
-      "name": "orbit_render_lifecycle_diagram",
-      "description": "Render a lifecycle diagram spec to SVG, PNG, and PDF."
+      "name": "orbit_start_program_discovery",
+      "description": "Required first step before creating any journey, program, or campaign."
     },
     {
-      "name": "orbit_build_brand_header_spec",
-      "description": "Create a review-ready brand header spec with deterministic layout and Gemini art prompting."
+      "name": "orbit_import_design",
+      "description": "Import an email design into Orbit as a structured design record."
     },
     {
-      "name": "orbit_update_brand_header_spec",
-      "description": "Apply deterministic revisions to an existing brand header spec."
-    },
-    {
-      "name": "orbit_render_brand_header",
-      "description": "Render a brand header spec into SVG, PNG, and PDF assets with local logo composition."
+      "name": "orbit_email_component_map",
+      "description": "Manage the email component map for an imported design."
     },
     {
       "name": "orbit_build_program_workspace",
-      "description": "Create a file-backed Orbit workspace tying together brief, message plan, lifecycle diagram, and downstream production artifacts."
-    },
-    {
-      "name": "orbit_import_figma_email_design",
-      "description": "Import a Figma email design into Orbit as a structured design record."
-    },
-    {
-      "name": "orbit_import_pdf_email_reference",
-      "description": "Import a PDF as a lower-confidence reference-mode design source."
-    },
-    {
-      "name": "orbit_suggest_email_component_map",
-      "description": "Infer reusable email components from a design import and map them to Orbit's canonical taxonomy."
-    },
-    {
-      "name": "orbit_update_email_component_map",
-      "description": "Apply deterministic revisions to an inferred email component map."
-    },
-    {
-      "name": "orbit_approve_email_component_map",
-      "description": "Approve an email component map before code generation or Braze publishing."
+      "description": "Create a local Orbit workspace that ties together discovery, the brief, message plan, diagram, and downstream build artifacts."
     },
     {
       "name": "orbit_build_message_plan",
-      "description": "Create a channel-by-channel message inventory with dependencies, personalization needs, and CTA mapping."
+      "description": "Create a channel-by-channel message inventory with CTAs, module needs, dependencies, and personalization requirements."
     },
     {
       "name": "orbit_build_email_template_spec",
-      "description": "Create a canonical Orbit email template spec before code generation."
+      "description": "Create a canonical Orbit email template spec before MJML generation."
     },
     {
       "name": "orbit_generate_mjml_template",
@@ -212,35 +188,35 @@
     },
     {
       "name": "orbit_compile_email_template",
-      "description": "Compile Orbit MJML to HTML and plain text with a compile report."
+      "description": "Compile Orbit MJML to HTML and plain text, with a compile report and optional files on disk."
     },
     {
       "name": "orbit_preview_email_template",
-      "description": "Create desktop, mobile, and dark-mode preview HTML files for an Orbit email."
+      "description": "Create desktop, mobile, and dark-mode preview HTML for an Orbit email and surface them as Claude artifacts."
     },
     {
       "name": "orbit_validate_email_template",
-      "description": "Run Orbit email QA for markup, links, fallback logic, legal blocks, and Braze-safe structure."
+      "description": "Run Orbit email QA for structure, personalization fallbacks, links, legal blocks, contrast, and Braze-safe markup."
     },
     {
       "name": "orbit_generate_email_components",
-      "description": "Generate reusable MJML/HTML email components from an approved component map."
+      "description": "Generate reusable MJML/HTML email components from an approved component map and save them into Orbit's local library."
     },
     {
       "name": "orbit_assemble_email_template_from_components",
-      "description": "Assemble a final MJML/HTML email from approved reusable Orbit components."
+      "description": "Assemble a final MJML/HTML lifecycle email from approved reusable Orbit components that share compatible props-and-slots contracts."
     },
     {
-      "name": "orbit_sync_braze_content_blocks",
-      "description": "Publish reusable Orbit email components to Braze Content Blocks."
+      "name": "orbit_sync_to_braze",
+      "description": "Publish Orbit assets to Braze."
     },
     {
-      "name": "orbit_sync_braze_email_template",
-      "description": "Publish a compiled Orbit HTML email template to Braze."
+      "name": "orbit_upload_images_to_braze",
+      "description": "Upload email component images to Braze's media library and get back hosted CDN URLs."
     },
     {
-      "name": "orbit_publish_email_to_braze",
-      "description": "Sync Braze Content Blocks first, then publish the final Braze HTML email template."
+      "name": "orbit_reconcile_image_urls",
+      "description": "Patch Braze-hosted CDN URLs into compiled email HTML files and the Stripo assembly template."
     },
     {
       "name": "orbit_build_braze_pack",
@@ -248,75 +224,75 @@
     },
     {
       "name": "orbit_create_braze_canvas",
-      "description": "Create a Braze Canvas from an Orbit braze pack and message plan, mapping program steps to Canvas steps with delays and channel config."
+      "description": "Create a Braze Canvas from an Orbit braze pack and message plan."
     },
     {
       "name": "orbit_audit_braze_instance",
-      "description": "Pull a complete inventory of all Canvases, campaigns, segments, content blocks, and templates in the Braze workspace."
+      "description": "Pull a complete inventory of all Canvases, campaigns, segments, content blocks,"
     },
     {
       "name": "orbit_read_braze_canvas",
-      "description": "Read the full structure of an existing Braze Canvas and reverse-map it to an Orbit message plan."
+      "description": "Read the full structure of an existing Braze Canvas \u2014 steps, channels, delays,"
     },
     {
       "name": "orbit_read_braze_campaign",
-      "description": "Read the full structure of an existing Braze Campaign."
+      "description": "Read the full structure of an existing Braze Campaign \u2014 channels, messages,"
     },
     {
       "name": "orbit_analyse_segments",
-      "description": "List and analyse all Braze segments with optional size trends and issue detection."
+      "description": "List all Braze segments with details, tags, and optional size trend data."
     },
     {
       "name": "orbit_audit_content_blocks",
-      "description": "Inventory all Braze Content Blocks with duplicate detection and optional deep content analysis."
+      "description": "Inventory all Braze Content Blocks with duplicate detection, stale block identification,"
     },
     {
       "name": "orbit_validate_braze_data",
-      "description": "Validate that custom events and attributes referenced in Orbit plans exist in the Braze instance."
+      "description": "Check whether custom events and custom attributes referenced in an Orbit message"
     },
     {
       "name": "orbit_check_deliverability",
-      "description": "Pull bounce and unsubscribe data from Braze with a health assessment and recommendations."
+      "description": "Pull hard bounce and unsubscribe data from Braze for the specified period."
     },
     {
       "name": "orbit_validate_test_users",
-      "description": "Look up Braze user profiles to validate personalisation data and subscription status for QA."
+      "description": "Look up Braze user profiles by external ID or email to validate personalisation"
     },
     {
       "name": "orbit_braze_performance",
-      "description": "Pull time-series performance data for Canvases, campaigns, segments, and KPIs."
+      "description": "Pull time-series performance data for Canvases, campaigns, and segments."
     },
     {
       "name": "orbit_check_template_collision",
-      "description": "Check whether an email template name already exists in Braze before creating."
+      "description": "Check whether an email template with a given name already exists in Braze before creating."
     },
     {
       "name": "orbit_list_braze_templates",
-      "description": "List all email templates in the Braze workspace."
+      "description": "List all email templates in the Braze workspace with their IDs, names, and dates."
     },
     {
       "name": "orbit_fetch_braze_template",
-      "description": "Fetch the full HTML of an existing Braze email template by ID or name."
+      "description": "Fetch the full HTML content of an existing Braze email template by ID or name."
     },
     {
       "name": "orbit_parse_master_template",
-      "description": "Parse an HTML email template into reusable sections, content slots, image references, and Liquid variables."
+      "description": "Parse an HTML email template into reusable sections/modules, extract content slots,"
     },
     {
       "name": "orbit_generate_template_variations",
-      "description": "Generate N variation specs from a parsed master template with content and image slots to populate."
+      "description": "Generate N variation specs from a parsed master template."
     },
     {
       "name": "orbit_assemble_template_variation",
-      "description": "Assemble a populated variation spec into final HTML from the master template structure."
+      "description": "Assemble a populated variation spec into final HTML by replacing content slots"
     },
     {
       "name": "orbit_upload_template_images",
-      "description": "Upload images to Braze media library and return CDN URLs for use in templates."
+      "description": "Upload images to Braze's media library for use in email templates."
     },
     {
       "name": "orbit_braze_namer",
-      "description": "Generate a consistent naming convention string for any Braze asset with smart tag recommendations."
+      "description": "Generate a consistent naming convention string for a Braze asset."
     },
     {
       "name": "orbit_braze_namer_dimensions",
@@ -324,23 +300,11 @@
     },
     {
       "name": "orbit_export_notion_bundle",
-      "description": "Create a Notion-friendly Markdown bundle with lifecycle docs and artifact references."
+      "description": "Create a Notion-friendly Markdown bundle with program docs, artifact manifests, and preview references."
     },
     {
-      "name": "orbit_save_library_item",
-      "description": "Save an email template, email component, module, or program artifact into Orbit's local library."
-    },
-    {
-      "name": "orbit_list_library_items",
-      "description": "Search or browse Orbit's local template, component, module, and program library."
-    },
-    {
-      "name": "orbit_load_library_item",
-      "description": "Load a saved Orbit library item with its artifact payload and saved files."
-    },
-    {
-      "name": "orbit_update_library_item",
-      "description": "Update metadata for a saved Orbit library item."
+      "name": "orbit_library",
+      "description": "Save, list, load, or update items in Orbit's local library of templates, components, modules, and programs."
     }
   ],
   "prompts_generated": true,

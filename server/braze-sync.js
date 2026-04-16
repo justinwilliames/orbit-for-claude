@@ -262,6 +262,158 @@ export async function publishEmailToBraze({
   };
 }
 
+export async function uploadImagesToBraze({
+  config,
+  generatedComponents,
+  outputDir,
+  dryRun = false
+}) {
+  const brazeSetup = validateBrazeSetup(config);
+  if (brazeSetup) {
+    return brazeSetup;
+  }
+
+  // Collect all images from generated component structures
+  const imageManifest = collectImageManifest(generatedComponents);
+  if (imageManifest.length === 0) {
+    return {
+      status: "ok",
+      message: "No images to upload — all components are text/layout only.",
+      manifest: [],
+      uploaded: []
+    };
+  }
+
+  if (dryRun) {
+    return {
+      status: "dry_run",
+      manifest: imageManifest,
+      message: `Found ${imageManifest.length} image(s) to upload to Braze media library.`
+    };
+  }
+
+  const uploaded = [];
+  const errors = [];
+
+  for (const image of imageManifest) {
+    try {
+      // Prefer exported_url (publicly accessible Figma CDN URL) for asset_url approach.
+      // Fall back to local file as base64 if no remote URL.
+      let requestBody;
+      if (image.exported_url) {
+        requestBody = {
+          asset_url: image.exported_url,
+          name: image.braze_name
+        };
+      } else if (image.local_path) {
+        const fs = await import("node:fs");
+        if (fs.existsSync(image.local_path)) {
+          const fileData = fs.readFileSync(image.local_path);
+          requestBody = {
+            asset_file: fileData.toString("base64"),
+            name: image.braze_name
+          };
+        } else {
+          errors.push({
+            image_id: image.id,
+            error: `Local file not found: ${image.local_path}`
+          });
+          continue;
+        }
+      } else {
+        errors.push({
+          image_id: image.id,
+          error: "No exported_url or local_path available for upload"
+        });
+        continue;
+      }
+
+      const response = await callBrazeApi({
+        config,
+        endpoint: "/media_library/create",
+        method: "POST",
+        body: requestBody
+      });
+
+      const asset = response.new_assets?.[0] ?? null;
+      if (asset?.url) {
+        uploaded.push({
+          image_id: image.id,
+          source_node_id: image.source_node_id,
+          component_name: image.component_name,
+          original_src: image.current_src,
+          braze_cdn_url: asset.url,
+          braze_name: asset.name ?? image.braze_name,
+          size: asset.size ?? null
+        });
+      } else {
+        errors.push({
+          image_id: image.id,
+          error: "Braze returned no asset URL",
+          response
+        });
+      }
+    } catch (err) {
+      errors.push({
+        image_id: image.id,
+        error: err.message
+      });
+    }
+  }
+
+  return {
+    status: errors.length === 0 ? "ok" : uploaded.length > 0 ? "partial" : "failed",
+    manifest: imageManifest,
+    uploaded,
+    errors: errors.length > 0 ? errors : undefined,
+    message: `Uploaded ${uploaded.length}/${imageManifest.length} image(s) to Braze media library.`
+  };
+}
+
+function collectImageManifest(generatedComponents) {
+  const images = [];
+  let counter = 0;
+
+  for (const entry of generatedComponents ?? []) {
+    const component = entry.component ?? entry;
+    const structure = component.structure;
+    if (!structure) continue;
+
+    walkStructureForImages(structure, (imageNode) => {
+      counter++;
+      const id = `img-${counter}`;
+      const safeName = slugify(
+        `${component.inferred_name}-${imageNode.name ?? "image"}-${counter}`
+      );
+      images.push({
+        id,
+        source_node_id: imageNode.source_node_id ?? null,
+        component_id: component.id,
+        component_name: component.display_label ?? component.inferred_name,
+        name: imageNode.name ?? `Image ${counter}`,
+        braze_name: safeName,
+        width: imageNode.width ?? null,
+        height: imageNode.height ?? null,
+        exported_url: imageNode.exported_url ?? null,
+        local_path: imageNode.local_path ?? null,
+        current_src: imageNode.exported_url ?? `https://placehold.co/${imageNode.width ?? 600}x${imageNode.height ?? 400}/png`
+      });
+    });
+  }
+
+  return images;
+}
+
+function walkStructureForImages(node, visitor) {
+  if (!node) return;
+  if (node.type === "image") {
+    visitor(node);
+  }
+  for (const child of node.children ?? []) {
+    walkStructureForImages(child, visitor);
+  }
+}
+
 function buildBrazeContentBlockName(item) {
   return slugify(`${item.slug}-${item.version}`).replace(/-/g, "_");
 }

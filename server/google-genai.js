@@ -55,6 +55,7 @@ export async function resolveImageModel(apiKey) {
   }
 
   _resolvedModel = HARDCODED_FALLBACK_MODEL;
+  console.warn(`[Orbit] Gemini model resolution: no priority match found. Falling back to ${HARDCODED_FALLBACK_MODEL}. If image generation fails, verify your API key supports this model.`);
   return _resolvedModel;
 }
 

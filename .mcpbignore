@@ -1,5 +1,8 @@
 .DS_Store
 skills/.DS_Store
+orbit.md
+icon 2.png
+external_logos/
 # Platform-specific instruction files not needed in the bundle (file deleted — entry retained for safety)
 docs/other-platforms/
 npm-debug.log*

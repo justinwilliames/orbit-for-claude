@@ -530,8 +530,9 @@ async function safeList(config, endpoint, itemsKey) {
 
 async function safeListAttributes(config) {
   try {
-    const response = await brazeGet({ config, endpoint: "/custom_attributes" });
-    return response.attributes ?? response.custom_attributes ?? [];
+    // Braze docs: GET /custom_attributes with query params
+    const response = await brazeGet({ config, endpoint: "/custom_attributes", params: { page: 1 } });
+    return response.attributes ?? response.custom_attributes ?? response.data ?? [];
   } catch {
     return [];
   }

@@ -435,6 +435,403 @@
     ]
   },
   {
+    "name": "braze-canvas-creator",
+    "title": "Braze Canvas Creator",
+    "category": "other",
+    "description": "Use this skill when the user wants to create, build, or deploy a Braze Canvas from Orbit program artifacts. Trigger on \"create a Canvas in Braze\", \"deploy this program to Braze\", \"push this journey to Braze as a Canvas\", \"build a Canvas from this message plan\", or any request to translate an Orbit lifecycle program into a live Braze Canvas. This skill handles the mapping from Orbit's program model to the Braze Canvas API schema and manages the API call or dry-run preview.",
+    "trigger_phrases": [
+      "create a canvas in braze",
+      "deploy this program to braze",
+      "push this journey to braze as a canvas",
+      "build a canvas from this message plan"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "api",
+      "artifacts",
+      "braze",
+      "braze-canvas-creator",
+      "build",
+      "call",
+      "canvas",
+      "create",
+      "creator",
+      "deliverable",
+      "deploy",
+      "dry-run",
+      "handles",
+      "journey",
+      "lifecycle",
+      "live",
+      "manages",
+      "mapping",
+      "message",
+      "model",
+      "plan",
+      "preview",
+      "program",
+      "push",
+      "request",
+      "schema",
+      "translate",
+      "trigger",
+      "user",
+      "wants"
+    ]
+  },
+  {
+    "name": "braze-canvas-reader",
+    "title": "Braze Canvas & Campaign Reader",
+    "category": "other",
+    "description": "Use this skill when the user wants to read, inspect, or import an existing Braze Canvas or campaign. Trigger on \"show me this Canvas\", \"what does this Canvas look like?\", \"import this Canvas into Orbit\", \"read campaign X\", or any request to understand the structure of an existing Braze journey. Also use when reverse-mapping a Braze Canvas to an Orbit message plan.",
+    "trigger_phrases": [
+      "show me this canvas",
+      "what does this canvas look like?",
+      "import this canvas into orbit",
+      "read campaign x"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "braze",
+      "braze-canvas-reader",
+      "campaign",
+      "canvas",
+      "deliverable",
+      "does",
+      "existing",
+      "import",
+      "inspect",
+      "journey",
+      "like",
+      "look",
+      "message",
+      "plan",
+      "read",
+      "reader",
+      "request",
+      "reverse-mapping",
+      "show",
+      "structure",
+      "trigger",
+      "understand",
+      "user",
+      "wants"
+    ]
+  },
+  {
+    "name": "braze-content-block-audit",
+    "title": "Braze Content Block Audit",
+    "category": "other",
+    "description": "Use this skill when the user wants to audit, inventory, or clean up their Braze Content Blocks. Trigger on \"audit our content blocks\", \"find duplicate content blocks\", \"which content blocks are stale?\", \"check content block quality\", or any request about Content Block health, duplicates, or Liquid quality issues.",
+    "trigger_phrases": [
+      "audit our content blocks",
+      "find duplicate content blocks",
+      "which content blocks are stale?",
+      "check content block quality"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "are",
+      "audit",
+      "block",
+      "blocks",
+      "braze",
+      "braze-content-block-audit",
+      "check",
+      "clean",
+      "content",
+      "deliverable",
+      "duplicate",
+      "duplicates",
+      "find",
+      "health",
+      "inventory",
+      "issues",
+      "liquid",
+      "our",
+      "quality",
+      "request",
+      "stale",
+      "trigger",
+      "user",
+      "wants"
+    ]
+  },
+  {
+    "name": "braze-data-validation",
+    "title": "Braze Data Model Validation",
+    "category": "other",
+    "description": "Use this skill when Orbit needs to verify that custom events and custom attributes referenced in a message plan or personalisation actually exist in the Braze instance. Trigger on \"do these attributes exist in Braze?\", \"validate our data model\", \"check if this event is tracked\", \"what custom attributes are available?\", or before launching any program that depends on specific user data fields.",
+    "trigger_phrases": [
+      "do these attributes exist in braze?",
+      "validate our data model",
+      "check if this event is tracked",
+      "what custom attributes are available?"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "actually",
+      "any",
+      "are",
+      "attributes",
+      "available",
+      "braze",
+      "braze-data-validation",
+      "check",
+      "custom",
+      "data",
+      "deliverable",
+      "depends",
+      "event",
+      "events",
+      "exist",
+      "fields",
+      "instance",
+      "launching",
+      "message",
+      "model",
+      "needs",
+      "our",
+      "personalisation",
+      "plan",
+      "program",
+      "referenced",
+      "specific",
+      "these",
+      "tracked",
+      "trigger",
+      "user",
+      "validate",
+      "validation",
+      "verify"
+    ]
+  },
+  {
+    "name": "braze-deliverability",
+    "title": "Braze Deliverability Health Check",
+    "category": "other",
+    "description": "Use this skill when the user wants to check email deliverability health in Braze. Trigger on \"check our deliverability\", \"how are our bounce rates?\", \"are we getting spam complaints?\", \"email health check\", \"should we launch this email program?\", or any request about bounce rates, unsubscribe trends, or email sending reputation.",
+    "trigger_phrases": [
+      "check our deliverability",
+      "how are our bounce rates?",
+      "are we getting spam complaints?",
+      "email health check",
+      "should we launch this email program?"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "are",
+      "bounce",
+      "braze",
+      "braze-deliverability",
+      "check",
+      "complaints",
+      "deliverability",
+      "deliverable",
+      "email",
+      "getting",
+      "health",
+      "how",
+      "launch",
+      "our",
+      "program",
+      "rates",
+      "reputation",
+      "request",
+      "sending",
+      "spam",
+      "trends",
+      "trigger",
+      "unsubscribe",
+      "user",
+      "wants"
+    ]
+  },
+  {
     "name": "braze-documentation-expert",
     "title": "Braze Documentation Expert",
     "category": "platform-documentation",
@@ -539,6 +936,425 @@
     ]
   },
   {
+    "name": "braze-instance-audit",
+    "title": "Braze Instance Audit",
+    "category": "other",
+    "description": "Use this skill when the user wants to audit, inventory, or health-check their Braze workspace. Trigger on \"what's in my Braze instance?\", \"audit our Braze setup\", \"how many Canvases do we have?\", \"find unused content blocks\", \"check our Braze naming conventions\", or any request to understand the current state of a Braze workspace before building new programs. This skill reads everything, writes nothing.",
+    "trigger_phrases": [
+      "what's in my braze instance?",
+      "audit our braze setup",
+      "how many canvases do we have?",
+      "find unused content blocks",
+      "check our braze naming conventions"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "audit",
+      "blocks",
+      "braze",
+      "braze-instance-audit",
+      "building",
+      "canvases",
+      "check",
+      "content",
+      "conventions",
+      "current",
+      "deliverable",
+      "everything",
+      "find",
+      "health-check",
+      "how",
+      "instance",
+      "inventory",
+      "many",
+      "naming",
+      "new",
+      "nothing",
+      "our",
+      "programs",
+      "reads",
+      "request",
+      "setup",
+      "state",
+      "trigger",
+      "understand",
+      "unused",
+      "user",
+      "wants",
+      "workspace",
+      "writes"
+    ]
+  },
+  {
+    "name": "braze-master-template",
+    "title": "Master Template Workflow",
+    "category": "other",
+    "description": "Use this skill when the user wants to import an existing HTML email template, break it into reusable modules, generate multiple content variations from it, or manage template images. Trigger on \"use my existing template\", \"import this HTML email\", \"generate 10 email variations\", \"break this template into sections\", \"upload these images to Braze\", \"I have a master template\", or any request involving template reuse, variation generation, or image management for email production.",
+    "trigger_phrases": [
+      "use my existing template",
+      "import this html email",
+      "generate 10 email variations",
+      "break this template into sections",
+      "upload these images to braze",
+      "i have a master template"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "braze",
+      "braze-master-template",
+      "break",
+      "content",
+      "deliverable",
+      "email",
+      "existing",
+      "generate",
+      "generation",
+      "html",
+      "image",
+      "images",
+      "import",
+      "involving",
+      "manage",
+      "management",
+      "master",
+      "modules",
+      "multiple",
+      "production",
+      "request",
+      "reusable",
+      "reuse",
+      "sections",
+      "template",
+      "these",
+      "trigger",
+      "upload",
+      "user",
+      "variation",
+      "variations",
+      "wants",
+      "workflow"
+    ]
+  },
+  {
+    "name": "braze-namer",
+    "title": "Braze Namer",
+    "category": "other",
+    "description": "Use this skill when the user needs to generate a consistent naming convention for a Braze asset — Canvas, campaign, segment, template, Content Block, or any other object. Trigger on \"name this Canvas\", \"what should I call this campaign?\", \"generate a Braze naming convention\", \"naming standard for our Braze assets\", or any request to produce deterministic, structured asset names for Braze.",
+    "trigger_phrases": [
+      "name this canvas",
+      "what should i call this campaign?",
+      "generate a braze naming convention",
+      "naming standard for our braze assets"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "asset",
+      "assets",
+      "block",
+      "braze",
+      "braze-namer",
+      "call",
+      "campaign",
+      "canvas",
+      "consistent",
+      "content",
+      "convention",
+      "deliverable",
+      "deterministic",
+      "generate",
+      "name",
+      "namer",
+      "names",
+      "naming",
+      "needs",
+      "object",
+      "other",
+      "our",
+      "produce",
+      "request",
+      "segment",
+      "standard",
+      "structured",
+      "template",
+      "trigger",
+      "user"
+    ]
+  },
+  {
+    "name": "braze-performance",
+    "title": "Braze Performance Dashboard",
+    "category": "other",
+    "description": "Use this skill when the user wants to pull performance data or analytics from Braze. Trigger on \"how is this Canvas performing?\", \"show me campaign metrics\", \"what are our open rates?\", \"pull MAU trends\", \"segment growth report\", \"lifecycle performance dashboard\", or any request for Braze analytics, conversion data, or KPI trends.",
+    "trigger_phrases": [
+      "how is this canvas performing?",
+      "show me campaign metrics",
+      "what are our open rates?",
+      "pull mau trends",
+      "segment growth report",
+      "lifecycle performance dashboard"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "analytics",
+      "any",
+      "are",
+      "braze",
+      "braze-performance",
+      "campaign",
+      "canvas",
+      "conversion",
+      "dashboard",
+      "data",
+      "deliverable",
+      "growth",
+      "how",
+      "kpi",
+      "lifecycle",
+      "mau",
+      "metrics",
+      "open",
+      "our",
+      "performance",
+      "performing",
+      "pull",
+      "rates",
+      "report",
+      "request",
+      "segment",
+      "show",
+      "trends",
+      "trigger",
+      "user",
+      "wants"
+    ]
+  },
+  {
+    "name": "braze-segment-analysis",
+    "title": "Braze Segment Analysis",
+    "category": "other",
+    "description": "Use this skill when the user wants to analyse, audit, or understand their Braze segments. Trigger on \"show me our segments\", \"which segments are we using?\", \"find overlapping segments\", \"are any segments unused?\", \"how is this segment growing?\", or any request about Braze segment health, size trends, or organisation.",
+    "trigger_phrases": [
+      "show me our segments",
+      "which segments are we using?",
+      "find overlapping segments",
+      "are any segments unused?",
+      "how is this segment growing?"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "analyse",
+      "analysis",
+      "any",
+      "are",
+      "audit",
+      "braze",
+      "braze-segment-analysis",
+      "deliverable",
+      "find",
+      "growing",
+      "health",
+      "how",
+      "organisation",
+      "our",
+      "overlapping",
+      "request",
+      "segment",
+      "segments",
+      "show",
+      "size",
+      "trends",
+      "trigger",
+      "understand",
+      "unused",
+      "user",
+      "using",
+      "wants"
+    ]
+  },
+  {
     "name": "braze-template-sync",
     "title": "Braze Template Sync",
     "category": "production-operations",
@@ -619,6 +1435,81 @@
       "templates",
       "trigger",
       "via"
+    ]
+  },
+  {
+    "name": "braze-test-users",
+    "title": "Braze Test User Validation",
+    "category": "other",
+    "description": "Use this skill when the user needs to validate test user profiles in Braze before sending QA test messages. Trigger on \"check my test users\", \"validate test user data\", \"does this user have the right attributes?\", \"check subscription status\", or any request about QA readiness for specific Braze user profiles.",
+    "trigger_phrases": [
+      "check my test users",
+      "validate test user data",
+      "does this user have the right attributes?",
+      "check subscription status"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "attributes",
+      "braze",
+      "braze-test-users",
+      "check",
+      "data",
+      "deliverable",
+      "does",
+      "messages",
+      "needs",
+      "profiles",
+      "readiness",
+      "request",
+      "right",
+      "sending",
+      "specific",
+      "status",
+      "subscription",
+      "test",
+      "trigger",
+      "user",
+      "users",
+      "validate",
+      "validation"
     ]
   },
   {
@@ -3595,6 +4486,100 @@
     ]
   },
   {
+    "name": "smart-header-builder",
+    "title": "Smart Header Builder",
+    "category": "other",
+    "description": "Use this skill whenever a user asks Orbit to generate, create, build, or design a brand header, email header, email banner, or brand image. Trigger on asks like \"make me a header\", \"generate a brand header\", \"create an email banner\", \"build a header for my welcome email\", \"design a header for this campaign\", or any request that will end with a call to orbit_brand_header. This skill wraps the full header generation flow — setup validation, intelligent brand example selection, spec building, rendering, and preview — so the user never needs to think about example paths or tool sequencing.",
+    "trigger_phrases": [
+      "make me a header",
+      "generate a brand header",
+      "create an email banner",
+      "build a header for my welcome email",
+      "design a header for this campaign"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "banner",
+      "brand",
+      "build",
+      "builder",
+      "building",
+      "call",
+      "campaign",
+      "create",
+      "deliverable",
+      "design",
+      "email",
+      "end",
+      "example",
+      "flow",
+      "full",
+      "generate",
+      "generation",
+      "header",
+      "image",
+      "intelligent",
+      "like",
+      "make",
+      "needs",
+      "never",
+      "paths",
+      "preview",
+      "rendering",
+      "request",
+      "selection",
+      "sequencing",
+      "setup",
+      "smart",
+      "smart-header-builder",
+      "spec",
+      "think",
+      "tool",
+      "trigger",
+      "user",
+      "validation",
+      "welcome",
+      "wraps"
+    ]
+  },
+  {
     "name": "sms-playbook",
     "title": "SMS Playbook",
     "category": "lifecycle-design-execution",
@@ -4100,97 +5085,6 @@
       "winback-playbook",
       "winback-program",
       "working"
-    ]
-  },
-  {
-    "name": "smart-header-builder",
-    "title": "Smart Header Builder",
-    "category": "brand-creative",
-    "description": "Use this skill whenever a user asks Orbit to generate, create, build, or design a brand header, email header, email banner, or brand image. Trigger on asks like 'make me a header', 'generate a brand header', 'create an email banner', 'build a header for my welcome email', 'design a header for this campaign', or any request that will end with a call to orbit_brand_header. This skill wraps the full header generation flow — setup validation, intelligent brand example selection, spec building, rendering, and preview — so the user never needs to think about example paths or tool sequencing.",
-    "trigger_phrases": [
-      "make me a header",
-      "generate a brand header",
-      "create an email banner",
-      "build a header for my welcome email",
-      "design a header for this campaign",
-      "create a brand header",
-      "generate an email header",
-      "build a brand image",
-      "make an email header"
-    ],
-    "exclusion_phrases": [
-      "brand kit setup",
-      "brand guidelines",
-      "critique this header",
-      "review this design"
-    ],
-    "disambiguators": [
-      "generate",
-      "create",
-      "build",
-      "design",
-      "make"
-    ],
-    "adjacent_skills": [
-      "graphic-design",
-      "copy-framework",
-      "lifecycle-design"
-    ],
-    "artifact_types": [
-      "brand-header",
-      "email-header",
-      "brand-image"
-    ],
-    "platform_sensitivity": {
-      "requires_confirmation": false,
-      "supported_platforms": [
-        "braze",
-        "iterable",
-        "hubspot"
-      ]
-    },
-    "templates": [],
-    "validator_rules": [
-      {
-        "label": "setup validation",
-        "type": "regex",
-        "value": "(orbit_check_setup|setup|brand.?kit)",
-        "flags": "i"
-      },
-      {
-        "label": "example selection",
-        "type": "regex",
-        "value": "(selected.*example|example.*select|brand.?example)",
-        "flags": "i"
-      },
-      {
-        "label": "header spec or render",
-        "type": "regex",
-        "value": "(orbit_brand_header|brand.?header|render|spec)",
-        "flags": "i"
-      }
-    ],
-    "keywords": [
-      "banner",
-      "brand-creative",
-      "brand-example",
-      "brand-header",
-      "brand-image",
-      "build",
-      "campaign",
-      "canvas",
-      "create",
-      "design",
-      "email-banner",
-      "email-header",
-      "example-selection",
-      "generate",
-      "header",
-      "image",
-      "lifecycle",
-      "make",
-      "render",
-      "smart-header-builder"
     ]
   }
 ]

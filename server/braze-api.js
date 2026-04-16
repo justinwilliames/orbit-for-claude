@@ -10,6 +10,18 @@
 import { validateBrazeEndpoint } from "./config.js";
 import { safeParseJson } from "./utils.js";
 
+// Simple rate limiter: ensure minimum gap between API calls
+let _lastCallTime = 0;
+const MIN_CALL_GAP_MS = 150;
+async function rateLimit() {
+  const now = Date.now();
+  const elapsed = now - _lastCallTime;
+  if (elapsed < MIN_CALL_GAP_MS) {
+    await new Promise((r) => setTimeout(r, MIN_CALL_GAP_MS - elapsed));
+  }
+  _lastCallTime = Date.now();
+}
+
 const BRAZE_API_TIMEOUT_MS = 20_000;
 
 /**
@@ -45,6 +57,7 @@ export function validateBrazeSetup(config) {
  * Make a GET request to the Braze REST API.
  */
 export async function brazeGet({ config, endpoint, params = {} }) {
+  await rateLimit();
   const baseUrl = config.brazeRestEndpoint.replace(/\/+$/g, "");
   const url = new URL(`${baseUrl}${endpoint}`);
   for (const [key, value] of Object.entries(params)) {
@@ -82,6 +95,7 @@ export async function brazeGet({ config, endpoint, params = {} }) {
  * Make a POST request to the Braze REST API.
  */
 export async function brazePost({ config, endpoint, body = {} }) {
+  await rateLimit();
   const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}${endpoint}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), BRAZE_API_TIMEOUT_MS);

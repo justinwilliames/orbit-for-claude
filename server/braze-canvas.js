@@ -1,9 +1,8 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { validateBrazeEndpoint } from "./config.js";
+import { validateBrazeSetup, brazePost, buildDashboardUrl } from "./braze-api.js";
 import { BRAZE_CANVAS_SYNC_SCHEMA } from "./production-specs.js";
-import { parseJsonInput, safeParseJson, slugify, writeJson } from "./utils.js";
+import { parseJsonInput, slugify, writeJson } from "./utils.js";
 
 /**
  * Create a Braze Canvas from an Orbit braze pack and message plan.
@@ -147,8 +146,9 @@ export async function createBrazeCanvas({
   }
 
   // --- Call Braze API ---
-  const response = await callBrazeCanvasApi({
+  const response = await brazePost({
     config,
+    endpoint: "/canvas/create",
     body: canvasPayload
   });
 
@@ -503,97 +503,10 @@ function validateCanvasPayload(payload, messages) {
   return { errors, warnings };
 }
 
-// ---------------------------------------------------------------------------
-// Braze API
-// ---------------------------------------------------------------------------
+// Braze API: uses shared braze-api.js (validateBrazeSetup, brazePost, buildDashboardUrl)
 
-const BRAZE_API_TIMEOUT_MS = 30_000;
-
-function validateBrazeSetup(config) {
-  if (!config.brazeApiKey || !config.brazeRestEndpoint) {
-    return {
-      status: "needs_setup",
-      missing: [
-        ...(!config.brazeApiKey ? ["braze_api_key"] : []),
-        ...(!config.brazeRestEndpoint ? ["braze_rest_endpoint"] : [])
-      ],
-      message:
-        "Set Braze API credentials before creating a Canvas. Configure braze_api_key and braze_rest_endpoint in your Orbit settings."
-    };
-  }
-
-  const endpointError = validateBrazeEndpoint(config.brazeRestEndpoint);
-  if (endpointError) {
-    return {
-      status: "needs_setup",
-      missing: ["braze_rest_endpoint"],
-      message: endpointError
-    };
-  }
-
-  return null;
-}
-
-async function callBrazeCanvasApi({ config, body }) {
-  const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}/canvas/create`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), BRAZE_API_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.brazeApiKey}`
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-  const text = await response.text();
-  const parsed = safeParseJson(text, { message: text });
-  if (!response.ok) {
-    const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
-    throw new Error(
-      `Braze API ${response.status} on /canvas/create: ${brazeMsg}`
-    );
-  }
-  return parsed;
-}
-
-// ---------------------------------------------------------------------------
-// Dashboard URL builder
-// ---------------------------------------------------------------------------
-
-// Map REST endpoint hostnames to dashboard cluster URLs.
-// Braze dashboard URLs follow: https://dashboard-XX.braze.com/canvas/CANVAS_ID
-const ENDPOINT_TO_DASHBOARD = {
-  "rest.iad-01.braze.com": "dashboard-01.braze.com",
-  "rest.iad-02.braze.com": "dashboard-02.braze.com",
-  "rest.iad-03.braze.com": "dashboard-03.braze.com",
-  "rest.iad-04.braze.com": "dashboard-04.braze.com",
-  "rest.iad-05.braze.com": "dashboard-05.braze.com",
-  "rest.iad-06.braze.com": "dashboard-06.braze.com",
-  "rest.iad-07.braze.com": "dashboard-07.braze.com",
-  "rest.iad-08.braze.com": "dashboard-08.braze.com",
-  "rest.eus-01.braze.eu": "dashboard-01.braze.eu",
-  "rest.eus-02.braze.eu": "dashboard-02.braze.eu"
-};
+// Dashboard URL builder: uses shared buildDashboardUrl from braze-api.js
 
 function buildCanvasDashboardUrl(restEndpoint, canvasId) {
-  if (!restEndpoint || !canvasId) return null;
-  try {
-    const hostname = new URL(restEndpoint).hostname;
-    const dashboard = ENDPOINT_TO_DASHBOARD[hostname];
-    if (dashboard) {
-      return `https://${dashboard}/canvas/${canvasId}`;
-    }
-    // Fallback — construct a best-guess URL
-    const cluster = hostname.replace("rest.", "dashboard-").replace(".braze.", ".braze.");
-    return `https://${cluster}/canvas/${canvasId}`;
-  } catch {
-    return null;
-  }
+  return buildDashboardUrl(restEndpoint, "canvas", canvasId);
 }

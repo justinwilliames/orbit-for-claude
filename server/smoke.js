@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildBrazePack } from "./braze-pack.js";
-import { publishEmailToBraze } from "./braze-sync.js";
+import { publishEmailToBraze, uploadImagesToBraze } from "./braze-sync.js";
 import {
   buildBrandHeaderSpec,
   renderBrandHeader,
@@ -25,7 +25,8 @@ import {
 } from "./email-templates.js";
 import {
   assembleEmailTemplateFromComponents,
-  generateEmailComponents
+  generateEmailComponents,
+  reconcileImageUrls
 } from "./email-components.js";
 import {
   approveEmailComponentMap,
@@ -625,6 +626,19 @@ const generatedComponents = generateEmailComponents({
   outputDir: path.join(outputDir, "generated-components"),
   version: "v1"
 });
+const imageUpload = await uploadImagesToBraze({
+  config,
+  generatedComponents: generatedComponents.generated_components,
+  outputDir: path.join(outputDir, "generated-components"),
+  dryRun: false
+});
+const imageReconcile = imageUpload.status === "ok" || imageUpload.status === "partial"
+  ? reconcileImageUrls({
+      uploadedImages: imageUpload.uploaded,
+      outputDir: path.join(outputDir, "generated-components"),
+      stripTemplatePath: generatedComponents.stripo_template
+    })
+  : { status: "skipped", patched_files: [] };
 const assembledFromComponents = assembleEmailTemplateFromComponents({
   config,
   componentMap: approvedComponentMap.component_map,
@@ -840,6 +854,40 @@ console.log(
         libraryDirDefaulted: config.libraryDir === libraryDir,
         figmaImportStatus: figmaImport.status,
         figmaSectionCount: figmaImport.design_import?.sections?.length ?? 0,
+        figmaSectionsHaveStructure: (figmaImport.design_import?.sections ?? []).every(
+          (section) => section.structure !== undefined
+        ),
+        figmaStructureHasChildren: (figmaImport.design_import?.sections ?? []).some(
+          (section) => section.structure?.children?.length > 0
+        ),
+        figmaHasTextStructure: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure).includes('"type":"text"')
+        ),
+        figmaHasButtonStructure: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure).includes('"type":"button"')
+        ),
+        figmaHasImageStructure: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure).includes('"type":"image"')
+        ),
+        figmaHiddenNodeFiltered: !(figmaImport.design_import?.sections ?? []).some(
+          (section) => (section.name ?? "").includes("Hidden Draft")
+        ),
+        figmaHasRichContent: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure ?? {}).includes('"rich_content":[{')
+        ),
+        figmaHasGradient: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure ?? {}).includes('"type":"GRADIENT_LINEAR"')
+        ),
+        figmaHasOpacity: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure ?? {}).includes('"opacity":0.9')
+        ),
+        figmaHasPrototypeLink: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure ?? {}).includes("app.orbit.example/signup")
+        ),
+        figmaHasExportedImages: (figmaImport.design_import?.sections ?? []).some(
+          (section) => JSON.stringify(section.structure ?? {}).includes('"exported_url"')
+            && !JSON.stringify(section.structure ?? {}).includes('"exported_url":null')
+        ),
         pdfReferenceMode: pdfImport.design_import?.reference_mode ?? null,
         componentMapStatus: componentMapSuggestion.status,
         componentTypes: componentMapSuggestion.component_map.sections.map(
@@ -847,6 +895,22 @@ console.log(
         ),
         componentGenerationStatus: generatedComponents.status,
         generatedComponentCount: generatedComponents.generated_components.length,
+        hasStripoTemplate: Boolean(generatedComponents.stripo_template),
+        stripoTemplateExists: generatedComponents.stripo_template
+          ? fs.existsSync(generatedComponents.stripo_template) : false,
+        stripoHasModuleComments: generatedComponents.stripo_template
+          ? fs.readFileSync(generatedComponents.stripo_template, "utf8").includes("<!-- MODULE:") : false,
+        imageUploadStatus: imageUpload.status,
+        imageUploadCount: imageUpload.uploaded?.length ?? 0,
+        imageManifestCount: imageUpload.manifest?.length ?? 0,
+        imageUploadHasCdnUrls: (imageUpload.uploaded ?? []).every(
+          (img) => img.braze_cdn_url?.includes("braze-images.appboy.com")
+        ),
+        imageReconcileStatus: imageReconcile.status,
+        imageReconcilePatchedCount: imageReconcile.patched_files?.length ?? 0,
+        stripoHasBrazeCdnUrl: generatedComponents.stripo_template
+          ? fs.readFileSync(generatedComponents.stripo_template, "utf8").includes("braze-images.appboy.com")
+          : false,
         assembledTemplateStatus: assembledFromComponents.status,
         assembledTemplateId: assembledFromComponents.library_item?.id ?? null,
         brazePublishOne: brazePublishOne.status,
@@ -864,7 +928,8 @@ async function startMockApiServer() {
     "/content_blocks/create": 0,
     "/content_blocks/update": 0,
     "/templates/email/create": 0,
-    "/templates/email/update": 0
+    "/templates/email/update": 0,
+    "/media_library/create": 0
   };
 
   let baseUrl = null;
@@ -882,61 +947,377 @@ async function startMockApiServer() {
                 id: nodeId,
                 type: "FRAME",
                 name: "Welcome Email",
+                absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 1800 },
                 children: [
                   {
                     id: "10:1",
                     type: "FRAME",
                     name: "Header",
+                    layoutMode: "VERTICAL",
                     absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 80 },
+                    paddingTop: 20, paddingBottom: 12, paddingLeft: 32, paddingRight: 32,
+                    fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }],
                     children: [
-                      { id: "10:2", type: "TEXT", name: "Eyebrow", characters: "Orbit" }
+                      {
+                        id: "10:2", type: "TEXT", name: "Eyebrow", characters: "Orbit",
+                        style: { fontFamily: "Inter", fontSize: 12, fontWeight: 400, lineHeightPx: 16, textAlignHorizontal: "LEFT", letterSpacing: 1 },
+                        fills: [{ type: "SOLID", color: { r: 0.42, g: 0.4, b: 0.37, a: 1 } }]
+                      }
                     ]
                   },
                   {
                     id: "20:1",
                     type: "FRAME",
-                    name: "Hero",
-                    absoluteBoundingBox: { x: 0, y: 80, width: 600, height: 180 },
+                    name: "Hero image full bleed",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 80, width: 600, height: 500 },
+                    fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }],
                     children: [
                       {
-                        id: "20:2",
-                        type: "TEXT",
-                        name: "Headline",
-                        characters: "Welcome to Orbit"
+                        id: "20:2", type: "RECTANGLE", name: "Image",
+                        absoluteBoundingBox: { x: 0, y: 80, width: 600, height: 300 },
+                        fills: [{ type: "IMAGE", imageRef: "hero-img-001" }]
                       },
                       {
-                        id: "20:3",
-                        type: "TEXT",
-                        name: "Body",
-                        characters: "Create your first workspace to get started."
+                        id: "20:3", type: "FRAME", name: "Column",
+                        layoutMode: "VERTICAL",
+                        paddingTop: 32, paddingRight: 24, paddingBottom: 40, paddingLeft: 24,
+                        itemSpacing: 16,
+                        absoluteBoundingBox: { x: 0, y: 380, width: 600, height: 200 },
+                        children: [
+                          {
+                            id: "20:4", type: "TEXT", name: "Heading", characters: "Welcome to Orbit",
+                            style: { fontFamily: "Inter", fontSize: 32, fontWeight: 700, lineHeightPx: 38.4, textAlignHorizontal: "LEFT" },
+                            fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }]
+                          },
+                          {
+                            id: "20:5", type: "TEXT", name: "Body", characters: "Create your first workspace to get started.",
+                            style: { fontFamily: "Inter", fontSize: 16, fontWeight: 400, lineHeightPx: 25.6, textAlignHorizontal: "LEFT" },
+                            fills: [{ type: "SOLID", color: { r: 0.35, g: 0.35, b: 0.41, a: 1 } }]
+                          },
+                          {
+                            id: "20:6", type: "FRAME", name: "Button",
+                            fills: [{ type: "SOLID", color: { r: 0.17, g: 0.52, b: 0.71, a: 1 } }],
+                            cornerRadius: 8,
+                            paddingTop: 12, paddingRight: 24, paddingBottom: 12, paddingLeft: 24,
+                            absoluteBoundingBox: { x: 24, y: 520, width: 160, height: 44 },
+                            children: [
+                              {
+                                id: "20:7", type: "TEXT", name: "Button Label", characters: "Get started",
+                                style: { fontFamily: "Inter", fontSize: 16, fontWeight: 600, textAlignHorizontal: "LEFT" },
+                                fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    id: "25:1",
+                    type: "FRAME",
+                    name: "Chat Bubbles",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 580, width: 600, height: 200 },
+                    itemSpacing: 8,
+                    children: [
+                      {
+                        id: "25:2", type: "FRAME", name: "Incoming",
+                        layoutMode: "HORIZONTAL",
+                        absoluteBoundingBox: { x: 24, y: 580, width: 350, height: 50 },
+                        fills: [{ type: "SOLID", color: { r: 0.94, g: 0.94, b: 0.96, a: 1 } }],
+                        cornerRadius: 16,
+                        children: [
+                          { id: "25:3", type: "TEXT", name: "Message", characters: "Hey! How does the free trial work?",
+                            style: { fontSize: 15, fontWeight: 400 },
+                            fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }] }
+                        ]
+                      },
+                      {
+                        id: "25:4", type: "FRAME", name: "Outgoing",
+                        layoutMode: "HORIZONTAL",
+                        absoluteBoundingBox: { x: 226, y: 638, width: 350, height: 60 },
+                        fills: [{ type: "SOLID", color: { r: 0.17, g: 0.52, b: 0.71, a: 1 } }],
+                        cornerRadius: 16,
+                        children: [
+                          { id: "25:5", type: "TEXT", name: "Message", characters: "You get 14 days to explore everything, no card required.",
+                            style: { fontSize: 15, fontWeight: 400 },
+                            fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }] }
+                        ]
+                      },
+                      {
+                        id: "25:6", type: "FRAME", name: "Incoming",
+                        layoutMode: "HORIZONTAL",
+                        absoluteBoundingBox: { x: 24, y: 706, width: 300, height: 50 },
+                        fills: [{ type: "SOLID", color: { r: 0.94, g: 0.94, b: 0.96, a: 1 } }],
+                        cornerRadius: 16,
+                        children: [
+                          { id: "25:7", type: "TEXT", name: "Message", characters: "Perfect, signing up now!",
+                            style: { fontSize: 15, fontWeight: 400 },
+                            fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }] }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    id: "28:1",
+                    type: "FRAME",
+                    name: "Table",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 780, width: 600, height: 160 },
+                    children: [
+                      {
+                        id: "28:2", type: "FRAME", name: "Header Row",
+                        layoutMode: "HORIZONTAL",
+                        absoluteBoundingBox: { x: 0, y: 780, width: 600, height: 40 },
+                        children: [
+                          { id: "28:3", type: "TEXT", name: "Col1", characters: "Plan",
+                            style: { fontSize: 14, fontWeight: 600 }, fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }],
+                            absoluteBoundingBox: { x: 0, y: 780, width: 200, height: 40 } },
+                          { id: "28:4", type: "TEXT", name: "Col2", characters: "Price",
+                            style: { fontSize: 14, fontWeight: 600 }, fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }],
+                            absoluteBoundingBox: { x: 200, y: 780, width: 200, height: 40 } },
+                          { id: "28:5", type: "TEXT", name: "Col3", characters: "Users",
+                            style: { fontSize: 14, fontWeight: 600 }, fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }],
+                            absoluteBoundingBox: { x: 400, y: 780, width: 200, height: 40 } }
+                        ]
+                      },
+                      {
+                        id: "28:6", type: "FRAME", name: "Data Row 1",
+                        layoutMode: "HORIZONTAL",
+                        absoluteBoundingBox: { x: 0, y: 820, width: 600, height: 40 },
+                        children: [
+                          { id: "28:7", type: "TEXT", name: "Cell", characters: "Starter",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }],
+                            absoluteBoundingBox: { x: 0, y: 820, width: 200, height: 40 } },
+                          { id: "28:8", type: "TEXT", name: "Cell", characters: "$19/mo",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }],
+                            absoluteBoundingBox: { x: 200, y: 820, width: 200, height: 40 } },
+                          { id: "28:9", type: "TEXT", name: "Cell", characters: "Up to 5",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }],
+                            absoluteBoundingBox: { x: 400, y: 820, width: 200, height: 40 } }
+                        ]
+                      },
+                      {
+                        id: "28:10", type: "FRAME", name: "Data Row 2",
+                        layoutMode: "HORIZONTAL",
+                        absoluteBoundingBox: { x: 0, y: 860, width: 600, height: 40 },
+                        children: [
+                          { id: "28:11", type: "TEXT", name: "Cell", characters: "Growth",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }],
+                            absoluteBoundingBox: { x: 0, y: 860, width: 200, height: 40 } },
+                          { id: "28:12", type: "TEXT", name: "Cell", characters: "$49/mo",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }],
+                            absoluteBoundingBox: { x: 200, y: 860, width: 200, height: 40 } },
+                          { id: "28:13", type: "TEXT", name: "Cell", characters: "Up to 25",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }],
+                            absoluteBoundingBox: { x: 400, y: 860, width: 200, height: 40 } }
+                        ]
                       }
                     ]
                   },
                   {
                     id: "30:1",
                     type: "FRAME",
-                    name: "Feature Card",
-                    absoluteBoundingBox: { x: 0, y: 260, width: 600, height: 140 },
+                    name: "Feature Grid",
+                    layoutMode: "HORIZONTAL",
+                    absoluteBoundingBox: { x: 0, y: 940, width: 600, height: 200 },
+                    itemSpacing: 16,
+                    paddingTop: 24, paddingBottom: 24, paddingLeft: 24, paddingRight: 24,
                     children: [
                       {
-                        id: "30:2",
-                        type: "TEXT",
-                        name: "Feature Title",
-                        characters: "Invite your team"
+                        id: "30:2", type: "FRAME", name: "Card 1",
+                        layoutMode: "VERTICAL",
+                        absoluteBoundingBox: { x: 24, y: 964, width: 268, height: 152 },
+                        fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }],
+                        children: [
+                          { id: "30:3", type: "RECTANGLE", name: "Card Image",
+                            absoluteBoundingBox: { x: 24, y: 964, width: 268, height: 80 },
+                            fills: [{ type: "IMAGE", imageRef: "card-img-001" }] },
+                          { id: "30:4", type: "TEXT", name: "Card Title", characters: "Invite your team",
+                            style: { fontSize: 18, fontWeight: 700 }, fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }] },
+                          { id: "30:5", type: "TEXT", name: "Card Desc", characters: "Collaborate in real-time with your teammates.",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.35, g: 0.35, b: 0.41, a: 1 } }] }
+                        ]
+                      },
+                      {
+                        id: "30:6", type: "FRAME", name: "Card 2",
+                        layoutMode: "VERTICAL",
+                        absoluteBoundingBox: { x: 308, y: 964, width: 268, height: 152 },
+                        fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }],
+                        children: [
+                          { id: "30:7", type: "RECTANGLE", name: "Card Image",
+                            absoluteBoundingBox: { x: 308, y: 964, width: 268, height: 80 },
+                            fills: [{ type: "IMAGE", imageRef: "card-img-002" }] },
+                          { id: "30:8", type: "TEXT", name: "Card Title", characters: "Set up automations",
+                            style: { fontSize: 18, fontWeight: 700 }, fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }] },
+                          { id: "30:9", type: "TEXT", name: "Card Desc", characters: "Build workflows that run while you sleep.",
+                            style: { fontSize: 14, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.35, g: 0.35, b: 0.41, a: 1 } }] }
+                        ]
                       }
+                    ]
+                  },
+                  {
+                    id: "32:1",
+                    type: "FRAME",
+                    name: "Quote",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1140, width: 600, height: 120 },
+                    paddingTop: 32, paddingBottom: 32, paddingLeft: 24, paddingRight: 24,
+                    children: [
+                      { id: "32:2", type: "TEXT", name: "Quote Text", characters: "Orbit cut our onboarding time in half.",
+                        style: { fontFamily: "Georgia", fontSize: 20, fontWeight: 400, lineHeightPx: 30 },
+                        fills: [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 } }] },
+                      { id: "32:3", type: "TEXT", name: "Attribution", characters: "Sarah Chen",
+                        style: { fontSize: 14, fontWeight: 700 },
+                        fills: [{ type: "SOLID", color: { r: 0.3, g: 0.3, b: 0.3, a: 1 } }] },
+                      { id: "32:4", type: "TEXT", name: "Role", characters: "Head of Growth, Acme Co",
+                        style: { fontSize: 14, fontWeight: 400 },
+                        fills: [{ type: "SOLID", color: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] }
+                    ]
+                  },
+                  {
+                    id: "35:1",
+                    type: "FRAME",
+                    name: "Emoji Bullet List",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1260, width: 600, height: 150 },
+                    paddingTop: 24, paddingBottom: 24, paddingLeft: 24, paddingRight: 24,
+                    children: [
+                      { id: "35:2", type: "TEXT", name: "Bullet 1", characters: "\uD83D\uDCB8 Save up to 40% on your subscription",
+                        style: { fontSize: 15, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 } }] },
+                      { id: "35:3", type: "TEXT", name: "Bullet 2", characters: "\uD83D\uDECD\uFE0F Browse exclusive member deals",
+                        style: { fontSize: 15, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 } }] },
+                      { id: "35:4", type: "TEXT", name: "Bullet 3", characters: "\u2728 Unlock premium templates",
+                        style: { fontSize: 15, fontWeight: 400 }, fills: [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 } }] }
+                    ]
+                  },
+                  {
+                    id: "38:1",
+                    type: "FRAME",
+                    name: "App Store Download",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1410, width: 600, height: 140 },
+                    children: [
+                      { id: "38:2", type: "TEXT", name: "Heading", characters: "Take Orbit on the go",
+                        style: { fontSize: 22, fontWeight: 700, textAlignHorizontal: "CENTER" },
+                        fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }] },
+                      { id: "38:3", type: "TEXT", name: "Body", characters: "Download the app for iOS and Android.",
+                        style: { fontSize: 15, fontWeight: 400, textAlignHorizontal: "CENTER" },
+                        fills: [{ type: "SOLID", color: { r: 0.36, g: 0.36, b: 0.36, a: 1 } }] }
                     ]
                   },
                   {
                     id: "40:1",
                     type: "FRAME",
-                    name: "Footer",
-                    absoluteBoundingBox: { x: 0, y: 400, width: 600, height: 100 },
+                    name: "Footer Social",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1550, width: 600, height: 100 },
+                    fills: [{ type: "SOLID", color: { r: 0.07, g: 0.09, b: 0.15, a: 1 } }],
                     children: [
-                      {
-                        id: "40:2",
-                        type: "TEXT",
-                        name: "Footer Copy",
-                        characters: "Need help? Reply to this email."
+                      { id: "40:2", type: "TEXT", name: "Footer Copy", characters: "Follow us for tips and updates",
+                        style: { fontSize: 14, fontWeight: 400, textAlignHorizontal: "CENTER" },
+                        fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }] }
+                    ]
+                  },
+                  {
+                    id: "42:1",
+                    type: "FRAME",
+                    name: "Footer Standard",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1650, width: 600, height: 80 },
+                    fills: [{ type: "SOLID", color: { r: 0.96, g: 0.96, b: 0.97, a: 1 } }],
+                    children: [
+                      { id: "42:2", type: "TEXT", name: "Company", characters: "Orbit Pty Ltd",
+                        style: { fontSize: 13, fontWeight: 400, textAlignHorizontal: "CENTER" },
+                        fills: [{ type: "SOLID", color: { r: 0.55, g: 0.55, b: 0.63, a: 1 } }] },
+                      { id: "42:3", type: "TEXT", name: "Address", characters: "123 Business St, Brisbane QLD 4000",
+                        style: { fontSize: 13, fontWeight: 400, textAlignHorizontal: "CENTER" },
+                        fills: [{ type: "SOLID", color: { r: 0.55, g: 0.55, b: 0.63, a: 1 } }] }
+                    ]
+                  },
+                  {
+                    id: "44:1",
+                    type: "GROUP",
+                    name: "Legacy Section No LayoutMode",
+                    absoluteBoundingBox: { x: 0, y: 1730, width: 600, height: 60 },
+                    children: [
+                      { id: "44:2", type: "TEXT", name: "Legacy Text", characters: "This section has no layoutMode property.",
+                        style: { fontSize: 14, fontWeight: 400 },
+                        fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 } }],
+                        absoluteBoundingBox: { x: 24, y: 1730, width: 400, height: 30 } },
+                      { id: "44:3", type: "VECTOR", name: "Decorative Line" }
+                    ]
+                  },
+                  {
+                    id: "50:1",
+                    type: "FRAME",
+                    name: "Hidden Draft Section",
+                    visible: false,
+                    absoluteBoundingBox: { x: 0, y: 1790, width: 600, height: 100 },
+                    children: [
+                      { id: "50:2", type: "TEXT", characters: "DRAFT: This should NOT appear in output.",
+                        style: { fontSize: 16, fontWeight: 700 },
+                        fills: [{ type: "SOLID", color: { r: 1, g: 0, b: 0, a: 1 } }] }
+                    ]
+                  },
+                  {
+                    id: "52:1",
+                    type: "FRAME",
+                    name: "Rich Text Demo",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1790, width: 600, height: 80 },
+                    children: [
+                      { id: "52:2", type: "TEXT", name: "Mixed Style Text",
+                        characters: "Hello bold world and italic text",
+                        style: { fontFamily: "Inter", fontSize: 16, fontWeight: 400, lineHeightPx: 24, textAlignHorizontal: "LEFT" },
+                        fills: [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 } }],
+                        characterStyleOverrides: [0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2],
+                        styleOverrideTable: {
+                          "1": { fontWeight: 700 },
+                          "2": { italic: true }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    id: "54:1",
+                    type: "FRAME",
+                    name: "Gradient Hero Banner",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1870, width: 600, height: 120 },
+                    fills: [
+                      { type: "GRADIENT_LINEAR", visible: true,
+                        gradientStops: [
+                          { color: { r: 0.17, g: 0.52, b: 0.71, a: 1 }, position: 0 },
+                          { color: { r: 0.13, g: 0.39, b: 0.53, a: 1 }, position: 1 }
+                        ] }
+                    ],
+                    opacity: 0.9,
+                    children: [
+                      { id: "54:2", type: "TEXT", name: "Banner Text", characters: "Limited time offer",
+                        style: { fontSize: 24, fontWeight: 700, textAlignHorizontal: "CENTER" },
+                        fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }] }
+                    ]
+                  },
+                  {
+                    id: "56:1",
+                    type: "FRAME",
+                    name: "CTA With Link",
+                    layoutMode: "VERTICAL",
+                    absoluteBoundingBox: { x: 0, y: 1990, width: 600, height: 80 },
+                    children: [
+                      { id: "56:2", type: "FRAME", name: "Linked Button",
+                        fills: [{ type: "SOLID", color: { r: 0.17, g: 0.52, b: 0.71, a: 1 } }],
+                        cornerRadius: 8,
+                        paddingTop: 12, paddingRight: 24, paddingBottom: 12, paddingLeft: 24,
+                        reactions: [{ action: { type: "URL", url: "https://app.orbit.example/signup" } }],
+                        absoluteBoundingBox: { x: 200, y: 2000, width: 200, height: 44 },
+                        children: [
+                          { id: "56:3", type: "TEXT", characters: "Sign Up Free",
+                            style: { fontSize: 16, fontWeight: 600 },
+                            fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }] }
+                        ]
                       }
                     ]
                   }
@@ -950,19 +1331,29 @@ async function startMockApiServer() {
     }
 
     if (req.method === "GET" && url.pathname === "/images/mock-file") {
-      const nodeId = url.searchParams.get("ids") ?? "1:2";
+      const idsParam = url.searchParams.get("ids") ?? "1:2";
+      const nodeIds = decodeURIComponent(idsParam).split(",");
+      const format = url.searchParams.get("format") ?? "svg";
+      const images = {};
+      for (const id of nodeIds) {
+        images[id.trim()] = `${baseUrl}/mock-asset-${encodeURIComponent(id.trim())}.${format}`;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          images: {
-            [nodeId]: `${baseUrl}/mock-email.svg`
-          }
-        })
-      );
+      res.end(JSON.stringify({ images }));
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/mock-email.svg") {
+    if (req.method === "GET" && url.pathname.startsWith("/mock-asset-")) {
+      if (url.pathname.endsWith(".png")) {
+        // Return a minimal 1x1 PNG
+        const pngBytes = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          "base64"
+        );
+        res.writeHead(200, { "Content-Type": "image/png" });
+        res.end(pngBytes);
+        return;
+      }
       res.writeHead(200, { "Content-Type": "image/svg+xml" });
       res.end(
         `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="600" height="500" fill="#ffffff"/><text x="40" y="70" font-size="32">Welcome to Orbit</text></svg>`
@@ -980,6 +1371,24 @@ async function startMockApiServer() {
             content_block_id: body.content_block_id ?? `cb_${counts[url.pathname]}`,
             liquid_tag: `{{content_blocks.${body.name}}}`,
             message: "ok"
+          })
+        );
+        return;
+      }
+
+      if (url.pathname === "/media_library/create") {
+        const assetName = body.name ?? `asset_${counts[url.pathname]}`;
+        res.end(
+          JSON.stringify({
+            new_assets: [
+              {
+                name: assetName,
+                size: 1024,
+                url: `https://braze-images.appboy.com/mock-cdn/${assetName}.png`,
+                ext: "png"
+              }
+            ],
+            errors: []
           })
         );
         return;

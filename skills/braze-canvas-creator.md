@@ -1,15 +1,16 @@
 ---
 name: braze-canvas-creator
 description: >
-  Use this skill when the user wants to create, build, or deploy a Braze Canvas from Orbit
-  program artifacts. Trigger on "create a Canvas in Braze", "deploy this program to Braze",
-  "push this journey to Braze as a Canvas", "build a Canvas from this message plan", or
-  any request to translate an Orbit lifecycle program into a live Braze Canvas. This skill
-  handles the mapping from Orbit's program model to the Braze Canvas API schema and manages
-  the API call or dry-run preview.
+  Use this skill when the user wants to design a Braze Canvas structure from Orbit
+  program artifacts. Trigger on "design a Canvas", "map this program to a Canvas",
+  "build a Canvas layout from this message plan", or any request to translate an
+  Orbit lifecycle program into a Braze Canvas structure. This skill maps the program
+  model to Canvas steps, delays, channels, and entry logic. The output is a structured
+  Canvas design that can be shared as an artifact or used as a reference to build
+  the Canvas manually in Braze.
 ---
 
-# Braze Canvas Creator
+# Braze Canvas Designer
 
 Map an Orbit lifecycle program to a Braze Canvas and create it via the Braze REST API — or preview the payload in dry-run mode.
 
