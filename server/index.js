@@ -24,9 +24,33 @@ import {
   buildBrazePack
 } from "./braze-pack.js";
 import {
+  createBrazeCanvas
+} from "./braze-canvas.js";
+import { pullBrazePerformance } from "./braze-performance.js";
+import {
+  auditBrazeInstance,
+  readBrazeCanvas as readBrazeCanvasDetails,
+  readBrazeCampaign,
+  analyseSegments,
+  auditContentBlocks,
+  validateBrazeData,
+  checkDeliverability,
+  validateTestUsers,
+  checkTemplateCollision
+} from "./braze-read.js";
+import {
+  fetchBrazeTemplate,
+  listBrazeTemplates,
+  parseMasterTemplate,
+  generateTemplateVariationSpecs,
+  assembleTemplateVariation,
+  uploadTemplateImages
+} from "./braze-template-master.js";
+import {
   publishEmailToBraze,
   syncBrazeContentBlocks,
-  syncBrazeEmailTemplate
+  syncBrazeEmailTemplate,
+  uploadImagesToBraze
 } from "./braze-sync.js";
 import {
   buildBrandKitDraft,
@@ -36,7 +60,8 @@ import {
 } from "./brand-kit.js";
 import {
   assembleEmailTemplateFromComponents,
-  generateEmailComponents
+  generateEmailComponents,
+  reconcileImageUrls
 } from "./email-components.js";
 import {
   buildEmailTemplateSpec,
@@ -84,6 +109,7 @@ import {
   buildProgramWorkspace
 } from "./program-workspaces.js";
 import {
+  BRAZE_CANVAS_SYNC_SCHEMA,
   BRAZE_CONTENT_BLOCK_REFERENCE,
   BRAZE_SYNC_RECORD_SCHEMA,
   COMPONENT_MAP_SCHEMA,
@@ -2574,6 +2600,66 @@ function registerTools() {
   );
 
   server.registerTool(
+    "orbit_upload_images_to_braze",
+    {
+      title: "Upload Images to Braze",
+      description:
+        "Upload email component images to Braze's media library and get back hosted CDN URLs. " +
+        "Pass the generated_components array from orbit_generate_email_components. " +
+        "After upload, use orbit_reconcile_image_urls to patch the CDN URLs into all compiled HTML files.",
+      inputSchema: {
+        generated_components_json: z.string().min(1).describe("JSON string of the generated_components array from orbit_generate_email_components"),
+        output_dir: z.string().optional().describe("Output directory containing generated component files"),
+        dry_run: z.boolean().optional().describe("If true, list images to upload without actually uploading")
+      }
+    },
+    async ({
+      generated_components_json: generatedComponentsJson,
+      output_dir: outputDir,
+      dry_run: dryRun
+    }) => {
+      const { value: generatedComponents, error: parseError } = parseToolJson(generatedComponentsJson, "generated_components_json", []);
+      if (parseError) return parseError;
+      const result = await uploadImagesToBraze({
+        config: runtimeConfig,
+        generatedComponents,
+        outputDir,
+        dryRun
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_reconcile_image_urls",
+    {
+      title: "Reconcile Image URLs",
+      description:
+        "Patch Braze-hosted CDN URLs into compiled email HTML files and the Stripo assembly template. " +
+        "Run this after orbit_upload_images_to_braze to replace placeholder/Figma URLs with permanent hosted URLs.",
+      inputSchema: {
+        uploaded_images_json: z.string().min(1).describe("JSON string of the uploaded array from orbit_upload_images_to_braze"),
+        output_dir: z.string().optional().describe("Output directory containing generated component files to patch"),
+        stripo_template_path: z.string().optional().describe("Path to stripo-template.html to patch")
+      }
+    },
+    async ({
+      uploaded_images_json: uploadedImagesJson,
+      output_dir: outputDir,
+      stripo_template_path: stripTemplatePath
+    }) => {
+      const { value: uploadedImages, error: parseError } = parseToolJson(uploadedImagesJson, "uploaded_images_json", []);
+      if (parseError) return parseError;
+      const result = reconcileImageUrls({
+        uploadedImages,
+        outputDir,
+        stripTemplatePath
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
     "orbit_build_braze_pack",
     {
       title: "Build a Braze Pack",
@@ -2604,6 +2690,409 @@ function registerTools() {
         messagePlan: messagePlanJson,
         emailAssets,
         outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_create_braze_canvas",
+    {
+      title: "Create Braze Canvas",
+      description:
+        "Create a Braze Canvas from an Orbit braze pack and message plan. " +
+        "Maps Orbit program steps, messages, delays, audience, and entry criteria to a valid Braze Canvas API payload. " +
+        "Use dry_run=true (default) to preview the payload without calling the Braze API. " +
+        "Requires: message_plan_json (from orbit_build_message_plan). Optional: braze_pack_json (from orbit_build_braze_pack), workspace_json.",
+      inputSchema: {
+        braze_pack_json: z.string().optional().describe("JSON string of the braze pack from orbit_build_braze_pack"),
+        message_plan_json: z.string().min(1).describe("JSON string of the message plan from orbit_build_message_plan"),
+        workspace_json: z.string().optional().describe("JSON string of the program workspace"),
+        canvas_name: z.string().optional().describe("Override Canvas name (defaults to program name from pack/plan)"),
+        canvas_description: z.string().optional().describe("Override Canvas description"),
+        entry_schedule_type: z.enum(["scheduled", "action_based", "api_triggered"]).optional().describe("Canvas entry schedule type (default: scheduled)"),
+        entry_segment_id: z.string().optional().describe("Braze segment ID for Canvas entry audience"),
+        entry_filters_json: z.string().optional().describe("JSON string of additional Braze entry audience filters"),
+        tags: z.array(z.string()).optional().describe("Additional tags for the Canvas"),
+        dry_run: z.boolean().optional().describe("If true (default), preview the payload without calling the Braze API"),
+        output_dir: z.string().optional().describe("Directory to write the Canvas payload JSON file")
+      }
+    },
+    async ({
+      braze_pack_json: brazePackJson,
+      message_plan_json: messagePlanJson,
+      workspace_json: workspaceJson,
+      canvas_name: canvasName,
+      canvas_description: canvasDescription,
+      entry_schedule_type: entryScheduleType,
+      entry_segment_id: entrySegmentId,
+      entry_filters_json: entryFiltersJson,
+      tags,
+      dry_run: dryRun,
+      output_dir: outputDir
+    }) => {
+      const { value: brazePack, error: packError } = parseToolJson(brazePackJson, "braze_pack_json", null);
+      if (packError) return packError;
+      const { value: entryFilters, error: filtersError } = parseToolJson(entryFiltersJson, "entry_filters_json", null);
+      if (filtersError) return filtersError;
+      const result = await createBrazeCanvas({
+        config: runtimeConfig,
+        brazePack: brazePack,
+        messagePlan: messagePlanJson,
+        workspace: workspaceJson,
+        canvasName,
+        canvasDescription,
+        entryScheduleType: entryScheduleType ?? "scheduled",
+        entrySegmentId,
+        entryFilters,
+        tags: tags ?? [],
+        dryRun: dryRun !== false,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  // -----------------------------------------------------------------------
+  // Braze Read-Only Intelligence Tools
+  // -----------------------------------------------------------------------
+
+  server.registerTool(
+    "orbit_audit_braze_instance",
+    {
+      title: "Audit Braze Instance",
+      description:
+        "Pull a complete inventory of all Canvases, campaigns, segments, content blocks, " +
+        "email templates, custom events, and custom attributes in the Braze workspace. " +
+        "Produces a structured audit report with counts, naming convention compliance, and warnings.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await auditBrazeInstance({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_read_braze_canvas",
+    {
+      title: "Read Braze Canvas",
+      description:
+        "Read the full structure of an existing Braze Canvas — steps, channels, delays, " +
+        "entry audience, and schedule. Also reverse-maps it to an Orbit message plan so " +
+        "you can import existing Canvases into Orbit's program model.",
+      inputSchema: {
+        canvas_id: z.string().min(1).describe("Braze Canvas ID to read")
+      }
+    },
+    async ({ canvas_id: canvasId }) => {
+      const result = await readBrazeCanvasDetails({ config: runtimeConfig, canvasId });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_read_braze_campaign",
+    {
+      title: "Read Braze Campaign",
+      description:
+        "Read the full structure of an existing Braze Campaign — channels, messages, " +
+        "schedule, conversion behaviours, and tags.",
+      inputSchema: {
+        campaign_id: z.string().min(1).describe("Braze Campaign ID to read")
+      }
+    },
+    async ({ campaign_id: campaignId }) => {
+      const result = await readBrazeCampaign({ config: runtimeConfig, campaignId });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_analyse_segments",
+    {
+      title: "Analyse Braze Segments",
+      description:
+        "List all Braze segments with details, tags, and optional size trend data. " +
+        "Identifies segments without analytics tracking and surfaces potential issues.",
+      inputSchema: {
+        include_data_series: z.boolean().optional().describe("Include daily size trends (slower — requires per-segment API calls)"),
+        days: z.number().optional().describe("Number of days of trend data (default: 30)")
+      }
+    },
+    async ({ include_data_series: includeDataSeries, days }) => {
+      const result = await analyseSegments({
+        config: runtimeConfig,
+        includeDataSeries: includeDataSeries ?? false,
+        days: days ?? 30
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_audit_content_blocks",
+    {
+      title: "Audit Braze Content Blocks",
+      description:
+        "Inventory all Braze Content Blocks with duplicate detection, stale block identification, " +
+        "and optional content analysis (Liquid fallback checks, broken images, HTTP URLs).",
+      inputSchema: {
+        fetch_content: z.boolean().optional().describe("Fetch full content for each block to enable deep analysis (slower)")
+      }
+    },
+    async ({ fetch_content: fetchContent }) => {
+      const result = await auditContentBlocks({
+        config: runtimeConfig,
+        fetchContent: fetchContent ?? false
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_validate_braze_data",
+    {
+      title: "Validate Braze Data Model",
+      description:
+        "Check whether custom events and custom attributes referenced in an Orbit message " +
+        "plan actually exist in the Braze instance. Also lists all available events and attributes.",
+      inputSchema: {
+        required_attributes: z.array(z.string()).optional().describe("Custom attribute names to check (e.g., [\"first_name\", \"plan_type\"])"),
+        required_events: z.array(z.string()).optional().describe("Custom event names to check (e.g., [\"purchase_completed\", \"signup_completed\"])")
+      }
+    },
+    async ({ required_attributes: requiredAttributes, required_events: requiredEvents }) => {
+      const result = await validateBrazeData({
+        config: runtimeConfig,
+        requiredAttributes: requiredAttributes ?? [],
+        requiredEvents: requiredEvents ?? []
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_check_deliverability",
+    {
+      title: "Check Email Deliverability",
+      description:
+        "Pull hard bounce and unsubscribe data from Braze for the specified period. " +
+        "Produces a health assessment with actionable recommendations.",
+      inputSchema: {
+        days: z.number().optional().describe("Lookback period in days (default: 30)")
+      }
+    },
+    async ({ days }) => {
+      const result = await checkDeliverability({ config: runtimeConfig, days: days ?? 30 });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_validate_test_users",
+    {
+      title: "Validate Test Users",
+      description:
+        "Look up Braze user profiles by external ID or email to validate personalisation " +
+        "data, subscription status, and push token availability for QA.",
+      inputSchema: {
+        user_ids: z.array(z.string()).optional().describe("External IDs to look up"),
+        emails: z.array(z.string()).optional().describe("Email addresses to look up")
+      }
+    },
+    async ({ user_ids: userIds, emails }) => {
+      const result = await validateTestUsers({
+        config: runtimeConfig,
+        userIds: userIds ?? [],
+        emails: emails ?? []
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_braze_performance",
+    {
+      title: "Pull Braze Performance Data",
+      description:
+        "Pull time-series performance data for Canvases, campaigns, and segments. " +
+        "Includes entries, conversions, open/click rates, segment growth, and KPI trends (MAU, DAU, sessions).",
+      inputSchema: {
+        canvas_ids: z.array(z.string()).optional().describe("Canvas IDs to pull data for"),
+        campaign_ids: z.array(z.string()).optional().describe("Campaign IDs to pull data for"),
+        segment_ids: z.array(z.string()).optional().describe("Segment IDs to pull data for"),
+        include_kpis: z.boolean().optional().describe("Include MAU, DAU, new user, and session KPIs (default: true)"),
+        days: z.number().optional().describe("Lookback period in days (default: 30)")
+      }
+    },
+    async ({ canvas_ids: canvasIds, campaign_ids: campaignIds, segment_ids: segmentIds, include_kpis: includeKpis, days }) => {
+      const result = await pullBrazePerformance({
+        config: runtimeConfig,
+        canvasIds: canvasIds ?? [],
+        campaignIds: campaignIds ?? [],
+        segmentIds: segmentIds ?? [],
+        includeKpis: includeKpis !== false,
+        days: days ?? 30
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_check_template_collision",
+    {
+      title: "Check Template Collision",
+      description:
+        "Check whether an email template with a given name already exists in Braze before creating. " +
+        "Returns the existing template details if a collision is found.",
+      inputSchema: {
+        template_name: z.string().min(1).describe("Template name to check for collisions")
+      }
+    },
+    async ({ template_name: templateName }) => {
+      const result = await checkTemplateCollision({ config: runtimeConfig, templateName });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  // -----------------------------------------------------------------------
+  // Master Template Workflow Tools
+  // -----------------------------------------------------------------------
+
+  server.registerTool(
+    "orbit_list_braze_templates",
+    {
+      title: "List Braze Email Templates",
+      description:
+        "List all email templates in the Braze workspace with their IDs, names, and dates. " +
+        "Use this to find a master template to import into Orbit.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await listBrazeTemplates({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_fetch_braze_template",
+    {
+      title: "Fetch Braze Email Template",
+      description:
+        "Fetch the full HTML content of an existing Braze email template by ID or name. " +
+        "Use this to import a master template for variation generation.",
+      inputSchema: {
+        template_id: z.string().optional().describe("Braze email_template_id"),
+        template_name: z.string().optional().describe("Template name (will search for a match)")
+      }
+    },
+    async ({ template_id: templateId, template_name: templateName }) => {
+      const result = await fetchBrazeTemplate({ config: runtimeConfig, templateId, templateName });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_parse_master_template",
+    {
+      title: "Parse Master Email Template",
+      description:
+        "Parse an HTML email template into reusable sections/modules, extract content slots, " +
+        "image references, and Liquid variables. Accepts HTML content directly or a file path. " +
+        "This is the first step in generating template variations.",
+      inputSchema: {
+        html_content: z.string().optional().describe("Raw HTML content of the master template"),
+        html_file_path: z.string().optional().describe("Path to an HTML file on disk"),
+        template_name: z.string().optional().describe("Name for this master template (default: 'master-template')"),
+        output_dir: z.string().optional().describe("Directory to write parsed output files")
+      }
+    },
+    async ({ html_content: htmlContent, html_file_path: htmlFilePath, template_name: templateName, output_dir: outputDir }) => {
+      const result = parseMasterTemplate({
+        config: runtimeConfig,
+        htmlContent,
+        htmlFilePath,
+        templateName,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_generate_template_variations",
+    {
+      title: "Generate Template Variation Specs",
+      description:
+        "Generate N variation specs from a parsed master template. Each variation has content " +
+        "slots and image slots to populate. Use this after orbit_parse_master_template.",
+      inputSchema: {
+        parsed_template_json: z.string().min(1).describe("JSON string of the parsed master template"),
+        variation_count: z.number().optional().describe("Number of variations to generate (default: 1, max: 20)"),
+        variation_briefs_json: z.string().optional().describe("JSON array of brief objects: [{ name, description, subject, preheader }]"),
+        program_name: z.string().optional().describe("Program name for the variations"),
+        output_dir: z.string().optional().describe("Directory to write variation spec files")
+      }
+    },
+    async ({ parsed_template_json: parsedTemplateJson, variation_count: variationCount, variation_briefs_json: variationBriefsJson, program_name: programName, output_dir: outputDir }) => {
+      const { value: variationBriefs, error: briefsError } = parseToolJson(variationBriefsJson, "variation_briefs_json", []);
+      if (briefsError) return briefsError;
+      const result = generateTemplateVariationSpecs({
+        config: runtimeConfig,
+        parsedTemplate: parsedTemplateJson,
+        variationCount: variationCount ?? 1,
+        variationBriefs: variationBriefs,
+        programName,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_assemble_template_variation",
+    {
+      title: "Assemble Template Variation",
+      description:
+        "Assemble a populated variation spec into final HTML by replacing content slots " +
+        "and image URLs in the master template structure.",
+      inputSchema: {
+        parsed_template_json: z.string().min(1).describe("JSON string of the parsed master template"),
+        variation_spec_json: z.string().min(1).describe("JSON string of the populated variation spec"),
+        output_dir: z.string().optional().describe("Directory to write the assembled HTML file")
+      }
+    },
+    async ({ parsed_template_json: parsedTemplateJson, variation_spec_json: variationSpecJson, output_dir: outputDir }) => {
+      const result = assembleTemplateVariation({
+        config: runtimeConfig,
+        parsedTemplate: parsedTemplateJson,
+        variationSpec: variationSpecJson,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_upload_template_images",
+    {
+      title: "Upload Template Images to Braze",
+      description:
+        "Upload images to Braze's media library for use in email templates. " +
+        "Accepts image URLs or local file paths. Returns Braze CDN URLs for each uploaded image.",
+      inputSchema: {
+        images_json: z.string().min(1).describe("JSON array of images: [{ name, url } or { name, file_path }]"),
+        dry_run: z.boolean().optional().describe("Preview upload without sending to Braze")
+      }
+    },
+    async ({ images_json: imagesJson, dry_run: dryRun }) => {
+      const { value: images, error: parseError } = parseToolJson(imagesJson, "images_json", []);
+      if (parseError) return parseError;
+      const result = await uploadTemplateImages({
+        config: runtimeConfig,
+        images,
+        dryRun: dryRun ?? false
       });
       return makeJsonToolResponse(result);
     }

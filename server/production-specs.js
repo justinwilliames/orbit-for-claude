@@ -458,6 +458,29 @@ export const BRAZE_PACK_SCHEMA = {
   }
 };
 
+export const BRAZE_CANVAS_SYNC_SCHEMA = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  title: "Orbit Braze Canvas Sync Record",
+  type: "object",
+  required: ["version", "type", "status"],
+  properties: {
+    version: { type: "string" },
+    type: { const: "braze_canvas_sync" },
+    status: { type: "string" },
+    canvas_id: { type: "string" },
+    canvas_name: { type: "string" },
+    dashboard_url: { type: "string" },
+    steps_created: { type: "number" },
+    synced_at: { type: "string" },
+    warnings: {
+      type: "array",
+      items: { type: "string" }
+    },
+    request_body: { type: "object" },
+    response_body: { type: "object" }
+  }
+};
+
 export const NOTION_EXPORT_SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   title: "Orbit Notion Export Bundle",
@@ -556,6 +579,48 @@ export const BRAZE_CONTENT_BLOCK_REFERENCE = [
   "- the personalization logic is unique and hard to QA centrally"
 ].join("\n");
 
+export const BRAZE_INSTANCE_AUDIT_SCHEMA = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  title: "Orbit Braze Instance Audit",
+  type: "object",
+  required: ["status", "audit"],
+  properties: {
+    status: { type: "string" },
+    audit: {
+      type: "object",
+      properties: {
+        timestamp: { type: "string" },
+        summary: { type: "object" },
+        naming_issues: { type: "array", items: { type: "object" } },
+        canvases: { type: "array", items: { type: "object" } },
+        campaigns: { type: "array", items: { type: "object" } },
+        segments: { type: "array", items: { type: "object" } },
+        content_blocks: { type: "array", items: { type: "object" } },
+        email_templates: { type: "array", items: { type: "object" } },
+        warnings: { type: "array", items: { type: "string" } }
+      }
+    }
+  }
+};
+
+export const MASTER_TEMPLATE_SCHEMA = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  title: "Orbit Master Template",
+  type: "object",
+  required: ["version", "type", "name", "sections"],
+  properties: {
+    version: { type: "string" },
+    type: { const: "master_template" },
+    name: { type: "string" },
+    slug: { type: "string" },
+    total_sections: { type: "number" },
+    total_images: { type: "number" },
+    liquid_variables: { type: "array", items: { type: "string" } },
+    sections: { type: "array", items: { type: "object" } },
+    images: { type: "array", items: { type: "object" } }
+  }
+};
+
 export function getProductionSchemaBundle() {
   return {
     design_import: DESIGN_IMPORT_SCHEMA,
@@ -566,6 +631,9 @@ export function getProductionSchemaBundle() {
     program_workspace: PROGRAM_WORKSPACE_SCHEMA,
     braze_pack: BRAZE_PACK_SCHEMA,
     notion_export: NOTION_EXPORT_SCHEMA,
-    braze_sync_record: BRAZE_SYNC_RECORD_SCHEMA
+    braze_sync_record: BRAZE_SYNC_RECORD_SCHEMA,
+    braze_canvas_sync: BRAZE_CANVAS_SYNC_SCHEMA,
+    braze_instance_audit: BRAZE_INSTANCE_AUDIT_SCHEMA,
+    master_template: MASTER_TEMPLATE_SCHEMA
   };
 }

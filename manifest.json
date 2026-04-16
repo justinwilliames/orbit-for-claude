@@ -247,6 +247,74 @@
       "description": "Package Orbit production artifacts into a Braze-ready implementation bundle."
     },
     {
+      "name": "orbit_create_braze_canvas",
+      "description": "Create a Braze Canvas from an Orbit braze pack and message plan, mapping program steps to Canvas steps with delays and channel config."
+    },
+    {
+      "name": "orbit_audit_braze_instance",
+      "description": "Pull a complete inventory of all Canvases, campaigns, segments, content blocks, and templates in the Braze workspace."
+    },
+    {
+      "name": "orbit_read_braze_canvas",
+      "description": "Read the full structure of an existing Braze Canvas and reverse-map it to an Orbit message plan."
+    },
+    {
+      "name": "orbit_read_braze_campaign",
+      "description": "Read the full structure of an existing Braze Campaign."
+    },
+    {
+      "name": "orbit_analyse_segments",
+      "description": "List and analyse all Braze segments with optional size trends and issue detection."
+    },
+    {
+      "name": "orbit_audit_content_blocks",
+      "description": "Inventory all Braze Content Blocks with duplicate detection and optional deep content analysis."
+    },
+    {
+      "name": "orbit_validate_braze_data",
+      "description": "Validate that custom events and attributes referenced in Orbit plans exist in the Braze instance."
+    },
+    {
+      "name": "orbit_check_deliverability",
+      "description": "Pull bounce and unsubscribe data from Braze with a health assessment and recommendations."
+    },
+    {
+      "name": "orbit_validate_test_users",
+      "description": "Look up Braze user profiles to validate personalisation data and subscription status for QA."
+    },
+    {
+      "name": "orbit_braze_performance",
+      "description": "Pull time-series performance data for Canvases, campaigns, segments, and KPIs."
+    },
+    {
+      "name": "orbit_check_template_collision",
+      "description": "Check whether an email template name already exists in Braze before creating."
+    },
+    {
+      "name": "orbit_list_braze_templates",
+      "description": "List all email templates in the Braze workspace."
+    },
+    {
+      "name": "orbit_fetch_braze_template",
+      "description": "Fetch the full HTML of an existing Braze email template by ID or name."
+    },
+    {
+      "name": "orbit_parse_master_template",
+      "description": "Parse an HTML email template into reusable sections, content slots, image references, and Liquid variables."
+    },
+    {
+      "name": "orbit_generate_template_variations",
+      "description": "Generate N variation specs from a parsed master template with content and image slots to populate."
+    },
+    {
+      "name": "orbit_assemble_template_variation",
+      "description": "Assemble a populated variation spec into final HTML from the master template structure."
+    },
+    {
+      "name": "orbit_upload_template_images",
+      "description": "Upload images to Braze media library and return CDN URLs for use in templates."
+    },
+    {
       "name": "orbit_export_notion_bundle",
       "description": "Create a Notion-friendly Markdown bundle with lifecycle docs and artifact references."
     },
