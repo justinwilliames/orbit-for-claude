@@ -1667,8 +1667,10 @@ function registerTools() {
         "action='build': create a new spec from a natural-language request (requires: request). " +
         "action='update': apply deterministic revisions to an existing spec (requires: spec_json). " +
         "action='render': render a spec to SVG, PNG, PDF, and interactive HTML files (requires: spec_json). " +
-        "The HTML output is a self-contained, hover-interactive artifact styled to match the Orbit homepage demo. " +
-        "For Braze, default to a Canvas-style flowchart with decision gates before each send.",
+        "When formats includes 'html', the tool response contains an 'html_content' string. You MUST present " +
+        "this to the user as an inline HTML artifact in your reply, not as a file link — the HTML is " +
+        "self-contained and fully hover-interactive. Keep your accompanying prose brief; the artifact is " +
+        "the deliverable. For Braze, default to a Canvas-style flowchart with decision gates before each send.",
       inputSchema: {
         action: z.enum(["build", "update", "render"]),
         request: z.string().optional(),

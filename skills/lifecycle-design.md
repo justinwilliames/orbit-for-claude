@@ -38,6 +38,15 @@ Default response shape for this skill:
 - Key risks, dependencies, and assumptions
 - Next actions or implementation steps
 
+## Diagram Rendering
+
+When the task produces a lifecycle diagram and `orbit_lifecycle_diagram` is
+called with `action=render` and `formats` includes `html`, the tool response
+includes a `html_content` field. Render it as an inline HTML artifact in your
+reply so the user can hover steps to see metadata, filters, and Liquid snippets
+without opening a file. Keep your accompanying prose tight; do not paraphrase
+what the artifact already shows.
+
 ## Evidence And Currency Rules
 
 - Do not invent platform capabilities, benchmarks, or compliance requirements.

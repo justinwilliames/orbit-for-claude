@@ -227,7 +227,8 @@ export async function renderLifecycleDiagram({
   spec,
   stylePreset = "orbit-default",
   outputDir,
-  formats = ["svg", "png", "pdf", "html"]
+  formats = ["svg", "png", "pdf", "html"],
+  performance = null
 }) {
   const theme = VISUAL_STYLE_PRESETS[stylePreset] ?? VISUAL_STYLE_PRESETS["orbit-default"];
   const laidOut = layoutDiagram(spec);
@@ -268,17 +269,18 @@ export async function renderLifecycleDiagram({
     files.pdf = pdfPath;
   }
 
+  let htmlContent = null;
   if (formats.includes("html")) {
     const htmlPath = `${outputBasePath}.html`;
-    const html = renderDiagramInteractiveHtml({ spec: laidOut });
-    fs.writeFileSync(htmlPath, html, "utf8");
+    htmlContent = renderDiagramInteractiveHtml({ spec: laidOut, performance });
+    fs.writeFileSync(htmlPath, htmlContent, "utf8");
     files.html = htmlPath;
   }
 
   const specPath = writeJson(`${outputBasePath}.json`, laidOut);
   const mermaidPath = writeText(`${outputBasePath}.mmd`, spec.mermaid);
 
-  return {
+  const result = {
     status: "ok",
     files: {
       ...files,
@@ -287,6 +289,21 @@ export async function renderLifecycleDiagram({
       notion_png: files.png ?? null
     }
   };
+
+  if (htmlContent) {
+    // Inline HTML so Claude can render it as an artifact in-chat.
+    // Claude's artifact panel handles self-contained HTML with inline
+    // CSS and JS; our renderDiagramInteractiveHtml output has no
+    // external fetches, so the artifact renders with full interactivity.
+    result.html_content = htmlContent;
+    result.artifact_instruction =
+      "Present this lifecycle diagram to the user as an inline HTML artifact " +
+      "using the html_content field. The artifact is self-contained and fully " +
+      "interactive on hover. Keep your text response brief — the artifact IS " +
+      "the output. Do not paraphrase the diagram in prose.";
+  }
+
+  return result;
 }
 
 function createLifecycleDiagramFromSource({
@@ -1896,10 +1913,60 @@ function htmlNodeSubtitle(node) {
   return node.subtitle || node.metadata?.trigger || node.metadata?.channel || "";
 }
 
-function renderDiagramInteractiveHtml({ spec }) {
+/**
+ * Format a single performance metric as "label: value" with graceful fallback
+ * for null/undefined and % formatting for rate fields.
+ */
+function formatPerfMetric(key, value) {
+  if (value === null || value === undefined) return null;
+  const rateKeys = new Set(["open_rate", "click_rate", "unsub_rate", "bounce_rate", "conversion_rate", "delivery_rate", "split"]);
+  const labelMap = {
+    open_rate: "open",
+    click_rate: "click",
+    unsub_rate: "unsub",
+    bounce_rate: "bounce",
+    conversion_rate: "conv",
+    delivery_rate: "deliv",
+    sends: "sent",
+    opens: "opens",
+    clicks: "clicks",
+    entered: "entered",
+    split: ""
+  };
+  const label = labelMap[key] ?? key;
+  if (rateKeys.has(key) && typeof value === "number") {
+    const pct = value > 1 ? value.toFixed(1) : (value * 100).toFixed(1);
+    return label ? `${pct}% ${label}` : `${pct}%`;
+  }
+  if (typeof value === "number") {
+    return `${value.toLocaleString()} ${label}`;
+  }
+  return `${value} ${label}`.trim();
+}
+
+/** Render a small performance chip row for a node if perf data is present. */
+function renderPerfChip(perfEntry) {
+  if (!perfEntry) return "";
+  const parts = [];
+  // Prefer the "headline" set of metrics for messages
+  for (const key of ["open_rate", "click_rate", "unsub_rate", "conversion_rate", "bounce_rate", "sends", "entered"]) {
+    if (perfEntry[key] !== undefined && perfEntry[key] !== null) {
+      const formatted = formatPerfMetric(key, perfEntry[key]);
+      if (formatted) parts.push(formatted);
+      if (parts.length >= 3) break;
+    }
+  }
+  if (parts.length === 0) return "";
+  const flag = perfEntry.flag || ""; // "warn" | "alert" | "ok"
+  return `<span class="perf-chip" data-flag="${escapeHtml(flag)}">${parts.map(escapeHtml).join(" · ")}</span>`;
+}
+
+function renderDiagramInteractiveHtml({ spec, performance = null }) {
   const title = spec?.title ?? "Lifecycle Diagram";
   const nodes = Array.isArray(spec?.nodes) ? spec.nodes : [];
   const edges = Array.isArray(spec?.edges) ? spec.edges : [];
+  const perfMap = performance && typeof performance === "object" ? performance : null;
+  const hasPerf = perfMap && Object.keys(perfMap).length > 0;
 
   // Build a linear top-down order following the edges from the first node.
   // This works for the common Orbit canvas where there's one entry and
@@ -1975,6 +2042,8 @@ function renderDiagramInteractiveHtml({ spec }) {
     const pairs = htmlNodeMetaPairs(node);
     const code = htmlNodeCode(node);
     const sub = extra.subLabel || subtitle;
+    const perfEntry = hasPerf ? perfMap[node.id] : null;
+    const perfChip = renderPerfChip(perfEntry);
 
     const metaHtml = pairs.length
       ? `<dl class="meta">${pairs
@@ -1983,6 +2052,25 @@ function renderDiagramInteractiveHtml({ spec }) {
       : "";
     const codeHtml = code ? `<pre>${escapeHtml(code)}</pre>` : "";
 
+    // Popover also renders full performance detail when available
+    let popoverPerfHtml = "";
+    if (perfEntry) {
+      const fullPairs = Object.entries(perfEntry)
+        .filter(([k]) => k !== "flag" && k !== "baseline_notes")
+        .map(([k, v]) => {
+          const formatted = formatPerfMetric(k, v);
+          return formatted ? `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(formatted)}</dd></div>` : null;
+        })
+        .filter(Boolean)
+        .join("");
+      if (fullPairs) {
+        popoverPerfHtml = `<p class="popover-subheading">Performance</p><dl class="meta perf-meta">${fullPairs}</dl>`;
+      }
+      if (perfEntry.baseline_notes) {
+        popoverPerfHtml += `<p class="popover-note">${escapeHtml(perfEntry.baseline_notes)}</p>`;
+      }
+    }
+
     return `
 <div class="step" data-variant="${variant}" tabindex="0">
   <button type="button" class="step-card" aria-expanded="false" aria-label="${escapeHtml(node.label || "Step")} details">
@@ -1990,11 +2078,13 @@ function renderDiagramInteractiveHtml({ spec }) {
     <span class="step-body">
       <span class="step-title">${escapeHtml(node.label || "Step")}</span>
       ${sub ? `<span class="step-sub">${escapeHtml(sub)}</span>` : ""}
+      ${perfChip}
     </span>
   </button>
   <div class="popover" role="tooltip">
     <p class="popover-heading">${escapeHtml(node.label || "Step")}</p>
     ${subtitle ? `<p class="popover-body">${escapeHtml(subtitle)}</p>` : ""}
+    ${popoverPerfHtml}
     ${metaHtml}
     ${codeHtml}
   </div>
@@ -2127,13 +2217,19 @@ function renderDiagramInteractiveHtml({ spec }) {
     letter-spacing: 0.14em;
     color: var(--text-dim);
   }
-  .rows { display: flex; flex-direction: column; align-items: center; gap: 0; }
-  .row { display: flex; justify-content: center; width: 100%; }
+  /* isolate creates a fresh stacking context so active popovers can
+     win against later-DOM siblings reliably */
+  .rows { display: flex; flex-direction: column; align-items: center; gap: 0; isolation: isolate; }
+  .row { display: flex; justify-content: center; width: 100%; position: relative; }
+  /* When any descendant step is hovered / focused, lift the whole row
+     into the top layer so the popover paints over every subsequent row */
+  .row:hover, .row:focus-within { z-index: 100; }
   .row-single { max-width: 420px; margin: 0 auto; }
   .row-branch { display: grid; gap: 20px; width: 100%; max-width: 820px; }
   .row-branch[data-cols="2"] { grid-template-columns: 1fr 1fr; }
   .row-branch[data-cols="3"] { grid-template-columns: 1fr 1fr 1fr; }
-  .branch-col { display: flex; flex-direction: column; gap: 0; }
+  .branch-col { display: flex; flex-direction: column; gap: 0; position: relative; }
+  .branch-col:hover, .branch-col:focus-within { z-index: 100; }
   .branch-label {
     text-align: center;
     font-size: 9px;
@@ -2148,6 +2244,9 @@ function renderDiagramInteractiveHtml({ spec }) {
   .branch-connector { color: var(--border-strong); height: 24px; width: 100%; max-width: 820px; margin: 0 auto; }
   .branch-connector svg { display: block; width: 100%; height: 100%; }
   .step { position: relative; width: 100%; }
+  /* When hovered / focused, the step itself is lifted too so its popover
+     always wins against neighbouring steps within the same row */
+  .step:hover, .step:focus-within { z-index: 100; }
   .step-card {
     display: flex;
     align-items: center;
@@ -2196,7 +2295,7 @@ function renderDiagramInteractiveHtml({ spec }) {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 40;
+    z-index: 999;
     width: 300px;
     padding: 16px;
     background: var(--popover-bg);
