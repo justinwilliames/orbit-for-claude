@@ -1,0 +1,42 @@
+name: Build and publish .mcpb
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'skills/**'
+      - 'manifest.json'
+      - 'package.json'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - run: npm run build:extension
+
+      - name: Package .mcpb
+        run: |
+          cd .mcpb-build
+          zip -r ../orbit-lifecycle-marketing-system-for-claude.mcpb . -x "*.DS_Store"
+
+      - name: Push to download repo
+        env:
+          GH_TOKEN: ${{ secrets.DL_REPO_TOKEN }}
+        run: |
+          git clone https://x-access-token:${GH_TOKEN}@github.com/justinwilliames-sketch/orbit-for-claude-dl.git /tmp/dl-repo
+          cp orbit-lifecycle-marketing-system-for-claude.mcpb /tmp/dl-repo/
+          cd /tmp/dl-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Auto-update .mcpb bundle from orbit-for-claude@${GITHUB_SHA::7}"
+          git push
