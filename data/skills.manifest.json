@@ -4803,6 +4803,100 @@
     ]
   },
   {
+    "name": "sources",
+    "title": "Source Attribution Protocol",
+    "category": "knowledge-attribution",
+    "description": "Use this skill to attribute specific, non-generic claims, benchmarks, frameworks, or recommendations Orbit makes to their original source. Trigger whenever Orbit cites a number, a named framework, a platform-specific requirement, a regulatory change, a deliverability or email-client rule, or an approach clearly attributable to a public industry thinker. Do NOT trigger for generic best practices, Orbit's own methodology, or common-knowledge marketing advice. Sources should appear as minimal footnotes — never as a prominent section. Attribution is a signal of rigour, not a citation essay.",
+    "trigger_phrases": [],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "deliverability-management",
+      "experiment-design",
+      "lifecycle-reporting",
+      "growth-marketing",
+      "copy-framework"
+    ],
+    "artifact_types": [
+      "citation-footnote",
+      "attribution-block"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [
+      "citation-footnote"
+    ],
+    "validator_rules": [
+      {
+        "label": "Sources block",
+        "type": "includes",
+        "value": "**Sources**"
+      },
+      {
+        "label": "Footnote marker",
+        "type": "regex",
+        "value": "\\[\\^\\d+\\]",
+        "flags": ""
+      }
+    ],
+    "keywords": [
+      "advice",
+      "appear",
+      "approach",
+      "attributable",
+      "attribute",
+      "attribution",
+      "attribution-block",
+      "benchmarks",
+      "best",
+      "change",
+      "citation",
+      "citation-footnote",
+      "cites",
+      "claims",
+      "clearly",
+      "common-knowledge",
+      "deliverability",
+      "email-client",
+      "essay",
+      "footnotes",
+      "framework",
+      "frameworks",
+      "generic",
+      "industry",
+      "makes",
+      "marketing",
+      "methodology",
+      "minimal",
+      "named",
+      "never",
+      "non-generic",
+      "not",
+      "number",
+      "original",
+      "own",
+      "platform-specific",
+      "practices",
+      "prominent",
+      "protocol",
+      "public",
+      "recommendations",
+      "regulatory",
+      "requirement",
+      "rigour",
+      "rule",
+      "section",
+      "signal",
+      "source",
+      "sources",
+      "specific",
+      "thinker",
+      "trigger"
+    ]
+  },
+  {
     "name": "strategic-stress-test",
     "title": "Strategic Stress-Test Protocol",
     "category": "strategy-planning",

@@ -104,6 +104,9 @@ const CATEGORY_GROUPS = {
     "email-design-ingestion",
     "design-to-email-componentization",
     "braze-template-sync"
+  ],
+  "knowledge-attribution": [
+    "sources"
   ]
 };
 
@@ -178,6 +181,13 @@ const ADJACENCY_MAP = {
     "content-block-system",
     "braze-build-packager",
     "template-library-management"
+  ],
+  "sources": [
+    "deliverability-management",
+    "experiment-design",
+    "lifecycle-reporting",
+    "growth-marketing",
+    "copy-framework"
   ]
 };
 
@@ -298,7 +308,8 @@ const TEMPLATE_MAP = {
   "notion-documentation-export": ["notion-export-bundle"],
   "email-design-ingestion": ["design-import-record"],
   "design-to-email-componentization": ["component-map"],
-  "braze-template-sync": ["braze-sync-record"]
+  "braze-template-sync": ["braze-sync-record"],
+  "sources": ["citation-footnote"]
 };
 
 const ARTIFACT_TYPES = {
@@ -341,7 +352,8 @@ const ARTIFACT_TYPES = {
   "notion-documentation-export": ["notion-export-bundle", "documentation-pack"],
   "email-design-ingestion": ["design-import-record", "source-artifact-set"],
   "design-to-email-componentization": ["component-map", "email-component-contract"],
-  "braze-template-sync": ["braze-sync-record", "publish-log"]
+  "braze-template-sync": ["braze-sync-record", "publish-log"],
+  "sources": ["citation-footnote", "attribution-block"]
 };
 
 const DEFAULT_VALIDATOR_RULES = [
@@ -425,6 +437,10 @@ const SPECIAL_VALIDATOR_RULES = {
     { label: "Braze", type: "regex", value: "(braze|content block|template)", flags: "i" },
     { label: "Sync result", type: "regex", value: "(sync|publish|id)", flags: "i" },
     { label: "Status", type: "regex", value: "(status|warning|failure)", flags: "i" }
+  ],
+  "sources": [
+    { label: "Sources block", type: "includes", value: "**Sources**" },
+    { label: "Footnote marker", type: "regex", value: "\\[\\^\\d+\\]", flags: "" }
   ]
 };
 
