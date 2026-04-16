@@ -47,6 +47,10 @@ import {
   uploadTemplateImages
 } from "./braze-template-master.js";
 import {
+  generateBrazeName,
+  listBrazeNamerDimensions
+} from "./braze-namer.js";
+import {
   publishEmailToBraze,
   syncBrazeContentBlocks,
   syncBrazeEmailTemplate,
@@ -3094,6 +3098,73 @@ function registerTools() {
         images,
         dryRun: dryRun ?? false
       });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  // -----------------------------------------------------------------------
+  // Braze Namer
+  // -----------------------------------------------------------------------
+
+  server.registerTool(
+    "orbit_braze_namer",
+    {
+      title: "Braze Namer",
+      description:
+        "Generate a consistent naming convention string for a Braze asset. " +
+        "Pass selections for dimensions like asset_type, channel, program, audience, country, language, version, step, variant, and deployment_date. " +
+        "Returns the formatted name and recommended Braze tags.",
+      inputSchema: {
+        asset_type: z.string().optional().describe("Canvas, Campaign, Segment, Template, or Content Block"),
+        channel: z.string().optional().describe("Email, Push, SMS, In-App, Banner, Content Card, or WhatsApp"),
+        program: z.string().optional().describe("Onboarding, Activation, Retention, Dunning, Win-back, etc."),
+        audience: z.string().optional().describe("All, Free, Paid, Trial, Churned, At-Risk, New, Dormant, or VIP"),
+        country: z.string().optional().describe("ISO country code (AU, US, GB, etc.) or GLOBAL"),
+        language: z.string().optional().describe("ISO language code (en, es, fr, etc.)"),
+        version: z.string().optional().describe("Version identifier (e.g., v1, v2)"),
+        step: z.string().optional().describe("Step or day (e.g., day-1, step-3)"),
+        variant: z.string().optional().describe("Variant identifier (e.g., a, b, control)"),
+        deployment_date: z.string().optional().describe("Deployment date in YYYY-MM-DD format")
+      }
+    },
+    async ({
+      asset_type: assetType,
+      channel,
+      program,
+      audience,
+      country,
+      language,
+      version,
+      step,
+      variant,
+      deployment_date: deploymentDate
+    }) => {
+      const selections = {};
+      if (assetType) selections.asset_type = assetType;
+      if (channel) selections.channel = channel;
+      if (program) selections.program = program;
+      if (audience) selections.audience = audience;
+      if (country) selections.country = country;
+      if (language) selections.language = language;
+      if (version) selections.version = version;
+      if (step) selections.step = step;
+      if (variant) selections.variant = variant;
+      if (deploymentDate) selections.deployment_date = deploymentDate;
+      const result = generateBrazeName({ selections });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  server.registerTool(
+    "orbit_braze_namer_dimensions",
+    {
+      title: "List Braze Namer Dimensions",
+      description:
+        "List all available dimensions and values for the Braze naming convention generator.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = listBrazeNamerDimensions();
       return makeJsonToolResponse(result);
     }
   );

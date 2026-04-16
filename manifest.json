@@ -315,6 +315,14 @@
       "description": "Upload images to Braze media library and return CDN URLs for use in templates."
     },
     {
+      "name": "orbit_braze_namer",
+      "description": "Generate a consistent naming convention string for any Braze asset with smart tag recommendations."
+    },
+    {
+      "name": "orbit_braze_namer_dimensions",
+      "description": "List all available dimensions and values for the Braze naming convention generator."
+    },
+    {
       "name": "orbit_export_notion_bundle",
       "description": "Create a Notion-friendly Markdown bundle with lifecycle docs and artifact references."
     },
