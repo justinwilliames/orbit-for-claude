@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 import dagre from "@dagrejs/dagre";
 import { routeTask } from "./catalog.js";
@@ -273,6 +274,10 @@ export async function renderLifecycleDiagram({
   if (formats.includes("html")) {
     const htmlPath = `${outputBasePath}.html`;
     htmlContent = renderDiagramInteractiveHtml({ spec: laidOut, performance });
+    // Ensure the output directory exists before writing. Other formats go
+    // through renderSvgBundle / writeJson which handle this themselves;
+    // the raw writeFileSync needs its own guard or ENOENT throws.
+    fs.mkdirSync(path.dirname(htmlPath), { recursive: true });
     fs.writeFileSync(htmlPath, htmlContent, "utf8");
     files.html = htmlPath;
   }

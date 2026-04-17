@@ -158,6 +158,20 @@ const server = new McpServer({
     "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
 });
 
+// Process-level safety net. MCP uses stdio for the transport so we only
+// ever write diagnostics to stderr. An unhandled error here shouldn't
+// crash the Claude Desktop extension without a trace.
+process.on("uncaughtException", (err) => {
+  try {
+    process.stderr.write(`[Orbit] uncaughtException: ${err?.stack ?? err}\n`);
+  } catch { /* best-effort */ }
+});
+process.on("unhandledRejection", (reason) => {
+  try {
+    process.stderr.write(`[Orbit] unhandledRejection: ${reason?.stack ?? reason}\n`);
+  } catch { /* best-effort */ }
+});
+
 registerResources();
 registerPrompts();
 registerTools();
@@ -1050,7 +1064,7 @@ function setupInterceptIfNeeded() {
 }
 
 function registerTools() {
-  server.registerTool(
+  registerToolSafe(
     "orbit_list_skills",
     {
       title: "List Orbit Skills",
@@ -1075,7 +1089,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_route_task",
     {
       title: "Route an Orbit Task",
@@ -1097,7 +1111,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_load_skill",
     {
       title: "Load an Orbit Skill",
@@ -1121,7 +1135,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_get_template",
     {
       title: "Get an Orbit Template",
@@ -1155,7 +1169,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_compose_sequence",
     {
       title: "Compose an Orbit Sequence",
@@ -1184,7 +1198,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_validate_output",
     {
       title: "Validate an Orbit Draft",
@@ -1200,7 +1214,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_check_setup",
     {
       title: "Check Orbit Setup",
@@ -1234,7 +1248,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_bootstrap_home_workspace",
     {
       title: "Bootstrap Orbit Home Workspace",
@@ -1253,7 +1267,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_check_copy_readiness",
     {
       title: "Check Copy Readiness",
@@ -1292,7 +1306,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_validate_brand_kit",
     {
       title: "Validate a Brand Kit",
@@ -1311,7 +1325,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_save_logo_file",
     {
       title: "Save Logo File",
@@ -1363,7 +1377,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_start_brand_guidelines_intake",
     {
       title: "Start Brand Guidelines Intake",
@@ -1479,7 +1493,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_build_brand_kit_draft",
     {
       title: "Build a Brand Kit Draft",
@@ -1575,7 +1589,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_write_brand_kit",
     {
       title: "Write a Brand Kit",
@@ -1596,7 +1610,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_update_brand_guidelines",
     {
       title: "Update Brand Guidelines",
@@ -1658,7 +1672,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_lifecycle_diagram",
     {
       title: "Lifecycle Diagram",
@@ -1779,7 +1793,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_brand_header",
     {
       title: "Brand Header",
@@ -1955,7 +1969,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_start_program_discovery",
     {
       title: "Start Program Discovery",
@@ -2062,7 +2076,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_import_design",
     {
       title: "Import a Design",
@@ -2111,7 +2125,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_email_component_map",
     {
       title: "Email Component Map",
@@ -2170,7 +2184,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_build_program_workspace",
     {
       title: "Build a Program Workspace",
@@ -2209,7 +2223,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_build_message_plan",
     {
       title: "Build a Message Plan",
@@ -2269,7 +2283,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_build_email_template_spec",
     {
       title: "Build an Email Template Spec",
@@ -2319,7 +2333,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_generate_mjml_template",
     {
       title: "Generate an MJML Template",
@@ -2339,7 +2353,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_compile_email_template",
     {
       title: "Compile an Email Template",
@@ -2369,7 +2383,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_preview_email_template",
     {
       title: "Preview an Email Template",
@@ -2441,7 +2455,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_validate_email_template",
     {
       title: "Validate an Email Template",
@@ -2461,7 +2475,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_generate_email_components",
     {
       title: "Generate Email Components",
@@ -2491,7 +2505,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_assemble_email_template_from_components",
     {
       title: "Assemble an Email Template From Components",
@@ -2532,7 +2546,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_sync_to_braze",
     {
       title: "Sync to Braze",
@@ -2606,7 +2620,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_upload_images_to_braze",
     {
       title: "Upload Images to Braze",
@@ -2637,7 +2651,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_reconcile_image_urls",
     {
       title: "Reconcile Image URLs",
@@ -2666,7 +2680,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_build_braze_pack",
     {
       title: "Build a Braze Pack",
@@ -2702,7 +2716,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_create_braze_canvas",
     {
       title: "Create Braze Canvas",
@@ -2764,7 +2778,7 @@ function registerTools() {
   // Braze Read-Only Intelligence Tools
   // -----------------------------------------------------------------------
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_audit_braze_instance",
     {
       title: "Audit Braze Instance",
@@ -2780,7 +2794,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_read_braze_canvas",
     {
       title: "Read Braze Canvas",
@@ -2798,7 +2812,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_read_braze_campaign",
     {
       title: "Read Braze Campaign",
@@ -2815,7 +2829,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_analyse_segments",
     {
       title: "Analyse Braze Segments",
@@ -2837,7 +2851,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_audit_content_blocks",
     {
       title: "Audit Braze Content Blocks",
@@ -2857,7 +2871,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_validate_braze_data",
     {
       title: "Validate Braze Data Model",
@@ -2879,7 +2893,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_check_deliverability",
     {
       title: "Check Email Deliverability",
@@ -2896,7 +2910,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_validate_test_users",
     {
       title: "Validate Test Users",
@@ -2918,7 +2932,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_braze_performance",
     {
       title: "Pull Braze Performance Data",
@@ -2946,7 +2960,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_check_template_collision",
     {
       title: "Check Template Collision",
@@ -2967,7 +2981,7 @@ function registerTools() {
   // Master Template Workflow Tools
   // -----------------------------------------------------------------------
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_list_braze_templates",
     {
       title: "List Braze Email Templates",
@@ -2982,7 +2996,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_fetch_braze_template",
     {
       title: "Fetch Braze Email Template",
@@ -3000,7 +3014,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_parse_master_template",
     {
       title: "Parse Master Email Template",
@@ -3027,7 +3041,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_generate_template_variations",
     {
       title: "Generate Template Variation Specs",
@@ -3057,7 +3071,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_assemble_template_variation",
     {
       title: "Assemble Template Variation",
@@ -3081,7 +3095,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_upload_template_images",
     {
       title: "Upload Template Images to Braze",
@@ -3109,7 +3123,7 @@ function registerTools() {
   // Braze Namer
   // -----------------------------------------------------------------------
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_braze_namer",
     {
       title: "Braze Namer",
@@ -3158,7 +3172,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_braze_namer_dimensions",
     {
       title: "List Braze Namer Dimensions",
@@ -3172,7 +3186,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_export_notion_bundle",
     {
       title: "Export a Notion Bundle",
@@ -3211,7 +3225,7 @@ function registerTools() {
     }
   );
 
-  server.registerTool(
+  registerToolSafe(
     "orbit_library",
     {
       title: "Orbit Library",
@@ -3379,6 +3393,101 @@ function makeJsonToolResponse(payload) {
       }
     ]
   };
+}
+
+/**
+ * Wrap an async tool handler so any thrown error is caught, classified,
+ * and returned as a proper MCP tool response instead of propagating up
+ * to the transport (which Claude Desktop surfaces as a generic JSON-RPC
+ * internal error with no remediation text).
+ *
+ * Classification:
+ *   - AbortError / timeout → status: "timeout"
+ *   - HTTP 401/403 in message → status: "auth_failed"
+ *   - HTTP 404 in message → status: "not_found"
+ *   - HTTP 429 in message → status: "rate_limited"
+ *   - Other Error → status: "error"
+ *
+ * Every tool registration should wrap its handler with this function.
+ */
+function withToolErrorHandling(toolName, handler) {
+  return async (args, extra) => {
+    try {
+      const result = await handler(args, extra);
+      // Guard against handlers that forgot to return a content-shaped object.
+      if (!result || !Array.isArray(result.content)) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: "invalid_handler_return",
+          tool: toolName,
+          message: "Tool returned an invalid MCP response shape."
+        });
+      }
+      return result;
+    } catch (err) {
+      const message = err?.message ?? String(err);
+      const errName = err?.name ?? "Error";
+      let code = "error";
+      if (errName === "AbortError" || /timeout/i.test(message)) code = "timeout";
+      else if (/\b(401|403)\b/.test(message) || /unauthori[sz]ed|forbidden/i.test(message)) code = "auth_failed";
+      else if (/\b404\b/.test(message) || /not found/i.test(message)) code = "not_found";
+      else if (/\b429\b/.test(message) || /rate limit/i.test(message)) code = "rate_limited";
+
+      // Log to stderr for observability without polluting the MCP stdio transport.
+      try {
+        process.stderr.write(
+          `[Orbit] Tool "${toolName}" failed (${code}): ${message}\n`
+        );
+      } catch {
+        // stderr write can't be trusted in all hosts; never let logging fail the response.
+      }
+
+      return makeJsonToolResponse({
+        status: code === "error" ? "error" : code,
+        code,
+        tool: toolName,
+        message,
+        suggested_next_steps: suggestedNextStepsForCode(code)
+      });
+    }
+  };
+}
+
+/**
+ * Drop-in replacement for server.registerTool that wraps the handler
+ * in withToolErrorHandling. Every tool registration in this file uses
+ * this instead of calling server.registerTool directly.
+ */
+function registerToolSafe(name, schema, handler) {
+  return server.registerTool(name, schema, withToolErrorHandling(name, handler));
+}
+
+function suggestedNextStepsForCode(code) {
+  switch (code) {
+    case "auth_failed":
+      return [
+        "Verify your API credentials in Orbit settings (Claude Desktop > Extensions > Orbit > Configure).",
+        "For Braze: check the API key has the required endpoint permissions and the REST endpoint matches your workspace cluster."
+      ];
+    case "timeout":
+      return [
+        "The upstream service took too long to respond. Try again in a moment.",
+        "If this keeps happening, narrow the scope of the request (smaller time range, fewer items)."
+      ];
+    case "rate_limited":
+      return [
+        "The upstream service rate-limited this request.",
+        "Wait 30-60 seconds and try again."
+      ];
+    case "not_found":
+      return [
+        "The requested resource was not found. Double-check the ID or name and try again."
+      ];
+    default:
+      return [
+        "Share the error message with support via the Orbit Contact form so the issue can be diagnosed."
+      ];
+  }
 }
 
 // Parse a JSON string from a tool input. Returns { value, error }.
