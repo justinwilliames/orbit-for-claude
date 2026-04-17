@@ -16,80 +16,102 @@ export async function auditBrazeInstance({ config }) {
   const setupError = validateBrazeSetup(config);
   if (setupError) return setupError;
 
-  const [
-    canvases,
-    campaigns,
-    segments,
-    contentBlocks,
-    templates,
-    events,
-    customAttributes
-  ] = await Promise.all([
-    safeList(config, "/canvas/list", "canvases"),
-    safeList(config, "/campaigns/list", "campaigns"),
-    safeList(config, "/segments/list", "segments"),
-    safeList(config, "/content_blocks/list", "content_blocks"),
-    safeList(config, "/templates/email/list", "templates"),
-    safeList(config, "/events/list", "events"),
-    safeListAttributes(config)
-  ]);
+  // Sequential so the shared rate limiter actually serialises calls.
+  // Parallel Promise.all here bypassed it by awaiting all promises at once.
+  const canvases = await safeList(config, "/canvas/list", "canvases");
+  if (canvases.authFailed) return authFailedResponse(canvases);
 
-  const canvasBreakdown = categoriseByStatus(canvases);
-  const campaignBreakdown = categoriseByStatus(campaigns);
+  const campaigns = await safeList(config, "/campaigns/list", "campaigns");
+  if (campaigns.authFailed) return authFailedResponse(campaigns);
+
+  const segments = await safeList(config, "/segments/list", "segments");
+  if (segments.authFailed) return authFailedResponse(segments);
+
+  const contentBlocks = await safeList(config, "/content_blocks/list", "content_blocks");
+  if (contentBlocks.authFailed) return authFailedResponse(contentBlocks);
+
+  const templates = await safeList(config, "/templates/email/list", "templates");
+  if (templates.authFailed) return authFailedResponse(templates);
+
+  const events = await safeList(config, "/events/list", "events");
+  if (events.authFailed) return authFailedResponse(events);
+
+  const customAttributes = await safeListAttributes(config);
+  if (customAttributes.authFailed) return authFailedResponse(customAttributes);
+
+  const fetchErrors = [canvases, campaigns, segments, contentBlocks, templates, events, customAttributes]
+    .filter((r) => r.error)
+    .map((r) => r.error);
+
+  const canvasItems = canvases.items;
+  const campaignItems = campaigns.items;
+  const segmentItems = segments.items;
+  const contentBlockItems = contentBlocks.items;
+  const templateItems = templates.items;
+  const eventItems = events.items;
+  const attributeItems = customAttributes.items;
+
+  const canvasBreakdown = categoriseByStatus(canvasItems);
+  const campaignBreakdown = categoriseByStatus(campaignItems);
 
   // Identify potential issues
   const warnings = [];
 
+  // Surface partial-data warnings so callers know this audit isn't complete.
+  for (const err of fetchErrors) {
+    warnings.push(err);
+  }
+
   // Check for naming convention compliance
   const namingIssues = checkNamingConventions([
-    ...canvases.map((c) => ({ type: "canvas", name: c.name, id: c.id })),
-    ...campaigns.map((c) => ({ type: "campaign", name: c.name, id: c.id })),
-    ...contentBlocks.map((c) => ({ type: "content_block", name: c.content_block_name ?? c.name, id: c.content_block_id ?? c.id }))
+    ...canvasItems.map((c) => ({ type: "canvas", name: c.name, id: c.id })),
+    ...campaignItems.map((c) => ({ type: "campaign", name: c.name, id: c.id })),
+    ...contentBlockItems.map((c) => ({ type: "content_block", name: c.content_block_name ?? c.name, id: c.content_block_id ?? c.id }))
   ]);
   if (namingIssues.length > 0) {
     warnings.push(`${namingIssues.length} items have inconsistent naming conventions.`);
   }
 
   return {
-    status: "ok",
+    status: fetchErrors.length > 0 ? "partial" : "ok",
     audit: {
       timestamp: new Date().toISOString(),
       summary: {
-        canvases: { total: canvases.length, ...canvasBreakdown },
-        campaigns: { total: campaigns.length, ...campaignBreakdown },
-        segments: { total: segments.length },
-        content_blocks: { total: contentBlocks.length },
-        email_templates: { total: templates.length },
-        custom_events: { total: events.length },
-        custom_attributes: { total: customAttributes.length }
+        canvases: { total: canvasItems.length, ...canvasBreakdown },
+        campaigns: { total: campaignItems.length, ...campaignBreakdown },
+        segments: { total: segmentItems.length },
+        content_blocks: { total: contentBlockItems.length },
+        email_templates: { total: templateItems.length },
+        custom_events: { total: eventItems.length },
+        custom_attributes: { total: attributeItems.length }
       },
       naming_issues: namingIssues.slice(0, 20),
-      canvases: canvases.map((c) => ({
+      canvases: canvasItems.map((c) => ({
         id: c.id,
         name: c.name,
         draft: c.draft,
         tags: c.tags,
         dashboard_url: buildDashboardUrl(config.brazeRestEndpoint, "canvas", c.id)
       })),
-      campaigns: campaigns.map((c) => ({
+      campaigns: campaignItems.map((c) => ({
         id: c.id,
         name: c.name,
         draft: c.draft ?? c.is_draft,
         tags: c.tags,
         dashboard_url: buildDashboardUrl(config.brazeRestEndpoint, "campaigns", c.id)
       })),
-      segments: segments.map((s) => ({
+      segments: segmentItems.map((s) => ({
         id: s.id,
         name: s.name,
         analytics_tracking_enabled: s.analytics_tracking_enabled
       })),
-      content_blocks: contentBlocks.map((cb) => ({
+      content_blocks: contentBlockItems.map((cb) => ({
         id: cb.content_block_id ?? cb.id,
         name: cb.content_block_name ?? cb.name,
         created_at: cb.created_at,
         last_edited: cb.last_edited
       })),
-      email_templates: templates.map((t) => ({
+      email_templates: templateItems.map((t) => ({
         id: t.id ?? t.email_template_id,
         name: t.template_name ?? t.name,
         created_at: t.created_at,
@@ -97,6 +119,20 @@ export async function auditBrazeInstance({ config }) {
       })),
       warnings
     }
+  };
+}
+
+// Shared helper: turns a safeList/safeCall result that hit 401/403 into
+// an explicit "needs_setup" response so the user knows their credentials
+// are the problem, not an empty workspace.
+function authFailedResponse(result) {
+  return {
+    status: "auth_failed",
+    missing: ["braze_api_key"],
+    message:
+      result.authMessage ??
+      "Braze rejected the API key. Check that braze_api_key is valid and has the required permissions for this workspace.",
+    braze_status: result.authStatus ?? null
   };
 }
 
@@ -186,9 +222,11 @@ export async function analyseSegments({ config, includeDataSeries = false, days 
   if (setupError) return setupError;
 
   const segments = await safeList(config, "/segments/list", "segments");
+  if (segments.authFailed) return authFailedResponse(segments);
+  const segmentItems = segments.items;
 
   const enriched = [];
-  for (const seg of segments) {
+  for (const seg of segmentItems) {
     const entry = {
       id: seg.id,
       name: seg.name,
@@ -239,7 +277,7 @@ export async function analyseSegments({ config, includeDataSeries = false, days 
 
   return {
     status: "ok",
-    total_segments: segments.length,
+    total_segments: segmentItems.length,
     segments: enriched,
     warnings
   };
@@ -254,9 +292,11 @@ export async function auditContentBlocks({ config, fetchContent = false }) {
   if (setupError) return setupError;
 
   const blocks = await safeList(config, "/content_blocks/list", "content_blocks");
+  if (blocks.authFailed) return authFailedResponse(blocks);
+  const blockItems = blocks.items;
 
   const enriched = [];
-  for (const block of blocks) {
+  for (const block of blockItems) {
     const entry = {
       id: block.content_block_id ?? block.id,
       name: block.content_block_name ?? block.name,
@@ -299,12 +339,12 @@ export async function auditContentBlocks({ config, fetchContent = false }) {
 
   return {
     status: "ok",
-    total_blocks: blocks.length,
+    total_blocks: blockItems.length,
     content_blocks: enriched,
     potential_duplicates: duplicates,
     stale_blocks: stale.map((b) => ({ id: b.id, name: b.name, last_edited: b.last_edited })),
     summary: {
-      total: blocks.length,
+      total: blockItems.length,
       stale_count: stale.length,
       duplicate_groups: duplicates.length
     }
@@ -319,13 +359,16 @@ export async function validateBrazeData({ config, requiredAttributes = [], requi
   const setupError = validateBrazeSetup(config);
   if (setupError) return setupError;
 
-  const [events, attributes] = await Promise.all([
-    safeList(config, "/events/list", "events"),
-    safeListAttributes(config)
-  ]);
+  // Serial to share rate limiter; propagate auth failures.
+  const events = await safeList(config, "/events/list", "events");
+  if (events.authFailed) return authFailedResponse(events);
+  const attributes = await safeListAttributes(config);
+  if (attributes.authFailed) return authFailedResponse(attributes);
 
-  const eventNames = new Set(events.map((e) => e.name ?? e));
-  const attributeNames = new Set(attributes.map((a) => a.name ?? a));
+  const eventItems = events.items;
+  const attributeItems = attributes.items;
+  const eventNames = new Set(eventItems.map((e) => e.name ?? e));
+  const attributeNames = new Set(attributeItems.map((a) => a.name ?? a));
 
   const missingEvents = requiredEvents.filter((e) => !eventNames.has(e));
   const missingAttributes = requiredAttributes.filter((a) => !attributeNames.has(a));
@@ -336,8 +379,8 @@ export async function validateBrazeData({ config, requiredAttributes = [], requi
   return {
     status: missingEvents.length === 0 && missingAttributes.length === 0 ? "ok" : "warnings",
     available: {
-      custom_events: events.map((e) => e.name ?? e),
-      custom_attributes: attributes.map((a) => a.name ?? a)
+      custom_events: eventItems.map((e) => e.name ?? e),
+      custom_attributes: attributeItems.map((a) => a.name ?? a)
     },
     validation: {
       required_events: requiredEvents,
@@ -364,21 +407,23 @@ export async function checkDeliverability({ config, days = 30 }) {
   const endDate = new Date().toISOString().split("T")[0];
   const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-  const [bounces, unsubscribes] = await Promise.all([
-    safeCall(() => brazeGet({
-      config,
-      endpoint: "/email/hard_bounces",
-      params: { start_date: startDate, end_date: endDate }
-    })),
-    safeCall(() => brazeGet({
-      config,
-      endpoint: "/email/unsubscribes",
-      params: { start_date: startDate, end_date: endDate }
-    }))
-  ]);
+  // Serial to share rate limiter; propagate auth failures.
+  const bounces = await safeCall(() => brazeGet({
+    config,
+    endpoint: "/email/hard_bounces",
+    params: { start_date: startDate, end_date: endDate }
+  }));
+  if (bounces.authFailed) return authFailedResponse(bounces);
 
-  const bounceEmails = bounces?.emails ?? [];
-  const unsubEmails = unsubscribes?.emails ?? [];
+  const unsubscribes = await safeCall(() => brazeGet({
+    config,
+    endpoint: "/email/unsubscribes",
+    params: { start_date: startDate, end_date: endDate }
+  }));
+  if (unsubscribes.authFailed) return authFailedResponse(unsubscribes);
+
+  const bounceEmails = bounces.value?.emails ?? [];
+  const unsubEmails = unsubscribes.value?.emails ?? [];
 
   const warnings = [];
   if (bounceEmails.length > 50) {
@@ -475,7 +520,8 @@ export async function checkTemplateCollision({ config, templateName }) {
   if (setupError) return setupError;
 
   const templates = await safeList(config, "/templates/email/list", "templates");
-  const existing = templates.find(
+  if (templates.authFailed) return authFailedResponse(templates);
+  const existing = templates.items.find(
     (t) => (t.template_name ?? t.name)?.toLowerCase() === templateName?.toLowerCase()
   );
 
@@ -519,31 +565,67 @@ export async function checkTemplateCollision({ config, templateName }) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Wrap a Braze list call. Returns one of:
+ *  - { items: [...], error: null, authFailed: false } on success
+ *  - { items: [], error: "...", authFailed: true, authStatus: 401 } on 401/403
+ *  - { items: [], error: "...", authFailed: false } on any other error
+ *
+ * Auth failures ARE propagated so callers can distinguish "workspace is
+ * empty" from "credentials are rejected". Other errors are captured but
+ * non-fatal: a missing endpoint won't blow up the whole audit.
+ */
 async function safeList(config, endpoint, itemsKey) {
   try {
     const response = await brazeGet({ config, endpoint });
-    return response[itemsKey] ?? [];
-  } catch {
-    return [];
+    return { items: response[itemsKey] ?? [], error: null, authFailed: false };
+  } catch (err) {
+    return classifyBrazeError(err, endpoint);
   }
 }
 
 async function safeListAttributes(config) {
   try {
-    // Braze docs: GET /custom_attributes with query params
     const response = await brazeGet({ config, endpoint: "/custom_attributes", params: { page: 1 } });
-    return response.attributes ?? response.custom_attributes ?? response.data ?? [];
-  } catch {
-    return [];
+    return {
+      items: response.attributes ?? response.custom_attributes ?? response.data ?? [],
+      error: null,
+      authFailed: false
+    };
+  } catch (err) {
+    return classifyBrazeError(err, "/custom_attributes");
   }
 }
 
 async function safeCall(fn) {
   try {
-    return await fn();
-  } catch {
-    return null;
+    const value = await fn();
+    return { value, error: null, authFailed: false };
+  } catch (err) {
+    const classified = classifyBrazeError(err, "safeCall");
+    return { value: null, error: classified.error, authFailed: classified.authFailed, authStatus: classified.authStatus };
   }
+}
+
+/**
+ * Classify a thrown Braze error into the safeList shape.
+ * `brazeGet` throws "Braze API <status> on <METHOD> <endpoint>: <msg>"
+ * so we extract the status code from the message if present.
+ */
+function classifyBrazeError(err, endpoint) {
+  const message = err?.message ?? String(err);
+  const statusMatch = message.match(/Braze API (\d{3})/);
+  const status = statusMatch ? Number(statusMatch[1]) : null;
+  const authFailed = status === 401 || status === 403;
+  return {
+    items: [],
+    error: `Failed to fetch ${endpoint}: ${message}`,
+    authFailed,
+    authStatus: status,
+    authMessage: authFailed
+      ? `Braze returned ${status} on ${endpoint}. Verify braze_api_key is correct and has the required endpoint permissions.`
+      : null
+  };
 }
 
 function categoriseByStatus(items) {

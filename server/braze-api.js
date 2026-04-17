@@ -124,28 +124,48 @@ export async function brazePost({ config, endpoint, body = {} }) {
 }
 
 /**
- * Paginate through a Braze list endpoint that returns { <key>: [...], next_page: "..." }.
- * Returns all items concatenated.
+ * Paginate through a Braze list endpoint. Handles both page-based and
+ * cursor-based endpoints: if the response includes `next_page` we pass
+ * it as `?page=`; if `next_cursor` we pass it as `?cursor=`.
+ *
+ * Returns `{ items, truncated, pages_fetched }`. `truncated` is true when
+ * `maxPages` was hit with more data still available, so callers can
+ * surface that in their response rather than silently returning partial
+ * results.
  */
 export async function brazePaginateList({ config, endpoint, params = {}, itemsKey, maxPages = 10 }) {
   const allItems = [];
-  let page = 1;
-  let nextPage = null;
+  let nextToken = null;
+  let nextTokenKey = null; // "page" or "cursor"
+  let truncated = false;
+  let pagesFetched = 0;
 
-  while (page <= maxPages) {
+  for (let page = 1; page <= maxPages; page += 1) {
     const requestParams = { ...params };
-    if (nextPage) requestParams.page = nextPage;
+    if (nextToken && nextTokenKey) requestParams[nextTokenKey] = nextToken;
 
     const response = await brazeGet({ config, endpoint, params: requestParams });
     const items = response[itemsKey] ?? [];
     allItems.push(...items);
+    pagesFetched = page;
 
-    if (!response.next_page && !response.next_cursor) break;
-    nextPage = response.next_page ?? response.next_cursor;
-    page++;
+    if (response.next_cursor) {
+      nextToken = response.next_cursor;
+      nextTokenKey = "cursor";
+    } else if (response.next_page) {
+      nextToken = response.next_page;
+      nextTokenKey = "page";
+    } else {
+      nextToken = null;
+      break;
+    }
+
+    if (page === maxPages && nextToken) {
+      truncated = true;
+    }
   }
 
-  return allItems;
+  return { items: allItems, truncated, pages_fetched: pagesFetched };
 }
 
 /**
