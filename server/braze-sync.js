@@ -304,6 +304,13 @@ export async function uploadImagesToBraze({
   const uploaded = [];
   const errors = [];
 
+  // Braze's /media_library/create accepts asset_file (base64) up to ~5MB
+  // once base64 encoding inflates it ~33%. Conservative local-file cap
+  // sits a touch under that. Remote asset_url has no size handshake so
+  // we don't apply the limit there (Braze downloads it server-side).
+  const MAX_LOCAL_IMAGE_BYTES = 4 * 1024 * 1024;
+  const fs = await import("node:fs");
+
   for (const image of imageManifest) {
     try {
       // Prefer exported_url (publicly accessible Figma CDN URL) for asset_url approach.
@@ -315,20 +322,26 @@ export async function uploadImagesToBraze({
           name: image.braze_name
         };
       } else if (image.local_path) {
-        const fs = await import("node:fs");
-        if (fs.existsSync(image.local_path)) {
-          const fileData = fs.readFileSync(image.local_path);
-          requestBody = {
-            asset_file: fileData.toString("base64"),
-            name: image.braze_name
-          };
-        } else {
+        if (!fs.existsSync(image.local_path)) {
           errors.push({
             image_id: image.id,
             error: `Local file not found: ${image.local_path}`
           });
           continue;
         }
+        const stat = fs.statSync(image.local_path);
+        if (stat.size > MAX_LOCAL_IMAGE_BYTES) {
+          errors.push({
+            image_id: image.id,
+            error: `Local file too large: ${Math.round(stat.size / 1024)}KB exceeds Braze base64 upload cap of ${MAX_LOCAL_IMAGE_BYTES / 1024}KB. Compress or convert to JPEG, or host the image on a CDN and pass it via exported_url.`
+          });
+          continue;
+        }
+        const fileData = fs.readFileSync(image.local_path);
+        requestBody = {
+          asset_file: fileData.toString("base64"),
+          name: image.braze_name
+        };
       } else {
         errors.push({
           image_id: image.id,

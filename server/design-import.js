@@ -430,9 +430,14 @@ async function fetchFigmaJson({ config, resourcePath, headers }) {
     clearTimeout(timeoutId);
   }
 
-  if (response.status === 403) {
+  if (response.status === 401 || response.status === 403) {
     throw new Error(
-      `Figma API unauthorized (403) for ${resourcePath}. Check that your Figma API token is valid and has read access to this file.`
+      `Figma API unauthorized (${response.status}) for ${resourcePath}. Check that your Figma API token is valid and has read access to this file. You can reset it in Orbit settings under Figma API Token.`
+    );
+  }
+  if (response.status === 404) {
+    throw new Error(
+      `Figma API not found (404) for ${resourcePath}. Verify the file key and node ID are correct.`
     );
   }
   if (response.status === 429) {

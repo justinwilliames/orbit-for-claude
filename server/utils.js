@@ -35,13 +35,58 @@ export function readText(filePath) {
   return fs.readFileSync(filePath, "utf8");
 }
 
+/**
+ * If `value` is a string that clearly LOOKS like a text-file path AND
+ * exists on disk, read it and return the contents. Otherwise return
+ * the string as-is.
+ *
+ * Path detection requires:
+ *   - absolute path, OR
+ *   - relative path starting with `./` or `../`, OR
+ *   - explicit `file://` prefix (stripped before resolution)
+ *  AND
+ *   - a known text/markup file extension (.html, .htm, .mjml, .md,
+ *     .txt, .json, .xml, .svg, .css).
+ *
+ * Previously this function treated any string that happened to match
+ * a real filename as a file path. That made it possible to pass a
+ * template name like "welcome-v1" that collides with a local file and
+ * silently read that file instead, plus was a general footgun. The
+ * tightened heuristic keeps the convenience (callers can pass either
+ * inline content or a path) while eliminating the accidental-read
+ * vector.
+ */
+const TEXT_FILE_EXTENSIONS = new Set([
+  ".html", ".htm", ".mjml", ".md", ".txt", ".json", ".xml", ".svg", ".css"
+]);
+
+function looksLikeTextFilePath(value) {
+  if (typeof value !== "string") return false;
+  let candidate = value.trim();
+  if (!candidate) return false;
+  if (candidate.startsWith("file://")) {
+    candidate = candidate.replace(/^file:\/\//, "");
+  } else if (!candidate.startsWith("/") && !candidate.startsWith("./") && !candidate.startsWith("../")) {
+    return false;
+  }
+  // Must have a recognised text-file extension.
+  const lastDot = candidate.lastIndexOf(".");
+  if (lastDot < 0) return false;
+  const ext = candidate.slice(lastDot).toLowerCase();
+  if (!TEXT_FILE_EXTENSIONS.has(ext)) return false;
+  return true;
+}
+
 export function maybeReadTextFile(value) {
   if (typeof value !== "string") {
     return value ?? null;
   }
 
-  if (fileExists(value)) {
-    return readText(value);
+  if (looksLikeTextFilePath(value)) {
+    const candidate = value.trim().replace(/^file:\/\//, "");
+    if (fileExists(candidate)) {
+      return readText(candidate);
+    }
   }
 
   return value;

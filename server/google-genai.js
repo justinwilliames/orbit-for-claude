@@ -14,16 +14,29 @@ const IMAGE_MODEL_PRIORITY = [
 ];
 const HARDCODED_FALLBACK_MODEL = "gemini-2.5-flash-preview-image-generation";
 
-// Cache so we only hit the models endpoint once per process lifetime.
+// Cache the resolved model with a 24h TTL. Previously cached for the
+// process lifetime, which meant Gemini model deprecations or upgrades
+// required a Claude Desktop restart to pick up. With a TTL, a running
+// Orbit re-resolves at most once a day.
+const MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 let _resolvedModel = null;
+let _resolvedModelExpiresAt = 0;
 
 /**
  * Query the Gemini API for available models and pick the best
  * image-generation-capable one.  Returns the model ID string.
  */
 export async function resolveImageModel(apiKey) {
-  if (_resolvedModel) return _resolvedModel;
+  if (_resolvedModel && Date.now() < _resolvedModelExpiresAt) {
+    return _resolvedModel;
+  }
   if (!apiKey) return HARDCODED_FALLBACK_MODEL;
+
+  const pickAndCache = (modelId) => {
+    _resolvedModel = modelId;
+    _resolvedModelExpiresAt = Date.now() + MODEL_CACHE_TTL_MS;
+    return _resolvedModel;
+  };
 
   try {
     const client = new GoogleGenAI({ apiKey });
@@ -37,8 +50,7 @@ export async function resolveImageModel(apiKey) {
 
     for (const preferred of IMAGE_MODEL_PRIORITY) {
       if (available.has(preferred)) {
-        _resolvedModel = preferred;
-        return _resolvedModel;
+        return pickAndCache(preferred);
       }
     }
 
@@ -46,22 +58,28 @@ export async function resolveImageModel(apiKey) {
     for (const model of models) {
       const id = model.name?.replace(/^models\//, "") ?? model.id ?? "";
       if (/image/i.test(id) && !/deprecated/i.test(model.description ?? "")) {
-        _resolvedModel = id;
-        return _resolvedModel;
+        return pickAndCache(id);
       }
     }
   } catch {
-    // API unreachable at startup — fall through to hardcoded default
+    // API unreachable — fall through to hardcoded default. Don't cache
+    // this so we retry on the next call rather than pinning the fallback
+    // for 24h over a transient failure.
+    return HARDCODED_FALLBACK_MODEL;
   }
 
-  _resolvedModel = HARDCODED_FALLBACK_MODEL;
-  console.warn(`[Orbit] Gemini model resolution: no priority match found. Falling back to ${HARDCODED_FALLBACK_MODEL}. If image generation fails, verify your API key supports this model.`);
-  return _resolvedModel;
+  // No priority match in available models. Cache the fallback so we
+  // don't re-resolve on every image call, and warn once.
+  process.stderr.write(
+    `[Orbit] Gemini model resolution: no priority match found. Falling back to ${HARDCODED_FALLBACK_MODEL}. If image generation fails, verify your API key supports this model.\n`
+  );
+  return pickAndCache(HARDCODED_FALLBACK_MODEL);
 }
 
 /** Clear the cached model (useful for tests). */
 export function resetModelCache() {
   _resolvedModel = null;
+  _resolvedModelExpiresAt = 0;
 }
 
 export async function generateBrandArtLayer({
