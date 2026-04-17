@@ -322,8 +322,13 @@ export function ensureDir(dirPath) {
 }
 
 // Validates a Braze REST endpoint URL. Returns null if valid, error string if not.
-// Accepts canonical braze.com/eu URLs and localhost (for dev/test mocks).
-const BRAZE_ENDPOINT_RE = /^https:\/\/rest\.[a-z0-9-]+\.braze\.(?:com|eu)$/i;
+// Accepts canonical Braze domains across all known clusters:
+//   US:  rest.iad-*.braze.com (iad-01..iad-10+)
+//   EU:  rest.fra-*.braze.eu,  rest.eus-*.braze.eu
+//   AU:  rest.au-*.braze.com   (Braze AU still serves under .com)
+//   IND: rest.ind-*.braze.com  (India cluster)
+// Also accepts localhost (for dev/test mocks).
+const BRAZE_ENDPOINT_RE = /^https:\/\/rest\.[a-z0-9-]+\.braze\.(?:com|eu|com\.au)$/i;
 const BRAZE_ENDPOINT_LOCAL_RE = /^https?:\/\/(?:localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
 
 export function validateBrazeEndpoint(endpoint) {
@@ -331,7 +336,7 @@ export function validateBrazeEndpoint(endpoint) {
   if (BRAZE_ENDPOINT_LOCAL_RE.test(endpoint)) return null;
   return BRAZE_ENDPOINT_RE.test(endpoint)
     ? null
-    : `Invalid Braze REST endpoint "${endpoint}". Expected format: https://rest.iad-01.braze.com`;
+    : `Invalid Braze REST endpoint "${endpoint}". Expected format: https://rest.iad-01.braze.com (or your cluster's equivalent — iad-*, au-*, fra-*, eus-*, ind-*).`;
 }
 
 export function resolveOptionalPath(value) {

@@ -174,26 +174,34 @@ export async function brazePaginateList({ config, endpoint, params = {}, itemsKe
 }
 
 /**
- * Map Braze REST endpoint hostname to dashboard cluster URL.
+ * Derive the Braze dashboard host from a REST API hostname. Braze's
+ * convention is to mirror the cluster suffix between rest.<cluster> and
+ * dashboard-<cluster>, so we can handle the mapping generically for any
+ * current or future cluster instead of hard-coding each one.
+ *
+ * Examples:
+ *   rest.iad-01.braze.com    -> dashboard-01.braze.com
+ *   rest.iad-10.braze.com    -> dashboard-10.braze.com
+ *   rest.eus-02.braze.eu     -> dashboard-02.braze.eu
+ *   rest.au-01.braze.com     -> dashboard-01.braze.com
+ *   rest.fra-01.braze.eu     -> dashboard-01.braze.eu
+ *   rest.ind-01.braze.com    -> dashboard-01.braze.com
  */
-const ENDPOINT_TO_DASHBOARD = {
-  "rest.iad-01.braze.com": "dashboard-01.braze.com",
-  "rest.iad-02.braze.com": "dashboard-02.braze.com",
-  "rest.iad-03.braze.com": "dashboard-03.braze.com",
-  "rest.iad-04.braze.com": "dashboard-04.braze.com",
-  "rest.iad-05.braze.com": "dashboard-05.braze.com",
-  "rest.iad-06.braze.com": "dashboard-06.braze.com",
-  "rest.iad-07.braze.com": "dashboard-07.braze.com",
-  "rest.iad-08.braze.com": "dashboard-08.braze.com",
-  "rest.eus-01.braze.eu": "dashboard-01.braze.eu",
-  "rest.eus-02.braze.eu": "dashboard-02.braze.eu"
-};
+function deriveDashboardHost(hostname) {
+  // Expected shape: rest.<region>-<num>.braze.<tld>
+  const match = hostname.match(
+    /^rest\.([a-z]+)-(\d{2})\.braze\.(com|eu|com\.au)$/i
+  );
+  if (!match) return null;
+  const [, , num, tld] = match;
+  return `dashboard-${num}.braze.${tld}`;
+}
 
 export function buildDashboardUrl(restEndpoint, objectType, objectId) {
   if (!restEndpoint || !objectId) return null;
   try {
     const hostname = new URL(restEndpoint).hostname;
-    const dashboard = ENDPOINT_TO_DASHBOARD[hostname];
+    const dashboard = deriveDashboardHost(hostname);
     if (dashboard) {
       return `https://${dashboard}/${objectType}/${objectId}`;
     }
