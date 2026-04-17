@@ -10,16 +10,21 @@
 import { validateBrazeEndpoint } from "./config.js";
 import { safeParseJson } from "./utils.js";
 
-// Simple rate limiter: ensure minimum gap between API calls
-let _lastCallTime = 0;
+// Promise-chain rate limiter. Guarantees a minimum gap between Braze
+// API calls even under concurrent awaiters. Previous implementation
+// used a bare _lastCallTime module variable, which two concurrent
+// awaiters could both read before either wrote, silently bypassing
+// the limit. The chain below serialises strictly: each new caller
+// awaits the previous slot before picking its own timestamp.
 const MIN_CALL_GAP_MS = 150;
-async function rateLimit() {
-  const now = Date.now();
-  const elapsed = now - _lastCallTime;
-  if (elapsed < MIN_CALL_GAP_MS) {
-    await new Promise((r) => setTimeout(r, MIN_CALL_GAP_MS - elapsed));
-  }
-  _lastCallTime = Date.now();
+let _rateLimitChain = Promise.resolve();
+function rateLimit() {
+  const next = _rateLimitChain.then(async () => {
+    await new Promise((resolve) => setTimeout(resolve, MIN_CALL_GAP_MS));
+  });
+  // Swallow rejection propagation so one slot's error doesn't break the chain.
+  _rateLimitChain = next.catch(() => {});
+  return next;
 }
 
 const BRAZE_API_TIMEOUT_MS = 20_000;
