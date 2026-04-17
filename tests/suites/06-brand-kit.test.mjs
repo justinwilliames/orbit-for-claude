@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
+import { assertNotHandlerCrash } from "../harness/validators.mjs";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_ROOT = process.env.ORBIT_TEST_RUN_DIR
@@ -43,6 +44,7 @@ describe("Brand kit suite — intake, draft, write", () => {
 
   test("start_brand_guidelines_intake returns shaped content", async () => {
     const res = await client.callToolLenient("orbit_start_brand_guidelines_intake", {});
+    assertNotHandlerCrash(res, "start_brand_guidelines_intake");
     // Intake can surface JSON questions OR a markdown interview. Both
     // are valid MCP responses.
     assert.ok(
@@ -53,6 +55,7 @@ describe("Brand kit suite — intake, draft, write", () => {
 
   test("validate_brand_kit returns a structured assessment for a fresh workspace", async () => {
     const res = await client.callToolLenient("orbit_validate_brand_kit", {});
+    assertNotHandlerCrash(res, "validate_brand_kit");
     assert.ok(res.kind === "response");
     // A fresh tmp workspace has no brand kit — handler returns needs_attention.
     assert.ok(
@@ -68,6 +71,7 @@ describe("Brand kit suite — intake, draft, write", () => {
       primary_colors: { primary: "#6366F1", accent: "#818CF8" },
       audience_summary: "Lifecycle marketers on Braze."
     });
+    assertNotHandlerCrash(res, "build_brand_kit_draft");
     assert.ok(res.kind === "response" || res.kind === "rpc_error",
       `Expected response or rpc_error, got ${res.kind}`);
   });

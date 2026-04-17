@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
+import { assertNotHandlerCrash } from "../harness/validators.mjs";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_ROOT = process.env.ORBIT_TEST_RUN_DIR
@@ -42,6 +43,7 @@ describe("Figma import suite — happy path + error classification", () => {
       figma_url: "https://www.figma.com/file/mock-file/test",
       node_id: "2:1"
     });
+    assertNotHandlerCrash(res, "import_design happy path");
     assert.ok(res.kind === "response",
       `Expected response, got ${res.kind}: ${JSON.stringify(res).slice(0, 300)}`);
     // Should have hit the mock Figma API.

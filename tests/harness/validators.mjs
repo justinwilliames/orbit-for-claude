@@ -100,3 +100,69 @@ export function runValidator(name, fn) {
     return { name, status: "fail", message: err.message };
   }
 }
+
+/**
+ * Guard against handler crashes that get silently absorbed by the
+ * withToolErrorHandling wrapper.
+ *
+ * When a handler throws unexpectedly, the wrapper catches the error,
+ * logs it to stderr, and returns { status: "error", message: "...",
+ * code: "error" }. That keeps the MCP transport clean — but it means
+ * a "tool returned a valid response" check passes even when the
+ * handler is fundamentally broken.
+ *
+ * This helper should run on every happy-path test. It fails loudly
+ * if:
+ *   - the response has status: "error" (wrapper caught a throw)
+ *   - the response text looks like a raw JS error (TypeError,
+ *     "Cannot read properties of undefined", etc.)
+ *
+ * Usage:
+ *   const res = await client.callToolLenient("orbit_xxx", args);
+ *   assertNotHandlerCrash(res);
+ *   // ... remaining assertions on happy-path shape
+ */
+export function assertNotHandlerCrash(res, context = "") {
+  const prefix = context ? `[${context}] ` : "";
+
+  if (res.kind === "response") {
+    if (res.parsed?.status === "error") {
+      const msg = res.parsed.message || JSON.stringify(res.parsed).slice(0, 240);
+      throw new assert.AssertionError({
+        message: `${prefix}Handler crashed and was caught by the wrapper: ${msg}`,
+        actual: "status=error",
+        expected: "any non-error status",
+        operator: "assertNotHandlerCrash"
+      });
+    }
+    return;
+  }
+
+  if (res.kind === "parse_error") {
+    const text = res.text || "";
+    if (/TypeError|ReferenceError|Cannot read propert(ies|y) of/i.test(text)) {
+      throw new assert.AssertionError({
+        message: `${prefix}Handler returned raw JS error in text content: ${text.slice(0, 240)}`,
+        actual: "raw error text",
+        expected: "shaped response",
+        operator: "assertNotHandlerCrash"
+      });
+    }
+    return;
+  }
+
+  if (res.kind === "rpc_error") {
+    // RPC errors are surfaced by the MCP SDK for schema validation etc.
+    // Those are legitimate "needs_inputs"-equivalent responses, not
+    // handler crashes — don't flag them here.
+    return;
+  }
+
+  // Other transport-level errors are genuinely broken.
+  throw new assert.AssertionError({
+    message: `${prefix}Unexpected response kind: ${res.kind}`,
+    actual: res.kind,
+    expected: "response | parse_error | rpc_error",
+    operator: "assertNotHandlerCrash"
+  });
+}

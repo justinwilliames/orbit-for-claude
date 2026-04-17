@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
+import { assertNotHandlerCrash } from "../harness/validators.mjs";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_ROOT = process.env.ORBIT_TEST_RUN_DIR
@@ -79,6 +80,7 @@ describe("Library + workspace suite — filesystem lifecycle", () => {
       action: "list",
       item_type: "email_component"
     });
+    assertNotHandlerCrash(res, "library list");
     assert.ok(res.kind === "response", `Expected response, got ${res.kind}`);
     assert.ok(res.parsed.status === "ok" || res.parsed.items !== undefined,
       "Expected an items list");

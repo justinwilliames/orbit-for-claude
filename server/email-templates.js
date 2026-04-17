@@ -206,8 +206,21 @@ export function generateMjmlTemplate({ spec }) {
     throw new Error("The supplied spec is not an Orbit email_template_spec.");
   }
 
+  // A spec with no modules can't render anything useful. Return a
+  // needs_inputs guide instead of crashing on record.modules.map(...).
+  const modules = Array.isArray(record.modules) ? record.modules : [];
+  if (modules.length === 0) {
+    return {
+      status: "needs_inputs",
+      missing: ["modules"],
+      message:
+        "The email_template_spec has no modules to render. Build the spec with orbit_build_email_template_spec first, or supply a spec that includes a non-empty modules array.",
+      spec: record
+    };
+  }
+
   const palette = resolvePalette(record);
-  const moduleMarkup = record.modules.map((module) => renderModule(module, palette)).join("\n");
+  const moduleMarkup = modules.map((module) => renderModule(module, palette)).join("\n");
   const mjml = [
     "<mjml>",
     "  <mj-head>",
@@ -236,7 +249,7 @@ export function generateMjmlTemplate({ spec }) {
     spec: record,
     mjml,
     metadata: {
-      module_count: record.modules.length,
+      module_count: modules.length,
       personalization_variables: record.personalization?.length ?? 0
     }
   };

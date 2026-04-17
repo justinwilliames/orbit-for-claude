@@ -91,7 +91,23 @@ export async function startMockApiServer() {
     // --- Figma endpoints
     setResponse("GET", "/files/mock-file", loadFixture("figma", "file-tree"));
     setResponse("GET", "/files/mock-file/nodes", loadFixture("figma", "file-nodes"));
-    setResponse("GET", "/images/mock-file", loadFixture("figma", "image-response"));
+    // The image-response fixture points at https://s3.example.com/... which
+    // the handler then tries to download. Rewrite those URLs to point at
+    // this mock server so the SVG fetch resolves locally.
+    const imageResponse = loadFixture("figma", "image-response");
+    if (imageResponse?.images) {
+      for (const key of Object.keys(imageResponse.images)) {
+        imageResponse.images[key] = `__MOCK_ORIGIN__/mock-svg.svg`;
+      }
+    }
+    setResponse("GET", "/images/mock-file", imageResponse);
+    // Serve a minimal valid SVG at the rewritten URL. handler does a
+    // plain-text fetch so we respond with svg+xml content type.
+    setResponse("GET", "/mock-svg.svg", {
+      status: 200,
+      headers: { "Content-Type": "image/svg+xml" },
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="100%" height="100%" fill="white"/><text x="20" y="40" font-family="Inter" font-size="14" fill="#111">mock SVG</text></svg>'
+    });
   }
 
   installDefaults();
@@ -149,6 +165,18 @@ export async function startMockApiServer() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  // Rewrite any __MOCK_ORIGIN__ placeholders in fixture URLs now that
+  // we know the dynamic port. Applies to Figma image responses that
+  // need to redirect the handler's SVG fetch back through the mock.
+  for (const [key, value] of responses.entries()) {
+    if (typeof value === "object" && value !== null) {
+      const replaced = JSON.parse(
+        JSON.stringify(value).replaceAll("__MOCK_ORIGIN__", baseUrl)
+      );
+      responses.set(key, replaced);
+    }
+  }
 
   return {
     url: baseUrl,

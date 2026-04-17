@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
-import { validateMjml } from "../harness/validators.mjs";
+import { validateMjml, assertNotHandlerCrash } from "../harness/validators.mjs";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_ROOT = process.env.ORBIT_TEST_RUN_DIR
@@ -45,6 +45,7 @@ describe("Email pipeline suite — spec → MJML → HTML → validation", () =>
       platform: "braze",
       title: "Welcome Email"
     });
+    assertNotHandlerCrash(res, "build_email_template_spec");
     // This tool may return a JSON status payload OR a markdown spec.
     // Both are valid MCP responses; the contract is "response, not throw".
     assert.ok(
@@ -68,6 +69,7 @@ describe("Email pipeline suite — spec → MJML → HTML → validation", () =>
         }
       })
     });
+    assertNotHandlerCrash(res, "generate_mjml_template");
     assert.ok(res.kind === "response" || res.kind === "rpc_error");
     if (res.kind === "response" && res.parsed.mjml) {
       validateMjml(res.parsed.mjml);
@@ -80,6 +82,7 @@ describe("Email pipeline suite — spec → MJML → HTML → validation", () =>
     const res = await client.callToolLenient("orbit_compile_email_template", {
       mjml
     });
+    assertNotHandlerCrash(res, "compile_email_template");
     assert.ok(res.kind === "response" || res.kind === "rpc_error",
       `Expected response or rpc_error, got ${res.kind}`);
     if (res.kind === "response" && res.parsed.html) {

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
+import { assertNotHandlerCrash } from "../harness/validators.mjs";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_ROOT = process.env.ORBIT_TEST_RUN_DIR
@@ -44,6 +45,7 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     // or by the SDK's Zod validation (JSON-RPC error). Both are valid MCP
     // contracts — what must NOT happen is an unhandled exception.
     const res = await client.callToolLenient("orbit_sync_to_braze", {});
+    assertNotHandlerCrash(res, "sync_to_braze");
     assert.ok(
       res.kind === "response" || res.kind === "rpc_error",
       `Expected a clean response or RPC error, got ${res.kind}`
@@ -61,6 +63,7 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     const res = await client.callToolLenient("orbit_upload_images_to_braze", {
       generated_components: []
     });
+    assertNotHandlerCrash(res, "upload_images_to_braze");
     // Handler may reject via schema (generated_components shape) or succeed
     // with an empty-manifest message. Either is acceptable.
     assert.ok(res.kind === "response" || res.kind === "rpc_error",
@@ -105,6 +108,9 @@ describe("Braze sync suite — write operations produce correct API calls", () =
   });
 
   test("create_braze_canvas requires a spec", async () => {
+    // This test intentionally exercises a missing-inputs path so we
+    // accept status === "error" from the wrapper; the handler itself
+    // is expected to guide via "needs_inputs" when it gets far enough.
     const res = await client.callToolLenient("orbit_create_braze_canvas", {});
     assert.ok(
       res.kind === "response" || res.kind === "rpc_error",
@@ -119,10 +125,13 @@ describe("Braze sync suite — write operations produce correct API calls", () =
   });
 
   test("build_braze_pack produces a structured package skeleton", async () => {
-    const { parsed } = await client.callToolJson("orbit_build_braze_pack", {
+    const res = await client.callToolLenient("orbit_build_braze_pack", {
       program_name: "Test Program"
     });
-    // May be ok (basic package) or needs_inputs — both are valid contracts.
-    assert.ok(["ok", "needs_inputs", "needs_setup"].includes(parsed.status));
+    assertNotHandlerCrash(res, "build_braze_pack");
+    if (res.kind === "response") {
+      // May be ok (basic package) or needs_inputs — both are valid contracts.
+      assert.ok(["ok", "needs_inputs", "needs_setup"].includes(res.parsed.status));
+    }
   });
 });
