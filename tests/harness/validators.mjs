@@ -33,7 +33,10 @@ export function validateMcpResponse(toolName, raw) {
 const KNOWN_STATUSES = new Set([
   "ok", "partial", "needs_setup", "needs_inputs", "not_found",
   "auth_failed", "rate_limited", "timeout", "dry_run", "error",
-  "no_collision", "warnings", "no_strong_match", "success", "failed"
+  "no_collision", "collision_found", "warnings", "no_strong_match",
+  "success", "failed", "needs_platform_confirmation",
+  "invalid_platform_logic", "needs_attention", "no_changes",
+  "already_exists"
 ]);
 
 export function validateStatusField(toolName, parsed) {

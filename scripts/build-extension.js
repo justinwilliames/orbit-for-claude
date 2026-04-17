@@ -21,6 +21,17 @@ if (pkgVersion !== manifestVersion) {
 // Rebuild the skills manifest before packaging so the bundle is never stale.
 console.log("Rebuilding skills manifest...");
 execSync("node server/build-skill-manifest.js", { cwd: ROOT_DIR, stdio: "inherit" });
+
+// Gate the build on the test suite. A failing test is a hard-stop;
+// the .mcpb cannot be packaged without every contract and error path
+// passing against the real MCP stdio transport. Skip by setting
+// ORBIT_SKIP_TESTS=1 — use only when triaging the test harness itself.
+if (process.env.ORBIT_SKIP_TESTS === "1") {
+  console.log("ORBIT_SKIP_TESTS=1 — skipping test suite (use only for harness debugging).");
+} else {
+  console.log("Running test suite (set ORBIT_SKIP_TESTS=1 to bypass)...");
+  execSync("node tests/run.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
+}
 const COPY_PATHS = [
   "manifest.json",
   "icon.png",

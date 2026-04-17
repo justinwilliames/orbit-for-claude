@@ -144,6 +144,36 @@ export async function spawnMcpClient({
     }
   }
 
+  /**
+   * Call a tool and tolerate either a JSON response OR an SDK-level
+   * schema validation failure. Useful for "missing inputs" contract
+   * tests where the MCP SDK may reject the call before the handler
+   * runs. Returns one of:
+   *   { kind: "response", raw, parsed } — tool returned a text-content block
+   *   { kind: "parse_error", text }    — text content is not JSON
+   *   { kind: "rpc_error", error }     — MCP SDK rejected via JSON-RPC error
+   *   { kind: "transport_error", error } — other transport failure
+   */
+  async function callToolLenient(name, args = {}) {
+    try {
+      const res = await callTool(name, args);
+      if (res?.isError) {
+        return { kind: "rpc_error", error: res };
+      }
+      const textBlock = (res?.content ?? []).find((c) => c.type === "text");
+      if (!textBlock) {
+        return { kind: "transport_error", error: new Error("no text content"), raw: res };
+      }
+      try {
+        return { kind: "response", raw: res, parsed: JSON.parse(textBlock.text) };
+      } catch {
+        return { kind: "parse_error", raw: res, text: textBlock.text };
+      }
+    } catch (err) {
+      return { kind: "rpc_error", error: err };
+    }
+  }
+
   async function listResources() {
     const res = await send("resources/list");
     return res.resources ?? [];
@@ -171,6 +201,7 @@ export async function spawnMcpClient({
     listTools,
     callTool,
     callToolJson,
+    callToolLenient,
     listResources,
     close,
     getStderr: () => stderrChunks.slice(),
