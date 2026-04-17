@@ -1,0 +1,15 @@
+{
+  "data": {
+    "name": "onboarding_new_trial_v2",
+    "stats": [
+      {
+        "time": "2026-03-15",
+        "total_stats": { "entries": 240, "in_progress": 180, "revenue": 0.0 }
+      },
+      {
+        "time": "2026-03-22",
+        "total_stats": { "entries": 265, "in_progress": 195, "revenue": 0.0 }
+      }
+    ]
+  }
+}

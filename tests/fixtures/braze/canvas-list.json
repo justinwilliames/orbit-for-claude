@@ -1,0 +1,28 @@
+{
+  "canvases": [
+    {
+      "id": "canvas-001",
+      "name": "onboarding_new_trial_v2",
+      "draft": false,
+      "archived": false,
+      "tags": ["Onboarding", "Email"],
+      "last_edited": "2026-03-15T10:00:00Z"
+    },
+    {
+      "id": "canvas-002",
+      "name": "winback_dormant_q2",
+      "draft": false,
+      "archived": false,
+      "tags": ["Win-back"],
+      "last_edited": "2026-04-01T14:30:00Z"
+    },
+    {
+      "id": "canvas-003",
+      "name": "  leading_space_bad",
+      "draft": true,
+      "archived": false,
+      "tags": [],
+      "last_edited": "2026-04-10T08:00:00Z"
+    }
+  ]
+}

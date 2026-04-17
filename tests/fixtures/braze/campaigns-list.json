@@ -1,0 +1,22 @@
+{
+  "campaigns": [
+    {
+      "id": "campaign-001",
+      "name": "promo_spring_sale_2026",
+      "draft": false,
+      "is_draft": false,
+      "archived": false,
+      "tags": ["Promotional"],
+      "last_edited": "2026-03-20T09:00:00Z"
+    },
+    {
+      "id": "campaign-002",
+      "name": "transactional_receipt",
+      "draft": false,
+      "is_draft": false,
+      "archived": false,
+      "tags": ["Transactional"],
+      "last_edited": "2025-11-01T00:00:00Z"
+    }
+  ]
+}

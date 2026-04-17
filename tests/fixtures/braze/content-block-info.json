@@ -1,0 +1,5 @@
+{
+  "content": "<p>Hi {{first_name | default: 'there'}},</p><p>Thanks for signing up.</p>",
+  "liquid_tag": "{{content_blocks.${email_footer_standard}}}",
+  "description": "Standard footer block"
+}

@@ -1,0 +1,40 @@
+{
+  "name": "onboarding_new_trial_v2",
+  "description": "Welcome program for trial signups",
+  "draft": false,
+  "archived": false,
+  "tags": ["Onboarding", "Email"],
+  "created_at": "2026-01-10T00:00:00Z",
+  "updated_at": "2026-03-15T10:00:00Z",
+  "schedule_type": "action_based",
+  "first_entry": "2026-01-11T00:00:00Z",
+  "last_entry": "2026-04-15T00:00:00Z",
+  "variants": [{ "name": "Default", "id": "v1" }],
+  "steps": [
+    {
+      "name": "Entry",
+      "type": "entry",
+      "next_step_id": "welcome_email"
+    },
+    {
+      "name": "Welcome Email",
+      "id": "welcome_email",
+      "type": "message",
+      "channels": ["email"],
+      "next_step_id": "wait_2d"
+    },
+    {
+      "name": "Wait 2 days",
+      "id": "wait_2d",
+      "type": "delay",
+      "delay_seconds": 172800,
+      "next_step_id": "feature_highlight"
+    },
+    {
+      "name": "Feature Highlight",
+      "id": "feature_highlight",
+      "type": "message",
+      "channels": ["email"]
+    }
+  ]
+}

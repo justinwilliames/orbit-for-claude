@@ -1,0 +1,46 @@
+{
+  "nodes": {
+    "2:1": {
+      "document": {
+        "id": "2:1",
+        "type": "FRAME",
+        "name": "Welcome Email",
+        "absoluteBoundingBox": { "x": 0, "y": 0, "width": 600, "height": 1800 },
+        "layoutMode": "VERTICAL",
+        "children": [
+          {
+            "id": "10:1",
+            "type": "FRAME",
+            "name": "Header",
+            "layoutMode": "VERTICAL",
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 600, "height": 80 },
+            "paddingTop": 20, "paddingBottom": 12, "paddingLeft": 32, "paddingRight": 32,
+            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              {
+                "id": "10:2", "type": "TEXT", "name": "Eyebrow", "characters": "Orbit",
+                "style": { "fontFamily": "Inter", "fontSize": 12, "fontWeight": 400, "lineHeightPx": 16, "textAlignHorizontal": "LEFT", "letterSpacing": 1 },
+                "fills": [{ "type": "SOLID", "color": { "r": 0.42, "g": 0.4, "b": 0.37, "a": 1 } }]
+              }
+            ]
+          },
+          {
+            "id": "20:1",
+            "type": "FRAME",
+            "name": "Hero",
+            "layoutMode": "VERTICAL",
+            "absoluteBoundingBox": { "x": 0, "y": 80, "width": 600, "height": 500 },
+            "fills": [{ "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+            "children": [
+              {
+                "id": "20:2", "type": "TEXT", "name": "Headline", "characters": "Welcome to Orbit",
+                "style": { "fontFamily": "Inter", "fontSize": 28, "fontWeight": 700, "lineHeightPx": 34, "textAlignHorizontal": "LEFT" },
+                "fills": [{ "type": "SOLID", "color": { "r": 0.05, "g": 0.05, "b": 0.05, "a": 1 } }]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

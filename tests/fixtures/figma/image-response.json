@@ -1,0 +1,6 @@
+{
+  "err": null,
+  "images": {
+    "2:1": "https://s3.example.com/mock-figma-image.svg"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "promo_spring_sale_2026",
+  "description": "Spring sale promo",
+  "draft": false,
+  "is_draft": false,
+  "archived": false,
+  "tags": ["Promotional"],
+  "schedule_type": "scheduled",
+  "conversion_behaviors": [
+    { "type": "Opens Email", "window": 3 }
+  ],
+  "messages": {
+    "email_body": {
+      "channel": "email",
+      "subject": "Spring sale starts now"
+    }
+  }
+}

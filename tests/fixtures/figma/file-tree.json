@@ -1,0 +1,21 @@
+{
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "1:1",
+        "type": "CANVAS",
+        "name": "Email",
+        "children": [
+          {
+            "id": "2:1",
+            "type": "FRAME",
+            "name": "Welcome Email",
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 600, "height": 1800 }
+          }
+        ]
+      }
+    ]
+  }
+}

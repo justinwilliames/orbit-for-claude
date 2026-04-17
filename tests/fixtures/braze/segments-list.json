@@ -1,0 +1,19 @@
+{
+  "segments": [
+    {
+      "id": "seg-001",
+      "name": "Active Free Users",
+      "analytics_tracking_enabled": true
+    },
+    {
+      "id": "seg-002",
+      "name": "Paid Users",
+      "analytics_tracking_enabled": true
+    },
+    {
+      "id": "seg-003",
+      "name": "Dormant 90d",
+      "analytics_tracking_enabled": false
+    }
+  ]
+}

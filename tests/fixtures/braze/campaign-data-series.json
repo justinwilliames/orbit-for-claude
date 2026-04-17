@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "time": "2026-03-15",
+      "messages": {
+        "email": [
+          { "sent": 2400, "opens": 1008, "unique_opens": 842, "clicks": 210, "unique_clicks": 185, "unsubscribes": 12, "bounces": 8 }
+        ]
+      }
+    }
+  ]
+}

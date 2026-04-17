@@ -1,0 +1,8 @@
+{
+  "events": [
+    { "name": "trial_signup_completed" },
+    { "name": "feature_used" },
+    { "name": "payment_succeeded" },
+    { "name": "subscription_cancelled" }
+  ]
+}
