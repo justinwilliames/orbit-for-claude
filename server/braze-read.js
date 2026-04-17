@@ -637,7 +637,6 @@ function categoriseByStatus(items) {
 
 function checkNamingConventions(items) {
   const issues = [];
-  const NAMING_RE = /^[a-z0-9][a-z0-9_-]*$/;
 
   for (const item of items) {
     const name = item.name ?? "";
@@ -657,9 +656,23 @@ function analyseContentBlockContent(content) {
   if (!content) return [];
   const issues = [];
 
-  // Check for Liquid without fallbacks
-  const liquidVars = content.match(/\{\{\s*\$\{[^}]+\}\s*\}\}/g) ?? [];
-  const noFallback = liquidVars.filter((v) => !v.includes("default:"));
+  // Check for Liquid output tags ({{ ... }}) that render user data without
+  // a default fallback. Covers all common Braze Liquid patterns:
+  //   {{first_name}}                             — direct attribute
+  //   {{ ${first_name} }}                        — Braze ${} syntax
+  //   {{custom_attribute.${some_field}}}         — nested Braze
+  //   {{ event_properties.${x} }}                — event properties
+  //
+  // Excludes {% ... %} logic tags, which don't output user data directly.
+  // A variable is considered safe if it contains `default:` or `| default:`.
+  const liquidOutputs = content.match(/\{\{(?!%)[^}]+\}\}/g) ?? [];
+  const noFallback = liquidOutputs.filter((v) => {
+    // Skip tags that are purely static (hardcoded strings, numeric, boolean)
+    if (/^\{\{\s*["'].*["']\s*\}\}$/.test(v)) return false;
+    if (/^\{\{\s*-?\d+(\.\d+)?\s*\}\}$/.test(v)) return false;
+    // Require a default filter
+    return !/\|\s*default\s*:/i.test(v);
+  });
   if (noFallback.length > 0) {
     issues.push(`${noFallback.length} Liquid variable(s) without fallback defaults`);
   }

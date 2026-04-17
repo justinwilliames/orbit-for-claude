@@ -96,7 +96,7 @@
     },
     {
       "name": "orbit_route_task",
-      "description": "Rank the best-fit Orbit skills for a request, identify missing disambiguators, and suggest the highest-leverage user questions Orbit should ask before"
+      "description": "Route a user request to the best-fit Orbit protocol before answering, then ask any high-leverage missing user questions before taking action."
     },
     {
       "name": "orbit_load_skill",
@@ -120,7 +120,7 @@
     },
     {
       "name": "orbit_bootstrap_home_workspace",
-      "description": "Create Orbit's default ~/Orbit working structure on first run and fill in any missing folders or starter files without overwriting existing user conte"
+      "description": "Create Orbit's default ~/Orbit working structure on first run and fill in any missing folders or starter files without overwriting existing user content."
     },
     {
       "name": "orbit_check_copy_readiness",
@@ -232,11 +232,11 @@
     },
     {
       "name": "orbit_read_braze_canvas",
-      "description": "Read the full structure of an existing Braze Canvas \u2014 steps, channels, delays,"
+      "description": "Read the full structure of an existing Braze Canvas — steps, channels, delays, entry audience, and schedule. Also reverse-maps it to an Orbit message plan so you can import existing Canvases into Orbit's program model."
     },
     {
       "name": "orbit_read_braze_campaign",
-      "description": "Read the full structure of an existing Braze Campaign \u2014 channels, messages,"
+      "description": "Read the full structure of an existing Braze Campaign — channels, messages, schedule, conversion behaviours, and tags."
     },
     {
       "name": "orbit_analyse_segments",
@@ -244,7 +244,7 @@
     },
     {
       "name": "orbit_audit_content_blocks",
-      "description": "Inventory all Braze Content Blocks with duplicate detection, stale block identification,"
+      "description": "Inventory all Braze Content Blocks with duplicate detection, stale block identification, and optional content analysis (Liquid fallback checks, broken images, HTTP URLs)."
     },
     {
       "name": "orbit_validate_braze_data",
@@ -307,7 +307,6 @@
       "description": "Save, list, load, or update items in Orbit's local library of templates, components, modules, and programs."
     }
   ],
-  "prompts_generated": true,
   "keywords": [
     "lifecycle marketing",
     "crm",
