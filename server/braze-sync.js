@@ -1,7 +1,7 @@
 import {
   BRAZE_SYNC_RECORD_SCHEMA
 } from "./production-specs.js";
-import { validateBrazeEndpoint } from "./config.js";
+import { brazePost, validateBrazeSetup } from "./braze-api.js";
 import {
   loadLibraryItem,
   updateLibraryItem
@@ -9,9 +9,18 @@ import {
 import {
   maybeReadTextFile,
   parseJsonInput,
-  safeParseJson,
   slugify
 } from "./utils.js";
+
+// Thin adapter that preserves the historical callBrazeApi(...) signature
+// used throughout this file, delegating to the shared brazePost client
+// (rate-limited, timeout-guarded, standardised error message format).
+async function callBrazeApi({ config, endpoint, method = "POST", body }) {
+  if (method.toUpperCase() !== "POST") {
+    throw new Error(`callBrazeApi only supports POST (got ${method}).`);
+  }
+  return brazePost({ config, endpoint, body });
+}
 
 export async function syncBrazeContentBlocks({
   config,
@@ -470,55 +479,3 @@ function parseLibraryRef(ref, expectedType) {
   };
 }
 
-function validateBrazeSetup(config) {
-  if (!config.brazeApiKey || !config.brazeRestEndpoint) {
-    return {
-      status: "needs_setup",
-      missing: [
-        ...(!config.brazeApiKey ? ["braze_api_key"] : []),
-        ...(!config.brazeRestEndpoint ? ["braze_rest_endpoint"] : [])
-      ],
-      message: "Set Braze API credentials before publishing to Braze."
-    };
-  }
-
-  const endpointError = validateBrazeEndpoint(config.brazeRestEndpoint);
-  if (endpointError) {
-    return {
-      status: "needs_setup",
-      missing: ["braze_rest_endpoint"],
-      message: endpointError
-    };
-  }
-
-  return null;
-}
-
-const BRAZE_API_TIMEOUT_MS = 15_000;
-
-async function callBrazeApi({ config, endpoint, method, body }) {
-  const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}${endpoint}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), BRAZE_API_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.brazeApiKey}`
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-  const text = await response.text();
-  const parsed = safeParseJson(text, { message: text });
-  if (!response.ok) {
-    const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
-    throw new Error(`Braze API ${response.status} on ${endpoint}: ${brazeMsg}`);
-  }
-  return parsed;
-}
