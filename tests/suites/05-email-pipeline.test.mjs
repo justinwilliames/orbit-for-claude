@@ -90,24 +90,42 @@ describe("Email pipeline suite — spec → MJML → HTML → validation", () =>
     }
   });
 
-  test("validate_email_template returns a structured response (not a throw)", async () => {
+  test("validate_email_template returns a QA report without a spec", async () => {
+    // Regression guard: the handler must tolerate a missing spec.
+    // Before the fix this threw "Cannot read properties of undefined
+    // (reading 'platform')" and the withToolErrorHandling wrapper
+    // surfaced it as status: "error".
     const html = `<!DOCTYPE html><html><body>
       <p>Hello {{first_name | default: 'there'}}</p>
       <a href="https://example.com/link">Link</a>
       <a href="https://example.com/unsubscribe">Unsubscribe</a>
     </body></html>`;
-    // validate_email_template requires a spec alongside html to avoid a
-    // handler crash — we pass both so we exercise the happy path.
+    const res = await client.callToolLenient("orbit_validate_email_template", {
+      html
+    });
+    assert.ok(res.kind === "response", `Expected response, got ${res.kind}`);
+    const p = res.parsed;
+    // Handler must return a shaped QA outcome, not pass through to the
+    // error wrapper. If the fix regresses, p.status === "error".
+    assert.notEqual(p.status, "error", `Handler crashed: ${p.message}`);
+    assert.ok(
+      p.status || p.report || p.findings || p.issues || p.checks,
+      `Expected a QA outcome, got ${JSON.stringify(p).slice(0, 200)}`
+    );
+  });
+
+  test("validate_email_template enriches report when spec provided", async () => {
+    const html = `<!DOCTYPE html><html><body><p>Hi</p></body></html>`;
     const res = await client.callToolLenient("orbit_validate_email_template", {
       html,
       spec_json: JSON.stringify({
         type: "email_template_spec",
         platform: "braze",
-        content: { subject: "Hello", preheader: "Preheader" }
+        subject_line: "Test subject",
+        preheader: "Test preheader"
       })
     });
-    // Contract: response, not throw.
-    assert.ok(res.kind === "response" || res.kind === "rpc_error",
-      `Expected response/rpc_error, got ${res.kind}`);
+    assert.ok(res.kind === "response", `Expected response, got ${res.kind}`);
+    assert.notEqual(res.parsed.status, "error", `Handler crashed: ${res.parsed.message}`);
   });
 });

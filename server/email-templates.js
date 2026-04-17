@@ -389,13 +389,21 @@ export function buildEmailValidation({
   spec,
   html
 }) {
-  const compiledSpec =
-    typeof spec === "string" ? parseJsonInput(spec, "email template spec") : spec;
+  // Spec is optional. When absent, validation runs without
+  // platform/subject/preheader context — still useful for catching
+  // broken HTML, missing alt text, etc. Previously this threw
+  // "Cannot read properties of undefined (reading 'platform')" when
+  // called with just html.
+  const compiledSpec = spec == null
+    ? {}
+    : typeof spec === "string"
+      ? parseJsonInput(spec, "email template spec")
+      : spec;
   return validateEmailTemplate({
     html,
-    platform: compiledSpec.platform,
-    subjectLine: compiledSpec.subject_line,
-    preheader: compiledSpec.preheader
+    platform: compiledSpec?.platform ?? null,
+    subjectLine: compiledSpec?.subject_line ?? null,
+    preheader: compiledSpec?.preheader ?? null
   });
 }
 
