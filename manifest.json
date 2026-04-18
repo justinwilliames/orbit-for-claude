@@ -305,6 +305,10 @@
     {
       "name": "orbit_library",
       "description": "Save, list, load, or update items in Orbit's local library of templates, components, modules, and programs."
+    },
+    {
+      "name": "orbit_check_version",
+      "description": "Compare your installed Orbit version against the latest release on GitHub. Returns up_to_date, update_available, or ahead with a download link when an update is available."
     }
   ],
   "keywords": [

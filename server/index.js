@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getAttribution } from "./orbit-attribution.js";
 import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
+import { checkOrbitVersion } from "./version-check.js";
 import {
   buildSkillSummary,
   composeSequence,
@@ -3345,6 +3346,20 @@ function registerTools() {
         versionLabel,
         metadataPatch
       });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_check_version",
+    {
+      title: "Check Orbit Version",
+      description:
+        "Compare your installed Orbit version against the latest release on GitHub. Returns status: up_to_date, update_available, or ahead, with the published version number and a download link when an update is available.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await checkOrbitVersion({ installedVersion: ORBIT_VERSION });
       return makeJsonToolResponse(result);
     }
   );

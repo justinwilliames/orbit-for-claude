@@ -118,9 +118,9 @@ describe("Contract suite — every tool meets the MCP response contract", () => 
     if (mockServer) await mockServer.close();
   });
 
-  test("tools/list returns all 54 registered tools", async () => {
+  test("tools/list returns all registered tools", async () => {
     const tools = await client.listTools();
-    assert.ok(tools.length >= 50, `Expected >=50 tools, got ${tools.length}`);
+    assert.ok(tools.length >= 55, `Expected >=55 tools, got ${tools.length}`);
     const names = new Set(tools.map((t) => t.name));
     // Spot-check presence of the critical tools.
     for (const expected of [
