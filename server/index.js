@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { getAttribution } from "./orbit-attribution.js";
+import { traceToolCall, hashArgs } from "./orbit-trace.js";
+import { truncateLargePayload } from "./orbit-resilience.js";
 import {
   buildSkillSummary,
   composeSequence,
@@ -3395,27 +3398,64 @@ function makeJsonToolResponse(payload) {
   };
 }
 
+const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
+const DEFAULT_RESPONSE_MAX_BYTES = 200_000;
+const PER_TOOL_TIMEOUT_MS = {
+  // Gemini image generation can genuinely take 30–90s.
+  orbit_brand_header: 120_000,
+  // Large Braze workspace audits exercise all 7 endpoints.
+  orbit_audit_braze_instance: 90_000,
+  orbit_audit_content_blocks: 90_000,
+  orbit_braze_performance: 90_000,
+  orbit_sync_to_braze: 120_000,
+  orbit_upload_images_to_braze: 120_000,
+  orbit_upload_template_images: 120_000
+};
+
 /**
- * Wrap an async tool handler so any thrown error is caught, classified,
- * and returned as a proper MCP tool response instead of propagating up
- * to the transport (which Claude Desktop surfaces as a generic JSON-RPC
- * internal error with no remediation text).
+ * Wrap an async tool handler with:
+ *   - try/catch + error classification (auth_failed / not_found /
+ *     rate_limited / timeout / upstream_unavailable / error)
+ *   - per-tool deadline (Promise.race with a timeout)
+ *   - response size cap (truncate arrays to fit Claude's context window)
+ *   - opt-in debug trace log (ORBIT_DEBUG_TRACE=1)
+ *   - automatic orbit_attribution merge into the response payload so
+ *     Claude sees what Orbit capability it just used
  *
- * Classification:
- *   - AbortError / timeout → status: "timeout"
- *   - HTTP 401/403 in message → status: "auth_failed"
- *   - HTTP 404 in message → status: "not_found"
- *   - HTTP 429 in message → status: "rate_limited"
- *   - Other Error → status: "error"
- *
- * Every tool registration should wrap its handler with this function.
+ * Every tool registration should go through registerToolSafe below so
+ * these behaviours apply uniformly.
  */
 function withToolErrorHandling(toolName, handler) {
   return async (args, extra) => {
+    const startedAt = Date.now();
+    const timeoutMs = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+
     try {
-      const result = await handler(args, extra);
+      // Deadline-wrapped handler. Promise.race lets us return a shaped
+      // timeout response without leaving the handler hanging in the
+      // event loop — it finishes in the background, we just stop waiting.
+      let timer;
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const e = new Error(`Tool "${toolName}" exceeded ${timeoutMs}ms deadline.`);
+          e.code = "deadline_exceeded";
+          reject(e);
+        }, timeoutMs);
+      });
+
+      let result;
+      try {
+        result = await Promise.race([handler(args, extra), deadline]);
+      } finally {
+        clearTimeout(timer);
+      }
+
       // Guard against handlers that forgot to return a content-shaped object.
       if (!result || !Array.isArray(result.content)) {
+        traceToolCall({
+          tool: toolName, args_hash: hashArgs(args), outcome: "invalid_return",
+          duration_ms: Date.now() - startedAt
+        });
         return makeJsonToolResponse({
           status: "error",
           code: "invalid_handler_return",
@@ -3423,32 +3463,81 @@ function withToolErrorHandling(toolName, handler) {
           message: "Tool returned an invalid MCP response shape."
         });
       }
+
+      // Parse, inject attribution, cap size, re-serialise.
+      const textBlock = result.content.find((c) => c.type === "text");
+      let outcome = "ok";
+      let finalBytes = textBlock?.text?.length ?? 0;
+      let originalBytes = finalBytes;
+      let truncated = false;
+
+      if (textBlock) {
+        let parsed = null;
+        try { parsed = JSON.parse(textBlock.text); } catch { /* non-JSON — pass through */ }
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const attribution = getAttribution(toolName);
+          if (attribution && !parsed.orbit_attribution) {
+            parsed.orbit_attribution = {
+              skill: attribution.skill,
+              summary: attribution.summary,
+              signature: attribution.signature,
+              heavy: attribution.heavy ?? false,
+              tool: toolName
+            };
+          }
+          const capped = truncateLargePayload(parsed, DEFAULT_RESPONSE_MAX_BYTES);
+          truncated = capped.truncated;
+          originalBytes = capped.original_bytes;
+          finalBytes = capped.final_bytes;
+          if (truncated) outcome = "ok_truncated";
+          textBlock.text = JSON.stringify(capped.payload, null, 2);
+        }
+      }
+
+      traceToolCall({
+        tool: toolName, args_hash: hashArgs(args), outcome,
+        duration_ms: Date.now() - startedAt,
+        bytes: finalBytes, original_bytes: originalBytes, truncated
+      });
       return result;
     } catch (err) {
       const message = err?.message ?? String(err);
       const errName = err?.name ?? "Error";
       let code = "error";
-      if (errName === "AbortError" || /timeout/i.test(message)) code = "timeout";
+      if (err?.code === "deadline_exceeded" || errName === "AbortError" || /timeout/i.test(message)) code = "timeout";
+      else if (err?.code === "circuit_open") code = "upstream_unavailable";
       else if (/\b(401|403)\b/.test(message) || /unauthori[sz]ed|forbidden/i.test(message)) code = "auth_failed";
       else if (/\b404\b/.test(message) || /not found/i.test(message)) code = "not_found";
       else if (/\b429\b/.test(message) || /rate limit/i.test(message)) code = "rate_limited";
 
-      // Log to stderr for observability without polluting the MCP stdio transport.
       try {
         process.stderr.write(
           `[Orbit] Tool "${toolName}" failed (${code}): ${message}\n`
         );
-      } catch {
-        // stderr write can't be trusted in all hosts; never let logging fail the response.
-      }
+      } catch { /* best-effort */ }
 
-      return makeJsonToolResponse({
+      const attribution = getAttribution(toolName);
+      const payload = {
         status: code === "error" ? "error" : code,
         code,
         tool: toolName,
         message,
-        suggested_next_steps: suggestedNextStepsForCode(code)
+        suggested_next_steps: suggestedNextStepsForCode(code),
+        ...(attribution ? {
+          orbit_attribution: {
+            skill: attribution.skill,
+            summary: attribution.summary,
+            signature: attribution.signature,
+            heavy: attribution.heavy ?? false,
+            tool: toolName
+          }
+        } : {})
+      };
+      traceToolCall({
+        tool: toolName, args_hash: hashArgs(args), outcome: code,
+        duration_ms: Date.now() - startedAt, error: message
       });
+      return makeJsonToolResponse(payload);
     }
   };
 }
@@ -3478,6 +3567,12 @@ function suggestedNextStepsForCode(code) {
       return [
         "The upstream service rate-limited this request.",
         "Wait 30-60 seconds and try again."
+      ];
+    case "upstream_unavailable":
+      return [
+        "Orbit's circuit breaker opened after repeated upstream failures. Retrying immediately would just fail again.",
+        "Wait 30 seconds and try again — the breaker auto-recovers after a cool-off period.",
+        "If it keeps failing, check the upstream's status page (Braze / Figma / Gemini)."
       ];
     case "not_found":
       return [
