@@ -12,6 +12,9 @@ import {
   writeJson,
   writeText
 } from "./utils.js";
+import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
+
+const FIGMA_BREAKER = getBreaker("figma");
 
 const CANONICAL_COMPONENT_TYPES = [
   "header",
@@ -418,17 +421,12 @@ function normalizeFigmaNodeId(value) {
 const FIGMA_API_TIMEOUT_MS = 15_000;
 
 async function fetchFigmaJson({ config, resourcePath, headers }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FIGMA_API_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(`${config.figmaApiBaseUrl}${resourcePath}`, {
-      headers,
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  // Retry + circuit breaker for transient Figma failures.
+  const response = await fetchWithRetry(
+    `${config.figmaApiBaseUrl}${resourcePath}`,
+    { headers },
+    { timeoutMs: FIGMA_API_TIMEOUT_MS, breaker: FIGMA_BREAKER }
+  );
 
   if (response.status === 401 || response.status === 403) {
     throw new Error(

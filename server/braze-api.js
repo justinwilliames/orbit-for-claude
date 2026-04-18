@@ -9,6 +9,9 @@
 
 import { validateBrazeEndpoint } from "./config.js";
 import { safeParseJson } from "./utils.js";
+import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
+
+const BRAZE_BREAKER = getBreaker("braze");
 
 // Promise-chain rate limiter. Guarantees a minimum gap between Braze
 // API calls even under concurrent awaiters. Previous implementation
@@ -59,7 +62,10 @@ export function validateBrazeSetup(config) {
 }
 
 /**
- * Make a GET request to the Braze REST API.
+ * Make a GET request to the Braze REST API with retry + circuit breaker.
+ * Transient failures (5xx, network, timeout) retry up to 3 times with
+ * 300ms / 600ms / 1.2s backoff. A circuit breaker opens after 3
+ * consecutive failures to protect Braze (and Orbit) during outages.
  */
 export async function brazeGet({ config, endpoint, params = {} }) {
   await rateLimit();
@@ -71,21 +77,17 @@ export async function brazeGet({ config, endpoint, params = {} }) {
     }
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), BRAZE_API_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(url.toString(), {
+  const response = await fetchWithRetry(
+    url.toString(),
+    {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.brazeApiKey}`
-      },
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+      }
+    },
+    { timeoutMs: BRAZE_API_TIMEOUT_MS, breaker: BRAZE_BREAKER }
+  );
 
   const text = await response.text();
   const parsed = safeParseJson(text, { message: text });
@@ -97,27 +99,24 @@ export async function brazeGet({ config, endpoint, params = {} }) {
 }
 
 /**
- * Make a POST request to the Braze REST API.
+ * Make a POST request to the Braze REST API with retry + circuit breaker.
  */
 export async function brazePost({ config, endpoint, body = {} }) {
   await rateLimit();
   const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}${endpoint}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), BRAZE_API_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(url, {
+
+  const response = await fetchWithRetry(
+    url,
+    {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.brazeApiKey}`
       },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+      body: JSON.stringify(body)
+    },
+    { timeoutMs: BRAZE_API_TIMEOUT_MS, breaker: BRAZE_BREAKER }
+  );
 
   const text = await response.text();
   const parsed = safeParseJson(text, { message: text });
