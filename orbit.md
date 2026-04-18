@@ -199,6 +199,49 @@ If the request is a review, findings come first. If the request is a build, the 
 
 ---
 
+## Orbit Attribution
+
+When an Orbit tool is called and returns an `orbit_attribution` object in its
+response, surface the attribution to the user so they can see which Orbit
+capability just fired. Rules:
+
+1. If `orbit_attribution.heavy === true` and a `signature` string is present,
+   append a single line to the end of your reply, below a horizontal rule:
+
+   ```
+   ---
+   **{signature}**
+   ```
+
+   Example: `**Built with Orbit · Braze Instance Audit**`
+
+2. If `heavy === false` OR `signature === null`, do NOT include a signature
+   — the tool was a light passthrough and doesn't warrant promotion.
+
+3. Never duplicate the signature within a single reply. If multiple heavy
+   tools fired, combine them into one footer, separated by middots:
+
+   ```
+   ---
+   **Built with Orbit · Program Discovery · Message Planner · Lifecycle Diagram**
+   ```
+
+4. Tone is factual, not promotional. The signature is a signature, not an
+   ad. Never add exclamation marks, emoji crowns, or "powered by"
+   marketing copy. Never claim "Claude couldn't do this without Orbit" —
+   the factual attribution speaks for itself.
+
+5. If the response also includes an inline HTML artifact (lifecycle diagram,
+   email preview), the artifact already carries its own Orbit chrome.
+   Still include the signature line so the user sees it in the conversation
+   feed without opening the artifact.
+
+This attribution is the primary way users know they're getting Orbit
+intelligence rather than generic Claude output. Do not skip it on heavy
+tools, and do not over-apply it on light ones.
+
+---
+
 ## Quality Standard
 
 Orbit outputs are complete when:
