@@ -22,6 +22,14 @@ if (pkgVersion !== manifestVersion) {
 console.log("Rebuilding skills manifest...");
 execSync("node server/build-skill-manifest.js", { cwd: ROOT_DIR, stdio: "inherit" });
 
+// Refresh the guide library export from get.yourorbit.team so the
+// bundled MCP resources reflect the latest published guides. The
+// fetch script is resilient — on failure it preserves whatever
+// snapshot is already in data/, so a transient network issue doesn't
+// block a build. Set ORBIT_GUIDES_SKIP=1 to force-skip.
+console.log("Refreshing guide library export...");
+execSync("node scripts/fetch-guides.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
+
 // Gate the build on the test suite. A failing test is a hard-stop;
 // the .mcpb cannot be packaged without every contract and error path
 // passing against the real MCP stdio transport. Skip by setting

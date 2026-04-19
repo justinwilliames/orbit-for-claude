@@ -10,6 +10,7 @@ import { getAttribution } from "./orbit-attribution.js";
 import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
 import { checkOrbitVersion } from "./version-check.js";
+import { registerGuideResources } from "./guides.js";
 import {
   buildSkillSummary,
   composeSequence,
@@ -719,6 +720,18 @@ function registerResources() {
       return makeJsonResource(uri, functions);
     }
   );
+
+  // Long-form guide library — 80+ markdown guides exposed as
+  // orbit://guides/{slug}, plus an index and per-category lists.
+  // Loaded from data/guides-export.json which is refreshed at mcpb
+  // build time from get.yourorbit.team/api/guides/export. No-ops
+  // cleanly if the export isn't present.
+  const guidesStatus = registerGuideResources(server, { ResourceTemplate });
+  if (guidesStatus.registered) {
+    process.stderr.write(
+      `[Orbit] Registered ${guidesStatus.guideCount} guide resources (${guidesStatus.categoryCount} categories) from export ${guidesStatus.exportedAt}.\n`
+    );
+  }
 }
 
 function registerPrompts() {
