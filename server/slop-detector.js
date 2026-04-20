@@ -104,6 +104,17 @@ const PHRASE_RULES = [
   { pattern: /\b(changed|changes)\s+my\s+life\b/gi, severity: "medium", category: "language", label: "Changed-my-life cliché", explanation: "Most overused LinkedIn-transformation closer.", fix: "Describe the specific change. 'I stopped working weekends' beats 'it changed my life'." },
   { pattern: /\b(never\s+been\s+more\s+(excited|proud|grateful|ready)|couldn['’]?t\s+be\s+more\s+(excited|proud|grateful|ready))\b/gi, severity: "medium", category: "language", label: "Never-been-more-X superlative", explanation: "LinkedIn emotion-inflation phrase.", fix: "Scale the claim back to something believable, or make the specific source of feeling explicit." },
   { pattern: /\b(at\s+the\s+end\s+of\s+the\s+day|when\s+push\s+comes\s+to\s+shove)\b/gi, severity: "medium", category: "language", label: "End-of-day filler", explanation: "Stock transition phrase that does no work.", fix: "Cut it. The sentence after will stand on its own." },
+  { pattern: /\b(has\s+been\s+a\s+whirlwind|what\s+a\s+whirlwind|what\s+a\s+week|what\s+a\s+ride)\b/gi, severity: "medium", category: "language", label: "Whirlwind week cliché", explanation: "Stock week-summary opener — 'has been a whirlwind' is a LinkedIn staple.", fix: "Describe what specifically made the week intense, with a real detail." },
+  { pattern: /\b(end-to-end\s+spectrum|full\s+spectrum\s+of\s+the\s+business|full\s+end-to-end)\b/gi, severity: "medium", category: "language", label: "End-to-end-spectrum jargon", explanation: "Corporate filler that signals 'I touched many things' without specifics.", fix: "Name the specific areas. 'Product, data, and brand' beats 'end-to-end spectrum'." },
+  { pattern: /\b(from\s+day\s+one|since\s+day\s+one)\b/gi, severity: "low", category: "language", label: "Day-one cliché", explanation: "'From day one' — stock startup-onboarding phrase.", fix: "Give the actual timeframe. 'By my third standup' beats 'from day one'." },
+  { pattern: /\b(in\s+tandem|in\s+parallel,?\s+with|working\s+alongside)\b/gi, severity: "low", category: "language", label: "Corporate-speak connector", explanation: "'In tandem / in parallel' used to dress up 'at the same time'.", fix: "Use 'at the same time' or restructure to show the actual coordination." },
+  { pattern: /\b(feedback\s+loops?\s+are\s+tight|tight\s+feedback\s+loops)\b/gi, severity: "medium", category: "language", label: "Tight-feedback-loops cliché", explanation: "AI-era stock phrase, dropped in for velocity-bragging.", fix: "Name the specific iteration cadence. 'We ship twice a day' beats 'tight feedback loops'." },
+  { pattern: /\b(things\s+ship\s+(quickly|fast)|we\s+ship\s+(quickly|fast))\b/gi, severity: "low", category: "language", label: "Ship-fast filler", explanation: "Generic velocity claim with no content.", fix: "Give the actual cadence and what shipped." },
+  { pattern: /\b(ownership\s+sits\s+close\s+to\s+the\s+problem|decisions\s+happen\s+in\s+the\s+room)\b/gi, severity: "high", category: "language", label: "Startup ownership cliché", explanation: "Stock phrases dressing up 'small team, fast decisions'.", fix: "Describe the actual decision cadence with an example." },
+  { pattern: /\b(big\s+(few\s+weeks|week|month|year)\s+ahead|exciting\s+(times|weeks|months)\s+ahead)\b/gi, severity: "medium", category: "language", label: "Exciting-ahead closer", explanation: "Placeholder closer when there's nothing specific to end on.", fix: "Name a specific thing that's coming in that timeframe, or just stop." },
+  { pattern: /\b(moving?\s+from\s+idea\s+to\s+\w+\s+to\s+\w+\s+to\s+\w+)\b/gi, severity: "medium", category: "structure", label: "Idea-to-N-abstracts journey", explanation: "'From idea to structured thinking to analysis to documented action' — AI rule-of-four abstract-noun journey.", fix: "Pick the one transition that matters most and describe it concretely." },
+  { pattern: /\b(almost\s+immediately|pretty\s+much\s+immediately|right\s+away\s+I)\b/gi, severity: "low", category: "language", label: "Time-filler qualifier", explanation: "'Almost immediately' softens a timeframe without adding precision.", fix: "State the actual time. 'Within three days' beats 'almost immediately'." },
+  { pattern: /\b(energis(?:ed|ing)\s+about|energi?z(?:ed|ing)\s+about)\b/gi, severity: "low", category: "language", label: "Energised-about opener", explanation: "Stock LinkedIn enthusiasm-bragging opener.", fix: "Describe what specifically is energising with a real detail." },
 
   // Repeated sentence openings (detected separately via analysis)
 ];
@@ -666,6 +677,59 @@ export function analyseSlop(raw) {
         "Exactly three bullets is the AI default. Ask whether the topic actually has three items or whether you cut corners.",
       fix: "If the point genuinely has three parts, keep it. If it has two or four, say so instead of forcing a round number.",
     });
+  }
+
+  // ── Emoji-prefixed bullet list ─────────────────────────────────
+  // The ✍️ / 🧠 / 📊 / 🔎 LinkedIn-tool-list format. A strong AI
+  // formatting tell — real humans rarely reach for themed emojis
+  // to organise a list.
+  const emojiBulletPattern =
+    /(^|\n)\s*([\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\u{1F000}-\u{1F2FF}]\uFE0F?)\s+\w/gu;
+  const emojiBullets = Array.from(text.matchAll(emojiBulletPattern));
+  if (emojiBullets.length >= 3) {
+    findings.push({
+      category: "structure",
+      severity: "high",
+      label: "Emoji-prefixed bullet list",
+      explanation:
+        `${emojiBullets.length} lines begin with a themed emoji (✍️/🧠/📊/🔎 pattern). Classic LinkedIn/AI formatting for "here are the N things I'm doing" lists.`,
+      matches: emojiBullets.slice(0, 4).map((m) => m[0].trim()),
+      fix: "Cut the emojis and write the list as prose, or use plain hyphen bullets. Themed emojis signal a template, not content.",
+    });
+  }
+
+  // ── Anaphoric paragraph openers (paragraph-level, not sentence) ─
+  // Catches "Often in synergy. Often one speaking to the other…"
+  // / "Here, ownership sits close… Here, we ship fast…" patterns
+  // where 3+ paragraphs OR consecutive sentences share an opener
+  // word that isn't typically used this way ("Often", "Here",
+  // "Now").
+  if (paragraphs.length >= 3) {
+    const paragraphOpeners = paragraphs
+      .map((p) => (p.trim().split(/\s+/)[0] ?? "").toLowerCase().replace(/[^a-z']/g, ""));
+    const openerCounts = new Map();
+    for (const o of paragraphOpeners) {
+      if (!o) continue;
+      openerCounts.set(o, (openerCounts.get(o) ?? 0) + 1);
+    }
+    // Flag unusual repeated openers (not conversational words like
+    // "i", "the", "a" — those are naturally common).
+    const unusualRepeats = Array.from(openerCounts.entries()).filter(
+      ([o, c]) =>
+        c >= 3 &&
+        !["i", "the", "a", "and", "but", "it", "we", "my"].includes(o)
+    );
+    if (unusualRepeats.length > 0) {
+      findings.push({
+        category: "structure",
+        severity: "medium",
+        label: "Anaphoric paragraph openers",
+        explanation:
+          `Multiple paragraphs start with the same unusual word (${unusualRepeats.map(([o, c]) => `"${o}" ×${c}`).join(", ")}). Parallel paragraph openers is a LinkedIn-template tell.`,
+        matches: unusualRepeats.slice(0, 3).map(([o, c]) => `"${o}..." × ${c}`),
+        fix: "Vary the paragraph opener. Parallel structure imposed across paragraphs reads as formulaic rather than intentional.",
+      });
+    }
   }
 
   // ── Compound structural penalty ────────────────────────────────
