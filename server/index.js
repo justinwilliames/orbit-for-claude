@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +5,19 @@ import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import {
+  MAX_SHORT_STRING,
+  MAX_MEDIUM_STRING,
+  MAX_LONG_STRING,
+  MAX_PATH_STRING,
+  MAX_SHORT_ARRAY,
+  MAX_MEDIUM_ARRAY,
+  MAX_LONG_ARRAY,
+  MIN_DAYS,
+  MAX_DAYS,
+  MIN_VARIATION_COUNT,
+  MAX_VARIATION_COUNT
+} from "./input-limits.js";
 import { getAttribution } from "./orbit-attribution.js";
 import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
@@ -1097,7 +1109,7 @@ function registerTools() {
       title: "List Orbit Skills",
       description: "List the Orbit skill library or filter it by category.",
       inputSchema: {
-        category: z.string().optional()
+        category: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({ category }) => {
@@ -1123,7 +1135,7 @@ function registerTools() {
       description:
         "Rank the best-fit Orbit skills for a request, identify missing disambiguators, and suggest the highest-leverage user questions Orbit should ask before acting.",
       inputSchema: {
-        request: z.string().min(1),
+        request: z.string().min(1).max(MAX_MEDIUM_STRING),
         limit: z.number().int().min(1).max(10).optional()
       }
     },
@@ -1144,7 +1156,7 @@ function registerTools() {
       title: "Load an Orbit Skill",
       description: "Load an Orbit skill in summary or full mode.",
       inputSchema: {
-        skill: z.string().min(1),
+        skill: z.string().min(1).max(MAX_SHORT_STRING),
         mode: z.enum(["summary", "full"]).default("summary")
       }
     },
@@ -1170,7 +1182,7 @@ function registerTools() {
       title: "Get an Orbit Template",
       description: "Fetch a reusable Orbit template or output format.",
       inputSchema: {
-        name: z.string().min(1)
+        name: z.string().min(1).max(MAX_SHORT_STRING)
       }
     },
     async ({ name }) => {
@@ -1204,8 +1216,8 @@ function registerTools() {
       title: "Compose an Orbit Sequence",
       description: "Suggest a multi-skill Orbit workflow for a goal.",
       inputSchema: {
-        goal: z.string().min(1),
-        primary_skill: z.string().optional()
+        goal: z.string().min(1).max(MAX_MEDIUM_STRING),
+        primary_skill: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({ goal, primary_skill: primarySkill }) => {
@@ -1233,8 +1245,8 @@ function registerTools() {
       title: "Validate an Orbit Draft",
       description: "Run a structural validation pass on a draft against an Orbit skill.",
       inputSchema: {
-        skill: z.string().min(1),
-        draft: z.string().min(1)
+        skill: z.string().min(1).max(MAX_SHORT_STRING),
+        draft: z.string().min(1).max(MAX_LONG_STRING)
       }
     },
     async ({ skill, draft }) => {
@@ -1261,8 +1273,9 @@ function registerTools() {
               "braze_publish"
             ])
           )
+          .max(MAX_SHORT_ARRAY)
           .optional(),
-        brand_kit_dir: z.string().optional()
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({ requested_features: requestedFeatures, brand_kit_dir: brandKitDir }) => {
@@ -1284,7 +1297,7 @@ function registerTools() {
       description:
         "Create Orbit's default ~/Orbit working structure on first run and fill in any missing folders or starter files without overwriting existing user content.",
       inputSchema: {
-        home_root: z.string().optional()
+        home_root: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({ home_root: homeRoot }) => {
@@ -1303,8 +1316,8 @@ function registerTools() {
       description:
         "Use this before writing copy. If brand guidelines or Tone Of Voice are missing, Orbit should ask whether to set them up first or proceed with explicit assumptions and remember that choice, then suggest the next useful Orbit step.",
       inputSchema: {
-        brand_kit_dir: z.string().optional(),
-        library_dir: z.string().optional(),
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        library_dir: z.string().max(MAX_PATH_STRING).optional(),
         allow_without_brand_guidelines: z.boolean().optional(),
         remember_choice: z.boolean().optional()
       }
@@ -1342,7 +1355,7 @@ function registerTools() {
       description:
         "Validate brand-profile.json, logo paths, example assets, and preferred layout settings.",
       inputSchema: {
-        brand_kit_dir: z.string().optional()
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({ brand_kit_dir: brandKitDir }) => {
@@ -1361,9 +1374,9 @@ function registerTools() {
       description:
         "Copies an uploaded or temp-path logo file to the permanent brand kit logos directory. Call this when the user uploads a logo during brand guidelines intake — before calling orbit_start_brand_guidelines_intake with the paths. Returns the saved permanent path.",
       inputSchema: {
-        source_path: z.string(),
+        source_path: z.string().min(1).max(MAX_PATH_STRING),
         role: z.enum(["primary", "alternate"]).default("primary"),
-        brand_kit_dir: z.string().optional()
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({ source_path: sourcePath, role, brand_kit_dir: brandKitDir }) => {
@@ -1413,36 +1426,37 @@ function registerTools() {
       description:
         "Required first step before creating brand guidelines or a brand kit. When intake is incomplete, returns the current step questions as plain text — show that text to the user exactly as returned and wait for their reply. Do not draft the brand kit until this tool returns status: ready_for_draft. When the user replies with answers, call this tool again with their answers and intake_state_json passed through unchanged.",
       inputSchema: {
-        intake_state_json: z.string().optional(),
-        brand_kit_dir: z.string().optional(),
-        brand_name: z.string().optional(),
-        company_name: z.string().optional(),
-        logo_paths: z.array(z.string()).optional(),
-        brand_example_paths: z.array(z.string()).optional(),
-        alternate_logo_path: z.string().optional(),
-        colors: z.record(z.string(), z.string()).optional(),
-        fonts: z.array(z.string()).optional(),
-        brand_overview: z.string().optional(),
-        audience_and_promise: z.string().optional(),
-        visual_system: z.string().optional(),
-        visual_style: z.string().optional(),
-        logos_and_safe_usage: z.string().optional(),
-        color_and_typography: z.string().optional(),
-        tone_of_voice: z.string().optional(),
-        brand_dos: z.array(z.string()).optional(),
-        brand_donts: z.array(z.string()).optional(),
-        email_header_rules: z.array(z.string()).optional(),
-        approved_references: z.array(z.string()).optional(),
-        open_questions: z.array(z.string()).optional(),
+        intake_state_json: z.string().max(MAX_LONG_STRING).optional(),
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        brand_name: z.string().max(MAX_SHORT_STRING).optional(),
+        company_name: z.string().max(MAX_SHORT_STRING).optional(),
+        logo_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_example_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        alternate_logo_path: z.string().max(MAX_PATH_STRING).optional(),
+        colors: z.record(z.string().max(MAX_SHORT_STRING), z.string().max(MAX_SHORT_STRING)).optional(),
+        fonts: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_overview: z.string().max(MAX_MEDIUM_STRING).optional(),
+        audience_and_promise: z.string().max(MAX_MEDIUM_STRING).optional(),
+        visual_system: z.string().max(MAX_MEDIUM_STRING).optional(),
+        visual_style: z.string().max(MAX_MEDIUM_STRING).optional(),
+        logos_and_safe_usage: z.string().max(MAX_MEDIUM_STRING).optional(),
+        color_and_typography: z.string().max(MAX_MEDIUM_STRING).optional(),
+        tone_of_voice: z.string().max(MAX_MEDIUM_STRING).optional(),
+        brand_dos: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_donts: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        email_header_rules: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        approved_references: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        open_questions: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
         preferred_header_families: z
           .array(
             z.enum(["left-anchor", "center-lock", "split-stage", "framed-narrative"])
           )
+          .max(MAX_SHORT_ARRAY)
           .optional(),
         default_canvas: z
           .object({
-            width: z.number(),
-            height: z.number()
+            width: z.number().int().positive().max(20_000),
+            height: z.number().int().positive().max(20_000)
           })
           .optional()
       }
@@ -1529,36 +1543,37 @@ function registerTools() {
       description:
         "Create a reviewable brand-kit draft with brand-profile.json, brand-guidelines.md, and a normalized asset plan. Use this after the required brand-guidelines intake is complete unless you explicitly want a placeholder-heavy draft.",
       inputSchema: {
-        brand_kit_dir: z.string().optional(),
-        brand_name: z.string().optional(),
-        company_name: z.string().optional(),
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        brand_name: z.string().max(MAX_SHORT_STRING).optional(),
+        company_name: z.string().max(MAX_SHORT_STRING).optional(),
         allow_tbd_draft: z.boolean().optional(),
-        logo_paths: z.array(z.string()).optional(),
-        brand_example_paths: z.array(z.string()).optional(),
-        alternate_logo_path: z.string().optional(),
-        colors: z.record(z.string(), z.string()).optional(),
-        fonts: z.array(z.string()).optional(),
-        brand_overview: z.string().optional(),
-        audience_and_promise: z.string().optional(),
-        visual_system: z.string().optional(),
-        visual_style: z.string().optional(),
-        logos_and_safe_usage: z.string().optional(),
-        color_and_typography: z.string().optional(),
-        tone_of_voice: z.string().optional(),
-        brand_dos: z.array(z.string()).optional(),
-        brand_donts: z.array(z.string()).optional(),
-        email_header_rules: z.array(z.string()).optional(),
-        approved_references: z.array(z.string()).optional(),
-        open_questions: z.array(z.string()).optional(),
+        logo_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_example_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        alternate_logo_path: z.string().max(MAX_PATH_STRING).optional(),
+        colors: z.record(z.string().max(MAX_SHORT_STRING), z.string().max(MAX_SHORT_STRING)).optional(),
+        fonts: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_overview: z.string().max(MAX_MEDIUM_STRING).optional(),
+        audience_and_promise: z.string().max(MAX_MEDIUM_STRING).optional(),
+        visual_system: z.string().max(MAX_MEDIUM_STRING).optional(),
+        visual_style: z.string().max(MAX_MEDIUM_STRING).optional(),
+        logos_and_safe_usage: z.string().max(MAX_MEDIUM_STRING).optional(),
+        color_and_typography: z.string().max(MAX_MEDIUM_STRING).optional(),
+        tone_of_voice: z.string().max(MAX_MEDIUM_STRING).optional(),
+        brand_dos: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_donts: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        email_header_rules: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        approved_references: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        open_questions: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
         preferred_header_families: z
           .array(
             z.enum(["left-anchor", "center-lock", "split-stage", "framed-narrative"])
           )
+          .max(MAX_SHORT_ARRAY)
           .optional(),
         default_canvas: z
           .object({
-            width: z.number(),
-            height: z.number()
+            width: z.number().int().positive().max(20_000),
+            height: z.number().int().positive().max(20_000)
           })
           .optional()
       }
@@ -1625,8 +1640,8 @@ function registerTools() {
       description:
         "Write an approved brand-kit draft to disk, including brand-profile.json, brand-guidelines.md, and copied asset files.",
       inputSchema: {
-        draft_json: z.string().min(1),
-        brand_kit_dir: z.string().optional()
+        draft_json: z.string().min(1).max(MAX_LONG_STRING),
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({ draft_json: draftJson, brand_kit_dir: brandKitDir }) => {
@@ -1646,21 +1661,21 @@ function registerTools() {
       description:
         "Update draft or existing brand-guidelines.md content without requiring a full brand-kit re-intake.",
       inputSchema: {
-        guidelines_markdown: z.string().optional(),
-        draft_json: z.string().optional(),
-        brand_kit_dir: z.string().optional(),
-        revision_request: z.string().optional(),
-        brand_overview: z.string().optional(),
-        audience_and_promise: z.string().optional(),
-        visual_system: z.string().optional(),
-        logos_and_safe_usage: z.string().optional(),
-        color_and_typography: z.string().optional(),
-        tone_of_voice: z.string().optional(),
-        brand_dos: z.array(z.string()).optional(),
-        brand_donts: z.array(z.string()).optional(),
-        email_header_rules: z.array(z.string()).optional(),
-        approved_references: z.array(z.string()).optional(),
-        open_questions: z.array(z.string()).optional()
+        guidelines_markdown: z.string().max(MAX_LONG_STRING).optional(),
+        draft_json: z.string().max(MAX_LONG_STRING).optional(),
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        revision_request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        brand_overview: z.string().max(MAX_MEDIUM_STRING).optional(),
+        audience_and_promise: z.string().max(MAX_MEDIUM_STRING).optional(),
+        visual_system: z.string().max(MAX_MEDIUM_STRING).optional(),
+        logos_and_safe_usage: z.string().max(MAX_MEDIUM_STRING).optional(),
+        color_and_typography: z.string().max(MAX_MEDIUM_STRING).optional(),
+        tone_of_voice: z.string().max(MAX_MEDIUM_STRING).optional(),
+        brand_dos: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_donts: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        email_header_rules: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        approved_references: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        open_questions: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional()
       }
     },
     async ({
@@ -1716,39 +1731,39 @@ function registerTools() {
         "the deliverable. For Braze, default to a Canvas-style flowchart with decision gates before each send.",
       inputSchema: {
         action: z.enum(["build", "update", "render"]),
-        request: z.string().optional(),
+        request: z.string().max(MAX_MEDIUM_STRING).optional(),
         platform: z.enum(PLATFORM_OPTIONS).optional(),
-        diagram_type: z.string().optional(),
-        spec_json: z.string().optional(),
-        revision_request: z.string().optional(),
-        title: z.string().optional(),
-        entry_trigger: z.string().optional(),
-        exit_condition: z.string().optional(),
-        add_segments: z.array(z.string()).optional(),
-        remove_step_indexes: z.array(z.number().int().min(1)).optional(),
+        diagram_type: z.string().max(MAX_SHORT_STRING).optional(),
+        spec_json: z.string().max(MAX_LONG_STRING).optional(),
+        revision_request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        title: z.string().max(MAX_SHORT_STRING).optional(),
+        entry_trigger: z.string().max(MAX_MEDIUM_STRING).optional(),
+        exit_condition: z.string().max(MAX_MEDIUM_STRING).optional(),
+        add_segments: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        remove_step_indexes: z.array(z.number().int().min(1).max(10_000)).max(MAX_MEDIUM_ARRAY).optional(),
         rename_steps: z.array(z.object({
-          step_index: z.number().int().min(1),
-          goal: z.string().optional(),
-          trigger: z.string().optional(),
-          channel: z.string().optional(),
-          if_no_action: z.string().optional(),
-          send_condition: z.string().optional(),
-          yes_label: z.string().optional(),
-          no_label: z.string().optional()
-        })).optional(),
+          step_index: z.number().int().min(1).max(10_000),
+          goal: z.string().max(MAX_MEDIUM_STRING).optional(),
+          trigger: z.string().max(MAX_MEDIUM_STRING).optional(),
+          channel: z.string().max(MAX_SHORT_STRING).optional(),
+          if_no_action: z.string().max(MAX_MEDIUM_STRING).optional(),
+          send_condition: z.string().max(MAX_MEDIUM_STRING).optional(),
+          yes_label: z.string().max(MAX_SHORT_STRING).optional(),
+          no_label: z.string().max(MAX_SHORT_STRING).optional()
+        })).max(MAX_MEDIUM_ARRAY).optional(),
         append_steps: z.array(z.object({
-          step: z.string().optional(),
-          trigger: z.string().optional(),
-          channel: z.string().optional(),
-          goal: z.string().min(1),
-          if_no_action: z.string().optional(),
-          send_condition: z.string().optional(),
-          yes_label: z.string().optional(),
-          no_label: z.string().optional()
-        })).optional(),
+          step: z.string().max(MAX_SHORT_STRING).optional(),
+          trigger: z.string().max(MAX_MEDIUM_STRING).optional(),
+          channel: z.string().max(MAX_SHORT_STRING).optional(),
+          goal: z.string().min(1).max(MAX_MEDIUM_STRING),
+          if_no_action: z.string().max(MAX_MEDIUM_STRING).optional(),
+          send_condition: z.string().max(MAX_MEDIUM_STRING).optional(),
+          yes_label: z.string().max(MAX_SHORT_STRING).optional(),
+          no_label: z.string().max(MAX_SHORT_STRING).optional()
+        })).max(MAX_MEDIUM_ARRAY).optional(),
         style_preset: z.enum(["orbit-default", "presentation", "minimal"]).optional(),
-        output_dir: z.string().optional(),
-        formats: z.array(z.enum(["svg", "png", "pdf", "html"])).optional()
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        formats: z.array(z.enum(["svg", "png", "pdf", "html"])).max(10).optional()
       }
     },
     async ({
@@ -1836,22 +1851,22 @@ function registerTools() {
         "After render: show the inline image preview, then show the download_link as a clickable markdown link (format: [⬇ Download full-resolution image](file://...)), then ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.",
       inputSchema: {
         action: z.enum(["build", "update", "render", "save"]),
-        goal: z.string().optional(),
+        goal: z.string().max(MAX_MEDIUM_STRING).optional(),
         platform: z.enum(PLATFORM_OPTIONS).optional(),
-        brand_kit_dir: z.string().optional(),
-        logo_paths: z.array(z.string()).optional(),
-        brand_example_paths: z.array(z.string()).optional(),
-        visual_ref_paths: z.array(z.string()).optional(),
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        logo_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        brand_example_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        visual_ref_paths: z.array(z.string().max(MAX_PATH_STRING)).max(MAX_SHORT_ARRAY).optional(),
         canvas_preset: z.enum(["email-header", "email-header-wide", "email-square"]).optional(),
         copy: z.object({
-          headline: z.string().optional(),
-          support_line: z.string().optional()
+          headline: z.string().max(MAX_SHORT_STRING).optional(),
+          support_line: z.string().max(MAX_SHORT_STRING).optional()
         }).optional(),
-        company_name: z.string().optional(),
-        spec_json: z.string().optional(),
-        revision_request: z.string().optional(),
-        output_dir: z.string().optional(),
-        preview_dir: z.string().optional().describe("Source directory for action=save. Defaults to ~/Downloads.")
+        company_name: z.string().max(MAX_SHORT_STRING).optional(),
+        spec_json: z.string().max(MAX_LONG_STRING).optional(),
+        revision_request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        preview_dir: z.string().max(MAX_PATH_STRING).optional().describe("Source directory for action=save. Defaults to ~/Downloads.")
       }
     },
     async ({
@@ -2005,27 +2020,27 @@ function registerTools() {
       description:
         "Required first step before creating any journey, program, or campaign. Call this before drafting or building anything. When discovery is incomplete, this tool returns the questions for the current step as plain text — show that text to the user exactly as returned and wait for their reply. Do not build the program until this tool returns status: ready_for_workspace. When the user replies with answers, call this tool again with their answers mapped to the relevant fields and intake_state_json passed through unchanged.",
       inputSchema: {
-        intake_state_json: z.string().optional(),
+        intake_state_json: z.string().max(MAX_LONG_STRING).optional(),
         allow_prefill: z.boolean().optional(),
-        request: z.string().optional(),
-        brief_markdown: z.string().optional(),
+        request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        brief_markdown: z.string().max(MAX_LONG_STRING).optional(),
         platform: z.enum(["braze", "iterable", "hubspot"]).optional(),
-        program_name: z.string().optional(),
-        objective: z.string().optional(),
-        primary_kpi: z.string().optional(),
-        secondary_kpis: z.array(z.string()).optional(),
-        audience: z.string().optional(),
-        lifecycle_stage: z.string().optional(),
-        current_state: z.string().optional(),
-        connected_data_sources: z.array(z.string()).optional(),
-        connected_data_notes: z.string().optional(),
-        existing_assets: z.array(z.string()).optional(),
-        technical_dependencies: z.array(z.string()).optional(),
-        constraints: z.array(z.string()).optional(),
-        timeline: z.string().optional(),
-        channels: z.array(z.string()).optional(),
-        business_model: z.string().optional(),
-        geography: z.string().optional()
+        program_name: z.string().max(MAX_SHORT_STRING).optional(),
+        objective: z.string().max(MAX_MEDIUM_STRING).optional(),
+        primary_kpi: z.string().max(MAX_MEDIUM_STRING).optional(),
+        secondary_kpis: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        audience: z.string().max(MAX_MEDIUM_STRING).optional(),
+        lifecycle_stage: z.string().max(MAX_SHORT_STRING).optional(),
+        current_state: z.string().max(MAX_MEDIUM_STRING).optional(),
+        connected_data_sources: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        connected_data_notes: z.string().max(MAX_MEDIUM_STRING).optional(),
+        existing_assets: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        technical_dependencies: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        constraints: z.array(z.string().max(MAX_MEDIUM_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        timeline: z.string().max(MAX_MEDIUM_STRING).optional(),
+        channels: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        business_model: z.string().max(MAX_MEDIUM_STRING).optional(),
+        geography: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({
@@ -2115,12 +2130,12 @@ function registerTools() {
         "source='pdf': import from a PDF as a lower-confidence reference-mode source; Orbit will not treat PDF structure as equal to Figma.",
       inputSchema: {
         source: z.enum(["figma", "pdf"]),
-        figma_url: z.string().optional(),
-        file_key: z.string().optional(),
-        node_id: z.string().optional(),
-        page_name: z.string().optional(),
-        pdf_path: z.string().optional(),
-        output_dir: z.string().optional()
+        figma_url: z.string().max(2_000).optional(),
+        file_key: z.string().max(MAX_SHORT_STRING).optional(),
+        node_id: z.string().max(MAX_SHORT_STRING).optional(),
+        page_name: z.string().max(MAX_SHORT_STRING).optional(),
+        pdf_path: z.string().max(MAX_PATH_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({
@@ -2165,12 +2180,12 @@ function registerTools() {
         "action='approve': approve a component map so Orbit can generate components and assemble templates from it (requires: component_map_json).",
       inputSchema: {
         action: z.enum(["suggest", "update", "approve"]),
-        design_import_json: z.string().optional(),
-        library_dir: z.string().optional(),
-        output_dir: z.string().optional(),
-        component_map_json: z.string().optional(),
-        revision_request: z.string().optional(),
-        edits_json: z.string().optional()
+        design_import_json: z.string().max(MAX_LONG_STRING).optional(),
+        library_dir: z.string().max(MAX_PATH_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        component_map_json: z.string().max(MAX_LONG_STRING).optional(),
+        revision_request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        edits_json: z.string().max(MAX_LONG_STRING).optional()
       }
     },
     async ({
@@ -2220,12 +2235,12 @@ function registerTools() {
       description:
         "Create a local Orbit workspace that ties together discovery, the brief, message plan, diagram, and downstream build artifacts. If discovery is incomplete, Orbit should continue the discovery process before drafting the flow.",
       inputSchema: {
-        request: z.string().optional(),
-        brief_markdown: z.string().optional(),
-        discovery_state_json: z.string().optional(),
+        request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        brief_markdown: z.string().max(MAX_LONG_STRING).optional(),
+        discovery_state_json: z.string().max(MAX_LONG_STRING).optional(),
         platform: z.enum(["braze", "iterable", "hubspot"]).optional(),
-        program_name: z.string().optional(),
-        output_dir: z.string().optional()
+        program_name: z.string().max(MAX_SHORT_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({
@@ -2259,11 +2274,11 @@ function registerTools() {
       description:
         "Create a channel-by-channel message inventory with CTAs, module needs, dependencies, and personalization requirements. Use a completed discovery or an existing brief rather than a thin prompt.",
       inputSchema: {
-        brief_markdown: z.string().optional(),
-        request: z.string().optional(),
-        discovery_state_json: z.string().optional(),
+        brief_markdown: z.string().max(MAX_LONG_STRING).optional(),
+        request: z.string().max(MAX_MEDIUM_STRING).optional(),
+        discovery_state_json: z.string().max(MAX_LONG_STRING).optional(),
         platform: z.enum(["braze", "iterable", "hubspot"]).optional(),
-        program_name: z.string().optional()
+        program_name: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({
@@ -2319,16 +2334,16 @@ function registerTools() {
       description:
         "Create a canonical Orbit email template spec before MJML generation. If brand guidelines or Tone Of Voice are missing, Orbit should ask whether to set them up first or proceed with explicit assumptions. Orbit should also suggest useful next steps such as importing a Figma design, setting up reusable templates/components, generating MJML, and previewing the email.",
       inputSchema: {
-        message_brief: z.string().min(1),
+        message_brief: z.string().min(1).max(MAX_LONG_STRING),
         platform: z.enum(["braze", "iterable", "hubspot"]).optional(),
-        brand_kit_dir: z.string().optional(),
-        module_refs: z.array(z.string()).optional(),
-        title: z.string().optional(),
-        message_id: z.string().optional(),
-        subject_line: z.string().optional(),
-        preheader: z.string().optional(),
-        cta_label: z.string().optional(),
-        cta_url: z.string().optional()
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        module_refs: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        title: z.string().max(MAX_SHORT_STRING).optional(),
+        message_id: z.string().max(MAX_SHORT_STRING).optional(),
+        subject_line: z.string().max(MAX_SHORT_STRING).optional(),
+        preheader: z.string().max(MAX_SHORT_STRING).optional(),
+        cta_label: z.string().max(MAX_SHORT_STRING).optional(),
+        cta_url: z.string().max(2_000).optional()
       }
     },
     async ({
@@ -2369,7 +2384,7 @@ function registerTools() {
       description:
         "Generate canonical MJML from an approved Orbit email template spec.",
       inputSchema: {
-        spec_json: z.string().min(1)
+        spec_json: z.string().min(1).max(MAX_LONG_STRING)
       }
     },
     async ({ spec_json: specJson }) => {
@@ -2389,10 +2404,10 @@ function registerTools() {
       description:
         "Compile Orbit MJML to HTML and plain text, with a compile report and optional files on disk.",
       inputSchema: {
-        spec_json: z.string().optional(),
-        mjml: z.string().optional(),
-        output_dir: z.string().optional(),
-        file_base_name: z.string().optional()
+        spec_json: z.string().max(MAX_LONG_STRING).optional(),
+        mjml: z.string().max(MAX_LONG_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        file_base_name: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({
@@ -2422,11 +2437,11 @@ function registerTools() {
         "render each as a separate artifact so the user can click between them. " +
         "Also saves preview files to disk and returns file paths in the files field.",
       inputSchema: {
-        spec_json: z.string().optional(),
-        html: z.string().optional(),
-        mjml: z.string().optional(),
-        output_dir: z.string().optional(),
-        file_base_name: z.string().optional()
+        spec_json: z.string().max(MAX_LONG_STRING).optional(),
+        html: z.string().max(MAX_LONG_STRING).optional(),
+        mjml: z.string().max(MAX_LONG_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        file_base_name: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({
@@ -2491,8 +2506,8 @@ function registerTools() {
       description:
         "Run Orbit email QA for structure, personalization fallbacks, links, legal blocks, contrast, and Braze-safe markup.",
       inputSchema: {
-        spec_json: z.string().optional(),
-        html: z.string().min(1)
+        spec_json: z.string().max(MAX_LONG_STRING).optional(),
+        html: z.string().min(1).max(MAX_LONG_STRING)
       }
     },
     async ({ spec_json: specJson, html }) => {
@@ -2511,10 +2526,10 @@ function registerTools() {
       description:
         "Generate reusable MJML/HTML email components from an approved component map and save them into Orbit's local library.",
       inputSchema: {
-        component_map_json: z.string().min(1),
-        library_dir: z.string().optional(),
-        output_dir: z.string().optional(),
-        version: z.string().optional()
+        component_map_json: z.string().min(1).max(MAX_LONG_STRING),
+        library_dir: z.string().max(MAX_PATH_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        version: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({
@@ -2541,13 +2556,13 @@ function registerTools() {
       description:
         "Assemble a final MJML/HTML lifecycle email from approved reusable Orbit components that share compatible props-and-slots contracts.",
       inputSchema: {
-        component_map_json: z.string().min(1),
-        component_refs: z.array(z.string()).optional(),
-        message_metadata_json: z.string().optional(),
-        output_dir: z.string().optional(),
-        library_dir: z.string().optional(),
+        component_map_json: z.string().min(1).max(MAX_LONG_STRING),
+        component_refs: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        message_metadata_json: z.string().max(MAX_LONG_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional(),
+        library_dir: z.string().max(MAX_PATH_STRING).optional(),
         save_to_library: z.boolean().optional(),
-        version: z.string().optional()
+        version: z.string().max(MAX_SHORT_STRING).optional()
       }
     },
     async ({
@@ -2586,15 +2601,15 @@ function registerTools() {
         "target='all': sync Content Blocks first, then publish the email template — the full publish pipeline (requires: template_ref).",
       inputSchema: {
         target: z.enum(["content_blocks", "email_template", "all"]),
-        component_refs: z.array(z.string()).optional(),
-        library_dir: z.string().optional(),
+        component_refs: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
+        library_dir: z.string().max(MAX_PATH_STRING).optional(),
         state: z.enum(["active", "draft"]).optional(),
-        tags: z.array(z.string()).optional(),
+        tags: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
         dry_run: z.boolean().optional(),
-        template_ref: z.string().optional(),
-        template_payload_json: z.string().optional(),
-        template_name: z.string().optional(),
-        description: z.string().optional()
+        template_ref: z.string().max(MAX_SHORT_STRING).optional(),
+        template_payload_json: z.string().max(MAX_LONG_STRING).optional(),
+        template_name: z.string().max(MAX_SHORT_STRING).optional(),
+        description: z.string().max(MAX_MEDIUM_STRING).optional()
       }
     },
     async ({
@@ -2658,8 +2673,8 @@ function registerTools() {
         "Pass the generated_components array from orbit_generate_email_components. " +
         "After upload, use orbit_reconcile_image_urls to patch the CDN URLs into all compiled HTML files.",
       inputSchema: {
-        generated_components_json: z.string().min(1).describe("JSON string of the generated_components array from orbit_generate_email_components"),
-        output_dir: z.string().optional().describe("Output directory containing generated component files"),
+        generated_components_json: z.string().min(1).max(MAX_LONG_STRING).describe("JSON string of the generated_components array from orbit_generate_email_components"),
+        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Output directory containing generated component files"),
         dry_run: z.boolean().optional().describe("If true, list images to upload without actually uploading")
       }
     },
@@ -2688,9 +2703,9 @@ function registerTools() {
         "Patch Braze-hosted CDN URLs into compiled email HTML files and the Stripo assembly template. " +
         "Run this after orbit_upload_images_to_braze to replace placeholder/Figma URLs with permanent hosted URLs.",
       inputSchema: {
-        uploaded_images_json: z.string().min(1).describe("JSON string of the uploaded array from orbit_upload_images_to_braze"),
-        output_dir: z.string().optional().describe("Output directory containing generated component files to patch"),
-        stripo_template_path: z.string().optional().describe("Path to stripo-template.html to patch")
+        uploaded_images_json: z.string().min(1).max(MAX_LONG_STRING).describe("JSON string of the uploaded array from orbit_upload_images_to_braze"),
+        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Output directory containing generated component files to patch"),
+        stripo_template_path: z.string().max(MAX_PATH_STRING).optional().describe("Path to stripo-template.html to patch")
       }
     },
     async ({
@@ -2716,11 +2731,11 @@ function registerTools() {
       description:
         "Package Orbit production artifacts into a Braze-ready implementation bundle.",
       inputSchema: {
-        workspace_json: z.string().optional(),
-        brief_markdown: z.string().optional(),
-        message_plan_json: z.string().optional(),
-        email_assets_json: z.string().optional(),
-        output_dir: z.string().optional()
+        workspace_json: z.string().max(MAX_LONG_STRING).optional(),
+        brief_markdown: z.string().max(MAX_LONG_STRING).optional(),
+        message_plan_json: z.string().max(MAX_LONG_STRING).optional(),
+        email_assets_json: z.string().max(MAX_LONG_STRING).optional(),
+        output_dir: z.string().max(MAX_PATH_STRING).optional()
       }
     },
     async ({
@@ -2755,17 +2770,17 @@ function registerTools() {
         "Use dry_run=true (default) to preview the payload without calling the Braze API. " +
         "Requires: message_plan_json (from orbit_build_message_plan). Optional: braze_pack_json (from orbit_build_braze_pack), workspace_json.",
       inputSchema: {
-        braze_pack_json: z.string().optional().describe("JSON string of the braze pack from orbit_build_braze_pack"),
-        message_plan_json: z.string().min(1).describe("JSON string of the message plan from orbit_build_message_plan"),
-        workspace_json: z.string().optional().describe("JSON string of the program workspace"),
-        canvas_name: z.string().optional().describe("Override Canvas name (defaults to program name from pack/plan)"),
-        canvas_description: z.string().optional().describe("Override Canvas description"),
+        braze_pack_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of the braze pack from orbit_build_braze_pack"),
+        message_plan_json: z.string().min(1).max(MAX_LONG_STRING).describe("JSON string of the message plan from orbit_build_message_plan"),
+        workspace_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of the program workspace"),
+        canvas_name: z.string().max(MAX_SHORT_STRING).optional().describe("Override Canvas name (defaults to program name from pack/plan)"),
+        canvas_description: z.string().max(MAX_MEDIUM_STRING).optional().describe("Override Canvas description"),
         entry_schedule_type: z.enum(["scheduled", "action_based", "api_triggered"]).optional().describe("Canvas entry schedule type (default: scheduled)"),
-        entry_segment_id: z.string().optional().describe("Braze segment ID for Canvas entry audience"),
-        entry_filters_json: z.string().optional().describe("JSON string of additional Braze entry audience filters"),
-        tags: z.array(z.string()).optional().describe("Additional tags for the Canvas"),
+        entry_segment_id: z.string().max(MAX_SHORT_STRING).optional().describe("Braze segment ID for Canvas entry audience"),
+        entry_filters_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of additional Braze entry audience filters"),
+        tags: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional().describe("Additional tags for the Canvas"),
         dry_run: z.boolean().optional().describe("If true (default), preview the payload without calling the Braze API"),
-        output_dir: z.string().optional().describe("Directory to write the Canvas payload JSON file")
+        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Directory to write the Canvas payload JSON file")
       }
     },
     async ({
@@ -2832,7 +2847,7 @@ function registerTools() {
         "entry audience, and schedule. Also reverse-maps it to an Orbit message plan so " +
         "you can import existing Canvases into Orbit's program model.",
       inputSchema: {
-        canvas_id: z.string().min(1).describe("Braze Canvas ID to read")
+        canvas_id: z.string().min(1).max(MAX_SHORT_STRING).describe("Braze Canvas ID to read")
       }
     },
     async ({ canvas_id: canvasId }) => {
@@ -2849,7 +2864,7 @@ function registerTools() {
         "Read the full structure of an existing Braze Campaign — channels, messages, " +
         "schedule, conversion behaviours, and tags.",
       inputSchema: {
-        campaign_id: z.string().min(1).describe("Braze Campaign ID to read")
+        campaign_id: z.string().min(1).max(MAX_SHORT_STRING).describe("Braze Campaign ID to read")
       }
     },
     async ({ campaign_id: campaignId }) => {
@@ -2867,7 +2882,7 @@ function registerTools() {
         "Identifies segments without analytics tracking and surfaces potential issues.",
       inputSchema: {
         include_data_series: z.boolean().optional().describe("Include daily size trends (slower — requires per-segment API calls)"),
-        days: z.number().optional().describe("Number of days of trend data (default: 30)")
+        days: z.number().int().min(MIN_DAYS).max(MAX_DAYS).optional().describe("Number of days of trend data (default: 30)")
       }
     },
     async ({ include_data_series: includeDataSeries, days }) => {
@@ -2908,8 +2923,8 @@ function registerTools() {
         "Check whether custom events and custom attributes referenced in an Orbit message " +
         "plan actually exist in the Braze instance. Also lists all available events and attributes.",
       inputSchema: {
-        required_attributes: z.array(z.string()).optional().describe("Custom attribute names to check (e.g., [\"first_name\", \"plan_type\"])"),
-        required_events: z.array(z.string()).optional().describe("Custom event names to check (e.g., [\"purchase_completed\", \"signup_completed\"])")
+        required_attributes: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_MEDIUM_ARRAY).optional().describe("Custom attribute names to check (e.g., [\"first_name\", \"plan_type\"])"),
+        required_events: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_MEDIUM_ARRAY).optional().describe("Custom event names to check (e.g., [\"purchase_completed\", \"signup_completed\"])")
       }
     },
     async ({ required_attributes: requiredAttributes, required_events: requiredEvents }) => {
@@ -2930,7 +2945,7 @@ function registerTools() {
         "Pull hard bounce and unsubscribe data from Braze for the specified period. " +
         "Produces a health assessment with actionable recommendations.",
       inputSchema: {
-        days: z.number().optional().describe("Lookback period in days (default: 30)")
+        days: z.number().int().min(MIN_DAYS).max(MAX_DAYS).optional().describe("Lookback period in days (default: 30)")
       }
     },
     async ({ days }) => {
@@ -2947,8 +2962,8 @@ function registerTools() {
         "Look up Braze user profiles by external ID or email to validate personalisation " +
         "data, subscription status, and push token availability for QA.",
       inputSchema: {
-        user_ids: z.array(z.string()).optional().describe("External IDs to look up"),
-        emails: z.array(z.string()).optional().describe("Email addresses to look up")
+        user_ids: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_MEDIUM_ARRAY).optional().describe("External IDs to look up"),
+        emails: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_MEDIUM_ARRAY).optional().describe("Email addresses to look up")
       }
     },
     async ({ user_ids: userIds, emails }) => {
