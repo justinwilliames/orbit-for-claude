@@ -10,6 +10,7 @@ import { getAttribution } from "./orbit-attribution.js";
 import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
 import { checkOrbitVersion } from "./version-check.js";
+import { attachQualityReport } from "./content-gate.js";
 import { registerGuideResources } from "./guides.js";
 import {
   buildSkillSummary,
@@ -3416,11 +3417,18 @@ function makeJsonResource(uri, payload) {
 }
 
 function makeJsonToolResponse(payload) {
+  // Attach a quality report to content-field strings before
+  // serialising. This is the universal slop-gate hook — every tool
+  // response that contains user-facing prose (subject lines,
+  // preheaders, body copy, CTAs, etc.) gets an auto-generated
+  // _quality block the calling LLM can read and act on.
+  // See server/content-gate.js for the gating logic.
+  const gated = attachQualityReport(payload);
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify(payload, null, 2)
+        text: JSON.stringify(gated, null, 2)
       }
     ]
   };
