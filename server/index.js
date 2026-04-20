@@ -11,6 +11,8 @@ import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
 import { checkOrbitVersion } from "./version-check.js";
 import { attachQualityReport } from "./content-gate.js";
+import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
+import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { registerGuideResources } from "./guides.js";
 import {
   buildSkillSummary,
@@ -181,6 +183,13 @@ process.on("unhandledRejection", (reason) => {
 registerResources();
 registerPrompts();
 registerTools();
+
+// Kick off background version-check on startup. Fire-and-forget —
+// never blocks transport connect. Result is cached for 24h on disk
+// so repeat sessions don't re-hit GitHub.
+startVersionNag({ installedVersion: ORBIT_VERSION });
+// Fire a session_start telemetry event if opted in (no-op otherwise).
+trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
@@ -1142,6 +1151,8 @@ function registerTools() {
     async ({ skill, mode }) => {
       const record = requireSkill(skill);
       const text = mode === "full" ? record.raw : buildSkillSummary(record);
+      // Opt-in telemetry — silent no-op unless ORBIT_TELEMETRY=1.
+      trackSkillLoad({ slug: skill, version: ORBIT_VERSION }).catch(() => {});
       return {
         content: [
           {
@@ -3424,6 +3435,16 @@ function makeJsonToolResponse(payload) {
   // _quality block the calling LLM can read and act on.
   // See server/content-gate.js for the gating logic.
   const gated = attachQualityReport(payload);
+  // Attach version-update notice if a newer MCPB release has been
+  // detected. Non-intrusive — attached as `_orbit_update` on the
+  // payload so the LLM can surface it to the user on first tool
+  // call if behind. Only fires when update is actually available.
+  if (gated && typeof gated === "object" && !Array.isArray(gated)) {
+    const nag = getVersionNag();
+    if (nag && !("_orbit_update" in gated)) {
+      gated._orbit_update = nag;
+    }
+  }
   return {
     content: [
       {
@@ -3465,6 +3486,13 @@ function withToolErrorHandling(toolName, handler) {
   return async (args, extra) => {
     const startedAt = Date.now();
     const timeoutMs = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+
+    // Fire telemetry for every tool call — opt-in via ORBIT_TELEMETRY.
+    // Silent no-op if disabled. Never awaited — telemetry can't block
+    // the tool. Also fires session_start on the first tool call if
+    // it hasn't already fired (idempotent in the module).
+    trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
+    trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
 
     try {
       // Deadline-wrapped handler. Promise.race lets us return a shaped
