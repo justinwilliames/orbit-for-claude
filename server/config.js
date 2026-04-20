@@ -316,7 +316,54 @@ export function resolveOutputDir(context, ...segments) {
   return path.join(context.defaultOutputDir, ...segments);
 }
 
+/**
+ * Validate a user-supplied output path against the Orbit workspace
+ * root. Returns the absolute, canonical path if it resolves inside
+ * `context.defaultOutputDir`. Throws `invalid_path` otherwise.
+ *
+ * Prevents accidental traversal like `../../etc` that would write
+ * outside the intended workspace. Callers that accept user paths
+ * should pipe them through this BEFORE calling `ensureDir`.
+ *
+ * Absolute paths are allowed (operators sometimes want to write
+ * into a known external directory), but traversal-style relative
+ * paths that escape the workspace are rejected.
+ */
+export function resolveUserOutputDir(context, userPath) {
+  if (userPath === null || userPath === undefined || userPath === "") {
+    // No user path supplied — fall back to the default.
+    return context.defaultOutputDir;
+  }
+  // Absolute paths are trusted (operator explicitly chose them).
+  if (path.isAbsolute(userPath)) {
+    return path.resolve(userPath);
+  }
+  // Relative paths must stay inside the workspace root. Resolve the
+  // user path against the root and check it doesn't escape.
+  const root = path.resolve(context.defaultOutputDir);
+  const resolved = path.resolve(root, userPath);
+  const rel = path.relative(root, resolved);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    const err = new Error(
+      `Output path "${userPath}" escapes the Orbit workspace root (${root}). Use an absolute path or a relative path that stays inside the workspace.`
+    );
+    err.code = "invalid_path";
+    throw err;
+  }
+  return resolved;
+}
+
 export function ensureDir(dirPath) {
+  if (typeof dirPath !== "string" || dirPath.length === 0) {
+    const err = new Error("ensureDir called with invalid path.");
+    err.code = "invalid_path";
+    throw err;
+  }
+  if (dirPath.includes("\0")) {
+    const err = new Error("Path cannot contain null bytes.");
+    err.code = "invalid_path";
+    throw err;
+  }
   fs.mkdirSync(dirPath, { recursive: true });
   return dirPath;
 }

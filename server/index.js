@@ -103,7 +103,7 @@ import {
 } from "./design-import.js";
 import { ensureHomeWorkspaceDirs } from "./home-workspace.js";
 import { titleCase } from "./utils.js";
-import { ensureDir, loadRuntimeConfig, resolveOutputDir } from "./config.js";
+import { ensureDir, loadRuntimeConfig, resolveOutputDir, resolveUserOutputDir } from "./config.js";
 import {
   extractSection,
   getSkill,
@@ -1825,7 +1825,7 @@ function registerTools() {
       if (!specJson) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "spec_json is required for action=render" });
       const { value: spec, error: specError } = parseToolJson(specJson, "spec_json");
       if (specError) return specError;
-      const targetDir = ensureDir(outputDir ?? resolveOutputDir(runtimeConfig, "diagrams"));
+      const targetDir = ensureDir(outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : resolveOutputDir(runtimeConfig, "diagrams"));
       const result = await renderLifecycleDiagram({
         rootDir: ROOT_DIR,
         spec,
@@ -1888,7 +1888,7 @@ function registerTools() {
       if (action === "save") {
         const sourceDir = previewDir ?? path.join(os.homedir(), "Downloads");
         if (!fs.existsSync(sourceDir)) return makeJsonToolResponse({ status: "error", code: "not_found", message: `Source directory not found: ${sourceDir}` });
-        const targetDir = ensureDir(outputDir ?? resolveOutputDir(runtimeConfig, "brand-headers"));
+        const targetDir = ensureDir(outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : resolveOutputDir(runtimeConfig, "brand-headers"));
         const files = fs.readdirSync(sourceDir).filter((f) => !f.startsWith(".") && /\.(png|json)$/.test(f));
         const saved = [];
         for (const file of files) {
@@ -2452,7 +2452,7 @@ function registerTools() {
       file_base_name: fileBaseName
     }) => {
       const targetDir =
-        ensureDir(outputDir ?? resolveOutputDir(runtimeConfig, "email-previews"));
+        ensureDir(outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : resolveOutputDir(runtimeConfig, "email-previews"));
       const result = previewEmailTemplate({
         rootDir: ROOT_DIR,
         spec: specJson,
