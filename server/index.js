@@ -2147,6 +2147,12 @@ function registerTools() {
       pdf_path: pdfPath,
       output_dir: outputDir
     }) => {
+      // Sanitise user-supplied output_dir against traversal.
+      // Throws invalid_path (caught by withToolErrorHandling) if the
+      // path escapes the Orbit workspace root.
+      const safeOutputDir = outputDir
+        ? resolveUserOutputDir(runtimeConfig, outputDir)
+        : undefined;
       if (source === "figma") {
         const result = await importFigmaEmailDesign({
           config: runtimeConfig,
@@ -2154,7 +2160,7 @@ function registerTools() {
           fileKey,
           nodeId,
           pageName,
-          outputDir
+          outputDir: safeOutputDir
         });
         return makeJsonToolResponse(result);
       }
@@ -2163,7 +2169,7 @@ function registerTools() {
       const result = importPdfEmailReference({
         config: runtimeConfig,
         pdfPath,
-        outputDir
+        outputDir: safeOutputDir
       });
       return makeJsonToolResponse(result);
     }
@@ -2199,7 +2205,7 @@ function registerTools() {
     }) => {
       if (action === "suggest") {
         if (!designImportJson) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "design_import_json is required for action=suggest" });
-        const targetDir = outputDir ? ensureDir(outputDir) : null;
+        const targetDir = outputDir ? ensureDir(resolveUserOutputDir(runtimeConfig, outputDir)) : null;
         const result = suggestEmailComponentMap({
           config: runtimeConfig,
           designImport: designImportJson,
@@ -2416,7 +2422,7 @@ function registerTools() {
       output_dir: outputDir,
       file_base_name: fileBaseName
     }) => {
-      const targetDir = outputDir ? ensureDir(outputDir) : null;
+      const targetDir = outputDir ? ensureDir(resolveUserOutputDir(runtimeConfig, outputDir)) : null;
       const result = compileEmailTemplate({
         spec: specJson,
         mjml,
