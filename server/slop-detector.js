@@ -82,6 +82,14 @@ const PHRASE_RULES = [
   { pattern: /\b(a\s+lot\s+of\s+(the\s+work|my\s+day|what|people))\b/gi, severity: "low", category: "language", label: "Vague quantifier", explanation: "'A lot of' used as emphatic filler.", fix: "Name a concrete proportion, or remove the quantifier." },
   { pattern: /\b(happening\s+in\s+real\s+time|in\s+real\s+time\s+now)\b/gi, severity: "medium", category: "language", label: "Hollow urgency closer", explanation: "'Happening in real time' used as dramatic closer.", fix: "Close on a specific observation or action, not a mood." },
   { pattern: /\b(what\s+followed\s+felt\s+simple|what\s+happened\s+next\s+was|and\s+then\s+something\s+changed)\b/gi, severity: "medium", category: "language", label: "Thread-narrative bait", explanation: "Suspense-framing used to pull readers through a LinkedIn post.", fix: "Describe what actually followed, plainly. Don't tease." },
+  { pattern: /\byou['’]ll\s+(grow|learn|improve|move|progress|advance)\s+(faster|more|quicker|further)\s+than\s+you\s+(thought|ever\s+(thought|imagined)|expected|imagined)\b/gi, severity: "high", category: "language", label: "Motivational growth closer", explanation: "'You'll grow faster than you thought possible' is a LinkedIn evergreen sign-off.", fix: "Close with what you'd actually tell someone considering the move." },
+  { pattern: /\b(a\s+|an\s+)?(huge|incredible|massive|game-changing|invaluable|tremendous)\s+(asset|help|resource|addition|advantage)\b/gi, severity: "medium", category: "language", label: "Praise-filler noun phrase", explanation: "'Huge asset' — generic praise that doesn't name what's valuable.", fix: "Describe the specific thing it helped with." },
+  { pattern: /\b(human\s+touch|human\s+element|human\s+side\s+of\s+things|that\s+human\s+connection)\b/gi, severity: "medium", category: "language", label: "Human-touch cliché", explanation: "'The human touch' is the most overused AI-vs-human phrase.", fix: "Name the specific thing a human brings that AI doesn't." },
+  { pattern: /\bthat['’]s\s+the\s+(bit|part|piece|thing)\s+I\s+(love|enjoy|live\s+for)\b/gi, severity: "low", category: "language", label: "Personal-flourish closer", explanation: "LinkedIn-style 'the bit I love' closer.", fix: "Name what specifically you love, or cut it." },
+  { pattern: /\b(from\s+a\s+blank\s+(canvas|page|sheet)|from\s+zero\s+to\s+(one|live|launched|shipped))\b/gi, severity: "medium", category: "language", label: "Journey-opener trope", explanation: "'From a blank canvas to…' is a stock LinkedIn project-reveal opener.", fix: "Start with the actual work or outcome." },
+  { pattern: /\bno\s+such\s+thing\s+as\s+["“]?that['’]s\s+not\s+my\s+job["”]?\b/gi, severity: "medium", category: "language", label: "Startup platitude", explanation: "'No such thing as 'that's not my job'' is stock startup-culture filler.", fix: "Describe the specific boundary crossing you did." },
+  { pattern: /\bturns\s+out\s+(the\s+two\s+aren['’]t\s+that\s+different|they['’]re\s+(the\s+same|more\s+alike)|there['’]s\s+more\s+overlap)\b/gi, severity: "medium", category: "language", label: "Thread-punchline pattern", explanation: "The 'turns out X and Y aren't that different' reveal is LinkedIn thread-punchline rhythm.", fix: "State the actual relationship with specifics." },
+  { pattern: /\b(grow\s+faster\s+than\s+you\s+thought|push\s+yourself\s+harder\s+than|achieve\s+more\s+than\s+you\s+imagined|surprise\s+yourself\s+with)\b/gi, severity: "medium", category: "language", label: "Growth-mindset platitude", explanation: "Stock inspirational growth phrase.", fix: "Name the specific thing a reader might gain or do." },
 ];
 
 const HEDGE_RE =
@@ -119,6 +127,27 @@ function findAnaphoricRuns(sentences) {
     }
   }
   return runs;
+}
+
+function findParallelPredicates(sentences) {
+  const pairs = [];
+  const normalizeWord = (w) => w.toLowerCase().replace(/[^a-z'’]/g, "");
+  const getTokens = (s) =>
+    s.split(/\s+/).map(normalizeWord).filter(Boolean);
+  for (let i = 0; i < sentences.length - 1; i++) {
+    const a = getTokens(sentences[i]);
+    const b = getTokens(sentences[i + 1]);
+    if (a.length < 4 || b.length < 4) continue;
+    if (a[0] === b[0]) continue;
+    if (a[1] === b[1] && a[2] === b[2]) {
+      pairs.push({
+        a: sentences[i].trim(),
+        b: sentences[i + 1].trim(),
+        sharedTail: `${a[1]} ${a[2]}`,
+      });
+    }
+  }
+  return pairs;
 }
 
 function openingEntropy(sentences) {
@@ -242,7 +271,8 @@ export function analyseSlop(raw) {
     }
   }
 
-  // Decorative emoji usage
+  // Decorative emoji usage — flag multiples anywhere, or a single
+  // decorative emoji in the final 80 chars (classic sign-off position).
   const emojiMatches = Array.from(text.matchAll(DECORATIVE_EMOJI_RE));
   if (emojiMatches.length >= 2) {
     findings.push({
@@ -253,6 +283,34 @@ export function analyseSlop(raw) {
       matches: Array.from(new Set(emojiMatches.map((m) => m[0]))).slice(0, 5),
       fix: "Cut ornamental emojis.",
     });
+  } else if (emojiMatches.length === 1) {
+    const lastEmoji = emojiMatches[0];
+    const pos = lastEmoji.index ?? 0;
+    if (pos >= text.length - 80) {
+      findings.push({
+        category: "language",
+        severity: "low",
+        label: "Decorative emoji sign-off",
+        explanation: `Single ornamental emoji (${lastEmoji[0]}) in the closing position — the LinkedIn motivational flourish.`,
+        matches: [lastEmoji[0]],
+        fix: "Either the final line earns its close without the emoji or it doesn't.",
+      });
+    }
+  }
+
+  // Parallel-predicate pairs — same verb+object pattern, different subjects
+  if (sentenceCount >= 2) {
+    const parallelPairs = findParallelPredicates(sentences);
+    if (parallelPairs.length >= 1) {
+      findings.push({
+        category: "structure",
+        severity: parallelPairs.length >= 2 ? "medium" : "low",
+        label: "Parallel-predicate structure",
+        explanation: `${parallelPairs.length} pair(s) of sentences share the same verb+object pattern with different subjects — rhetorical parallelism imposed by template.`,
+        matches: parallelPairs.slice(0, 2).map((p) => `"${p.a}" / "${p.b}"`),
+        fix: "Collapse the pair into one sentence, or rewrite so the parallelism isn't the structural load-bearer.",
+      });
+    }
   }
 
   // Flat sentence rhythm (kept from v1)

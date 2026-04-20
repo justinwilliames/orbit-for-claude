@@ -832,6 +832,14 @@ function createStepNode(step, index, platform, overrides = {}) {
       send_condition: step.send_condition || null,
       yes_label: step.yes_label || null,
       no_label: step.no_label || null,
+      // Enriched fields passed through normalizeStepInput — match the
+      // home-demo popover pattern so the HTML output has real depth,
+      // not just labels.
+      segmentation: step.segmentation || null,
+      targeting: step.targeting || null,
+      email: step.email && Object.values(step.email).some((v) => v) ? step.email : null,
+      delay: step.delay || null,
+      timing: step.timing || null,
       node_role: "step_action",
       step_index: index + 1,
       platform_function:
@@ -1487,6 +1495,22 @@ function inferLifecycleRevision(revisionRequest) {
 }
 
 function normalizeStepInput(step) {
+  // Email content sub-object — optional. When the caller supplies
+  // structured email copy, the renderer surfaces it in the HTML
+  // popover (matching the home-demo inbox-preview pattern). All
+  // fields optional individually; omit the whole block for
+  // non-message steps (decisions, delays).
+  const emailInput = step.email && typeof step.email === "object" ? step.email : null;
+  const email = emailInput
+    ? {
+        subject: String(emailInput.subject ?? "").trim(),
+        preheader: String(emailInput.preheader ?? "").trim(),
+        headline: String(emailInput.headline ?? "").trim(),
+        body: String(emailInput.body ?? "").trim(),
+        cta: String(emailInput.cta ?? "").trim()
+      }
+    : null;
+
   return {
     step: String(step.step ?? ""),
     trigger: String(step.trigger ?? "").trim(),
@@ -1495,7 +1519,15 @@ function normalizeStepInput(step) {
     if_no_action: String(step.if_no_action ?? "").trim(),
     send_condition: String(step.send_condition ?? "").trim(),
     yes_label: String(step.yes_label ?? "").trim(),
-    no_label: String(step.no_label ?? "").trim()
+    no_label: String(step.no_label ?? "").trim(),
+    // Enriched fields — audience framing (plain English + literal
+    // filter) and rendered email content. Match the home-demo
+    // popover's richness so the MCPB output parity holds.
+    segmentation: String(step.segmentation ?? "").trim(),
+    targeting: String(step.targeting ?? step.filter ?? "").trim(),
+    email,
+    delay: String(step.delay ?? "").trim(),
+    timing: String(step.timing ?? "").trim()
   };
 }
 
