@@ -22,6 +22,18 @@ import { getAttribution } from "./orbit-attribution.js";
 import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
 import { checkOrbitVersion } from "./version-check.js";
+import {
+  scoreSubject,
+  calculateSampleSize,
+  durationDays,
+  compareVariants,
+  calcLtv,
+  tierForRatio,
+  paybackBand,
+  checkPushCopy,
+  checkEmailSize,
+  generateLiquidSnippet
+} from "./calculators.js";
 import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
@@ -1386,14 +1398,24 @@ function registerTools() {
         if (!targetDir) {
           return makeJsonToolResponse({
             status: "error",
-            error:
-              "No brand kit directory configured. Run orbit_bootstrap_home_workspace first, or provide brand_kit_dir."
+            code: "missing_brand_kit",
+            message:
+              "No brand kit directory configured. Run orbit_bootstrap_home_workspace first, or provide brand_kit_dir.",
+            suggested_next_steps: [
+              "Run orbit_bootstrap_home_workspace to create the default workspace at ~/Orbit/brand-kit.",
+              "Or pass brand_kit_dir explicitly to this tool with the absolute path to an existing brand kit directory.",
+            ],
           });
         }
         if (!fs.existsSync(sourcePath)) {
           return makeJsonToolResponse({
             status: "error",
-            error: `Source file not found: ${sourcePath}`
+            code: "source_not_found",
+            message: `Source logo file not found: ${sourcePath}`,
+            suggested_next_steps: [
+              "Double-check the absolute path — spelling, case, extension.",
+              "If the path is relative, make it absolute: Orbit tools don't interpret paths relative to the current shell.",
+            ],
           });
         }
         const ext = path.extname(sourcePath).toLowerCase() || "";
@@ -3391,6 +3413,196 @@ function registerTools() {
         notes,
         versionLabel,
         metadataPatch
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  // ─────────────────────────────────────────────────────────────
+  // PURE-FUNCTION CALCULATORS — mirror the web apps at
+  // get.yourorbit.team/apps so the same logic is available in-chat.
+  // All seven are synchronous, deterministic, no external calls.
+  // ─────────────────────────────────────────────────────────────
+
+  registerToolSafe(
+    "orbit_score_subject_line",
+    {
+      title: "Score Subject Line",
+      description:
+        "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score, a tier (sharp/decent/risky/spam), and a list of specific issues the operator can fix.",
+      inputSchema: {
+        subject: z.string().min(1).max(MAX_MEDIUM_STRING).describe("The subject line to score"),
+        preheader: z.string().max(MAX_MEDIUM_STRING).optional().describe("Optional preheader text — the second line that renders in the inbox preview")
+      }
+    },
+    async ({ subject, preheader }) => {
+      const result = scoreSubject(subject, preheader ?? "");
+      return makeJsonToolResponse(result ?? { error: "Subject cannot be empty." });
+    }
+  );
+
+  registerToolSafe(
+    "orbit_sample_size",
+    {
+      title: "Calculate A/B Test Sample Size",
+      description:
+        "Calculate the sample size required per arm for a two-proportion A/B test, given baseline conversion rate, minimum detectable effect, and desired statistical power. Also returns test duration in days if daily volume is provided.",
+      inputSchema: {
+        baseline_rate_pct: z.number().min(0.01).max(99.99).describe("Current conversion rate as a percentage (e.g., 3.2 for 3.2%)"),
+        mde_relative_pct: z.number().min(0.1).max(500).describe("Minimum detectable effect as relative lift percentage (e.g., 10 means you want to detect a 10% lift on the baseline)"),
+        confidence_pct: z.enum(["90", "95", "99"]).optional().describe("Statistical confidence level. Default: 95"),
+        power_pct: z.enum(["80", "90", "95"]).optional().describe("Statistical power. Default: 80"),
+        daily_volume: z.number().int().min(0).optional().describe("Average daily visitors per arm — used to compute expected test duration")
+      }
+    },
+    async ({ baseline_rate_pct, mde_relative_pct, confidence_pct, power_pct, daily_volume }) => {
+      const result = calculateSampleSize(
+        baseline_rate_pct,
+        mde_relative_pct,
+        confidence_pct ?? "95",
+        power_pct ?? "80"
+      );
+      if (!result) {
+        return makeJsonToolResponse({ error: "Invalid inputs. Check baseline rate is between 0 and 100, and MDE is positive." });
+      }
+      const duration = daily_volume && daily_volume > 0 ? durationDays(result.total, daily_volume) : null;
+      return makeJsonToolResponse({
+        per_arm: result.perArm,
+        total: result.total,
+        baseline_rate: result.p1,
+        expected_rate: result.p2,
+        expected_duration_days: duration,
+        confidence_pct: confidence_pct ?? "95",
+        power_pct: power_pct ?? "80"
+      });
+    }
+  );
+
+  registerToolSafe(
+    "orbit_test_significance",
+    {
+      title: "Check A/B Test Significance",
+      description:
+        "Run a two-proportion z-test on A/B test results. Returns z-score, p-value, lift percentage, and whether the result is statistically significant at the given confidence level.",
+      inputSchema: {
+        control_visitors: z.number().int().min(1).describe("Control variant: total visitors"),
+        control_conversions: z.number().int().min(0).describe("Control variant: conversions"),
+        variant_visitors: z.number().int().min(1).describe("Test variant: total visitors"),
+        variant_conversions: z.number().int().min(0).describe("Test variant: conversions"),
+        confidence_level: z.number().min(0.5).max(0.9999).optional().describe("Confidence threshold (default: 0.95)")
+      }
+    },
+    async ({ control_visitors, control_conversions, variant_visitors, variant_conversions, confidence_level }) => {
+      const result = compareVariants(
+        control_visitors,
+        control_conversions,
+        variant_visitors,
+        variant_conversions,
+        confidence_level ?? 0.95
+      );
+      if (!result) {
+        return makeJsonToolResponse({ error: "Invalid inputs. Check visitor counts are positive and conversions don't exceed visitors." });
+      }
+      return makeJsonToolResponse({
+        control_rate: result.rateA,
+        variant_rate: result.rateB,
+        lift_pct: result.lift,
+        z_score: result.z,
+        p_value: result.pValue,
+        confidence_pct: result.confidence,
+        significant: result.significant
+      });
+    }
+  );
+
+  registerToolSafe(
+    "orbit_ltv_payback",
+    {
+      title: "Calculate LTV, LTV:CAC, and Payback",
+      description:
+        "Calculate customer lifetime value, LTV:CAC ratio, and payback period from ARPU, gross margin, monthly churn, and CAC. Returns a tier assessment (losing/thin/marginal/healthy/strong) and a payback-period band.",
+      inputSchema: {
+        arpu: z.number().min(0).describe("Average revenue per user per month (in dollars)"),
+        gross_margin_pct: z.number().min(0).max(100).describe("Gross margin as a percentage (e.g., 85 for 85%)"),
+        monthly_churn_pct: z.number().min(0.01).max(99).describe("Monthly churn rate as a percentage (e.g., 3 for 3%)"),
+        cac: z.number().min(0).describe("Customer acquisition cost (in dollars)")
+      }
+    },
+    async ({ arpu, gross_margin_pct, monthly_churn_pct, cac }) => {
+      const result = calcLtv(arpu, gross_margin_pct, monthly_churn_pct, cac);
+      if (!result) {
+        return makeJsonToolResponse({ error: "Invalid inputs. ARPU/margin/churn must be positive; margin and churn must be less than 100%." });
+      }
+      return makeJsonToolResponse({
+        ltv: Math.round(result.ltv * 100) / 100,
+        ltv_cac_ratio: isFinite(result.ltvCacRatio) ? Math.round(result.ltvCacRatio * 100) / 100 : null,
+        payback_months: Math.round(result.payback * 10) / 10,
+        contribution_per_month: Math.round(result.contributionPerMonth * 100) / 100,
+        tier: tierForRatio(result.ltvCacRatio),
+        payback_band: paybackBand(result.payback)
+      });
+    }
+  );
+
+  registerToolSafe(
+    "orbit_check_push_copy",
+    {
+      title: "Check Push Notification Copy",
+      description:
+        "Check how a push notification title and body render across iOS, Android, and Web — returning truncation warnings and the truncated preview for each platform. Android truncates most aggressively (100 chars body); iOS has the most room (178 chars body).",
+      inputSchema: {
+        title: z.string().min(1).max(MAX_MEDIUM_STRING).describe("Push notification title"),
+        body: z.string().min(1).max(MAX_LONG_STRING).describe("Push notification body")
+      }
+    },
+    async ({ title, body }) => {
+      const result = checkPushCopy(title, body);
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_check_email_size",
+    {
+      title: "Check Email Size (Gmail Clipping)",
+      description:
+        "Check whether an email will be clipped by Gmail's 102 KB threshold. Pass either the raw HTML string or a byte count. Returns the size, the % of the limit used, a tier (plenty-of-room / comfortable / at-risk / clips), and a recommendation.",
+      inputSchema: {
+        html: z.string().min(1).max(500_000).optional().describe("The raw email HTML string. Mutually exclusive with bytes."),
+        bytes: z.number().int().min(0).optional().describe("Pre-measured size in bytes. Mutually exclusive with html.")
+      }
+    },
+    async ({ html, bytes }) => {
+      if (html === undefined && bytes === undefined) {
+        return makeJsonToolResponse({ error: "Provide either html or bytes." });
+      }
+      const input = html !== undefined ? html : bytes;
+      const result = checkEmailSize(input);
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_liquid_snippet",
+    {
+      title: "Generate Liquid Snippet",
+      description:
+        "Generate a Braze Liquid snippet for personalised date / text / control-flow rendering. Supports common date formats (long-month-day-year, iso, day-of-week, time-12h, etc.), text filters (upcase, downcase, capitalize), and if/else fallback blocks.",
+      inputSchema: {
+        attribute: z.string().min(1).max(MAX_SHORT_STRING).describe("Liquid attribute name (e.g., 'first_name', 'order_total')"),
+        category: z.enum(["date", "text", "control-flow"]).describe("Snippet category"),
+        filter: z.string().max(MAX_SHORT_STRING).optional().describe("For date: one of long-month-day-year, day-month-year, iso, short-month-day, day-of-week, time-12h, time-24h. For text: upcase, downcase, capitalize."),
+        fallback: z.string().max(MAX_SHORT_STRING).optional().describe("Fallback value if the attribute is empty (text / control-flow only)"),
+        date_offset_days: z.number().int().optional().describe("For date category only: offset 'now' by N days (e.g., 7 for a week from now)")
+      }
+    },
+    async ({ attribute, category, filter, fallback, date_offset_days }) => {
+      const result = generateLiquidSnippet({
+        attribute,
+        category,
+        filter,
+        fallback,
+        dateOffset: date_offset_days ?? 0
       });
       return makeJsonToolResponse(result);
     }

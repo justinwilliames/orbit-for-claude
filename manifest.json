@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -305,6 +305,34 @@
     {
       "name": "orbit_library",
       "description": "Save, list, load, or update items in Orbit's local library of templates, components, modules, and programs."
+    },
+    {
+      "name": "orbit_score_subject_line",
+      "description": "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score with a tier and specific issues."
+    },
+    {
+      "name": "orbit_sample_size",
+      "description": "Calculate the sample size required per arm for a two-proportion A/B test. Returns per-arm size, total, expected rates, and test duration if daily volume is provided."
+    },
+    {
+      "name": "orbit_test_significance",
+      "description": "Run a two-proportion z-test on A/B test results. Returns z-score, p-value, lift %, and whether the result is statistically significant."
+    },
+    {
+      "name": "orbit_ltv_payback",
+      "description": "Calculate LTV, LTV:CAC ratio, and payback period from ARPU, gross margin, monthly churn, and CAC. Returns a tier (losing/thin/marginal/healthy/strong) and payback band."
+    },
+    {
+      "name": "orbit_check_push_copy",
+      "description": "Check how a push notification renders on iOS, Android, and Web. Returns per-platform truncation warnings and the truncated preview."
+    },
+    {
+      "name": "orbit_check_email_size",
+      "description": "Check whether an email will be clipped by Gmail's 102 KB threshold. Accepts raw HTML or byte count. Returns size, % of limit, tier, and recommendation."
+    },
+    {
+      "name": "orbit_liquid_snippet",
+      "description": "Generate a Braze Liquid snippet for personalised date / text / control-flow rendering. Supports common date formats, text filters, and if/else fallback blocks."
     },
     {
       "name": "orbit_check_version",

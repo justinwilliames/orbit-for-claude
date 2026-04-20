@@ -18,7 +18,7 @@
 const PHRASE_RULES = [
   // Empty authority openers
   { pattern: /\b(in today['’]s\s+(fast-paced|digital|modern|ever-changing|rapidly-evolving)\s+(world|business\s+environment|landscape))/gi, severity: "high", category: "language", label: "Empty opener", explanation: "Generic intros that could belong to any article on any topic.", fix: "Open with a specific claim, number, or story — not a state-of-the-world phrase." },
-  { pattern: /\b(it['’]s\s+important\s+to\s+note|it\s+is\s+worth\s+noting|it\s+should\s+be\s+noted|it\s+goes\s+without\s+saying)\b/gi, severity: "high", category: "language", label: "Empty authority phrase", explanation: "Tells the reader something is important without showing why.", fix: "Just make the point. If it's important the writing should demonstrate it." },
+  { pattern: /\b(it['’]s\s+important\s+to\s+note|it\s+is\s+worth\s+(noting|considering|mentioning|observing)|it['’]s\s+worth\s+(noting|considering|mentioning)|it\s+should\s+be\s+noted|it\s+goes\s+without\s+saying)\b/gi, severity: "high", category: "language", label: "Empty authority phrase", explanation: "Tells the reader something is important without showing why.", fix: "Just make the point. If it's important the writing should demonstrate it." },
   { pattern: /\b(let['’]s\s+(dive|deep\s+dive|take\s+a\s+closer\s+look|explore|unpack|break\s+it\s+down))\b/gi, severity: "high", category: "language", label: "Filler transition", explanation: "A performance of getting-started rather than actually starting.", fix: "Cut it. The next sentence is the start." },
   { pattern: /\b(unlock\s+(the\s+power\s+of|your\s+potential|the\s+secret)|harness\s+the\s+power\s+of|tap\s+into)\b/gi, severity: "high", category: "language", label: "Marketing-speak verb", explanation: "Jargon that signals effort without saying anything.", fix: "Name the specific benefit or action." },
 
@@ -115,6 +115,95 @@ const PHRASE_RULES = [
   { pattern: /\b(moving?\s+from\s+idea\s+to\s+\w+\s+to\s+\w+\s+to\s+\w+)\b/gi, severity: "medium", category: "structure", label: "Idea-to-N-abstracts journey", explanation: "'From idea to structured thinking to analysis to documented action' — AI rule-of-four abstract-noun journey.", fix: "Pick the one transition that matters most and describe it concretely." },
   { pattern: /\b(almost\s+immediately|pretty\s+much\s+immediately|right\s+away\s+I)\b/gi, severity: "low", category: "language", label: "Time-filler qualifier", explanation: "'Almost immediately' softens a timeframe without adding precision.", fix: "State the actual time. 'Within three days' beats 'almost immediately'." },
   { pattern: /\b(energis(?:ed|ing)\s+about|energi?z(?:ed|ing)\s+about)\b/gi, severity: "low", category: "language", label: "Energised-about opener", explanation: "Stock LinkedIn enthusiasm-bragging opener.", fix: "Describe what specifically is energising with a real detail." },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // MARKETING SLOP — the "unleash/empower/transform/elevate" cluster
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /\b(unleash|unlock)\s+(your|the|their|a|an|a\s+new\s+kind\s+of)\s+(full\s+)?(potential|creativity|power)\b/gi, severity: "high", category: "language", label: "Unleash-your-potential cliché", explanation: "Most overused empty-motivation phrase in marketing copy.", fix: "Name the specific outcome or capability. 'Ship two campaigns a week instead of one' beats 'unleash your potential'." },
+  { pattern: /\b(transform|revolutionize|revolutionise|reimagine)\s+(the\s+way\s+(you|we|they)|your|how\s+you)\s+\w+/gi, severity: "high", category: "language", label: "Transform-the-way-you-X opener", explanation: "Template marketing claim — reads as product-page filler.", fix: "Describe the specific change with a before/after that a user would recognise." },
+  { pattern: /\b(empowers?|empowering|empowered)\s+(teams?|people|you|users|customers|businesses|organizations|organisations)\b/gi, severity: "medium", category: "language", label: "Empowers-teams cliché", explanation: "Stock SaaS copy verb. 'Empowering' is the tell-tale marketing drum.", fix: "Name the specific capability the tool unlocks. 'Lets you edit Canvas flows without opening the Braze UI' beats 'empowers teams'." },
+  { pattern: /\b(drives?|driving|delivers?|delivering)\s+(sustainable\s+)?(growth|results|engagement|revenue|value|success|outcomes|impact|change)\b/gi, severity: "medium", category: "language", label: "Drive-growth cliché", explanation: "'Drives growth / delivers results' is the most generic verb+object pair in B2B copy.", fix: "Name the specific metric and the specific mechanism." },
+  { pattern: /\b(ahead\s+of\s+the\s+curve|stay\s+ahead|get\s+ahead\s+of)\b/gi, severity: "medium", category: "language", label: "Ahead-of-the-curve cliché", explanation: "Consultant-deck filler that says 'be early' with extra syllables.", fix: "Say 'move first' or name the specific timing advantage." },
+  { pattern: /\b(thriv(?:e|ing)\s+in\s+the\s+(new|modern|digital|fast-paced|evolving|changing)\s+(era|age|world|landscape|economy))\b/gi, severity: "high", category: "language", label: "Thrive-in-the-new-era cliché", explanation: "Keynote-slide filler with no actual information.", fix: "Name the specific shift and the specific adjustment required." },
+  { pattern: /\b(innovative|forward-thinking|cutting-edge|best-in-class|next-generation|next-gen|industry-leading|world-class)\s+(platform|solution|technology|approach|company|brand|team)\b/gi, severity: "high", category: "language", label: "Adjective-stacked positioning", explanation: "Self-praise adjective + generic noun — the signature phrase of marketing-site boilerplate.", fix: "Describe what specifically is innovative / leading / cutting-edge. The adjective alone carries no information." },
+  { pattern: /\b(passionate\s+about|deeply\s+committed\s+to|laser-focused\s+on|obsessed\s+with\s+helping)\b/gi, severity: "medium", category: "language", label: "Passionate-about filler", explanation: "Corporate self-description that says 'we care' without naming what we do.", fix: "Describe the specific thing you do. 'We rewrite Canvas templates' beats 'passionate about helping brands'." },
+  { pattern: /\b(data-driven\s+(insights?|decisions?|approach|strategy)|data-led\s+approach)\b/gi, severity: "medium", category: "language", label: "Data-driven cliché", explanation: "'Data-driven insights' is the most overused phrase in SaaS marketing.", fix: "Name the specific data or the specific decision. 'Open-rate cohorts drive send-time' beats 'data-driven insights'." },
+  { pattern: /\b(meaningful\s+(ways?|experiences?|impact|connections?|relationships?))\b/gi, severity: "medium", category: "language", label: "Meaningful-ways filler", explanation: "'Meaningful' is code for 'we couldn't name what we actually do'.", fix: "Describe what specifically is meaningful — a specific connection, a specific outcome." },
+  { pattern: /\b(every\s+(single\s+)?(touchpoint|interaction|step\s+of\s+the\s+way|step\s+of\s+the\s+journey))\b/gi, severity: "medium", category: "language", label: "Every-touchpoint cliché", explanation: "Customer-journey filler phrase — no information content.", fix: "Name the two or three specific moments that matter." },
+  { pattern: /\b(your\s+journey\s+to|the\s+journey\s+to)\s+\w+/gi, severity: "high", category: "language", label: "Your-journey-to cliché", explanation: "'Your journey to marketing excellence' — the single clearest marketing-copy template.", fix: "Lead with the outcome or the first specific step, not the journey framing." },
+  { pattern: /\b(from\s+ideation\s+to\s+execution|from\s+strategy\s+to\s+execution|end-to-end\s+(solutions?|service|platform))\b/gi, severity: "medium", category: "language", label: "End-to-end cliché", explanation: "Consulting-speak that signals breadth without describing anything.", fix: "Name the specific stages. 'We handle brief, draft, review, and send' beats 'end-to-end solution'." },
+  { pattern: /\b(a\s+)?team\s+of\s+(experts|specialists|professionals|passionate\s+\w+)\b/gi, severity: "medium", category: "language", label: "Team-of-experts filler", explanation: "Agency-site filler — every company has a 'team of experts'.", fix: "Describe the specific people or the specific skill. 'Two ex-Braze solutions architects' beats 'team of experts'." },
+  { pattern: /\b(tell\s+(your|their)\s+stor(y|ies)|share\s+(your|their)\s+stor(y|ies)|brand\s+stor(y|ies))\b/gi, severity: "medium", category: "language", label: "Brand-story cliché", explanation: "'Tell your story' is the most overused marketing-agency phrase.", fix: "Name the specific message or audience. 'Position the free trial to trial-converters' beats 'tell your story'." },
+  { pattern: /\b(join\s+(thousands|millions|hundreds)\s+of|trusted\s+by\s+(thousands|millions|industry\s+leaders))\b/gi, severity: "medium", category: "language", label: "Vague social-proof filler", explanation: "'Join thousands of forward-thinking companies' — no specific customer named, no outcome quantified.", fix: "Name one specific customer and what they do with the product." },
+  { pattern: /\b(at\s+scale|at-scale|enterprise-grade|enterprise-ready)\b/gi, severity: "low", category: "language", label: "At-scale filler", explanation: "'At scale' is used to imply seriousness without specifying the actual scale.", fix: "Name the actual scale. '10M events/day' beats 'at scale'." },
+  { pattern: /\b(top-performing|top-tier|world-class|best-in-class)\s+(brands?|teams?|companies|marketers|creators?)\b/gi, severity: "medium", category: "language", label: "Top-performing filler", explanation: "Adjective-padding used to imply authority without evidence.", fix: "Name the specific brand or the specific metric that makes them 'top-performing'." },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // CORPORATE OPENER TEMPLATES
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /\bin\s+an?\s+(increasingly|ever-?(changing|evolving)|rapidly-?(changing|evolving))\s+\w+\s+(business\s+)?(environment|landscape|world|economy|market)\b/gi, severity: "high", category: "language", label: "In-an-increasingly-X opener", explanation: "Most common corporate-opener template — interchangeable with any other topic.", fix: "Open with a specific claim about your topic, not a state-of-the-world preamble." },
+  { pattern: /\b(organi[sz]ations?|businesses|companies|teams?)\s+must\s+(leverage|embrace|adopt|navigate|adapt\s+to|harness|deploy)\b/gi, severity: "high", category: "language", label: "Organizations-must prescription", explanation: "Prescriptive corporate opener with no specific mechanism.", fix: "Name the specific action and the specific consequence of not taking it." },
+  { pattern: /\b(the\s+future\s+of\s+\w+\s+(is|belongs\s+to)|the\s+future\s+belongs\s+to)\b/gi, severity: "high", category: "language", label: "Future-of-X template", explanation: "'The future of work is hybrid / the future belongs to those who…' — empty prediction framing.", fix: "Make the specific claim. 'Remote-first teams ship 30% faster' beats 'the future of work is hybrid'." },
+  { pattern: /\bimagine\s+a\s+world\s+(where|in\s+which)\b/gi, severity: "high", category: "language", label: "Imagine-a-world opener", explanation: "Keynote-slide opener with zero content — pure hypothetical filler.", fix: "Describe the specific current problem or the specific future state. Skip the 'imagine' frame." },
+  { pattern: /\b(powered\s+by\s+AI|AI-powered|AI-driven|powered\s+by\s+machine\s+learning)\b/gi, severity: "medium", category: "language", label: "AI-powered filler", explanation: "Generic tech-washing that says 'we used ML' without describing anything specific.", fix: "Name the specific model, task, or capability. 'Claude classifies the deliverability risk' beats 'AI-powered'." },
+  { pattern: /\ba\s+(symphony|tapestry|mosaic|ecosystem|universe|constellation)\s+of\s+\w+/gi, severity: "high", category: "language", label: "Corporate metaphor soup", explanation: "'A symphony of perfectly-timed signals' / 'a tapestry of touchpoints' — decorative filler.", fix: "Describe the specific coordination or components. Cut the metaphor." },
+  { pattern: /\b(seen,?\s+heard,?\s+and\s+valued|seen\s+and\s+heard|(felt|truly)\s+understood)\b/gi, severity: "medium", category: "language", label: "Feels-seen cliché", explanation: "Customer-experience-deck filler — evokes emotion without describing behaviour.", fix: "Describe the specific behaviour change: what does the customer experience differently?" },
+  { pattern: /\b(isn'?t|doesn'?t|aren'?t)\s+(just|simply|only|about)?\s*\w+(?:\s+\w+){0,3}\s*[—–-]\s*(it|they|we|you)['’]?s?\s*(is|are|do|will|can|'s|'re|'ll|just|only)?\b/gi, severity: "high", category: "structure", label: "Not-just-X-but-Y template", explanation: "'AI isn't replacing us — it's empowering us' / 'CRM doesn't just react — it predicts' — the rhetorical template of every AI-optimism piece.", fix: "Drop the dismissal setup. Make the positive claim directly." },
+  { pattern: /\b\w+\s+(isn'?t|aren'?t)\s+(?:\w+\s+){1,5}?,?\s*but\s+(?:a|an|the|rather)\b/gi, severity: "medium", category: "structure", label: "X-isn't-Y-but-Z template", explanation: "'Marketing isn't a guessing game, but a symphony of…' — LinkedIn reveal-structure pattern.", fix: "State what it is without the dismissal of what it isn't." },
+  { pattern: /\b(the\s+best\s+\w+\s+aren'?t\s+the\s+ones\s+(that|who))\b/gi, severity: "high", category: "language", label: "Best-X-aren't-the-ones template", explanation: "'The best teams aren't the ones that resist' — LinkedIn leadership-wisdom template.", fix: "Make the positive claim about the best without the comparative setup." },
+  { pattern: /\bcombines?\s+human\s+\w+\s+with\s+(machine|AI|artificial)\s+\w+/gi, severity: "high", category: "language", label: "Human-plus-machine cliché", explanation: "'Combines human creativity with machine precision' — the most overused AI-partnership trope.", fix: "Name the specific human contribution and the specific AI contribution. Cut the framing." },
+  { pattern: /\ba\s+new\s+kind\s+of\s+(potential|success|work|growth|thinking|leadership|creativity|intelligence)\b/gi, severity: "medium", category: "language", label: "New-kind-of cliché", explanation: "'A new kind of potential' — vague claim that something has transcended its category.", fix: "Name what specifically is different. Cut the 'new kind of' frame." },
+  { pattern: /\b(success\s+(isn'?t|is\s+not)\s+about|happiness\s+(isn'?t|is\s+not)\s+about|(leadership|growth|work)\s+isn'?t\s+about)\b/gi, severity: "high", category: "language", label: "X-isn't-about-Y opener", explanation: "'Success isn't about being the smartest' — LinkedIn wisdom-post opener template.", fix: "Make the positive claim directly. 'Curiosity beats intelligence' beats 'success isn't about intelligence'." },
+  { pattern: /^remember\s*[:.]/gim, severity: "medium", category: "language", label: "Remember-colon teacher tone", explanation: "'Remember: the best leaders aren't born' — lecturing opener that signals a platitude is coming.", fix: "Just make the claim. The reader doesn't need to be told to remember." },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // CLOSING-PARAGRAPH SLOP
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /\b(in\s+conclusion|to\s+conclude|to\s+sum\s+up|to\s+summari[sz]e|in\s+summary)\b/gi, severity: "high", category: "structure", label: "In-conclusion opener", explanation: "Summary connective that restates rather than lands.", fix: "Just make the closing claim. Readers know the essay is ending." },
+  { pattern: /\bthe\s+key\s+(takeaway|learning|lesson|insight|point)\s+(is|here\s+is|to\s+remember)\b/gi, severity: "high", category: "language", label: "Key-takeaway cliché", explanation: "Classroom-summary filler — signals a point without committing to it.", fix: "State the point directly. If the reader needed a label to notice it, it's probably not sharp enough." },
+  { pattern: /\b(resonate|resonates?|resonating)\s+with\s+(your|their|the|our)\s+(audience|customers|readers|users|team)\b/gi, severity: "medium", category: "language", label: "Resonate-with cliché", explanation: "Content-marketing filler — 'resonate' is code for 'we don't know what people will actually do'.", fix: "Name the specific response you're after: open, click, reply, buy, tell a friend." },
+  { pattern: /\b(starts\s+with\s+a\s+single\s+step|begins\s+with\s+(a\s+single\s+step|understanding)|starts\s+with\s+understanding)\b/gi, severity: "high", category: "language", label: "Starts-with-a-single-step cliché", explanation: "'The journey of a thousand miles' recycled as closing-paragraph filler.", fix: "Name the actual first step. 'Pull a 30-day engagement export from Braze' beats 'starts with understanding'." },
+  { pattern: /\b(impactful|impact-driven|results-driven|high-impact)\s+(experiences?|campaigns?|strategies|initiatives?|content)\b/gi, severity: "medium", category: "language", label: "Impactful-experiences cliché", explanation: "'Impactful experiences' is marketing-speak for 'good ones'.", fix: "Name the specific outcome. 'Higher reply rate on winback emails' beats 'impactful experiences'." },
+  { pattern: /\b(it\s+requires\s+a\s+cultural\s+shift|a\s+cultural\s+shift\s+(that|which))\b/gi, severity: "medium", category: "language", label: "Cultural-shift cliché", explanation: "Corporate-transformation filler — implies change without naming it.", fix: "Name the specific behaviour or process that has to change." },
+  { pattern: /\b(continuous\s+(learning|improvement|growth|innovation)|a\s+culture\s+of\s+(learning|innovation|excellence))\b/gi, severity: "medium", category: "language", label: "Continuous-learning cliché", explanation: "Corporate-values deck filler — implies a practice without describing it.", fix: "Name the specific ritual. 'Friday retros' beats 'continuous learning'." },
+  { pattern: /\b(embraces?|embracing|embrace)\s+(experimentation|change|uncertainty|failure|the\s+journey|innovation)\b/gi, severity: "medium", category: "language", label: "Embraces-X cliché", explanation: "'Embraces experimentation' / 'embrace change' — corporate-culture filler verb.", fix: "Describe the specific behaviour. 'Ships half-finished ideas weekly' beats 'embraces experimentation'." },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // THREAD-BRO / LINKEDIN PLATITUDES
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /\b(the\s+best\s+(leaders?|teams?|founders?|people|creators?|marketers?)\s+aren'?t\s+(born|made)[.\s—–-]+they'?re\s+(built|made|born))\b/gi, severity: "high", category: "language", label: "Best-leaders-aren't-born cliché", explanation: "Most recycled LinkedIn wisdom-platitude on the internet.", fix: "Cut the platitude. If you have a specific leadership observation, make it without the setup." },
+  { pattern: /\b(one\s+day\s+at\s+a\s+time|one\s+step\s+at\s+a\s+time|brick\s+by\s+brick)\b/gi, severity: "medium", category: "language", label: "Platitude rhythm closer", explanation: "Stock inspirational rhythm-closer that signals 'motivational post ending'.", fix: "Close on a specific action the reader can take, not a rhythmic platitude." },
+  { pattern: /\b(nothing\s+but\s+a\s+(dream|vision|laptop|idea)|with\s+nothing\s+but\s+)/gi, severity: "high", category: "language", label: "Origin-story filler", explanation: "'Walked in with nothing but a dream' — the cornerstone of LinkedIn origin-story posts.", fix: "Describe what you specifically had and didn't have. 'I had $4,000 and zero customers' beats 'nothing but a dream'." },
+  { pattern: /\b(stop\s+waiting\s+for\s+permission|don'?t\s+wait\s+for\s+permission)\b/gi, severity: "medium", category: "language", label: "Stop-waiting-for-permission cliché", explanation: "LinkedIn career-advice staple — performative boldness.", fix: "Describe the specific permission structure you bypassed or the specific action you took." },
+  { pattern: /\b(start\s+before\s+you'?re\s+ready|begin\s+before\s+you\s+feel\s+ready)\b/gi, severity: "medium", category: "language", label: "Start-before-you're-ready cliché", explanation: "LinkedIn advice-platitude — evergreen motivational filler.", fix: "Name the specific fear or delay you'd push through. 'Ship the first version before you've chosen a name' beats 'start before you're ready'." },
+  { pattern: /\b(hire\s+people\s+smarter\s+than\s+you|surround\s+yourself\s+with\s+people\s+smarter)\b/gi, severity: "medium", category: "language", label: "Hire-smarter-than-you cliché", explanation: "Top-5 LinkedIn wisdom-platitude — repeated by every founder's ghostwriter.", fix: "Describe the specific hire or skill gap. 'Our second hire was a CRM engineer who'd run retention at Klarna' beats the platitude." },
+  { pattern: /\b(trust\s+the\s+process|embrace\s+the\s+process|the\s+process\s+works)\b/gi, severity: "medium", category: "language", label: "Trust-the-process cliché", explanation: "Sports-movie quote recycled as thought-leadership.", fix: "Describe the specific process. 'Weekly retros where we ship only one thing' beats 'trust the process'." },
+  { pattern: /\b(celebrate\s+(small|tiny|the\s+small)\s+wins|small\s+wins\s+compound)\b/gi, severity: "medium", category: "language", label: "Celebrate-small-wins cliché", explanation: "Listicle-bullet staple — zero operational content.", fix: "Describe the specific ritual. 'We post every shipped PR to a #wins Slack channel' beats the platitude." },
+  { pattern: /\b(which\s+(one\s+)?resonates\s+(with\s+you)?|which\s+one\s+hits\s+hardest|which\s+is\s+your\s+favorite)\s*\??/gi, severity: "medium", category: "language", label: "Engagement-bait closer", explanation: "'Which resonates?' — algorithmic engagement bait at the end of a LinkedIn post.", fix: "Cut the bait. If you want specific engagement, ask a specific question." },
+  { pattern: /\b(dive\s+into|diving\s+into|dives\s+into)\s+(the\s+)?(world|realm|art|science)\s+of\b/gi, severity: "high", category: "language", label: "Dive-into-the-world-of opener", explanation: "Blog-post template opener that immediately announces generic writing.", fix: "Open with the specific claim or story, not the meta-announcement of a deep-dive." },
+  { pattern: /\bunlock\s+the\s+secrets?\s+(that|of|to)\b/gi, severity: "high", category: "language", label: "Unlock-the-secrets cliché", explanation: "'Unlock the secrets that top brands use' — pure content-marketing filler.", fix: "Just describe what the brands do. Skip the 'secrets' frame." },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // AI TEMPLATE-PROSE TELLS — the subtle connectives and framings
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /\b(when|while)\s+thinking\s+about\s+\w+/gi, severity: "medium", category: "language", label: "When-thinking-about opener", explanation: "Generic framing opener — template preamble before the actual thought.", fix: "State the thought directly. 'Onboarding succeeds when…' beats 'When thinking about onboarding…'." },
+  { pattern: /\bseamless(ly)?\b/gi, severity: "low", category: "language", label: "Seamlessly adverb", explanation: "'Seamlessly' is AI's favorite adverb — signals polish without describing it.", fix: "Describe what specifically is frictionless. Or cut the adverb." },
+  { pattern: /\b(key\s+elements?\s+include|key\s+(features?|components?|factors?)\s+include)\b/gi, severity: "medium", category: "structure", label: "Key-elements-include preamble", explanation: "Bullet-list preamble that announces the writer is about to structure their thought.", fix: "Just list the elements as prose, or use a plain header." },
+  { pattern: /\bclear\s+calls?-to-action\b/gi, severity: "low", category: "language", label: "Clear-CTA jargon", explanation: "UX-deck filler phrase — 'clear calls-to-action' is default marketing-site advice.", fix: "Name the specific button copy or the specific intent. 'Upgrade to Pro' beats 'clear call-to-action'." },
+  { pattern: /\b(reduced\s+friction|reducing\s+friction|frictionless\s+(experience|flow|journey))\b/gi, severity: "low", category: "language", label: "Friction jargon", explanation: "UX/product-marketing stock phrase.", fix: "Name the specific step you removed. 'Skip phone-number on signup' beats 'reduced friction'." },
+  { pattern: /\bpersonali[sz]ed\s+(touchpoints?|experiences?|recommendations?|journeys?)\b/gi, severity: "medium", category: "language", label: "Personalized-touchpoints cliché", explanation: "Martech-deck filler — every tool claims 'personalized touchpoints'.", fix: "Name the specific personalization. '3-segment dynamic hero' beats 'personalized touchpoints'." },
+  { pattern: /\bby\s+focusing\s+on\s+(these|the)\s+(fundamentals?|basics|essentials|core\s+principles?)\b/gi, severity: "medium", category: "language", label: "Focusing-on-fundamentals closer", explanation: "Closing-paragraph template that waves at a conclusion without naming one.", fix: "Name the specific next step or the specific insight. Cut the pointing-back frame." },
+  { pattern: /\b(significantly|substantially|dramatically)\s+(improve|increase|boost|enhance|reduce|decrease|accelerate)\b/gi, severity: "low", category: "language", label: "Significantly-improve cliché", explanation: "'Significantly improve X' — vague adverb + generic verb = AI copy tell.", fix: "Give the actual number. '12% lift in activation' beats 'significantly improve activation'." },
+  { pattern: /\b(plays?\s+an?\s+(key|crucial|vital|important|major|critical)\s+role)\b/gi, severity: "medium", category: "language", label: "Plays-a-key-role filler", explanation: "Generic attribution phrase — signals importance without naming mechanism.", fix: "Describe the specific mechanism. 'Engagement signals decide Gmail tab placement' beats 'engagement signals play a key role'." },
+  { pattern: /\b(yields?\s+(the\s+)?best\s+results|produces?\s+(the\s+)?best\s+outcomes|delivers?\s+(the\s+)?best\s+results)\b/gi, severity: "medium", category: "language", label: "Yields-best-results cliché", explanation: "Closing-paragraph filler that restates 'this works well' without specifics.", fix: "Name the specific result. 'Double-digit lift in reply rate' beats 'yields the best results'." },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ORIGIN-STORY / THREAD-BRO PATTERNS
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /\b(\d+|ten|twelve|fifteen|twenty)\s+years\s+ago,?\s+I\s+\w+/gi, severity: "medium", category: "language", label: "X-years-ago-I opener", explanation: "'Ten years ago, I walked into X with nothing but…' — LinkedIn origin-story opener.", fix: "Lead with the present-tense claim you're making. Skip the timeline setup." },
+  { pattern: /\btoday,?\s+I\s+(lead|run|own|manage|oversee)\s+\w+/gi, severity: "medium", category: "language", label: "Today-I-lead transition", explanation: "Origin-story second beat — pairs with 'X years ago I walked in' opener.", fix: "State the outcome or current role without the before/after journey arc." },
+  { pattern: /\bhere'?s\s+what\s+(changed\s+everything|I\s+(learned|figured\s+out|discovered)|no\s+one\s+(tells|told)\s+you)\b/gi, severity: "medium", category: "language", label: "Here's-what-changed-everything opener", explanation: "Thread-reveal opener — announces a reveal instead of just making it.", fix: "Lead with the specific insight. Skip the 'what I learned' frame." },
+  { pattern: /(^|\n)\s*\d+[\/.]?\s+[A-Z]\w+\s+\w+/gm, severity: "low", category: "structure", label: "Slash-numbered thread bullets", explanation: "'1/ Stop waiting for permission  2/ Start before you're ready' — LinkedIn thread-bullet format.", fix: "Write the list as prose paragraphs, or at least drop the slash. The format itself signals template." },
 
   // Repeated sentence openings (detected separately via analysis)
 ];
@@ -506,12 +595,21 @@ export function analyseSlop(raw) {
   }
 
   // ── Structural signal 1: anaphoric runs ────────────────────────
-  if (sentenceCount >= 4) {
+  // 3 consecutive anaphoric sentences is medium. 4+ is high. When the
+  // prefix is a LinkedIn-signature word ("it's", "we", "you", "this"),
+  // we escalate severity — those repetitions are the textbook slop pattern.
+  if (sentenceCount >= 3) {
     const runs = findAnaphoricRuns(sentences);
+    const SIGNATURE_PREFIXES = new Set(["its", "it", "we", "you", "this", "that", "the", "and"]);
     for (const run of runs) {
+      const isSignaturePrefix = SIGNATURE_PREFIXES.has(run.prefix.replace(/['’]/g, ""));
+      const severity =
+        run.count >= 4 ? "high" :
+        run.count >= 3 && isSignaturePrefix ? "high" :
+        "medium";
       findings.push({
         category: "structure",
-        severity: run.count >= 4 ? "high" : "medium",
+        severity,
         label: "Anaphoric parallelism",
         explanation:
           `${run.count} consecutive sentences start with "${run.prefix}" — parallelism imposed by rule rather than earned by the content. Signature AI-drafting pattern.`,
@@ -613,9 +711,13 @@ export function analyseSlop(raw) {
     const lastEmoji = emojiMatches[emojiMatches.length - 1];
     const pos = (lastEmoji.index ?? 0);
     if (pos >= text.length - 80) {
+      // Motivational-flourish emojis (🙌💯✨🚀🔥👇💪) at the end of a post
+      // are the canonical LinkedIn sign-off — escalate to medium severity.
+      const LINKEDIN_SIGNOFF_EMOJI = /[\u{1F64C}\u{1F4AF}\u{2728}\u{1F680}\u{1F525}\u{1F447}\u{1F4AA}]/u;
+      const isSignatureEmoji = LINKEDIN_SIGNOFF_EMOJI.test(lastEmoji[0]);
       findings.push({
         category: "language",
-        severity: "low",
+        severity: isSignatureEmoji ? "medium" : "low",
         label: "Decorative emoji sign-off",
         explanation:
           `Single ornamental emoji (${lastEmoji[0]}) in the closing position — the LinkedIn-style motivational flourish.`,
@@ -732,6 +834,31 @@ export function analyseSlop(raw) {
     }
   }
 
+  // ── Compound connective-density signal ─────────────────────────
+  // When 3+ AI-connective findings fire (Empty authority, Generic closer,
+  // Transition spam, Qualifying filler, Vague qualifier), the DENSITY of
+  // connectives — not the individual phrases — is the real slop signal.
+  const CONNECTIVE_LABELS = new Set([
+    "Empty authority phrase",
+    "Generic closer",
+    "Transition spam",
+    "Qualifying filler",
+    "Vague qualifier",
+    "Padded phrase",
+    "End-of-day filler",
+  ]);
+  const connectiveCount = findings.filter((f) => CONNECTIVE_LABELS.has(f.label)).length;
+  if (connectiveCount >= 3) {
+    findings.push({
+      category: "structure",
+      severity: "high",
+      label: "AI-connective density",
+      explanation:
+        `${connectiveCount} AI-template connective phrases in a single passage. Density itself is the tell — real writing doesn't need 'moreover' + 'that said' + 'ultimately' to make a point.`,
+      fix: "Cut the connectives. Let the sentences stand next to each other without announcing the transition.",
+    });
+  }
+
   // ── Compound structural penalty ────────────────────────────────
   // When 4+ structural signals fire in the same text, the combination
   // itself is a powerful AI-tell beyond the individual deductions.
@@ -756,10 +883,22 @@ export function analyseSlop(raw) {
     else if (f.severity === "medium") score -= 5;
     else score -= 2;
   }
-  // Very-short content bias: if the text is under 40 words, relax
-  // scoring (noise dominates).
-  if (wordCount > 0 && wordCount < 40) {
-    score = Math.max(score, 70);
+  // Very-short content bias: trivially short content (<15 words) can't
+  // reliably accumulate enough findings to distinguish slop from signal,
+  // so we apply a protective floor. But short marketing copy (15-40 words)
+  // is exactly where slop density is HIGHEST — product taglines, hero
+  // text, landing-page intros — so we let those score freely.
+  //
+  // Exception: if the text is 15-40 words AND fires fewer than 2
+  // high-severity findings, we apply a gentler floor (60) to avoid
+  // over-punishing mildly-flawed short prose.
+  if (wordCount > 0 && wordCount < 15) {
+    score = Math.max(score, 75);
+  } else if (wordCount >= 15 && wordCount < 40) {
+    const highSeverityCount = findings.filter((f) => f.severity === "high").length;
+    if (highSeverityCount < 2) {
+      score = Math.max(score, 60);
+    }
   }
   if (wordCount === 0) score = 0;
   score = Math.max(0, Math.min(100, score));
