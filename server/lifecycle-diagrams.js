@@ -1908,7 +1908,9 @@ function htmlNodeIcon(variant) {
   }
 }
 
-/** Flatten node.metadata into {k, v} pairs for the popover detail panel. */
+/** Flatten node.metadata into {k, v} pairs for the popover detail panel.
+ *  Skips fields that now surface in dedicated blocks (segmentation,
+ *  targeting, email) so they don't render twice. */
 function htmlNodeMetaPairs(node) {
   const md = node?.metadata ?? {};
   const pairs = [];
@@ -1922,9 +1924,11 @@ function htmlNodeMetaPairs(node) {
   push("Trigger", md.trigger);
   push("Goal", md.goal);
   push("Send condition", md.send_condition);
-  push("Audience", md.audience);
-  push("Filter", md.filter);
-  push("Segment", md.segment);
+  // Audience / filter / segment only included when not superseded by
+  // the richer `segmentation` + `targeting` block.
+  if (!md.segmentation) push("Audience", md.audience);
+  if (!md.targeting) push("Filter", md.filter);
+  if (!md.segmentation && !md.targeting) push("Segment", md.segment);
   push("If no action", md.if_no_action);
   push("Yes", md.yes_label);
   push("No", md.no_label);
@@ -1934,6 +1938,67 @@ function htmlNodeMetaPairs(node) {
   push("Holdout", md.holdout);
   push("Suppression", md.suppression);
   return pairs;
+}
+
+/**
+ * Render the segmentation + targeting block for a node's popover.
+ * Returns "" when neither field is present.
+ *
+ * Segmentation is the plain-English audience description. Targeting
+ * is the literal filter expression. Paired in one box because they're
+ * two views of the same question: "who receives this?".
+ */
+function htmlNodeSegmentationBlock(node) {
+  const md = node?.metadata ?? {};
+  const seg = typeof md.segmentation === "string" ? md.segmentation.trim() : "";
+  const tgt = typeof md.targeting === "string" ? md.targeting.trim() : "";
+  if (!seg && !tgt) return "";
+  const segLine = seg
+    ? `<div class="seg-row"><p class="seg-label">Segmentation</p><p class="seg-value">${escapeHtml(seg)}</p></div>`
+    : "";
+  const tgtLine = tgt
+    ? `<div class="seg-row"><p class="seg-label">Targeting filter</p><p class="seg-value seg-mono">${escapeHtml(tgt)}</p></div>`
+    : "";
+  return `<div class="seg-box">${segLine}${tgtLine}</div>`;
+}
+
+/**
+ * Render the inbox-preview block matching the home-demo popover
+ * pattern: subject, preheader, headline, body (clamped), CTA button.
+ * Returns "" when there's no email content on the node.
+ */
+function htmlNodeEmailPreview(node) {
+  const email = node?.metadata?.email ?? null;
+  if (!email || typeof email !== "object") return "";
+  const { subject, preheader, headline, body, cta } = email;
+  const hasAny = [subject, preheader, headline, body, cta].some(
+    (v) => typeof v === "string" && v.trim()
+  );
+  if (!hasAny) return "";
+  const row = (label, value, opts = {}) => {
+    if (!value || !String(value).trim()) return "";
+    const cls = opts.mono ? "email-mono" : opts.muted ? "email-muted" : "";
+    return `<div class="email-row"><p class="email-label">${label}</p><p class="email-value ${cls}">${escapeHtml(String(value).trim())}</p></div>`;
+  };
+  const subjectRow = row("Subject", subject, { mono: true });
+  const preheaderRow = row("Preheader", preheader, { mono: true, muted: true });
+  const headlineHtml = headline && headline.trim()
+    ? `<p class="email-headline">${escapeHtml(headline.trim())}</p>`
+    : "";
+  const bodyHtml = body && body.trim()
+    ? `<p class="email-body">${escapeHtml(body.trim())}</p>`
+    : "";
+  const ctaHtml = cta && cta.trim()
+    ? `<div class="email-cta"><span>${escapeHtml(cta.trim())}</span></div>`
+    : "";
+  return `<div class="email-preview">
+    <div class="email-head"><span>Inbox preview</span></div>
+    <div class="email-body-wrap">
+      ${subjectRow}
+      ${preheaderRow}
+      ${(headlineHtml || bodyHtml || ctaHtml) ? `<div class="email-render">${headlineHtml}${bodyHtml}${ctaHtml}</div>` : ""}
+    </div>
+  </div>`;
 }
 
 function htmlNodeCode(node) {
@@ -2080,6 +2145,8 @@ function renderDiagramInteractiveHtml({ spec, performance = null, logoDataUri = 
     const subtitle = htmlNodeSubtitle(node);
     const pairs = htmlNodeMetaPairs(node);
     const code = htmlNodeCode(node);
+    const segmentationHtml = htmlNodeSegmentationBlock(node);
+    const emailHtml = htmlNodeEmailPreview(node);
     const sub = extra.subLabel || subtitle;
     const perfEntry = hasPerf ? perfMap[node.id] : null;
     const perfChip = renderPerfChip(perfEntry);
@@ -2123,6 +2190,8 @@ function renderDiagramInteractiveHtml({ spec, performance = null, logoDataUri = 
   <div class="popover" role="tooltip">
     <p class="popover-heading">${escapeHtml(node.label || "Step")}</p>
     ${subtitle ? `<p class="popover-body">${escapeHtml(subtitle)}</p>` : ""}
+    ${segmentationHtml}
+    ${emailHtml}
     ${popoverPerfHtml}
     ${metaHtml}
     ${codeHtml}
@@ -2364,6 +2433,28 @@ function renderDiagramInteractiveHtml({ spec, performance = null, logoDataUri = 
   .meta > div { display: flex; gap: 12px; margin-bottom: 6px; font-size: 11px; align-items: baseline; }
   .meta dt { flex: 0 0 96px; color: var(--text-dim); font-weight: 500; margin: 0; text-transform: none; letter-spacing: 0; font-size: 11px; }
   .meta dd { flex: 1; margin: 0; color: var(--text); font-family: var(--font-mono); font-size: 10.5px; word-break: break-word; line-height: 1.4; }
+  /* Segmentation + targeting box — plain-English audience +
+     literal filter expression, paired in one visual block. */
+  .seg-box { border: 1px solid var(--border); background: var(--bg-muted); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+  .seg-box .seg-row + .seg-row { margin-top: 8px; }
+  .seg-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; color: var(--text-dim); margin: 0 0 4px; }
+  .seg-value { font-size: 11.5px; line-height: 1.45; color: var(--text); margin: 0; }
+  .seg-value.seg-mono { font-family: var(--font-mono); font-size: 10.5px; word-break: break-word; }
+  /* Inbox-preview card — mirrors the home-demo popover pattern so
+     every message-type step in a rendered diagram shows what a
+     recipient actually sees. */
+  .email-preview { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; overflow: hidden; margin: 0 0 12px; }
+  .email-head { background: var(--bg-muted); border-bottom: 1px solid var(--border); padding: 6px 12px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; color: var(--text-dim); }
+  .email-body-wrap { padding: 10px 12px; }
+  .email-row { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+  .email-label { flex: 0 0 64px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; color: var(--text-dim); margin: 0; }
+  .email-value { flex: 1; font-size: 11px; line-height: 1.4; color: var(--text); margin: 0; word-break: break-word; }
+  .email-value.email-mono { font-family: var(--font-mono); font-size: 10.5px; }
+  .email-value.email-muted { color: var(--text-muted); }
+  .email-render { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px; }
+  .email-headline { font-size: 12px; font-weight: 700; line-height: 1.35; color: var(--text); margin: 0 0 6px; }
+  .email-body { font-size: 11px; line-height: 1.45; color: var(--text-muted); margin: 0 0 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .email-cta { display: inline-block; background: var(--accent); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; }
   pre {
     margin: 0;
     padding: 10px;
