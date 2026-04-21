@@ -83,8 +83,8 @@ export async function checkOrbitVersion({ installedVersion }) {
     suggested_next_steps: comparison < 0
       ? [
           "Open https://get.yourorbit.team/download in your browser.",
-          "Download the latest .mcpb, double-click to install in Claude Desktop.",
-          "Restart Claude Desktop after install."
+          "Download the latest .mcpb and double-click it. Claude Desktop replaces the old version in place — no uninstall required.",
+          "Restart Claude Desktop after install to load the updated skills and tools."
         ]
       : []
   };

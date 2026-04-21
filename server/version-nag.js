@@ -27,6 +27,11 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let cached = null;
 let checked = false;
+// Session-scoped: true after getVersionNag() has surfaced the notice
+// once this session. Subsequent calls return null so the update
+// notice doesn't attach to every tool response. First tool of the
+// session shows the nag; everything after stays clean.
+let surfacedThisSession = false;
 
 function readCache() {
   try {
@@ -76,18 +81,37 @@ export function startVersionNag({ installedVersion } = {}) {
 
 /**
  * Return a short "update available" message if we've learned a newer
- * version exists, or null otherwise. Tool handlers can attach this to
- * their responses as a gentle nudge without being blocking.
+ * version exists, or null otherwise.
+ *
+ * Surfaces ONCE per session — the first tool call of the session
+ * that passes through `attachQualityReport` gets the nag attached.
+ * Every subsequent call returns null so the update notice doesn't
+ * hijack every tool response for the rest of the session.
+ *
+ * If the user is already on the latest version, always returns null
+ * (no notice, ever). The version check runs on startup; if the cache
+ * says "up to date," users see nothing.
  */
 export function getVersionNag() {
   if (!cached) return null;
-  if (cached.update_available === true && cached.latest_version) {
-    return {
-      update_available: true,
-      installed_version: cached.installed_version,
-      latest_version: cached.latest_version,
-      notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}). Download the latest .mcpb from the Orbit download page.`,
-    };
-  }
-  return null;
+  if (cached.update_available !== true || !cached.latest_version) return null;
+  // Already surfaced this session — stay silent.
+  if (surfacedThisSession) return null;
+  surfacedThisSession = true;
+  return {
+    update_available: true,
+    installed_version: cached.installed_version,
+    latest_version: cached.latest_version,
+    download_url: cached.download_url ?? "https://get.yourorbit.team/download",
+    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}). Download the latest .mcpb from https://get.yourorbit.team/download and double-click it — Claude replaces the old version in place, no uninstall needed.`,
+  };
+}
+
+/**
+ * Test helper — reset the surfaced flag so unit tests can verify
+ * both surfaced-once behavior and latest-version-no-notice behavior.
+ * Not called in production.
+ */
+export function _resetVersionNagForTest() {
+  surfacedThisSession = false;
 }
