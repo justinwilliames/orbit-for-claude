@@ -23,7 +23,18 @@ export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
   // accumulated step results so orbit_continue_job can resume from
   // exactly where it stopped on the next call. The 7 steps are
   // natural checkpoint boundaries.
-  const state = resumeState ?? { completed: [], results: {} };
+  //
+  // startedAt is pinned on the first call and threaded through the
+  // resume_state so the final audit result carries the ORIGINAL call's
+  // timestamp even when produced by a resume — otherwise a resumed
+  // audit would be cosmetically distinguishable from an uninterrupted
+  // one (deep-equal fails on .timestamp) and users would see the
+  // clock-jump-at-continue moment in their output.
+  const state = resumeState ?? {
+    completed: [],
+    results: {},
+    startedAt: new Date().toISOString()
+  };
   const yieldIf = typeof shouldYield === "function" ? shouldYield : () => false;
 
   const steps = [
@@ -106,7 +117,7 @@ export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
   return {
     status: fetchErrors.length > 0 ? "partial" : "ok",
     audit: {
-      timestamp: new Date().toISOString(),
+      timestamp: state.startedAt,
       summary: {
         canvases: { total: canvasItems.length, ...canvasBreakdown },
         campaigns: { total: campaignItems.length, ...campaignBreakdown },
