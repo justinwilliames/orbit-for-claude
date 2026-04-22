@@ -192,4 +192,16 @@ describe("Braze read suite — audit, canvas/campaign/segment reads", () => {
     }
     mock.resetResponses();
   });
+
+  test("orbit_continue_job rejects unknown token cleanly", async () => {
+    const { parsed } = await client.callToolJson("orbit_continue_job", {
+      continuation_token: "nonexistent-token-abc123"
+    });
+    assert.equal(parsed.status, "error");
+    assert.equal(parsed.code, "continuation_expired");
+    assert.ok(
+      Array.isArray(parsed.suggested_next_steps) && parsed.suggested_next_steps.length > 0,
+      "Unknown-token response should carry suggested_next_steps for Claude to follow"
+    );
+  });
 });

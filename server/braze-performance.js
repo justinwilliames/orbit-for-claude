@@ -60,18 +60,26 @@ export async function pullBrazePerformance({
     }
   });
 
-  for (let i = canvasStart; i < canvasIds.length; i += 1) {
-    canvasData.push(await pullCanvasPerformance(config, canvasIds[i], days, endingAt));
-    if (yieldIf()) return yieldPartial();
-  }
-  for (let i = campaignStart; i < campaignIds.length; i += 1) {
-    campaignData.push(await pullCampaignPerformance(config, campaignIds[i], days, endingAt));
-    if (yieldIf()) return yieldPartial();
-  }
-  for (let i = segmentStart; i < segmentIds.length; i += 1) {
-    segmentData.push(await pullSegmentPerformance(config, segmentIds[i], days, endingAt));
-    if (yieldIf()) return yieldPartial();
-  }
+  // Batch-parallel so small requests stay fast while large ones can
+  // still checkpoint. Batch size of 5 keeps us under typical Braze
+  // API rate limits AND preserves sub-second response for common
+  // cases (5–10 IDs complete in one batch each). Larger workspaces
+  // trigger the yield check between batches and checkpoint cleanly.
+  const BATCH_SIZE = 5;
+
+  const runBatch = async (ids, startIdx, puller, accumulator) => {
+    for (let i = startIdx; i < ids.length; i += BATCH_SIZE) {
+      const batch = ids.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map((id) => puller(config, id, days, endingAt)));
+      accumulator.push(...batchResults);
+      if (i + BATCH_SIZE < ids.length && yieldIf()) return false;
+    }
+    return true;
+  };
+
+  if (!(await runBatch(canvasIds, canvasStart, pullCanvasPerformance, canvasData))) return yieldPartial();
+  if (!(await runBatch(campaignIds, campaignStart, pullCampaignPerformance, campaignData))) return yieldPartial();
+  if (!(await runBatch(segmentIds, segmentStart, pullSegmentPerformance, segmentData))) return yieldPartial();
   if (includeKpis && kpiData === undefined) {
     kpiData = await pullKpiData(config, days, endingAt);
   } else if (!includeKpis) {
