@@ -4,19 +4,17 @@
  * website, which proxies the canonical manifest.json from the private
  * distribution bucket.
  *
- * We keep a GitHub-based fallback so that if the website is down the
- * check can still succeed against the public source repo's manifest
- * (which always matches the bucket after a release).
+ * Single-source because the source repo is private and the -dl mirror
+ * has been retired. If the website is down the version check fails
+ * gracefully (MCPB tolerates non-2xx responses silently) and the user
+ * just doesn't see an update prompt until next run.
  */
 
 import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
 
 const WEBSITE_BREAKER = getBreaker("orbit-website");
-const GITHUB_BREAKER = getBreaker("github");
 const LATEST_MANIFEST_URL =
   "https://get.yourorbit.team/api/orbit/latest-version";
-const FALLBACK_LATEST_URL =
-  "https://raw.githubusercontent.com/justinwilliames-sketch/orbit-for-claude/main/manifest.json";
 
 function compareVersions(a, b) {
   const [am, an, ap] = String(a).split(".").map((x) => Number.parseInt(x, 10) || 0);
@@ -27,34 +25,25 @@ function compareVersions(a, b) {
 }
 
 export async function checkOrbitVersion({ installedVersion }) {
-  const sources = [LATEST_MANIFEST_URL, FALLBACK_LATEST_URL];
   let latest = null;
   let sourceUsed = null;
   let error = null;
 
-  for (const url of sources) {
-    try {
-      // Use a per-host breaker so a flaky website doesn't cascade
-      // into the GitHub-fallback's reputation and vice versa.
-      const breaker = url.startsWith("https://get.yourorbit.team")
-        ? WEBSITE_BREAKER
-        : GITHUB_BREAKER;
-      const res = await fetchWithRetry(
-        url,
-        { method: "GET", headers: { Accept: "application/json" } },
-        { timeoutMs: 10_000, retries: 2, breaker }
-      );
-      if (!res.ok) {
-        error = `Source returned ${res.status} for ${url}`;
-        continue;
-      }
+  try {
+    const res = await fetchWithRetry(
+      LATEST_MANIFEST_URL,
+      { method: "GET", headers: { Accept: "application/json" } },
+      { timeoutMs: 10_000, retries: 2, breaker: WEBSITE_BREAKER }
+    );
+    if (res.ok) {
       const data = await res.json();
       latest = data?.version;
-      sourceUsed = url;
-      if (latest) break;
-    } catch (err) {
-      error = err.message;
+      sourceUsed = LATEST_MANIFEST_URL;
+    } else {
+      error = `Version endpoint returned ${res.status}`;
     }
+  } catch (err) {
+    error = err.message;
   }
 
   if (!latest) {
