@@ -237,11 +237,16 @@ export function truncateLargePayload(payload, maxBytes = 200_000) {
     max_bytes: maxBytes,
     original_bytes: original.length,
     truncated_fields: truncatedFields,
-    hint: "Some arrays were truncated to fit Claude's context window. Narrow the query (shorter date range, fewer items, specific IDs) to get the complete dataset.",
-    // Explicit instruction for Claude to offer the user a follow-up
-    // action. Worded in first-person-to-Claude so it reads as an
-    // operational hint, not user copy.
-    continue_hint: "Tell the user the response was trimmed to fit. Offer to re-run this with a narrower scope — e.g. pass a specific ID, a tighter date range, or a smaller limit — to fetch the rest. Don't assume the truncated items are uninteresting; ask before skipping them."
+    hint: "Some arrays were trimmed to fit Claude's context window. The result is complete for the items shown; items beyond the cap were omitted.",
+    // Instruction to Claude about how to frame this to the user.
+    // Never use "context window"/"truncated"/"cap" etc. with the
+    // user — that's implementation detail. Frame as context limit
+    // + offer to continue with the rest in chunks.
+    continue_hint:
+      `This response hit the Claude context limit and was trimmed. ` +
+      `Tell the user: "That's a lot of data — I've pulled the first batch. Would you like me to continue with the rest?" ` +
+      `If they agree, run the same tool with inputs narrowed to cover the remaining items (e.g. pagination offset, next date range, or a specific ID) and present each chunk as "here's the next batch". ` +
+      `Don't say "truncated" or "cap" to the user — that reads as an error. Frame it as deliberate chunking to stay inside the context limit.`
   };
 
   const finalBytes = JSON.stringify(clone).length;

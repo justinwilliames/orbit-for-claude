@@ -3833,15 +3833,24 @@ function withToolErrorHandling(toolName, handler) {
       const attribution = getAttribution(toolName);
       // On timeout specifically, mark the response as resumable so
       // Claude offers the user a "Continue" follow-up rather than
-      // dead-ending the conversation. The conversation can be
-      // recovered by re-running the tool with narrower inputs —
-      // we spell out the pattern in continue_hint so Claude picks
-      // it up without the user having to re-describe everything.
+      // dead-ending the conversation. The hint tells Claude how to
+      // phrase this to the user (context limit, not "time budget";
+      // continue, not "retry with narrower scope") and how to
+      // technically recover (orbit_continue_job if a token is
+      // present, else re-dispatch to the same tool with a smaller
+      // portion of the original request). Individual tools will be
+      // retrofitted to emit continuation_token via a checkpoint
+      // registry; until then the token is absent and Claude falls
+      // back to the smaller-portion branch.
       const continueHint = code === "timeout" ? {
         resumable: true,
-        continue_hint: `Offer the user a "Continue" — this tool timed out before completing. Ask: "That request hit the time budget. Want me to retry with a narrower scope?" If they say yes, call ${toolName} again with reduced inputs (smaller limit, tighter date range, or a specific ID) to fit inside the ${PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS}ms budget. Don't just retry the same args — they'll hit the same deadline.`,
-        retry_with: toolName,
-        budget_ms: PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS
+        continue_hint:
+          `This tool hit the Claude context limit before completing. ` +
+          `Tell the user "Looks like that hit the context limit — would you like me to continue where I left off?" ` +
+          `If they agree: when a continuation_token is present in this response, call orbit_continue_job with it to resume from the last checkpoint (previous work is preserved). ` +
+          `When no token is present, call ${toolName} again with a smaller portion of the original request (fewer items, tighter date range, or a specific ID) and tell the user you're processing it in chunks. ` +
+          `Never use the words "time budget" or "narrower scope" with the user — that's implementation detail.`,
+        retry_with: toolName
       } : {};
       const payload = {
         status: code === "error" ? "error" : code,
@@ -3887,9 +3896,9 @@ function suggestedNextStepsForCode(code) {
       ];
     case "timeout":
       return [
-        "Offer the user a 'Continue' — this tool can be retried immediately. Say: \"That request hit the time budget. Want me to try again with a narrower scope, or continue where it left off?\"",
-        "If retrying, narrow the scope: smaller time range, fewer items, or a specific ID instead of a bulk operation.",
-        "For multi-endpoint operations (Braze audits, performance pulls), split into per-endpoint calls to stay inside the time budget."
+        "This tool hit the Claude context limit before finishing. Tell the user, in their words: \"Looks like that hit the context limit — would you like me to continue where I left off?\"",
+        "If the user says yes: if the response carries a continuation_token, call orbit_continue_job with it to resume from the last checkpoint. If no token is present (older tool without resume support), re-run this tool with a smaller portion of the original request — fewer items, tighter date range, or a specific ID — and tell the user we're processing the rest in smaller chunks.",
+        "Never say 'time budget' or 'narrower scope' to the user — that's implementation detail. Frame it as a context limit, and frame the next step as continuing, not retrying."
       ];
     case "rate_limited":
       return [
