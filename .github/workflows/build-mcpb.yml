@@ -23,20 +23,49 @@ jobs:
 
       - run: npm run build:extension
 
+      # Package the .mcpb bundle for distribution.
       - name: Package .mcpb
         run: |
           cd .mcpb-build
           zip -r ../orbit-lifecycle-marketing-system-for-claude.mcpb . -x "*.DS_Store"
 
-      - name: Push to download repo
-        env:
-          GH_TOKEN: ${{ secrets.DL_REPO_TOKEN }}
+      # Extract the version from manifest.json so the versioned key in
+      # the bucket matches the release. Jobs downstream use this env var.
+      - name: Extract version
+        id: version
         run: |
-          git clone https://x-access-token:${GH_TOKEN}@github.com/justinwilliames-sketch/orbit-for-claude-dl.git /tmp/dl-repo
-          cp orbit-lifecycle-marketing-system-for-claude.mcpb /tmp/dl-repo/
-          cd /tmp/dl-repo
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet || git commit -m "Auto-update .mcpb bundle from orbit-for-claude@${GITHUB_SHA::7}"
-          git push
+          VERSION=$(node -e "console.log(require('./manifest.json').version)")
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building orbit-v$VERSION"
+
+      # Upload to the private Railway-backed Tigris bucket. Three
+      # objects per release:
+      #   - mcpb/orbit-v{version}.mcpb   — immutable versioned archive
+      #   - mcpb/latest.mcpb             — always-latest alias (the
+      #                                    one /api/mcpb-download serves)
+      #   - manifest.json                — proxied by
+      #                                    /api/orbit/latest-version
+      # The website only reads these via signed URLs — the bucket
+      # itself is private, no public ingress.
+      - name: Upload to MCPB bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ORBIT_MCPB_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ORBIT_MCPB_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.ORBIT_MCPB_S3_REGION }}
+          S3_ENDPOINT: ${{ secrets.ORBIT_MCPB_S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.ORBIT_MCPB_S3_BUCKET }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+            orbit-lifecycle-marketing-system-for-claude.mcpb \
+            "s3://$S3_BUCKET/mcpb/orbit-v$VERSION.mcpb" \
+            --content-type application/zip
+          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+            orbit-lifecycle-marketing-system-for-claude.mcpb \
+            "s3://$S3_BUCKET/mcpb/latest.mcpb" \
+            --content-type application/zip
+          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+            manifest.json \
+            "s3://$S3_BUCKET/manifest.json" \
+            --content-type application/json
+          echo "Uploaded orbit-v$VERSION.mcpb, latest.mcpb, and manifest.json"

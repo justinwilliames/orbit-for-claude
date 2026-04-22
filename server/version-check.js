@@ -1,14 +1,20 @@
 /**
  * Orbit version check — compares the installed version against the
- * latest release on GitHub. No auth required; uses the raw manifest.json
- * in the -dl download repo as the source of truth.
+ * latest release. No auth required; reads the manifest from the Orbit
+ * website, which proxies the canonical manifest.json from the private
+ * distribution bucket.
+ *
+ * We keep a GitHub-based fallback so that if the website is down the
+ * check can still succeed against the public source repo's manifest
+ * (which always matches the bucket after a release).
  */
 
 import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
 
+const WEBSITE_BREAKER = getBreaker("orbit-website");
 const GITHUB_BREAKER = getBreaker("github");
 const LATEST_MANIFEST_URL =
-  "https://raw.githubusercontent.com/justinwilliames-sketch/orbit-for-claude-dl/main/manifest.json";
+  "https://get.yourorbit.team/api/orbit/latest-version";
 const FALLBACK_LATEST_URL =
   "https://raw.githubusercontent.com/justinwilliames-sketch/orbit-for-claude/main/manifest.json";
 
@@ -28,13 +34,18 @@ export async function checkOrbitVersion({ installedVersion }) {
 
   for (const url of sources) {
     try {
+      // Use a per-host breaker so a flaky website doesn't cascade
+      // into the GitHub-fallback's reputation and vice versa.
+      const breaker = url.startsWith("https://get.yourorbit.team")
+        ? WEBSITE_BREAKER
+        : GITHUB_BREAKER;
       const res = await fetchWithRetry(
         url,
         { method: "GET", headers: { Accept: "application/json" } },
-        { timeoutMs: 10_000, retries: 2, breaker: GITHUB_BREAKER }
+        { timeoutMs: 10_000, retries: 2, breaker }
       );
       if (!res.ok) {
-        error = `GitHub returned ${res.status} for ${url}`;
+        error = `Source returned ${res.status} for ${url}`;
         continue;
       }
       const data = await res.json();
@@ -50,11 +61,11 @@ export async function checkOrbitVersion({ installedVersion }) {
     return {
       status: "error",
       code: "version_check_failed",
-      message: `Could not reach GitHub to compare versions: ${error ?? "unknown"}`,
+      message: `Could not reach the version-check endpoint: ${error ?? "unknown"}`,
       installed_version: installedVersion,
       suggested_next_steps: [
         "Check your internet connection.",
-        "Visit https://github.com/justinwilliames-sketch/orbit-for-claude-dl to see the latest release."
+        "Visit https://get.yourorbit.team/account/downloads to see the latest release."
       ]
     };
   }
