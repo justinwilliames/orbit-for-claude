@@ -12,32 +12,63 @@ import { brazeGet, brazePost, buildDashboardUrl, validateBrazeSetup } from "./br
 // 1. Instance Audit
 // ---------------------------------------------------------------------------
 
-export async function auditBrazeInstance({ config }) {
+export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
   const setupError = validateBrazeSetup(config);
   if (setupError) return setupError;
 
-  // Sequential so the shared rate limiter actually serialises calls.
-  // Parallel Promise.all here bypassed it by awaiting all promises at once.
-  const canvases = await safeList(config, "/canvas/list", "canvases");
-  if (canvases.authFailed) return authFailedResponse(canvases);
+  // Sequential steps — the shared rate limiter only serialises if we
+  // await one at a time. After each step completes, callers can pass
+  // a shouldYield() predicate that returns true when we're close to
+  // the time budget; the function returns a partial response with
+  // accumulated step results so orbit_continue_job can resume from
+  // exactly where it stopped on the next call. The 7 steps are
+  // natural checkpoint boundaries.
+  const state = resumeState ?? { completed: [], results: {} };
+  const yieldIf = typeof shouldYield === "function" ? shouldYield : () => false;
 
-  const campaigns = await safeList(config, "/campaigns/list", "campaigns");
-  if (campaigns.authFailed) return authFailedResponse(campaigns);
+  const steps = [
+    { name: "canvases",       run: () => safeList(config, "/canvas/list", "canvases") },
+    { name: "campaigns",      run: () => safeList(config, "/campaigns/list", "campaigns") },
+    { name: "segments",       run: () => safeList(config, "/segments/list", "segments") },
+    { name: "content_blocks", run: () => safeList(config, "/content_blocks/list", "content_blocks") },
+    { name: "templates",      run: () => safeList(config, "/templates/email/list", "templates") },
+    { name: "events",         run: () => safeList(config, "/events/list", "events") },
+    { name: "custom_attributes", run: () => safeListAttributes(config) }
+  ];
 
-  const segments = await safeList(config, "/segments/list", "segments");
-  if (segments.authFailed) return authFailedResponse(segments);
+  for (const step of steps) {
+    if (state.completed.includes(step.name)) continue;
+    const result = await step.run();
+    if (result.authFailed) return authFailedResponse(result);
+    state.results[step.name] = result;
+    state.completed.push(step.name);
+    // Checkpoint boundary — let caller decide whether to bail before
+    // the next step. Returning a partial here leaves the 7 steps
+    // walkable across multiple resumes.
+    if (yieldIf() && state.completed.length < steps.length) {
+      // Distinct status from "partial" (which the existing codebase
+      // uses to mean "completed but with fetch errors along the way")
+      // so the tool handler can tell the two cases apart without
+      // shape-sniffing.
+      return {
+        status: "continuation_required",
+        audit_partial: {
+          completed_steps: [...state.completed],
+          remaining_steps: steps.map((s) => s.name).filter((n) => !state.completed.includes(n)),
+          progress: `${state.completed.length}/${steps.length} steps done`
+        },
+        resume_state: state
+      };
+    }
+  }
 
-  const contentBlocks = await safeList(config, "/content_blocks/list", "content_blocks");
-  if (contentBlocks.authFailed) return authFailedResponse(contentBlocks);
-
-  const templates = await safeList(config, "/templates/email/list", "templates");
-  if (templates.authFailed) return authFailedResponse(templates);
-
-  const events = await safeList(config, "/events/list", "events");
-  if (events.authFailed) return authFailedResponse(events);
-
-  const customAttributes = await safeListAttributes(config);
-  if (customAttributes.authFailed) return authFailedResponse(customAttributes);
+  const canvases      = state.results.canvases;
+  const campaigns     = state.results.campaigns;
+  const segments      = state.results.segments;
+  const contentBlocks = state.results.content_blocks;
+  const templates     = state.results.templates;
+  const events        = state.results.events;
+  const customAttributes = state.results.custom_attributes;
 
   const fetchErrors = [canvases, campaigns, segments, contentBlocks, templates, events, customAttributes]
     .filter((r) => r.error)
@@ -287,16 +318,33 @@ export async function analyseSegments({ config, includeDataSeries = false, days 
 // 4. Content Block Inventory & Dedup
 // ---------------------------------------------------------------------------
 
-export async function auditContentBlocks({ config, fetchContent = false }) {
+export async function auditContentBlocks({ config, fetchContent = false, resumeState, shouldYield }) {
   const setupError = validateBrazeSetup(config);
   if (setupError) return setupError;
 
-  const blocks = await safeList(config, "/content_blocks/list", "content_blocks");
-  if (blocks.authFailed) return authFailedResponse(blocks);
-  const blockItems = blocks.items;
+  const yieldIf = typeof shouldYield === "function" ? shouldYield : () => false;
 
-  const enriched = [];
-  for (const block of blockItems) {
+  // Resume scaffolding — the expensive part is per-block content
+  // fetches (N × 1 API call each). Checkpoint after each enrichment
+  // iteration so a large workspace can resume mid-audit.
+  let blockItems;
+  let enriched;
+  let nextIndex;
+
+  if (resumeState) {
+    blockItems = resumeState.block_items;
+    enriched = resumeState.enriched;
+    nextIndex = resumeState.next_index;
+  } else {
+    const blocks = await safeList(config, "/content_blocks/list", "content_blocks");
+    if (blocks.authFailed) return authFailedResponse(blocks);
+    blockItems = blocks.items;
+    enriched = [];
+    nextIndex = 0;
+  }
+
+  for (let i = nextIndex; i < blockItems.length; i += 1) {
+    const block = blockItems[i];
     const entry = {
       id: block.content_block_id ?? block.id,
       name: block.content_block_name ?? block.name,
@@ -316,8 +364,6 @@ export async function auditContentBlocks({ config, fetchContent = false }) {
         entry.content = info.content;
         entry.content_length = info.content?.length ?? 0;
         entry.liquid_tag = info.liquid_tag;
-
-        // Check for issues
         entry.issues = analyseContentBlockContent(info.content);
       } catch {
         entry._error = "Could not fetch content";
@@ -325,6 +371,23 @@ export async function auditContentBlocks({ config, fetchContent = false }) {
     }
 
     enriched.push(entry);
+
+    // Yield check after each block so we stay inside the budget.
+    if (i + 1 < blockItems.length && yieldIf()) {
+      return {
+        status: "continuation_required",
+        audit_partial: {
+          progress: `${enriched.length}/${blockItems.length} blocks audited`,
+          enriched_count: enriched.length,
+          total: blockItems.length
+        },
+        resume_state: {
+          block_items: blockItems,
+          enriched,
+          next_index: i + 1
+        }
+      };
+    }
   }
 
   // Find potential duplicates by name similarity

@@ -13,20 +13,70 @@ export async function pullBrazePerformance({
   campaignIds = [],
   segmentIds = [],
   includeKpis = true,
-  days = 30
+  days = 30,
+  resumeState,
+  shouldYield
 }) {
   const setupError = validateBrazeSetup(config);
   if (setupError) return setupError;
 
-  const endingAt = new Date().toISOString();
+  const yieldIf = typeof shouldYield === "function" ? shouldYield : () => false;
 
-  // Parallel data pulls
-  const [canvasData, campaignData, segmentData, kpiData] = await Promise.all([
-    Promise.all(canvasIds.map((id) => pullCanvasPerformance(config, id, days, endingAt))),
-    Promise.all(campaignIds.map((id) => pullCampaignPerformance(config, id, days, endingAt))),
-    Promise.all(segmentIds.map((id) => pullSegmentPerformance(config, id, days, endingAt))),
-    includeKpis ? pullKpiData(config, days, endingAt) : null
-  ]);
+  // Stable ending_at across resumes so the data is internally
+  // consistent even if the resume lands minutes later than the
+  // original call.
+  const endingAt = resumeState?.ending_at ?? new Date().toISOString();
+
+  // Serialise per-ID pulls so we can checkpoint between IDs. The
+  // original parallel-everything pattern was fast for small
+  // workspaces but couldn't yield mid-way, so a 30-Canvas report
+  // would either complete or fail whole. Now it walks IDs one at a
+  // time; if the budget runs out, we save what we have and resume
+  // on the next call.
+  const canvasData   = resumeState?.canvases   ? [...resumeState.canvases]   : [];
+  const campaignData = resumeState?.campaigns  ? [...resumeState.campaigns]  : [];
+  const segmentData  = resumeState?.segments   ? [...resumeState.segments]   : [];
+  let kpiData        = resumeState?.kpis      ?? undefined;
+
+  const canvasStart   = canvasData.length;
+  const campaignStart = campaignData.length;
+  const segmentStart  = segmentData.length;
+
+  const yieldPartial = () => ({
+    status: "continuation_required",
+    perf_partial: {
+      progress: `${canvasData.length}/${canvasIds.length} canvases · ${campaignData.length}/${campaignIds.length} campaigns · ${segmentData.length}/${segmentIds.length} segments${kpiData === undefined && includeKpis ? " · KPIs pending" : ""}`,
+      canvases_done: canvasData.length,
+      campaigns_done: campaignData.length,
+      segments_done: segmentData.length,
+      kpis_done: kpiData !== undefined
+    },
+    resume_state: {
+      ending_at: endingAt,
+      canvases: canvasData,
+      campaigns: campaignData,
+      segments: segmentData,
+      kpis: kpiData
+    }
+  });
+
+  for (let i = canvasStart; i < canvasIds.length; i += 1) {
+    canvasData.push(await pullCanvasPerformance(config, canvasIds[i], days, endingAt));
+    if (yieldIf()) return yieldPartial();
+  }
+  for (let i = campaignStart; i < campaignIds.length; i += 1) {
+    campaignData.push(await pullCampaignPerformance(config, campaignIds[i], days, endingAt));
+    if (yieldIf()) return yieldPartial();
+  }
+  for (let i = segmentStart; i < segmentIds.length; i += 1) {
+    segmentData.push(await pullSegmentPerformance(config, segmentIds[i], days, endingAt));
+    if (yieldIf()) return yieldPartial();
+  }
+  if (includeKpis && kpiData === undefined) {
+    kpiData = await pullKpiData(config, days, endingAt);
+  } else if (!includeKpis) {
+    kpiData = null;
+  }
 
   return {
     status: "ok",

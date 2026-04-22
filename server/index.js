@@ -23,6 +23,27 @@ import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
 import { checkOrbitVersion } from "./version-check.js";
 import {
+  saveCheckpoint as _saveCheckpoint,
+  loadCheckpoint as _loadCheckpoint,
+  claimCheckpoint,
+  releaseCheckpoint,
+  completeCheckpoint,
+  updateCheckpoint,
+  checkpointInfo,
+} from "./continuation.js";
+
+/**
+ * Handler registry — every tool registered via registerToolSafe is
+ * captured here by name so orbit_continue_job can redispatch to a
+ * resumed tool's original handler. Declared at module top so it
+ * exists before registerTools() executes at load.
+ *
+ * We keep the RAW handler (pre-wrapper) in the registry. The wrapper
+ * is re-applied when orbit_continue_job redispatches so the resumed
+ * call still gets deadline + error classification + telemetry.
+ */
+const TOOL_HANDLERS = new Map();
+import {
   scoreSubject,
   calculateSampleSize,
   durationDays,
@@ -2857,11 +2878,54 @@ function registerTools() {
       description:
         "Pull a complete inventory of all Canvases, campaigns, segments, content blocks, " +
         "email templates, custom events, and custom attributes in the Braze workspace. " +
-        "Produces a structured audit report with counts, naming convention compliance, and warnings.",
+        "Produces a structured audit report with counts, naming convention compliance, and warnings. " +
+        "Resumable: if the workspace is large enough to hit the context limit, the response " +
+        "includes a continuation_token you can pass to orbit_continue_job to finish the audit.",
       inputSchema: {}
     },
-    async () => {
-      const result = await auditBrazeInstance({ config: runtimeConfig });
+    async (args) => {
+      const toolName = "orbit_audit_braze_instance";
+      const TOOL_BUDGET_MS = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+      const startedAt = Date.now();
+      // Bail if we're past 80% of the deadline — leaves ~15s headroom
+      // for serialisation, orbit_attribution, and the MCP response
+      // hop back to Claude. Past that point, checkpointing is safer
+      // than pushing for completion and hitting the hard deadline.
+      const shouldYield = () => Date.now() - startedAt > TOOL_BUDGET_MS * 0.8;
+
+      const resume = loadResumeState(args);
+      const result = await auditBrazeInstance({
+        config: runtimeConfig,
+        resumeState: resume?.state ?? null,
+        shouldYield
+      });
+
+      if (result?.status === "continuation_required") {
+        // Under budget hit — save checkpoint and bubble a resumable
+        // response. If we came in on a resume, keep the same token
+        // so the chain doesn't balloon across multiple continues.
+        let token;
+        if (resume?.token) {
+          // Refresh existing checkpoint in place — preserves the
+          // token across multiple continues so chains don't bloat.
+          updateCheckpoint(resume.token, result.resume_state);
+          token = resume.token;
+        } else {
+          token = saveResumeState(toolName, args, result.resume_state);
+        }
+        return makeJsonToolResponse({
+          status: "partial",
+          message: "Workspace audit paused mid-way to stay inside the context limit. Call orbit_continue_job with the token below to finish.",
+          continuation_token: token,
+          progress: result.audit_partial,
+          continue_hint:
+            `Tell the user, plainly: "I've pulled ${result.audit_partial.completed_steps.length} of ${result.audit_partial.completed_steps.length + result.audit_partial.remaining_steps.length} sections so far — would you like me to continue with the rest?" ` +
+            `If they agree, call orbit_continue_job with continuation_token "${token}" to resume. Previous work is preserved.`
+        });
+      }
+
+      // Audit completed — clean up any prior checkpoint token.
+      if (resume?.token) completeCheckpoint(resume.token);
       return makeJsonToolResponse(result);
     }
   );
@@ -2929,16 +2993,47 @@ function registerTools() {
       title: "Audit Braze Content Blocks",
       description:
         "Inventory all Braze Content Blocks with duplicate detection, stale block identification, " +
-        "and optional content analysis (Liquid fallback checks, broken images, HTTP URLs).",
+        "and optional content analysis (Liquid fallback checks, broken images, HTTP URLs). " +
+        "Resumable: large workspaces emit a continuation_token you can pass to orbit_continue_job " +
+        "to finish the audit without re-fetching blocks already checked.",
       inputSchema: {
         fetch_content: z.boolean().optional().describe("Fetch full content for each block to enable deep analysis (slower)")
       }
     },
-    async ({ fetch_content: fetchContent }) => {
+    async (args) => {
+      const toolName = "orbit_audit_content_blocks";
+      const TOOL_BUDGET_MS = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+      const startedAt = Date.now();
+      const shouldYield = () => Date.now() - startedAt > TOOL_BUDGET_MS * 0.8;
+
+      const resume = loadResumeState(args);
       const result = await auditContentBlocks({
         config: runtimeConfig,
-        fetchContent: fetchContent ?? false
+        fetchContent: args.fetch_content ?? false,
+        resumeState: resume?.state ?? null,
+        shouldYield
       });
+
+      if (result?.status === "continuation_required") {
+        let token;
+        if (resume?.token) {
+          updateCheckpoint(resume.token, result.resume_state);
+          token = resume.token;
+        } else {
+          token = saveResumeState(toolName, args, result.resume_state);
+        }
+        return makeJsonToolResponse({
+          status: "partial",
+          message: "Content-block audit paused mid-way to stay inside the context limit. Call orbit_continue_job with the token below to finish.",
+          continuation_token: token,
+          progress: result.audit_partial,
+          continue_hint:
+            `Tell the user: "I've audited ${result.audit_partial.enriched_count} of ${result.audit_partial.total} content blocks so far — would you like me to continue with the rest?" ` +
+            `If they agree, call orbit_continue_job with continuation_token "${token}" to resume. Previous work is preserved.`
+        });
+      }
+
+      if (resume?.token) completeCheckpoint(resume.token);
       return makeJsonToolResponse(result);
     }
   );
@@ -3019,15 +3114,44 @@ function registerTools() {
         days: z.number().optional().describe("Lookback period in days (default: 30)")
       }
     },
-    async ({ canvas_ids: canvasIds, campaign_ids: campaignIds, segment_ids: segmentIds, include_kpis: includeKpis, days }) => {
+    async (args) => {
+      const toolName = "orbit_braze_performance";
+      const TOOL_BUDGET_MS = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+      const startedAt = Date.now();
+      const shouldYield = () => Date.now() - startedAt > TOOL_BUDGET_MS * 0.8;
+
+      const resume = loadResumeState(args);
       const result = await pullBrazePerformance({
         config: runtimeConfig,
-        canvasIds: canvasIds ?? [],
-        campaignIds: campaignIds ?? [],
-        segmentIds: segmentIds ?? [],
-        includeKpis: includeKpis !== false,
-        days: days ?? 30
+        canvasIds: args.canvas_ids ?? [],
+        campaignIds: args.campaign_ids ?? [],
+        segmentIds: args.segment_ids ?? [],
+        includeKpis: args.include_kpis !== false,
+        days: args.days ?? 30,
+        resumeState: resume?.state ?? null,
+        shouldYield
       });
+
+      if (result?.status === "continuation_required") {
+        let token;
+        if (resume?.token) {
+          updateCheckpoint(resume.token, result.resume_state);
+          token = resume.token;
+        } else {
+          token = saveResumeState(toolName, args, result.resume_state);
+        }
+        return makeJsonToolResponse({
+          status: "partial",
+          message: "Performance pull paused mid-way to stay inside the context limit. Call orbit_continue_job with the token below to finish.",
+          continuation_token: token,
+          progress: result.perf_partial,
+          continue_hint:
+            `Tell the user, plainly: "I've pulled performance data for ${result.perf_partial.canvases_done} canvases, ${result.perf_partial.campaigns_done} campaigns, and ${result.perf_partial.segments_done} segments so far — would you like me to continue?" ` +
+            `If they agree, call orbit_continue_job with continuation_token "${token}" to finish the pull. Previous results are preserved.`
+        });
+      }
+
+      if (resume?.token) completeCheckpoint(resume.token);
       return makeJsonToolResponse(result);
     }
   );
@@ -3621,6 +3745,97 @@ function registerTools() {
       return makeJsonToolResponse(result);
     }
   );
+
+  registerToolSafe(
+    "orbit_continue_job",
+    {
+      title: "Continue a paused Orbit operation",
+      description:
+        "Resume a prior Orbit tool call that hit the Claude context limit before finishing. Pass the continuation_token from the earlier response — Orbit will reload the checkpointed work state and pick up where it left off. If the token has expired (>1h old), was never created, or is already in progress, you'll get a structured error explaining what to do next.",
+      inputSchema: {
+        continuation_token: z.string().min(1).describe("The continuation_token returned by a prior tool response that hit the context limit.")
+      }
+    },
+    async (args) => {
+      const token = args?.continuation_token;
+      if (!token) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: "missing_token",
+          message: "continuation_token is required.",
+          suggested_next_steps: ["Pass the continuation_token from the prior tool response."]
+        });
+      }
+
+      // Attempt to claim the checkpoint — rejects if already in use
+      // elsewhere, expired, or missing.
+      const claim = claimCheckpoint(token);
+      if (!claim.ok) {
+        const info = checkpointInfo(token);
+        if (claim.reason === "in_use") {
+          return makeJsonToolResponse({
+            status: "error",
+            code: "already_in_progress",
+            message: "This continuation is already being processed. Wait for it to complete before calling again.",
+            suggested_next_steps: ["Tell the user another resume is already in flight; ask them to wait a moment and try again."]
+          });
+        }
+        return makeJsonToolResponse({
+          status: "error",
+          code: "continuation_expired",
+          message: "This continuation has expired or wasn't found. Continuations live for one hour and are cleared if Orbit restarts.",
+          suggested_next_steps: [
+            "Tell the user the paused work has expired (continuations don't persist forever).",
+            "Offer to re-run the original request fresh — they shouldn't have to re-describe what they wanted."
+          ]
+        });
+      }
+
+      const { entry } = claim;
+
+      // Version mismatch — the tool may have changed between save
+      // and resume. Safer to fail than return subtly-wrong results.
+      if (entry.version !== ORBIT_VERSION) {
+        releaseCheckpoint(token);
+        completeCheckpoint(token);
+        return makeJsonToolResponse({
+          status: "error",
+          code: "version_mismatch",
+          message: `Continuation was saved under Orbit ${entry.version}; you're on ${ORBIT_VERSION}. Safer to restart the operation than resume across versions.`,
+          suggested_next_steps: [
+            "Tell the user Orbit updated between calls so the paused work can't resume safely.",
+            "Offer to re-run the original request under the current version."
+          ]
+        });
+      }
+
+      // Look up the original tool's raw handler and redispatch with
+      // the _continue_token passthrough. The wrapper runs again so
+      // the resumed call gets its own deadline + truncation + trace.
+      const handler = TOOL_HANDLERS.get(entry.tool);
+      if (!handler) {
+        releaseCheckpoint(token);
+        completeCheckpoint(token);
+        return makeJsonToolResponse({
+          status: "error",
+          code: "tool_not_found",
+          message: `Checkpoint references tool "${entry.tool}" which is no longer registered.`,
+          suggested_next_steps: [
+            "Tell the user the paused operation's source tool is gone (likely after an Orbit update).",
+            "Offer to re-run the original request using current tools."
+          ]
+        });
+      }
+
+      try {
+        const resumeArgs = { ...entry.args, _continue_token: token };
+        const wrapped = withToolErrorHandling(entry.tool, handler);
+        return await wrapped(resumeArgs, {});
+      } finally {
+        releaseCheckpoint(token);
+      }
+    }
+  );
 }
 
 function requireSkill(name) {
@@ -3881,10 +4096,77 @@ function withToolErrorHandling(toolName, handler) {
 /**
  * Drop-in replacement for server.registerTool that wraps the handler
  * in withToolErrorHandling. Every tool registration in this file uses
- * this instead of calling server.registerTool directly.
+ * this instead of calling server.registerTool directly. The raw
+ * handler is cached in TOOL_HANDLERS (declared near the top of this
+ * file so registerTools() can populate it at module load) so
+ * orbit_continue_job can redispatch resumed calls.
  */
 function registerToolSafe(name, schema, handler) {
+  TOOL_HANDLERS.set(name, handler);
   return server.registerTool(name, schema, withToolErrorHandling(name, handler));
+}
+
+// ──────────────────────────────────────────────────────────────
+// Continuation API exposed to tool handlers.
+//
+// Heavy tools that want to be resumable call these. Example pattern
+// inside a tool:
+//
+//   registerToolSafe("orbit_audit_braze_instance", schema, async (args) => {
+//     const started = Date.now();
+//     // Load any prior checkpoint
+//     const prior = loadResumeState(args);
+//     let cursor = prior?.cursor ?? 0;
+//     const accumulator = prior?.accumulator ?? [];
+//     while (cursor < total) {
+//       accumulator.push(await fetchPage(cursor));
+//       cursor += 1;
+//       // At ~80% of budget, bail and return a partial with a token.
+//       if (Date.now() - started > deadlineMs * 0.8) {
+//         const token = saveResumeState(args, { cursor, accumulator });
+//         return makeJsonToolResponse({
+//           status: "partial",
+//           continuation_token: token,
+//           completed: accumulator.length,
+//           total_estimated: total,
+//           partial: accumulator,
+//         });
+//       }
+//     }
+//     if (prior?.token) completeCheckpoint(prior.token);
+//     return makeJsonToolResponse({ status: "ok", result: accumulator });
+//   });
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Inside a tool handler: read any resume state passed in by
+ * orbit_continue_job. Returns { token, state } or null.
+ *
+ * The handler should branch on null vs non-null to decide whether
+ * it's starting fresh or resuming.
+ */
+function loadResumeState(args) {
+  const token = args?._continue_token;
+  if (!token) return null;
+  const entry = _loadCheckpoint(token);
+  if (!entry) return null;
+  return { token, state: entry.state };
+}
+
+/**
+ * Inside a tool handler: save current work state and return a
+ * continuation token. The handler should then emit a response
+ * containing this token so Claude can offer a Continue follow-up.
+ *
+ * args should be the ORIGINAL args the handler received (with or
+ * without _continue_token; this strips it) — they're replayed on
+ * resume so the tool doesn't have to re-derive parameters from
+ * state alone.
+ */
+function saveResumeState(toolName, args, state) {
+  const cleanArgs = { ...args };
+  delete cleanArgs._continue_token;
+  return _saveCheckpoint(toolName, cleanArgs, state, ORBIT_VERSION);
 }
 
 function suggestedNextStepsForCode(code) {
