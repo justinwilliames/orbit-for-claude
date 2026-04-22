@@ -237,7 +237,11 @@ export function truncateLargePayload(payload, maxBytes = 200_000) {
     max_bytes: maxBytes,
     original_bytes: original.length,
     truncated_fields: truncatedFields,
-    hint: "Some arrays were truncated to fit Claude's context window. Narrow the query (shorter date range, fewer items) to get the complete dataset."
+    hint: "Some arrays were truncated to fit Claude's context window. Narrow the query (shorter date range, fewer items, specific IDs) to get the complete dataset.",
+    // Explicit instruction for Claude to offer the user a follow-up
+    // action. Worded in first-person-to-Claude so it reads as an
+    // operational hint, not user copy.
+    continue_hint: "Tell the user the response was trimmed to fit. Offer to re-run this with a narrower scope — e.g. pass a specific ID, a tighter date range, or a smaller limit — to fetch the rest. Don't assume the truncated items are uninteresting; ask before skipping them."
   };
 
   const finalBytes = JSON.stringify(clone).length;

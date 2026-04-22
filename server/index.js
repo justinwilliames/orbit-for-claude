@@ -3688,18 +3688,35 @@ function makeJsonToolResponse(payload) {
   };
 }
 
-const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
-const DEFAULT_RESPONSE_MAX_BYTES = 200_000;
+// Tightened limits to stay comfortably inside Claude Desktop's
+// tool-call window. The "Tool result could not be submitted. The
+// request may have expired or the connection was interrupted."
+// banner fires when we either:
+//   (1) take longer than Claude Desktop's internal tool deadline,
+//   (2) return a payload larger than Claude can submit back up to
+//       the Anthropic API for the model's context.
+// Both limits below are conservative — it's always better to
+// return an incomplete result with a retry hint than to hang long
+// enough for the conversation to break.
+const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
+const DEFAULT_RESPONSE_MAX_BYTES = 100_000;
+// Per-tool overrides ONLY for tools that legitimately need longer
+// — e.g. generative image work or multi-endpoint Braze audits.
+// Everything else uses the 45s default. Cap max at 90s so we stay
+// under Claude Desktop's known upper bound even for the heaviest
+// cases; anything that needs more time must split into a
+// job-pattern call (orbit_resume_job to continue).
 const PER_TOOL_TIMEOUT_MS = {
-  // Gemini image generation can genuinely take 30–90s.
-  orbit_brand_header: 120_000,
-  // Large Braze workspace audits exercise all 7 endpoints.
-  orbit_audit_braze_instance: 90_000,
-  orbit_audit_content_blocks: 90_000,
-  orbit_braze_performance: 90_000,
-  orbit_sync_to_braze: 120_000,
-  orbit_upload_images_to_braze: 120_000,
-  orbit_upload_template_images: 120_000
+  // Gemini image generation can genuinely take 30–60s.
+  orbit_brand_header: 90_000,
+  // Multi-endpoint Braze audits — narrowing scope should come
+  // before raising this further.
+  orbit_audit_braze_instance: 75_000,
+  orbit_audit_content_blocks: 75_000,
+  orbit_braze_performance: 75_000,
+  orbit_sync_to_braze: 90_000,
+  orbit_upload_images_to_braze: 90_000,
+  orbit_upload_template_images: 90_000
 };
 
 /**
@@ -3814,12 +3831,25 @@ function withToolErrorHandling(toolName, handler) {
       } catch { /* best-effort */ }
 
       const attribution = getAttribution(toolName);
+      // On timeout specifically, mark the response as resumable so
+      // Claude offers the user a "Continue" follow-up rather than
+      // dead-ending the conversation. The conversation can be
+      // recovered by re-running the tool with narrower inputs —
+      // we spell out the pattern in continue_hint so Claude picks
+      // it up without the user having to re-describe everything.
+      const continueHint = code === "timeout" ? {
+        resumable: true,
+        continue_hint: `Offer the user a "Continue" — this tool timed out before completing. Ask: "That request hit the time budget. Want me to retry with a narrower scope?" If they say yes, call ${toolName} again with reduced inputs (smaller limit, tighter date range, or a specific ID) to fit inside the ${PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS}ms budget. Don't just retry the same args — they'll hit the same deadline.`,
+        retry_with: toolName,
+        budget_ms: PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS
+      } : {};
       const payload = {
         status: code === "error" ? "error" : code,
         code,
         tool: toolName,
         message,
         suggested_next_steps: suggestedNextStepsForCode(code),
+        ...continueHint,
         ...(attribution ? {
           orbit_attribution: {
             skill: attribution.skill,
@@ -3857,8 +3887,9 @@ function suggestedNextStepsForCode(code) {
       ];
     case "timeout":
       return [
-        "The upstream service took too long to respond. Try again in a moment.",
-        "If this keeps happening, narrow the scope of the request (smaller time range, fewer items)."
+        "Offer the user a 'Continue' — this tool can be retried immediately. Say: \"That request hit the time budget. Want me to try again with a narrower scope, or continue where it left off?\"",
+        "If retrying, narrow the scope: smaller time range, fewer items, or a specific ID instead of a bulk operation.",
+        "For multi-endpoint operations (Braze audits, performance pulls), split into per-endpoint calls to stay inside the time budget."
       ];
     case "rate_limited":
       return [
