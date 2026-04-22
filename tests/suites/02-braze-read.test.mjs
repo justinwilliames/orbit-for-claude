@@ -198,7 +198,14 @@ describe("Braze read suite — audit, canvas/campaign/segment reads", () => {
       continuation_token: "nonexistent-token-abc123"
     });
     assert.equal(parsed.status, "error");
-    assert.equal(parsed.code, "continuation_expired");
+    // In a fresh MCP spawn the process uptime is < 1h, so an unknown
+    // token is classified as "lost on restart" rather than the generic
+    // "expired". Both codes are valid not-found responses; the test
+    // accepts either to stay robust across long-running test runs.
+    assert.ok(
+      parsed.code === "continuation_lost_on_restart" || parsed.code === "continuation_expired",
+      `Expected continuation_lost_on_restart or continuation_expired, got ${parsed.code}`
+    );
     assert.ok(
       Array.isArray(parsed.suggested_next_steps) && parsed.suggested_next_steps.length > 0,
       "Unknown-token response should carry suggested_next_steps for Claude to follow"

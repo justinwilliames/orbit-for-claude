@@ -35,6 +35,19 @@ import { randomBytes } from "node:crypto";
 const TTL_MS = 60 * 60 * 1000;
 
 /**
+ * When the Orbit process started. Used to distinguish "your checkpoint
+ * died because Orbit restarted" from "your checkpoint aged out of the
+ * 1-hour TTL" — both surface as "not found" in the registry, but they
+ * warrant very different explanations to the user.
+ *
+ * If the current uptime is less than TTL_MS, a not-found token MUST
+ * have died with the restart (it couldn't have existed longer than the
+ * process has). If uptime >= TTL_MS, we can't tell the difference —
+ * fall back to the generic "expired or never existed" message.
+ */
+const SERVER_STARTED_AT = Date.now();
+
+/**
  * Hard cap on concurrent checkpoints. Each is 10-50KB of state so
  * 20 is ~1MB worst-case — negligible. Oldest-first eviction when
  * the cap is hit.
@@ -175,7 +188,30 @@ export function checkpointInfo(token) {
   };
 }
 
+/**
+ * When a checkpoint is not found, classify the most-likely reason so
+ * the caller can give the user a specific, helpful message rather
+ * than the generic "expired" catch-all.
+ *
+ * Returns one of:
+ *   "server_restarted"        - process uptime < TTL_MS, so the
+ *                               checkpoint can only have died with a
+ *                               restart (it couldn't have TTL-expired).
+ *   "expired_or_never_existed" - process uptime >= TTL_MS, so we
+ *                               can't tell whether it aged out or
+ *                               was never issued in the first place.
+ */
+export function classifyMissingCheckpoint() {
+  const uptime = Date.now() - SERVER_STARTED_AT;
+  return uptime < TTL_MS ? "server_restarted" : "expired_or_never_existed";
+}
+
 /** Exposed for test harnesses only. */
 export function _resetForTests() {
   checkpoints.clear();
+}
+
+/** Exposed for test harnesses only. Lets tests simulate a long-running process. */
+export function _getServerStartedAt() {
+  return SERVER_STARTED_AT;
 }

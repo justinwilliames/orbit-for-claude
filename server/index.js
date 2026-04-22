@@ -30,6 +30,7 @@ import {
   completeCheckpoint,
   updateCheckpoint,
   checkpointInfo,
+  classifyMissingCheckpoint,
 } from "./continuation.js";
 
 /**
@@ -3778,6 +3779,23 @@ function registerTools() {
             code: "already_in_progress",
             message: "This continuation is already being processed. Wait for it to complete before calling again.",
             suggested_next_steps: ["Tell the user another resume is already in flight; ask them to wait a moment and try again."]
+          });
+        }
+        // Distinguish "Orbit restarted since you paused" from "an
+        // hour has passed or the token was never valid". Both surface
+        // as not-found in the registry, but the user-facing reason is
+        // very different — framing it accurately saves a support round
+        // trip where the user insists "but I only paused 5 minutes ago".
+        const reason = classifyMissingCheckpoint();
+        if (reason === "server_restarted") {
+          return makeJsonToolResponse({
+            status: "error",
+            code: "continuation_lost_on_restart",
+            message: "This continuation was cleared when Orbit restarted. Paused work is held in memory only and doesn't survive an Orbit restart (quitting Claude Desktop, reloading the extension, or a machine sleep/wake cycle).",
+            suggested_next_steps: [
+              "Tell the user the paused work was cleared by an Orbit restart — not a timeout. Continuations live in memory only and don't survive a restart.",
+              "Offer to re-run the original request fresh — they shouldn't have to re-describe what they wanted."
+            ]
           });
         }
         return makeJsonToolResponse({
