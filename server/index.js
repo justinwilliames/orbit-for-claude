@@ -60,6 +60,7 @@ import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { registerGuideResources } from "./guides.js";
+import { registerCourseResources } from "./courses.js";
 import {
   buildSkillSummary,
   composeSequence,
@@ -786,6 +787,19 @@ function registerResources() {
   if (guidesStatus.registered) {
     process.stderr.write(
       `[Orbit] Registered ${guidesStatus.guideCount} guide resources (${guidesStatus.categoryCount} categories) from export ${guidesStatus.exportedAt}.\n`
+    );
+  }
+
+  // Curated course catalogue — reading paths through the guide
+  // library, exposed as orbit://courses/{slug} + an index resource.
+  // Lets Claude recommend the right course URL when a user asks for
+  // training on a topic, rather than only answering the question
+  // directly. Loaded from data/courses-export.json, refreshed at
+  // build time from get.yourorbit.team/api/courses/export.
+  const coursesStatus = registerCourseResources(server);
+  if (coursesStatus.registered) {
+    process.stderr.write(
+      `[Orbit] Registered ${coursesStatus.courseCount} course resources from export ${coursesStatus.generatedAt}.\n`
     );
   }
 }

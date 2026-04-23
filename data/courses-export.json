@@ -1,0 +1,183 @@
+{
+  "version": "1",
+  "siteBaseUrl": "https://get.yourorbit.team",
+  "generatedAt": "2026-04-23T01:56:09.411Z",
+  "courses": [
+    {
+      "slug": "lifecycle-fundamentals",
+      "title": "Lifecycle Foundations",
+      "level": "beginner",
+      "levelLabel": "Beginner",
+      "tagline": "The core loop — why lifecycle exists, how audiences work, and what your first program looks like.",
+      "description": "Start here if you're new to CRM / lifecycle or you've been running campaigns without a clear mental model. You'll come out able to explain why retention compounds, how to segment without over-engineering it, and what a good first program ships. Seven guides, roughly 70 minutes end-to-end.",
+      "guideSlugs": [
+        "what-is-lifecycle-marketing",
+        "retention-economics-roi",
+        "segmentation-beyond-rfm",
+        "welcome-email-sequence",
+        "subject-line-anatomy",
+        "email-deliverability-guide",
+        "cadence-question"
+      ],
+      "guideCount": 7,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/lifecycle-fundamentals"
+    },
+    {
+      "slug": "building-lifecycle-programs",
+      "title": "Programs That Compound",
+      "level": "intermediate",
+      "levelLabel": "Intermediate",
+      "tagline": "The canonical flows — onboarding, abandoned cart, win-back, post-purchase — and how to measure them honestly.",
+      "description": "For operators already running programs who want to level up. Covers how to pick which programs to build first, the four canonical flows you'll ship, the measurement discipline that separates 'I launched it' from 'I know it works,' and how to personalise without crossing the creepy line. Eight guides, roughly 100 minutes end-to-end.",
+      "guideSlugs": [
+        "choosing-lifecycle-programs",
+        "onboarding-email-flows",
+        "abandoned-cart-emails",
+        "winback-flows-examples",
+        "post-purchase-emails",
+        "holdout-group-design",
+        "personalisation-not-creepy",
+        "lifecycle-metrics-dashboard"
+      ],
+      "guideCount": 8,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/building-lifecycle-programs"
+    },
+    {
+      "slug": "deliverability-and-optimisation",
+      "title": "Deliverability Mastery",
+      "level": "advanced",
+      "levelLabel": "Advanced",
+      "tagline": "The infrastructure and measurement that decides whether any of the work above reaches a human.",
+      "description": "For senior operators. The plumbing that makes the rest of lifecycle work — authentication, reputation, IP warming, causal measurement, attribution. Starts with the systems-level mental model that ties it all together, then dives into each piece. This is the work you're glad you did when something breaks at 9pm on a Friday. Eight guides, roughly 112 minutes end-to-end.",
+      "guideSlugs": [
+        "deliverability-mental-model",
+        "ip-warmup-braze",
+        "spf-dkim-dmarc-explained",
+        "bimi-authentication",
+        "google-postmaster-walkthrough",
+        "incrementality-test-design",
+        "attribution-models-lifecycle",
+        "reputation-recovery-playbook"
+      ],
+      "guideCount": 8,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/deliverability-and-optimisation"
+    },
+    {
+      "slug": "starting-a-program",
+      "title": "Launch Your First Program",
+      "level": "beginner",
+      "levelLabel": "Beginner",
+      "tagline": "You've got a list and a brief. Here's how to ship your first real program — welcome, cadence, and the transactional layer that quietly does most of the work.",
+      "description": "For someone about to build their first lifecycle program. Covers the 72-hour activation window, welcome sequencing, how often to send, the role of transactional email, and birthday / anniversary programs (plus when NOT to ship one). End-to-end in under an hour.",
+      "guideSlugs": [
+        "72-hour-aha-moment",
+        "welcome-email-sequence",
+        "cadence-question",
+        "transactional-emails",
+        "birthday-anniversary-emails"
+      ],
+      "guideCount": 5,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/starting-a-program"
+    },
+    {
+      "slug": "email-craft-that-converts",
+      "title": "The Email Craft Playbook",
+      "level": "beginner",
+      "levelLabel": "Beginner",
+      "tagline": "Subject lines, preheaders, copy structure, personalisation — the small decisions that compound into opens, clicks, and conversions.",
+      "description": "The foundational craft of lifecycle email: subject-line anatomy, preheader discipline, the copy pyramid, brand voice, emoji use (and misuse), and personalisation that doesn't cross the creepy line. End-to-end in about 55 minutes.",
+      "guideSlugs": [
+        "subject-line-anatomy",
+        "preheader-text",
+        "email-copywriting-pyramid",
+        "brand-voice-in-lifecycle",
+        "emoji-in-subject-lines",
+        "personalisation-not-creepy"
+      ],
+      "guideCount": 6,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/email-craft-that-converts"
+    },
+    {
+      "slug": "winning-the-inbox",
+      "title": "Winning the Inbox",
+      "level": "advanced",
+      "levelLabel": "Advanced",
+      "tagline": "The deliverability work that decides whether any of your lifecycle effort reaches a human. List hygiene, bounces, complaints, MPP, Gmail quirks.",
+      "description": "Hands-on deliverability for operators with enough scale to actually see the problems. Covers list hygiene without nuking your audience, what drives bounces vs complaints, why Apple Mail Privacy broke measurement, the 102KB Gmail clip, and what the Promotions tab means for your campaigns. Roughly 80 minutes end-to-end.",
+      "guideSlugs": [
+        "email-deliverability-guide",
+        "list-hygiene-policy",
+        "bounce-rate-management",
+        "spam-complaints-playbook",
+        "apple-mpp-four-years",
+        "gmail-clipping-102kb",
+        "gmail-tabs-promotions"
+      ],
+      "guideCount": 7,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/winning-the-inbox"
+    },
+    {
+      "slug": "ecommerce-lifecycle",
+      "title": "Ecommerce Retention",
+      "level": "intermediate",
+      "levelLabel": "Intermediate",
+      "tagline": "The programs that move ecommerce revenue — cart recovery, browse abandonment, post-purchase cross-sell, replenishment, reviews, shipping thresholds.",
+      "description": "Ecom-specific course for operators running programs at retail, DTC, or marketplace companies. Covers the four highest-ROI triggered flows, how to time post-purchase outreach, when replenishment actually works, and how to use shipping thresholds to nudge AOV. 6 guides, ~60 minutes end-to-end.",
+      "guideSlugs": [
+        "abandoned-cart-emails",
+        "browse-abandonment",
+        "post-purchase-emails",
+        "replenishment-emails",
+        "review-request-emails",
+        "free-shipping-threshold"
+      ],
+      "guideCount": 6,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/ecommerce-lifecycle"
+    },
+    {
+      "slug": "saas-lifecycle",
+      "title": "SaaS Activation & Retention",
+      "level": "intermediate",
+      "levelLabel": "Intermediate",
+      "tagline": "Lifecycle for subscription products. Activation, trial conversion, churn saves, and win-back — the four programs SaaS teams actually need.",
+      "description": "For PLG or subscription SaaS operators. Covers activation timing, onboarding email flow design, trial-to-paid conversion sequencing, subscription-save plays when paying users signal churn, and win-back for cancelled subs. Plus the lifecycle-at-startup specifics that differ from scaled programs. 6 guides, ~65 minutes end-to-end.",
+      "guideSlugs": [
+        "72-hour-aha-moment",
+        "onboarding-email-flows",
+        "trial-to-paid-conversion",
+        "subscription-churn-saves",
+        "reactivation-vs-winback",
+        "lifecycle-for-startups"
+      ],
+      "guideCount": 6,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/saas-lifecycle"
+    },
+    {
+      "slug": "advanced-experimentation",
+      "title": "A/B Testing That Sticks",
+      "level": "advanced",
+      "levelLabel": "Advanced",
+      "tagline": "Causal measurement, incrementality tests, holdout design, attribution, price testing, cohort analysis. The measurement work that pays for itself.",
+      "description": "For senior operators running mature lifecycle programs. Covers incrementality test design, proper holdout groups, the honest version of attribution, price-testing inside lifecycle channels, churn cohort analysis, and inbox-placement testing. This is the measurement that separates lifecycle teams reporting real revenue from ones reporting attributed numbers. 6 guides, ~90 minutes end-to-end.",
+      "guideSlugs": [
+        "incrementality-test-design",
+        "holdout-group-design",
+        "attribution-models-lifecycle",
+        "price-testing-email",
+        "churn-cohort-analysis",
+        "inbox-placement-testing"
+      ],
+      "guideCount": 6,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/advanced-experimentation"
+    }
+  ]
+}

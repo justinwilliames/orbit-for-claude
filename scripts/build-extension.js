@@ -30,6 +30,12 @@ execSync("node server/build-skill-manifest.js", { cwd: ROOT_DIR, stdio: "inherit
 console.log("Refreshing guide library export...");
 execSync("node scripts/fetch-guides.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
 
+// Refresh the courses export — same pattern, same resilience. Lets
+// Claude point users at the right course URL on the website when
+// they ask for training on a topic the courses cover.
+console.log("Refreshing courses export...");
+execSync("node scripts/fetch-courses.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
+
 // Gate the build on the test suite. A failing test is a hard-stop;
 // the .mcpb cannot be packaged without every contract and error path
 // passing against the real MCP stdio transport. Skip by setting
