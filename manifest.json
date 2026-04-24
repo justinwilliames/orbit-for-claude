@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -349,6 +349,58 @@
     {
       "name": "orbit_modify_email_template",
       "description": "Apply structured edits (remove module, change CTA/heading text, swap image) to an assembled email referencing a learned template's module catalog."
+    },
+    {
+      "name": "orbit_check_email_auth",
+      "description": "Resolve DNS records for a domain and verify SPF, DMARC, and DKIM (common selectors + any you supply). Returns pass/warn/fail with specific remediation strings."
+    },
+    {
+      "name": "orbit_check_bimi",
+      "description": "Validate a domain's BIMI record — SVG logo URL, VMC certificate, and DMARC-policy prerequisite check."
+    },
+    {
+      "name": "orbit_dark_mode_check",
+      "description": "Scan an HTML email for colour pairs that invert into invisible or low-contrast text in Apple Mail / Outlook dark mode."
+    },
+    {
+      "name": "orbit_accessibility_lint",
+      "description": "WCAG AA lint on email HTML — alt-text coverage, contrast ratios, semantic heading order, link-text quality, html lang, layout-table role=presentation."
+    },
+    {
+      "name": "orbit_rfm_score",
+      "description": "Score a customer list on RFM quintiles and classify each user into a named segment (Champions, Loyal, At Risk, Hibernating, …) with per-segment revenue share and recommended actions."
+    },
+    {
+      "name": "orbit_cohort_retention",
+      "description": "Build retention curves from enrollment + revenue-event data. Returns per-cohort period-over-period retention% plus an aggregate curve."
+    },
+    {
+      "name": "orbit_score_preheader",
+      "description": "Score an email preheader: client-by-client inbox-preview clipping, duplicate-subject risk, greeking, placeholder leakage."
+    },
+    {
+      "name": "orbit_audit_unsubscribe_page",
+      "description": "Fetch and lint an unsubscribe URL for one-click compliance, password-gate, preference-centre granularity, and Gmail / Yahoo 2024 bulk-sender rules."
+    },
+    {
+      "name": "orbit_validate_liquid",
+      "description": "Syntax + fallback check on Braze Liquid — tag balance, default-filter coverage, unknown-attribute detection against a supplied inventory."
+    },
+    {
+      "name": "orbit_compose_sms",
+      "description": "SMS composer — detect GSM-7 vs UCS-2 encoding, count segments, inject regional compliance footer (US CTIA, AU, UK/EU GDPR, CA CASL)."
+    },
+    {
+      "name": "orbit_free_shipping_threshold",
+      "description": "Free-shipping threshold calculator. Given AOV, margin, and shipping cost, returns conservative/standard/aggressive thresholds with net-contribution math."
+    },
+    {
+      "name": "orbit_replenishment_calc",
+      "description": "Given pack size and daily consumption, compute the 3-touch replenishment email schedule (early nudge, reminder, last-chance)."
+    },
+    {
+      "name": "orbit_build_exec_report",
+      "description": "Turn raw channel stats into a Notion-ready exec-summary markdown with headline numbers, per-channel table, and narrative."
     }
   ],
   "keywords": [

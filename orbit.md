@@ -149,6 +149,11 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `design-to-email-componentization` | Break a design into reusable, contract-based email components |
 | `email-template-learning` | Learn an existing HTML email template (Stripo-aware) — remember its modules + brand tokens and build/modify on-brand emails from it on request |
 | `braze-template-sync` | Publish reusable components and final HTML templates into Braze |
+| `reputation-recovery` | Emergency playbook when a sender is already in deliverability trouble (bounces/complaints/blacklist/placement drop) |
+| `apple-mpp-response` | Reframe engagement metrics and program decisions for audiences dominated by Apple Mail Privacy Protection |
+| `gmail-bulk-sender-compliance` | Defensible checklist against Google + Yahoo's Feb 2024 bulk-sender requirements (5k/day threshold) |
+| `esp-migration` | Move from one ESP to another without tanking reputation — 4-phase plan with dual-send cutover |
+| `quarterly-planning` | Turn annual OKRs into a prioritised 90-day lifecycle program backlog that survives exec review |
 
 ---
 
@@ -186,6 +191,15 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 
 **Learn an existing HTML template and build from it going forward:**
 `email-template-learning` (run orbit_learn_email_template on the pasted HTML first, then reference the returned template_id in every subsequent email build / edit)
+
+**Emergency deliverability recovery:**
+`reputation-recovery` → `orbit_check_email_auth` → `orbit_check_deliverability` → `orbit_rfm_score` (identify engaged tier) → `gmail-bulk-sender-compliance` (if Gmail-specific)
+
+**Move ESPs without burning reputation:**
+`martech-audit` (if target ESP not yet chosen) → `esp-migration` → `orbit_check_email_auth` → `ip-warmup-braze` (or website IP Warm-Up planner for other targets) → `orbit_validate_liquid` (migrate templates)
+
+**Plan a quarter of lifecycle work:**
+`quarterly-planning` → `orbit_build_exec_report` (baseline) → `orbit_rfm_score` + `orbit_cohort_retention` (audience sizing) → individual program skills for the top 5-7 picks
 
 ---
 

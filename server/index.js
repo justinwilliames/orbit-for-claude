@@ -106,6 +106,20 @@ import {
   buildEmailFromTemplate,
   modifyEmailTemplate
 } from "./stripo-template-learning.js";
+import { checkEmailAuth, checkBimi } from "./email-auth.js";
+import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
+import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
+import {
+  scorePreheader,
+  auditUnsubscribe,
+  validateLiquid,
+  composeSms
+} from "./content-extensions.js";
+import {
+  calcFreeShippingThreshold,
+  calcReplenishment,
+  buildExecReport
+} from "./ecomm-calcs.js";
 import {
   generateBrazeName,
   listBrazeNamerDimensions
@@ -3968,6 +3982,305 @@ function registerTools() {
         templateId,
         currentHtml,
         instructions,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // 0.16.0: Deliverability auth, HTML quality, segmentation math,
+  // content helpers, and ecomm calculators.
+  // -------------------------------------------------------------------
+
+  registerToolSafe(
+    "orbit_check_email_auth",
+    {
+      title: "Check Email Auth (SPF / DKIM / DMARC)",
+      description:
+        "Resolve real DNS records for a domain and return a verdict on SPF, DMARC, and DKIM selectors. Flags common deliverability issues — multiple SPF records, too many lookups, p=none DMARC, empty DKIM keys. Pass dkim_selectors if you know your ESP's selector; otherwise Orbit checks common defaults.",
+      inputSchema: {
+        domain: z.string().min(1).describe("Root domain — e.g. yourorbit.team (not www.)."),
+        dkim_selectors_json: z.string().optional().describe("Optional JSON array of DKIM selector names to probe, in addition to the common defaults.")
+      }
+    },
+    async ({ domain, dkim_selectors_json: dkimSelectorsJson }) => {
+      const { value: dkimSelectors, error } = parseToolJson(dkimSelectorsJson, "dkim_selectors_json", []);
+      if (error) return error;
+      const result = await checkEmailAuth({ domain, dkimSelectors });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_check_bimi",
+    {
+      title: "Check BIMI Record",
+      description:
+        "Validate the BIMI DNS record at <selector>._bimi.<domain>. Confirms SVG logo URL, VMC certificate presence, and that the domain's DMARC policy is strong enough (p=quarantine or p=reject) for Gmail / Yahoo's authenticated-brand rendering.",
+      inputSchema: {
+        domain: z.string().min(1).describe("Root domain."),
+        selector: z.string().optional().describe("BIMI selector (default: 'default').")
+      }
+    },
+    async ({ domain, selector }) => {
+      const result = await checkBimi({ domain, selector: selector ?? "default" });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_dark_mode_check",
+    {
+      title: "Dark Mode Rendering Check",
+      description:
+        "Parse an HTML email and flag invisible-text risk when Apple Mail / Outlook mobile invert colours in dark mode. Reports per-element colour pairs, checks for a prefers-color-scheme: dark media query, and recommends specific overrides.",
+      inputSchema: {
+        html: z.string().min(1).describe("The email HTML to analyse.")
+      }
+    },
+    async ({ html }) => {
+      const result = checkDarkModeRisk({ html });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_accessibility_lint",
+    {
+      title: "Email Accessibility Lint (WCAG AA)",
+      description:
+        "Run WCAG AA checks on email HTML: alt-text coverage, WCAG 4.5:1 contrast, semantic heading order, link-text quality, html lang attribute, layout-table role=presentation. Returns fail/warn/pass per rule with specific remediation.",
+      inputSchema: {
+        html: z.string().min(1).describe("The email HTML to lint.")
+      }
+    },
+    async ({ html }) => {
+      const result = accessibilityLint({ html });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_rfm_score",
+    {
+      title: "RFM Segmentation Score",
+      description:
+        "Score a customer list on Recency / Frequency / Monetary quintiles and assign each user to a named RFM segment (Champions, Loyal Customers, At Risk, Hibernating, Lost, etc.). Returns per-segment revenue share, user counts, average recency, and a recommended action per segment.",
+      inputSchema: {
+        users_json: z.string().min(1).describe("JSON array of users: [{ id?, email?, last_order_date, order_count, lifetime_revenue }, …]."),
+        reference_date: z.string().optional().describe("ISO date to score recency against. Defaults to today."),
+        output_dir: z.string().optional().describe("Optional directory to write the scored CSV + segment JSON.")
+      }
+    },
+    async ({ users_json: usersJson, reference_date: referenceDate, output_dir: outputDir }) => {
+      const { value: users, error } = parseToolJson(usersJson, "users_json", []);
+      if (error) return error;
+      const result = scoreRfm({ users, referenceDate, outputDir });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_cohort_retention",
+    {
+      title: "Cohort Retention Curve",
+      description:
+        "Build retention curves from enrollment + revenue-event data. Returns per-cohort period-by-period retention% + revenue, plus an aggregate curve across all cohorts. Powers retention-economics conversations beyond the simple LTV calculator.",
+      inputSchema: {
+        enrollments_json: z.string().min(1).describe("JSON array: [{ user_id, enrolled_at }, …]."),
+        events_json: z.string().optional().describe("JSON array: [{ user_id, event_at, revenue? }, …]. Optional — without it, all retention numbers are 0."),
+        period_days: z.number().optional().describe("Days per period (default: 30 — monthly cohorts)."),
+        periods_to_track: z.number().optional().describe("Number of periods to track (default: 12)."),
+        reference_date: z.string().optional().describe("ISO date to anchor 'today' against. Defaults to now."),
+        output_dir: z.string().optional().describe("Optional directory to write cohort JSON.")
+      }
+    },
+    async ({
+      enrollments_json: enrollmentsJson,
+      events_json: eventsJson,
+      period_days: periodDays,
+      periods_to_track: periodsToTrack,
+      reference_date: referenceDate,
+      output_dir: outputDir
+    }) => {
+      const { value: enrollments, error: e1 } = parseToolJson(enrollmentsJson, "enrollments_json", []);
+      if (e1) return e1;
+      const { value: events, error: e2 } = parseToolJson(eventsJson, "events_json", []);
+      if (e2) return e2;
+      const result = buildCohortRetention({
+        enrollments,
+        events,
+        periodDays: periodDays ?? 30,
+        periodsToTrack: periodsToTrack ?? 12,
+        referenceDate,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_score_preheader",
+    {
+      title: "Preheader Scorer",
+      description:
+        "Score an email preheader with client-by-client inbox-preview clipping (Gmail mobile 90 / desktop 110, Apple Mail 140, Outlook 55), duplicate-subject risk, greeking detection, and placeholder leakage. Returns per-client preview strings so you can see exactly what each inbox will show.",
+      inputSchema: {
+        preheader: z.string().min(1).describe("The preheader text."),
+        subject: z.string().optional().describe("Optional subject line to check for leading-phrase duplication.")
+      }
+    },
+    async ({ preheader, subject }) => {
+      const result = scorePreheader({ preheader, subject });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_audit_unsubscribe_page",
+    {
+      title: "Unsubscribe Page Audit",
+      description:
+        "Fetch an unsubscribe URL and lint for one-click compliance, password-gate, preference-centre granularity, and Gmail / Yahoo 2024 bulk-sender requirements.",
+      inputSchema: {
+        url: z.string().min(1).describe("The full unsubscribe URL to audit.")
+      }
+    },
+    async ({ url }) => {
+      const result = await auditUnsubscribe({ url });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_validate_liquid",
+    {
+      title: "Validate Braze Liquid",
+      description:
+        "Syntax-check a Braze Liquid snippet: balanced {{ }} and {% %}, if/endif and for/endfor pairs, fallback (| default:) presence on variable references, empty-default warnings, and optional cross-check against a supplied known-attributes inventory.",
+      inputSchema: {
+        snippet: z.string().min(1).describe("The Liquid snippet to validate."),
+        known_attributes_json: z.string().optional().describe("Optional JSON array of known attribute names (from Braze custom-attribute inventory).")
+      }
+    },
+    async ({ snippet, known_attributes_json: knownAttributesJson }) => {
+      const { value: knownAttributes, error } = parseToolJson(knownAttributesJson, "known_attributes_json", []);
+      if (error) return error;
+      const result = validateLiquid({ snippet, knownAttributes });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_compose_sms",
+    {
+      title: "Compose + Validate SMS",
+      description:
+        "Detect encoding (GSM-7 vs Unicode/UCS-2), compute segment count, inject the correct regional compliance footer (US CTIA, AU, UK/EU GDPR, CA CASL), and surface the final composed message with cost implications.",
+      inputSchema: {
+        body: z.string().min(1).describe("The SMS body copy."),
+        region: z.string().optional().describe("US | AU | UK | EU | CA | GLOBAL. Default: GLOBAL."),
+        brand: z.string().optional().describe("Brand name — required for US CTIA compliance."),
+        include_stop_line: z.boolean().optional().describe("Append STOP/opt-out line (default: true).")
+      }
+    },
+    async ({ body, region, brand, include_stop_line: includeStopLine }) => {
+      const result = composeSms({
+        body,
+        region: region ?? "GLOBAL",
+        brand,
+        includeStopLine: includeStopLine !== false
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_free_shipping_threshold",
+    {
+      title: "Free-Shipping Threshold Calculator",
+      description:
+        "Compute conservative / standard / aggressive free-shipping thresholds and recommend the one that maximises net contribution under a simple uplift-elasticity model. Surfaces the assumptions explicitly.",
+      inputSchema: {
+        current_aov: z.number().describe("Current AOV in dollars."),
+        gross_margin_pct: z.number().describe("Gross margin as a percentage (e.g. 45 for 45%)."),
+        shipping_cost: z.number().describe("Shipping cost per order in dollars."),
+        target_lift_pct: z.number().optional().describe("Target AOV lift percentage (default 15)."),
+        assumed_elasticity: z.number().optional().describe("How much of the AOV gap customers actually spend up to (default 0.5).")
+      }
+    },
+    async ({
+      current_aov: currentAov,
+      gross_margin_pct: grossMarginPct,
+      shipping_cost: shippingCost,
+      target_lift_pct: targetLiftPct,
+      assumed_elasticity: assumedElasticity
+    }) => {
+      const result = calcFreeShippingThreshold({
+        currentAov,
+        grossMarginPct,
+        shippingCost,
+        targetLiftPct,
+        assumedElasticity
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_replenishment_calc",
+    {
+      title: "Replenishment Timing Calculator",
+      description:
+        "Given pack size + daily consumption rate, compute pack duration and a 3-touch replenishment email schedule (early nudge, reminder, last-chance). Flags pack-duration-subscription fit.",
+      inputSchema: {
+        pack_units: z.number().describe("Units per pack (e.g. 60 capsules per bottle)."),
+        daily_consumption_units: z.number().describe("Units consumed per day (e.g. 2)."),
+        reminder_lead_days: z.number().optional().describe("Days before run-out to send the main reminder (default: 5).")
+      }
+    },
+    async ({
+      pack_units: packUnits,
+      daily_consumption_units: dailyConsumptionUnits,
+      reminder_lead_days: reminderLeadDays
+    }) => {
+      const result = calcReplenishment({
+        packUnits,
+        dailyConsumptionUnits,
+        reminderLeadDays
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_build_exec_report",
+    {
+      title: "Build Lifecycle Exec Report",
+      description:
+        "Transform raw channel performance stats into a Notion-ready exec-summary markdown with headline numbers, per-channel table, period-over-period deltas (when baseline supplied), and a 3-5 line narrative with recommended priorities.",
+      inputSchema: {
+        period_label: z.string().min(1).describe('Period label — e.g. "Q1 2026" or "March 2026".'),
+        channel_stats_json: z.string().min(1).describe("JSON array of { channel, sends, opens, clicks, conversions, revenue, baseline_open_rate_pct?, baseline_click_rate_pct?, baseline_revenue? } objects."),
+        program_highlights_json: z.string().optional().describe("Optional JSON array of short program-highlight strings to call out."),
+        output_dir: z.string().optional().describe("Optional directory to write the markdown + JSON files.")
+      }
+    },
+    async ({
+      period_label: periodLabel,
+      channel_stats_json: channelStatsJson,
+      program_highlights_json: programHighlightsJson,
+      output_dir: outputDir
+    }) => {
+      const { value: channelStats, error: e1 } = parseToolJson(channelStatsJson, "channel_stats_json", []);
+      if (e1) return e1;
+      const { value: programHighlights, error: e2 } = parseToolJson(programHighlightsJson, "program_highlights_json", []);
+      if (e2) return e2;
+      const result = buildExecReport({
+        periodLabel,
+        channelStats,
+        programHighlights,
         outputDir
       });
       return makeJsonToolResponse(result);
