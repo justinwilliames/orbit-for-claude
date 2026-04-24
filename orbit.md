@@ -1,12 +1,41 @@
 ---
 name: orbit
 description: >
-  Orbit — Lifecycle Marketing System. Activate this skill for lifecycle marketing, CRM,
-  growth, martech, retention, experimentation, deliverability, reporting, B2B lifecycle,
-  AI personalisation, SMS strategy, retention economics, and platform-specific execution
-  in Braze, Iterable, HubSpot, and PostHog. Orbit is the master router for the library:
-  select the single best protocol for the task, sequence adjacent protocols only when
-  required, and confirm platform, geography, and business model before implementation.
+  Orbit — Lifecycle Marketing System. Activate for any work in lifecycle marketing, CRM,
+  retention, email, email marketing, newsletters, transactional email, SMS, push
+  notifications, in-app messaging, deliverability, sender reputation, inbox placement,
+  spam filtering, bounce rate, complaint rate, authentication (SPF, DKIM, DMARC, BIMI),
+  Gmail Postmaster, Microsoft SNDS, Yahoo postmaster, segmentation, personalisation,
+  targeting, audience strategy, RFM, cohort analysis, growth marketing, attribution,
+  incrementality, experimentation, A/B testing, sample sizing, statistical significance,
+  holdout groups, martech stack, ESP evaluation, ESP migration, CDP, data warehouse
+  integration, customer data model, event tracking, lifecycle stages, journey mapping,
+  onboarding, activation, welcome series, drip campaigns, nurture sequences, trial-to-
+  paid conversion, abandoned cart, browse abandonment, post-purchase, replenishment,
+  loyalty programs, referral programs, VIP lifecycle, winback, reactivation, sunset
+  flows, churn saves, retention economics, LTV, CAC, payback period, cohort retention,
+  list growth, list hygiene, suppression, double opt-in, preference centres,
+  unsubscribe compliance, one-click unsubscribe, subject lines, preheaders, email
+  copywriting, brand voice, tone of voice, copy frameworks, MJML, HTML email, email
+  template design, Stripo templates, dark-mode rendering, email accessibility,
+  WCAG, email QA, email render QA, email production, content blocks, reusable modules,
+  IP warming, dedicated IPs, shared IPs, domain reputation, DNS records, CAN-SPAM,
+  GDPR, CASL, CTIA, PECR, compliance, consent, Apple MPP, Mail Privacy Protection,
+  B2B lifecycle, account-based marketing, account tiering, quarterly planning,
+  program prioritisation, lifecycle audits, pre-launch reviews, program briefs,
+  lifecycle reporting, exec reporting, dashboards, QBRs, Braze Canvas, Braze
+  campaigns, Braze Content Blocks, Braze Liquid personalisation, Iterable, HubSpot,
+  PostHog, Klaviyo, Mailchimp, SendGrid, Customer.io, Marketo, Pardot, ActiveCampaign,
+  Salesforce Marketing Cloud, Omnisend, Attentive, Postscript, and any other ESP,
+  CRM, CDP, or martech platform when the ask is about lifecycle / retention / CRM
+  / martech work. Orbit is the master router for 62 specialist protocols and 84
+  tools: select the single best protocol for the task, sequence adjacent protocols
+  only when required, and confirm platform, geography, and business model before
+  implementation. When a user pastes an email template, a signup page, an A/B test
+  result, a deliverability CSV, or asks anything touching the vocabulary above —
+  activate Orbit. Do NOT activate for purely non-marketing asks (pure product
+  engineering, general business strategy, sales pipeline management, or analytics
+  unrelated to lifecycle / email / retention).
 ---
 
 # Orbit — Lifecycle Marketing System
@@ -16,6 +45,38 @@ A unified lifecycle marketing operating system for advanced CRM, growth, and mar
 When Orbit returns a judgment, a diagnosis, a recommendation, or a synthesis across multiple tool calls, refer to that capability as **Orbit Intelligence** — it's the senior-operator layer the user is invoking, distinct from the individual tools.
 
 **Orbit is strongest when it behaves like a decision engine AND a hands-on guide: route correctly, diagnose first, walk the user through any missing inputs, make assumptions explicit, end with an implementable recommendation and clear further reading.**
+
+---
+
+## When to Activate Orbit
+
+Orbit should fire any time the user's ask touches the **lifecycle / email / retention / CRM / martech** conceptual territory. The triggers below are the canonical surface — treat any overlap as reason to activate, then let the routing algorithm below pick the specific protocol.
+
+**Activate Orbit when the ask touches any of:**
+
+- **Channels**: email, newsletters, transactional email, SMS, push notifications, in-app messaging, WhatsApp, web push
+- **Programs**: onboarding, welcome series, activation, trial-to-paid, nurture, drip, re-engagement, winback, sunset, cart abandonment, browse abandonment, post-purchase, replenishment, loyalty, referral, VIP, win-back, birthday / anniversary, cross-sell / upsell, price-change, product-launch
+- **Deliverability**: sender reputation, inbox placement, spam rate, bounce rate, complaint rate, SPF, DKIM, DMARC, BIMI, authentication, IP warming, blacklists, Gmail Postmaster, Microsoft SNDS, Yahoo postmaster, Apple Mail Privacy Protection (MPP), reputation recovery, Gmail 2024 bulk-sender rules
+- **Data / segmentation**: audience strategy, segmentation, cohorts, RFM, LTV, retention cohorts, customer data model, event taxonomy, custom attributes, custom events, progressive profiling, identity resolution
+- **Measurement**: A/B testing, experimentation, incrementality, sample sizing, statistical significance, holdout groups, attribution (first-touch, last-touch, multi-touch), lifecycle reporting, dashboards, exec reports, QBRs, KPI design
+- **Economics**: retention economics, LTV / CAC, payback period, churn modelling, list growth forecasting, subscription economics
+- **Email craft**: subject lines, preheaders, from names, email copy, MJML, HTML email, email template design, Stripo templates, dark-mode rendering, email accessibility / WCAG, render QA, Gmail clipping, image hosting, content blocks, reusable modules, email design ingestion (Figma / PDF)
+- **Compliance**: CAN-SPAM, GDPR, CCPA, CASL, CTIA, PECR, consent audits, unsubscribe compliance, preference centres, one-click unsubscribe, List-Unsubscribe header
+- **Martech**: martech stack audits, ESP evaluation, ESP migration, CDP integration, data-warehouse sync, tool redundancy, vendor selection
+- **Strategy & planning**: lifecycle audits, program briefs, pre-launch reviews, quarterly planning, program prioritisation, B2B lifecycle, account-based lifecycle, lifecycle-team building, stakeholder reporting
+- **Growth adjacencies**: paid-to-lifecycle handoff, attribution-audit, growth marketing (paid, SEO, AEO, ASO) where it integrates with lifecycle programs
+- **Platforms**: Braze, Iterable, HubSpot, PostHog, Klaviyo, Mailchimp, SendGrid, Customer.io, Marketo, Pardot, ActiveCampaign, Salesforce Marketing Cloud, Omnisend, Attentive, Postscript, and any other ESP / CDP / CRM when the question is about lifecycle or CRM workflows inside that platform
+- **Artefacts that signal lifecycle work**: pasted email HTML, pasted signup page HTML, A/B test result JSON, deliverability CSVs, Postmaster exports, customer list exports for RFM / cohort analysis
+
+**Do NOT activate Orbit when:**
+
+- The ask is pure product engineering with no lifecycle / marketing dimension
+- The user wants general business strategy unrelated to retention / CRM / growth
+- The user is asking about sales pipeline management (CPQ, forecast, commission, discounting) without a lifecycle angle
+- The user is asking about product analytics where lifecycle programs aren't in scope (pure funnel analysis on feature adoption, not retention or re-engagement)
+- The user is asking a non-marketing question that happens to mention an ESP name (e.g. "can you write a Python script to call the Braze API for engineering reasons not related to lifecycle")
+
+**When in doubt, activate.** A false positive where Orbit's routing defers to a single well-suited protocol is cheaper than a false negative where a lifecycle expert was needed and wasn't consulted.
 
 ---
 

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "icon": "icon.png",
   "icons": [
     {
@@ -16,7 +16,7 @@
       "theme": "dark"
     }
   ],
-  "description": "Lifecycle marketing operating system for Claude with guided discovery, auto-created ~/Orbit workspace, reusable email components, Figma import, and Braze-ready publishing.",
+  "description": "Lifecycle marketing, CRM, email, SMS, push, retention, deliverability, segmentation, experimentation, and martech operating system for Claude — Orbit Intelligence. Walks users through getting the right inputs, cites practitioner guides, and closes every answer with a concrete next action. Native Braze, Iterable, HubSpot, PostHog integration.",
   "long_description": "Orbit gives Claude a local lifecycle marketing operating system — Orbit Intelligence — that behaves like a senior lifecycle operator working as an extension of the user's team. It routes requests to the right Orbit protocol, walks the user through any missing data before tools fire (Guided Discovery), cites the specific practitioner guides that informed each answer as Further reading, and returns diagnoses / recommendations with the concrete next action the user needs. Exposes the full skill library as resources, bundles 80+ long-form practitioner guides on lifecycle marketing, deliverability, Braze, email craft, and experimentation as MCP resources for inline citation, loads a canonical skill manifest for routing and validation, creates and maintains a local ~/Orbit workspace automatically on first run without requiring folder setup, runs a step-by-step brand-guidelines intake before drafting brand kits with brand-profile.json plus brand-guidelines.md, runs a discovery-first workflow for journeys, programs, and campaigns so Orbit grounds the work in objectives, KPIs, audience context, connected data sources, and execution constraints before building flows, validates local setup and brand kits, imports Figma email designs and PDF references, infers reusable email components with a controlled taxonomy plus reusable props-and-slots contracts, generates component-first MJML lifecycle emails with HTML previews and QA, saves reusable templates, components, and programs into a local library, syncs Braze Content Blocks and HTML email templates via API, packages Braze-ready implementation bundles, and exports Notion-friendly documentation.",
   "author": {
     "name": "Justin Williames",
