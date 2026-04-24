@@ -147,6 +147,7 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `notion-documentation-export` | Export Notion-friendly documentation bundles and artifact manifests |
 | `email-design-ingestion` | Ingest Figma frames or PDF references into reusable Orbit design records |
 | `design-to-email-componentization` | Break a design into reusable, contract-based email components |
+| `email-template-learning` | Learn an existing HTML email template (Stripo-aware) — remember its modules + brand tokens and build/modify on-brand emails from it on request |
 | `braze-template-sync` | Publish reusable components and final HTML templates into Braze |
 
 ---
@@ -182,6 +183,9 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 
 **Move from design source to reusable email build:**
 `email-design-ingestion` → `design-to-email-componentization` → `email-production-system` → `email-render-qa` → `braze-template-sync`
+
+**Learn an existing HTML template and build from it going forward:**
+`email-template-learning` (run orbit_learn_email_template on the pasted HTML first, then reference the returned template_id in every subsequent email build / edit)
 
 ---
 

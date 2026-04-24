@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -337,6 +337,18 @@
     {
       "name": "orbit_check_version",
       "description": "Compare your installed Orbit version against the latest release on GitHub. Returns up_to_date, update_available, or ahead with a download link when an update is available."
+    },
+    {
+      "name": "orbit_learn_email_template",
+      "description": "Parse an HTML email template (Stripo-aware) into modules + brand tokens and save to Orbit's library so future conversations can reference it. Use this the first time a user pastes an email template."
+    },
+    {
+      "name": "orbit_build_email_from_template",
+      "description": "Compose an on-brand email from a previously-learned template's modules. Output is Stripo-pasteable with es-* / esd-* structure intact."
+    },
+    {
+      "name": "orbit_modify_email_template",
+      "description": "Apply structured edits (remove module, change CTA/heading text, swap image) to an assembled email referencing a learned template's module catalog."
     }
   ],
   "keywords": [

@@ -102,6 +102,11 @@ import {
   uploadTemplateImages
 } from "./braze-template-master.js";
 import {
+  learnEmailTemplate,
+  buildEmailFromTemplate,
+  modifyEmailTemplate
+} from "./stripo-template-learning.js";
+import {
   generateBrazeName,
   listBrazeNamerDimensions
 } from "./braze-namer.js";
@@ -3866,6 +3871,106 @@ function registerTools() {
       } finally {
         releaseCheckpoint(token);
       }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // Stripo-aware email template learning / building / modification
+  // -------------------------------------------------------------------
+
+  registerToolSafe(
+    "orbit_learn_email_template",
+    {
+      title: "Learn Email Template (Stripo-aware)",
+      description:
+        "Parse an HTML email template into Stripo-native modules + brand tokens and save it to Orbit's library. " +
+        "Use this the first time a user pastes an email template — Orbit will remember it and reference the modules in future conversations. " +
+        "Output preserves es-* / esd-* / MSO structure so the assembled HTML remains editable when pasted into Stripo.",
+      inputSchema: {
+        html: z.string().min(1).describe("The full HTML of the email template to learn."),
+        template_name: z.string().optional().describe("Human-readable name for this template (default: 'master-template')."),
+        output_dir: z.string().optional().describe("Optional directory to mirror the learned files into (in addition to the Orbit library).")
+      }
+    },
+    async ({ html, template_name: templateName, output_dir: outputDir }) => {
+      const result = learnEmailTemplate({ config: runtimeConfig, html, templateName, outputDir });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_build_email_from_template",
+    {
+      title: "Build Email From Learned Template (Stripo-aware)",
+      description:
+        "Compose a new on-brand email using the modules of a previously-learned template. " +
+        "Pass the template_id returned by orbit_learn_email_template. Optional module_selection (array of module ids, indices, or types) subsets which modules to include; default is all modules in source order. " +
+        "Output is Stripo-pasteable HTML with es-* / esd-* structure intact.",
+      inputSchema: {
+        template_id: z.string().min(1).describe("The template_id returned by orbit_learn_email_template (format: 'module:<slug>:<version>')."),
+        brief: z.string().optional().describe("Short prose brief describing the email's purpose. Used as context; not auto-parsed into slots. Use orbit_modify_email_template for precise slot edits."),
+        module_selection_json: z.string().optional().describe("JSON array of module ids, indices, or types to include. Default: all modules in source order."),
+        image_overrides_json: z.string().optional().describe("JSON object mapping old image URLs to new URLs — e.g. {\"https://old.cdn/a.png\":\"https://new.cdn/a.png\"}."),
+        output_dir: z.string().optional().describe("Optional directory to write the assembled HTML file.")
+      }
+    },
+    async ({
+      template_id: templateId,
+      brief,
+      module_selection_json: moduleSelectionJson,
+      image_overrides_json: imageOverridesJson,
+      output_dir: outputDir
+    }) => {
+      const { value: moduleSelection, error: selError } = parseToolJson(moduleSelectionJson, "module_selection_json", null);
+      if (selError) return selError;
+      const { value: imageOverrides, error: imgError } = parseToolJson(imageOverridesJson, "image_overrides_json", {});
+      if (imgError) return imgError;
+      const result = buildEmailFromTemplate({
+        config: runtimeConfig,
+        templateId,
+        brief,
+        moduleSelection,
+        imageOverrides,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_modify_email_template",
+    {
+      title: "Modify Email (Stripo-aware)",
+      description:
+        "Apply structured edits to an assembled email based on a learned template. " +
+        "Instructions are an array of operations: " +
+        "{op:'remove', target:'module_id:<id>' | 'module_type:<type>' | 'module_index:<n>'}, " +
+        "{op:'set_text', target:'first_cta' | 'first_heading', value:'...'}, " +
+        "{op:'set_text', find:'old text', value:'new text'}, " +
+        "{op:'swap_image', target:'<old_url>', value:'<new_url>'}.",
+      inputSchema: {
+        template_id: z.string().min(1).describe("The template_id returned by orbit_learn_email_template."),
+        current_html: z.string().optional().describe("Optional HTML to modify. If omitted, Orbit assembles a fresh copy of the full learned template first."),
+        instructions_json: z.string().min(1).describe("JSON array of instruction objects — see tool description for supported ops."),
+        output_dir: z.string().optional().describe("Optional directory to write the modified HTML file.")
+      }
+    },
+    async ({
+      template_id: templateId,
+      current_html: currentHtml,
+      instructions_json: instructionsJson,
+      output_dir: outputDir
+    }) => {
+      const { value: instructions, error: instError } = parseToolJson(instructionsJson, "instructions_json", []);
+      if (instError) return instError;
+      const result = modifyEmailTemplate({
+        config: runtimeConfig,
+        templateId,
+        currentHtml,
+        instructions,
+        outputDir
+      });
+      return makeJsonToolResponse(result);
     }
   );
 }
