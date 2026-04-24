@@ -154,6 +154,8 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `gmail-bulk-sender-compliance` | Defensible checklist against Google + Yahoo's Feb 2024 bulk-sender requirements (5k/day threshold) |
 | `esp-migration` | Move from one ESP to another without tanking reputation — 4-phase plan with dual-send cutover |
 | `quarterly-planning` | Turn annual OKRs into a prioritised 90-day lifecycle program backlog that survives exec review |
+| `email-production-qa` | Canonical pre-send QA gate — chains accessibility, dark-mode, and Gmail-clipping checks via orbit_qa_email |
+| `postmaster-tools-setup` | Set up Gmail Postmaster Tools and interpret the six dashboards — pairs with orbit_parse_postmaster_signal |
 
 ---
 
@@ -199,7 +201,19 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 `martech-audit` (if target ESP not yet chosen) → `esp-migration` → `orbit_check_email_auth` → `ip-warmup-braze` (or website IP Warm-Up planner for other targets) → `orbit_validate_liquid` (migrate templates)
 
 **Plan a quarter of lifecycle work:**
-`quarterly-planning` → `orbit_build_exec_report` (baseline) → `orbit_rfm_score` + `orbit_cohort_retention` (audience sizing) → individual program skills for the top 5-7 picks
+`quarterly-planning` → `orbit_build_exec_report` (baseline) → `orbit_rfm_score` + `orbit_cohort_retention` (audience sizing) → `orbit_list_growth_forecast` (12-month trajectory) → individual program skills for the top 5-7 picks
+
+**Pre-send QA gate (run before any email goes to Braze or production):**
+`email-production-qa` → `orbit_qa_email` → `orbit_validate_email_template` → `orbit_check_email_auth` → `orbit_score_subject_line` + `orbit_score_preheader` → ship
+
+**Diagnose Gmail deliverability with real telemetry:**
+`postmaster-tools-setup` (if not already set up) → `orbit_parse_postmaster_signal` → `orbit_check_email_auth` → `reputation-recovery` (if any metric fails)
+
+**Read a completed A/B test honestly:**
+`experiment-design` (to confirm the test was well-designed) → `orbit_parse_test_readout` → ship / iterate / kill
+
+**Audit consent compliance before sending to EU/UK users:**
+`orbit_gdpr_consent_audit` on the signup page, the email footer, and the preference centre — each has different expected checks
 
 ---
 

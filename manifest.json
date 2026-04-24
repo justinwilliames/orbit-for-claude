@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -400,7 +400,31 @@
     },
     {
       "name": "orbit_build_exec_report",
-      "description": "Turn raw channel stats into a Notion-ready exec-summary markdown with headline numbers, per-channel table, and narrative."
+      "description": "Turn raw channel stats into a Notion-ready exec-summary markdown with headline numbers, per-channel table, and narrative. Supports multi-currency via currency_code."
+    },
+    {
+      "name": "orbit_qa_email",
+      "description": "One-shot pre-send email QA gate — runs accessibility, dark-mode, and Gmail-clipping checks in a single call and returns a combined pass/warn/fail verdict."
+    },
+    {
+      "name": "orbit_render_email_preview",
+      "description": "Produce desktop, mobile, and dark-mode preview HTML artifacts from arbitrary email HTML."
+    },
+    {
+      "name": "orbit_parse_postmaster_signal",
+      "description": "Interpret Gmail Postmaster Tools data (CSV export or snapshot) with Gmail-threshold context and recommended actions per metric."
+    },
+    {
+      "name": "orbit_list_growth_forecast",
+      "description": "Project 12-month subscriber list trajectory from current size, acquisition, and churn. Returns trajectory table plus break-even / halving milestones."
+    },
+    {
+      "name": "orbit_gdpr_consent_audit",
+      "description": "Scan signup-page / email-footer / preference-centre HTML for GDPR consent signals — pre-ticked checkboxes, sender identifiability, purpose specificity, right to withdraw, privacy link."
+    },
+    {
+      "name": "orbit_parse_test_readout",
+      "description": "Turn A/B test counts into a written read-out with significance, 95% CI on rate difference, verdict (winner/loser/inconclusive), and ship-or-not recommendation."
     }
   ],
   "keywords": [

@@ -190,6 +190,23 @@ async function resolveDkim(domain, selectors) {
     "s2",
     "k1",
     "k2",
+    // Additional common defaults across major ESPs / providers.
+    "dkim",
+    "smtp",
+    "smtpapi",
+    "amazonses",
+    "ses",
+    "postmark",
+    "pm",
+    "mg",
+    "mailgun",
+    "sendgrid",
+    "sg",
+    "klavio1",
+    "klavio2",
+    "m1",
+    "m2",
+    "ed25519",
   ];
   const seen = new Set();
   const results = [];
@@ -329,31 +346,46 @@ function normaliseDomain(d) {
 }
 
 async function resolveTxtSafe(host) {
+  // dns.resolveTxt doesn't take an AbortSignal, so the timeout is a
+  // Promise.race — the dangling timer promise rejects after the
+  // deadline and we return a readable error.
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-    try {
-      // dns.resolveTxt returns string[][]; join fragments of each record.
-      const records = await Promise.race([
-        dns.resolveTxt(host),
-        new Promise((_, r) => setTimeout(() => r(new Error("timeout")), DEFAULT_TIMEOUT_MS)),
-      ]);
-      return { values: records.map((r) => r.join("")), error: null };
-    } finally {
-      clearTimeout(timer);
-    }
+    const records = await Promise.race([
+      dns.resolveTxt(host),
+      new Promise((_, r) => setTimeout(() => r(new Error("timeout")), DEFAULT_TIMEOUT_MS)),
+    ]);
+    // dns.resolveTxt returns string[][]; join fragments of each record.
+    return { values: records.map((r) => r.join("")), error: null };
   } catch (err) {
-    // ENOTFOUND / ENODATA / timeout all come through here. We surface
-    // a short readable string for the UI layer.
+    // ENOTFOUND / ENODATA / timeout all come through here.
     return { values: [], error: String(err?.code ?? err?.message ?? err) };
   }
 }
 
 function countSpfLookups(record) {
-  // Roughly: count mechanisms that trigger a DNS lookup. RFC 7208
-  // caps at 10 per SPF evaluation.
-  const lookupPatterns = /\b(include|a|mx|ptr|exists|redirect)\b[:=]/gi;
-  return (record.match(lookupPatterns) || []).length;
+  // Count mechanisms that trigger a DNS lookup per RFC 7208. Cap is
+  // 10 per SPF evaluation.
+  //
+  // The original implementation required a `:` or `=` after the
+  // mechanism name (e.g. `include:`, `redirect=`), which missed the
+  // bare forms `a`, `mx`, `ptr`, `exists` — all of which are valid
+  // mechanisms that DO trigger a lookup. A sender sitting right at
+  // the 10-lookup ceiling would have been told they were fine when
+  // they were actually over.
+  //
+  // We tokenise the record on whitespace, strip leading qualifiers
+  // (`+`, `-`, `~`, `?`), and count tokens whose base mechanism is
+  // lookup-inducing. Tokens with args (`include:x.com`) and tokens
+  // without args (bare `a`, `mx`) both get counted correctly.
+  const tokens = record.split(/\s+/);
+  const lookupMechanisms = new Set(["a", "mx", "ptr", "exists", "include", "redirect"]);
+  let count = 0;
+  for (const t of tokens) {
+    const stripped = t.replace(/^[+\-~?]/, "");
+    const base = stripped.split(/[:=]/)[0].toLowerCase();
+    if (lookupMechanisms.has(base)) count += 1;
+  }
+  return count;
 }
 
 function parseDmarcTags(record) {

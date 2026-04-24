@@ -196,16 +196,16 @@ export async function auditUnsubscribe({ url }) {
     issues.push({
       severity: "fail",
       message:
-        "Page requires a password — fails Gmail / Yahoo one-click unsubscribe (2024 bulk-sender rules).",
+        "Page requires a password — this will fail Gmail / Yahoo one-click unsubscribe (2024 bulk-sender rules).",
     });
   }
   if (!hasSimpleUnsubForm) {
     issues.push({
       severity: "warn",
-      message: "No obvious one-click unsubscribe form detected on the page.",
+      message: "No markup signals consistent with one-click unsubscribe — manual verification recommended.",
     });
   } else {
-    passes.push({ rule: "one-click-form", message: "One-click unsubscribe form detected." });
+    passes.push({ rule: "one-click-form", message: "Markup signals consistent with a one-click unsubscribe form." });
   }
 
   // 2. Preference-centre depth — check for multiple checkbox options
@@ -358,17 +358,49 @@ export function validateLiquid({ snippet, knownAttributes = [] }) {
   }
 
   // 5. Attribute-existence check against known inventory.
+  //
+  // We check each variable reference against the inventory at three
+  // levels of specificity (most-specific first):
+  //   a) full dotted path — `user.custom_data.plan_tier`
+  //   b) first-segment prefix — `user` (brand's root namespace)
+  //   c) final leaf — `plan_tier` (only if it's a unique leaf name
+  //      in the inventory; common names like `id`, `email`, `status`
+  //      are ignored at this level to reduce false positives)
+  //
+  // Liquid system prefixes (`content_blocks`, `${`, `campaign.`,
+  // `canvas_step`, `re-eligibility`, etc.) are always skipped — they
+  // aren't user attributes.
+  const LIQUID_SYSTEM_PREFIXES = [
+    "content_blocks", "campaign", "canvas_step", "message_variation",
+    "in_control_group", "workflow", "event_properties",
+  ];
+  const COMMON_LEAVES = new Set(["id", "email", "status", "name", "value", "type", "date"]);
   const unknownVars = [];
   if (knownAttributes.length > 0) {
     const known = new Set(knownAttributes.map((a) => String(a).toLowerCase()));
+    // Build a lookup of unique leaves for the low-confidence fallback.
+    const leafCounts = new Map();
+    for (const a of knownAttributes) {
+      const leaf = String(a).toLowerCase().split(".").pop();
+      leafCounts.set(leaf, (leafCounts.get(leaf) ?? 0) + 1);
+    }
     for (const v of varRefs) {
       const ref = v[1].trim().toLowerCase();
-      // only check direct attribute references, not nested paths
-      const top = ref.split(".").pop();
-      if (ref.startsWith("${") || ref.startsWith("content_blocks")) continue;
-      if (!known.has(top) && !known.has(ref)) {
-        unknownVars.push(v[1].trim());
-      }
+      if (ref.startsWith("${")) continue;
+      if (LIQUID_SYSTEM_PREFIXES.some((p) => ref.startsWith(p))) continue;
+      const segments = ref.split(".");
+      const fullPath = ref;
+      const rootNs = segments[0];
+      const leaf = segments[segments.length - 1];
+      // Most specific: full dotted path match.
+      if (known.has(fullPath)) continue;
+      // Namespace match (root segment registered).
+      if (known.has(rootNs)) continue;
+      // Leaf match — only if the leaf is unique and not a common
+      // generic name. Otherwise we'd false-positive on every `email`
+      // or `id` reference.
+      if (!COMMON_LEAVES.has(leaf) && leafCounts.get(leaf) === 1) continue;
+      unknownVars.push(v[1].trim());
     }
     if (unknownVars.length > 0) {
       issues.push({

@@ -139,29 +139,42 @@ export function calcReplenishment({
 
   const packDurationDays = packUnits / dailyConsumptionUnits;
 
-  // We build a 3-touch replenishment arc. Early nudge → reminder →
-  // last-chance. The "days from purchase" anchors stay well below
-  // 100% consumption so the prompt lands before the customer has to
-  // improvise.
+  // We build a 3-touch replenishment arc. The reminder is the anchor
+  // (timed so the reorder arrives before pack runs out); early nudge
+  // lands at least 3 days BEFORE reminder; last-chance lands a few
+  // days AFTER pack exhaustion. We enforce strict monotonic ordering
+  // with minimum gaps so short pack durations can't produce
+  // out-of-order touches.
+  const reminderDay = Math.max(2, Math.round(packDurationDays - reminderLeadDays));
+  // Natural early-nudge anchor — 3/4 of the way through the pack.
+  const naturalEarly = Math.round(packDurationDays * 0.75);
+  // Enforce: early lands at least 3 days before reminder, but never
+  // before day 1. For very short pack durations, early nudge gets
+  // compressed or absorbed into the reminder (flagged separately).
+  const earlyDay = Math.max(1, Math.min(naturalEarly, reminderDay - 3));
+  const lastChanceDay = Math.max(reminderDay + 3, Math.round(packDurationDays + 3));
+
+  const orderingIssue = earlyDay >= reminderDay || reminderDay >= lastChanceDay;
+
   const touches = [
     {
       touch: 1,
       label: "Early nudge",
-      days_from_purchase: Math.max(1, Math.round(packDurationDays * 0.75)),
+      days_from_purchase: earlyDay,
       intent:
         "Remind the customer they're three-quarters of the way through — perfect time to top up without urgency pricing.",
     },
     {
       touch: 2,
       label: "Reminder",
-      days_from_purchase: Math.max(2, Math.round(packDurationDays - reminderLeadDays)),
+      days_from_purchase: reminderDay,
       intent:
         "Primary replenishment prompt — timed so the reorder arrives before they run out.",
     },
     {
       touch: 3,
       label: "Last-chance",
-      days_from_purchase: Math.round(packDurationDays + 3),
+      days_from_purchase: lastChanceDay,
       intent:
         "Customer has likely run out. Message shifts from reminder to 'don't go without' — good place for a small discount if conversion lags.",
     },
@@ -172,6 +185,9 @@ export function calcReplenishment({
     pack_duration_days: round2(packDurationDays),
     reminder_lead_days: reminderLeadDays,
     touches,
+    ordering_warning: orderingIssue
+      ? "Pack duration is short enough that the 3-touch arc has been compressed; one or more touches share or invert their natural ordering. Consider reducing reminder_lead_days or skipping the early nudge."
+      : null,
     subscription_recommendation:
       packDurationDays >= 20 && packDurationDays <= 60
         ? "Pack duration is in the classic subscription sweet spot (3-8 weeks). Offer a subscribe-and-save alongside one-time purchase."
@@ -194,6 +210,8 @@ export function buildExecReport({
   periodLabel,
   channelStats,
   programHighlights = [],
+  currencyCode = "USD",
+  currencySymbol,
   outputDir,
 }) {
   if (!periodLabel || typeof periodLabel !== "string") {
@@ -211,6 +229,12 @@ export function buildExecReport({
         "channel_stats: array of { channel, sends, opens, clicks, conversions, revenue, baseline_* (optional) } objects.",
     };
   }
+
+  // Resolve currency symbol. An explicit `currencySymbol` takes
+  // precedence; otherwise pick from the code lookup table; otherwise
+  // default to "$" with the USD code.
+  const resolvedSymbol = currencySymbol ?? CURRENCY_SYMBOLS[currencyCode] ?? "$";
+  const fmtMoney = (n) => `${resolvedSymbol}${Math.round(n).toLocaleString()}`;
 
   // Compute per-channel rates + period-over-period deltas when a
   // baseline is supplied.
@@ -256,6 +280,7 @@ export function buildExecReport({
     totals,
     channels,
     programHighlights,
+    fmtMoney,
   });
 
   const markdown = renderExecMarkdown({
@@ -264,6 +289,7 @@ export function buildExecReport({
     channels,
     programHighlights,
     narrative,
+    fmtMoney,
   });
 
   let written = null;
@@ -295,7 +321,8 @@ export function buildExecReport({
     narrative,
     markdown,
     output_files: written,
-    message: `Exec summary for ${periodLabel}: ${fmtCurrency(totals.revenue)} revenue across ${totals.sends.toLocaleString()} sends, ${channels.length} channel(s).`,
+    currency: { code: currencyCode, symbol: resolvedSymbol },
+    message: `Exec summary for ${periodLabel}: ${fmtMoney(totals.revenue)} revenue across ${totals.sends.toLocaleString()} sends, ${channels.length} channel(s).`,
     orbit_attribution: {
       heavy: true,
       signature: "Built with Orbit · Exec Report",
@@ -303,7 +330,7 @@ export function buildExecReport({
   };
 }
 
-function buildNarrative({ periodLabel, totals, channels, programHighlights }) {
+function buildNarrative({ periodLabel, totals, channels, programHighlights, fmtMoney }) {
   const topChannel = [...channels].sort((a, b) => b.revenue - a.revenue)[0];
   const weakest = [...channels]
     .filter((c) => c.delta_revenue_pct !== null)
@@ -311,11 +338,11 @@ function buildNarrative({ periodLabel, totals, channels, programHighlights }) {
 
   const lines = [];
   lines.push(
-    `In ${periodLabel}, lifecycle drove ${fmtCurrency(totals.revenue)} across ${totals.sends.toLocaleString()} sends (${rate(totals.conversions, totals.sends)}% overall CVR).`,
+    `In ${periodLabel}, lifecycle drove ${fmtMoney(totals.revenue)} across ${totals.sends.toLocaleString()} sends (${rate(totals.conversions, totals.sends)}% overall CVR).`,
   );
   if (topChannel) {
     lines.push(
-      `Top revenue channel: ${topChannel.channel} at ${fmtCurrency(topChannel.revenue)} (${round2((topChannel.revenue / Math.max(totals.revenue, 1)) * 100)}% of total).`,
+      `Top revenue channel: ${topChannel.channel} at ${fmtMoney(topChannel.revenue)} (${round2((topChannel.revenue / Math.max(totals.revenue, 1)) * 100)}% of total).`,
     );
   }
   if (weakest && weakest.delta_revenue_pct !== null && weakest.delta_revenue_pct < 0) {
@@ -332,35 +359,75 @@ function buildNarrative({ periodLabel, totals, channels, programHighlights }) {
   return lines;
 }
 
-function renderExecMarkdown({ periodLabel, totals, channels, programHighlights, narrative }) {
+// Escape user-supplied strings before they land in a markdown table.
+// Channel names with a `|` break the table; `<` can be interpreted
+// by renderers; a newline collapses the row. Minimal-surface
+// escape — we still want readable output.
+function escapeMarkdownCell(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\n+/g, " ")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderExecMarkdown({ periodLabel, totals, channels, programHighlights, narrative, fmtMoney }) {
   const fmtPct = (n) => (n == null ? "—" : `${n}%`);
-  const header = `# Lifecycle exec summary — ${periodLabel}\n\n`;
+  const safePeriod = escapeMarkdownCell(periodLabel);
+  const header = `# Lifecycle exec summary — ${safePeriod}\n\n`;
   const tldr = `## TL;DR\n\n${narrative.map((l) => `- ${l}`).join("\n")}\n\n`;
   const overall =
     `## Headline numbers\n\n` +
     `| Metric | Value |\n|---|---|\n` +
-    `| Revenue | ${fmtCurrency(totals.revenue)} |\n` +
+    `| Revenue | ${fmtMoney(totals.revenue)} |\n` +
     `| Sends | ${totals.sends.toLocaleString()} |\n` +
     `| Overall open rate | ${rate(totals.opens, totals.sends)}% |\n` +
     `| Overall click rate | ${rate(totals.clicks, totals.sends)}% |\n` +
     `| Overall CVR | ${rate(totals.conversions, totals.sends)}% |\n` +
-    `| Revenue per 1K sends | ${fmtCurrency(totals.sends > 0 ? (totals.revenue / totals.sends) * 1000 : 0)} |\n\n`;
+    `| Revenue per 1K sends | ${fmtMoney(totals.sends > 0 ? (totals.revenue / totals.sends) * 1000 : 0)} |\n\n`;
   const perChannel =
     `## By channel\n\n` +
     `| Channel | Sends | Open% | Click% | CVR% | Revenue | Δ Rev |\n|---|---:|---:|---:|---:|---:|---:|\n` +
     channels
       .map(
         (c) =>
-          `| ${c.channel} | ${c.sends.toLocaleString()} | ${c.open_rate_pct}% | ${c.click_rate_pct}% | ${c.cvr_pct}% | ${fmtCurrency(c.revenue)} | ${fmtPct(c.delta_revenue_pct)} |`,
+          `| ${escapeMarkdownCell(c.channel)} | ${c.sends.toLocaleString()} | ${c.open_rate_pct}% | ${c.click_rate_pct}% | ${c.cvr_pct}% | ${fmtMoney(c.revenue)} | ${fmtPct(c.delta_revenue_pct)} |`,
       )
       .join("\n") +
     "\n\n";
   const highlights =
     programHighlights.length > 0
-      ? `## Program highlights\n\n${programHighlights.map((h) => `- ${h}`).join("\n")}\n\n`
+      ? `## Program highlights\n\n${programHighlights.map((h) => `- ${escapeMarkdownCell(h)}`).join("\n")}\n\n`
       : "";
   return header + tldr + overall + perChannel + highlights;
 }
+
+// ISO-4217 code → symbol (common subset). Unknown codes fall back to
+// the supplied `currencySymbol` or the default `$`.
+const CURRENCY_SYMBOLS = {
+  USD: "$",
+  CAD: "$",
+  AUD: "$",
+  NZD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CNY: "¥",
+  INR: "₹",
+  BRL: "R$",
+  MXN: "$",
+  CHF: "CHF ",
+  SEK: "kr ",
+  NOK: "kr ",
+  DKK: "kr ",
+  SGD: "S$",
+  HKD: "HK$",
+  KRW: "₩",
+  TRY: "₺",
+  ZAR: "R",
+};
 
 // ---------------------------------------------------------------------------
 // Internals: small numeric helpers
@@ -386,7 +453,4 @@ function deltaPct(numer, denom, baselinePct) {
   if (baselinePct == null || !denom) return null;
   const current = (numer / denom) * 100;
   return Math.round((current - baselinePct) * 100) / 100;
-}
-function fmtCurrency(n) {
-  return `$${Math.round(n).toLocaleString()}`;
 }

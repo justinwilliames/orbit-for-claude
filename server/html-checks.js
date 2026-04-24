@@ -22,58 +22,48 @@ export function checkDarkModeRisk({ html }) {
   const findings = [];
   const warnings = [];
 
-  // Find elements with explicit foreground + background inline colour.
-  // Dark-mode inverters flip near-white/near-black; text on light
-  // backgrounds goes invisible or low-contrast.
-  const tagsWithStyle = [
-    ...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*style\s*=\s*["']([^"']+)["'][^>]*>/gi),
-  ];
+  // Walk the DOM-ish tree and pair each coloured text element with
+  // the nearest background it actually inherits (own element → own
+  // style → ancestor bgcolor attribute / ancestor style). This is
+  // how colour actually renders in an email client, so any check
+  // that only looks at `fg AND bg on the same element` misses the
+  // vast majority of real contrast / invert issues.
+  const pairs = collectFgBgPairs(html);
 
-  for (const m of tagsWithStyle) {
-    const tag = m[1].toLowerCase();
-    const style = m[2];
-    const fg = parseColor(cssProp(style, "color"));
-    const bg = parseColor(cssProp(style, "background-color") || cssProp(style, "background"));
-    if (!fg && !bg) continue;
-
-    // Case 1: explicit white-on-dark. Inversion -> dark-on-light.
-    //         Usually fine, but if text was grey-on-black it becomes
-    //         grey-on-white (low contrast).
-    // Case 2: black-ish on white-ish. Apple/Outlook invert ONLY the
-    //         background -> black-ish text on dark-ish bg. Invisible.
-    if (fg && bg) {
-      const fgDark = isDark(fg);
-      const bgDark = isDark(bg);
-      if (!fgDark && !bgDark) {
-        // Dark text on light bg with no explicit dark-mode override
-        findings.push({
-          tag,
-          fg: colorToHex(fg),
-          bg: colorToHex(bg),
-          kind: "invert_risk",
-          message:
-            `Light-on-light pair will invert to dark-on-dark in Apple Mail / Outlook mobile dark mode. Add a dark-mode media query to override.`,
-        });
-      }
-      if (fgDark && bgDark) {
-        findings.push({
-          tag,
-          fg: colorToHex(fg),
-          bg: colorToHex(bg),
-          kind: "already_dark",
-          message: `Dark-on-dark pair has contrast ${contrastRatio(fg, bg).toFixed(2)}:1 — below WCAG AA (4.5:1).`,
-        });
-      }
-    }
-    if (fg && !bg && isWhiteIsh(fg)) {
-      warnings.push({
-        tag,
-        fg: colorToHex(fg),
-        kind: "bare_white_text",
-        message:
-          "White text with no explicit background colour on the same element — email clients with partial-invert can land white-on-white.",
+  for (const p of pairs) {
+    // Light fg on light bg: inverters flip this to dark-on-dark,
+    // which is the classic invisibility bug.
+    if (!isDark(p.fg) && !isDark(p.bg)) {
+      findings.push({
+        tag: p.tag,
+        fg: colorToHex(p.fg),
+        bg: colorToHex(p.bg),
+        kind: "invert_risk",
+        message: `Light-on-light pair will invert to dark-on-dark in Apple Mail / Outlook mobile dark mode. Add a dark-mode override.`,
       });
     }
+    // Dark fg on dark bg: low contrast even without inversion.
+    if (isDark(p.fg) && isDark(p.bg)) {
+      findings.push({
+        tag: p.tag,
+        fg: colorToHex(p.fg),
+        bg: colorToHex(p.bg),
+        kind: "already_dark",
+        message: `Dark-on-dark pair has contrast ${contrastRatio(p.fg, p.bg).toFixed(2)}:1 — below WCAG AA (4.5:1).`,
+      });
+    }
+  }
+
+  // Bare near-white text with no discoverable background — partial
+  // inverters can land white-on-white.
+  for (const bare of collectBareWhiteText(html)) {
+    warnings.push({
+      tag: bare.tag,
+      fg: colorToHex(bare.fg),
+      kind: "bare_white_text",
+      message:
+        "White text with no discoverable background colour — email clients with partial-invert can land white-on-white.",
+    });
   }
 
   // Check for a dark-mode media query in <style>. Its presence is a
@@ -199,22 +189,20 @@ export function accessibilityLint({ html }) {
     });
   }
 
-  // 4. Contrast ratios on any foreground/background pairs found.
+  // 4. Contrast ratios — walks the DOM-ish tree and pairs coloured
+  //    text elements with the background they actually inherit
+  //    (own style → ancestor style → ancestor bgcolor="" attribute).
+  //    The old check only fired when fg+bg sat on the same tag,
+  //    which misses the vast majority of real email contrast bugs
+  //    (text in <p> / <td> inside a <table bgcolor="#fff">).
   const contrastIssues = [];
-  const styledTags = [
-    ...html.matchAll(/<([a-z][a-z0-9]*)\b[^>]*style\s*=\s*["']([^"']+)["'][^>]*>/gi),
-  ];
-  for (const m of styledTags) {
-    const tag = m[1].toLowerCase();
-    const fg = parseColor(cssProp(m[2], "color"));
-    const bg = parseColor(cssProp(m[2], "background-color") || cssProp(m[2], "background"));
-    if (!fg || !bg) continue;
-    const ratio = contrastRatio(fg, bg);
+  for (const p of collectFgBgPairs(html)) {
+    const ratio = contrastRatio(p.fg, p.bg);
     if (ratio < 4.5) {
       contrastIssues.push({
-        tag,
-        fg: colorToHex(fg),
-        bg: colorToHex(bg),
+        tag: p.tag,
+        fg: colorToHex(p.fg),
+        bg: colorToHex(p.bg),
         ratio: Math.round(ratio * 100) / 100,
       });
     }
@@ -227,8 +215,8 @@ export function accessibilityLint({ html }) {
       recommendation: "Darken the foreground or lighten the background until the ratio clears 4.5:1.",
       samples: contrastIssues.slice(0, 5),
     });
-  } else if (styledTags.length > 0) {
-    passes.push({ rule: "contrast-aa", message: "All explicit colour pairs pass WCAG AA." });
+  } else if (html.match(/color\s*:/i)) {
+    passes.push({ rule: "contrast-aa", message: "All foreground/background pairs pass WCAG AA (ancestor-resolved)." });
   }
 
   // 5. Lang attribute on <html>.
@@ -287,7 +275,9 @@ function cssProp(style, prop) {
 }
 
 // Parse CSS colour strings into {r, g, b} 0-255. Handles #rgb, #rrggbb,
-// rgb(), rgba(), and a small set of named colours.
+// rgb(), rgba(), hsl(), hsla(), and a small set of named colours.
+// Returns null for unresolvable values (currentColor, CSS variables,
+// transparent, etc.) so callers can skip them gracefully.
 function parseColor(input) {
   if (!input) return null;
   const v = String(input).trim().toLowerCase();
@@ -300,7 +290,38 @@ function parseColor(input) {
   }
   const rgb = v.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
   if (rgb) return { r: +rgb[1], g: +rgb[2], b: +rgb[3] };
+  const hsl = v.match(
+    /^hsla?\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*%?\s*,\s*(\d+(?:\.\d+)?)\s*%/,
+  );
+  if (hsl) return hslToRgb(+hsl[1], +hsl[2], +hsl[3]);
   return null;
+}
+
+function hslToRgb(h, s, l) {
+  // Normalise to 0-1.
+  const hue = (((h % 360) + 360) % 360) / 360;
+  const sat = Math.max(0, Math.min(100, s)) / 100;
+  const lig = Math.max(0, Math.min(100, l)) / 100;
+  if (sat === 0) {
+    const v = Math.round(lig * 255);
+    return { r: v, g: v, b: v };
+  }
+  const q = lig < 0.5 ? lig * (1 + sat) : lig + sat - lig * sat;
+  const p = 2 * lig - q;
+  const f = (t) => {
+    let x = t;
+    if (x < 0) x += 1;
+    if (x > 1) x -= 1;
+    if (x < 1 / 6) return p + (q - p) * 6 * x;
+    if (x < 1 / 2) return q;
+    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+    return p;
+  };
+  return {
+    r: Math.round(f(hue + 1 / 3) * 255),
+    g: Math.round(f(hue) * 255),
+    b: Math.round(f(hue - 1 / 3) * 255),
+  };
 }
 
 function colorToHex(c) {
@@ -341,4 +362,147 @@ function isDark(c) {
 
 function isWhiteIsh(c) {
   return c.r > 240 && c.g > 240 && c.b > 240;
+}
+
+// ---------------------------------------------------------------------------
+// DOM-ish tree walker for colour-pair discovery
+// ---------------------------------------------------------------------------
+//
+// Real email clients render text with colour inheritance: a <p> with
+// `color: #6d6d6d` inside a <table bgcolor="#ffffff"> shows grey on
+// white. The colour lives on the <p>, the background lives on the
+// <table>. Our earlier check only fired when both were on the same
+// tag, which misses almost every real email. This walker parses the
+// HTML into a flat sequence of open/close/text events, tracks an
+// ancestor stack, and emits one { fg, bg, tag } pair per coloured
+// text-bearing element — pairing against the nearest resolvable
+// ancestor background.
+
+const SELF_CLOSING_TAGS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
+]);
+
+// Parse open/close tags in source order, keeping an ancestor stack.
+// Returns a list of { tag, style, bgcolor } entries with full
+// ancestry for each open tag that has text content (direct or
+// inherited).
+function collectFgBgPairs(html) {
+  const pairs = [];
+  const tagRegex = /<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi;
+  const stack = [];
+  let lastIndex = 0;
+  for (const m of html.matchAll(tagRegex)) {
+    const textBetween = html.slice(lastIndex, m.index);
+    lastIndex = m.index + m[0].length;
+
+    // If the slice between the previous tag and this one has visible
+    // text, attribute it to the top of the stack.
+    const hasText = /\S/.test(stripInnerTags(textBetween));
+    if (hasText && stack.length > 0) {
+      emitPairFor(stack[stack.length - 1], stack, pairs);
+    }
+
+    const raw = m[0];
+    const tagName = m[1].toLowerCase();
+    const isClose = raw.startsWith("</");
+    if (isClose) {
+      // Pop back to matching open. Email HTML is messy; we tolerate
+      // mismatches by unwinding until we find the opener or empty.
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].tag === tagName) {
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
+    if (SELF_CLOSING_TAGS.has(tagName)) continue;
+    const isSelfClosing = /\/\s*>$/.test(raw);
+    if (isSelfClosing) continue;
+
+    const frame = {
+      tag: tagName,
+      style: (m[2].match(/\bstyle\s*=\s*["']([^"']+)["']/i) || [])[1] ?? "",
+      bgcolorAttr: (m[2].match(/\bbgcolor\s*=\s*["']([^"']+)["']/i) || [])[1] ?? null,
+    };
+    stack.push(frame);
+  }
+  return pairs;
+}
+
+function emitPairFor(frame, stack, pairs) {
+  const fg = parseColor(cssProp(frame.style, "color"));
+  if (!fg) return;
+  // Walk ancestors (innermost first) looking for a resolvable bg.
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const a = stack[i];
+    const bg =
+      parseColor(cssProp(a.style, "background-color")) ||
+      parseColor(cssProp(a.style, "background")) ||
+      parseColor(a.bgcolorAttr);
+    if (bg) {
+      pairs.push({ tag: frame.tag, fg, bg });
+      return;
+    }
+  }
+  // No background found anywhere up the ancestry — skip (we can't
+  // make claims about contrast without knowing the backdrop).
+}
+
+// Find near-white text with no discoverable background. Used by
+// dark-mode checker to flag partial-invert risks.
+function collectBareWhiteText(html) {
+  const bare = [];
+  const tagRegex = /<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi;
+  const stack = [];
+  let lastIndex = 0;
+  for (const m of html.matchAll(tagRegex)) {
+    const textBetween = html.slice(lastIndex, m.index);
+    lastIndex = m.index + m[0].length;
+    const hasText = /\S/.test(stripInnerTags(textBetween));
+    if (hasText && stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      const fg = parseColor(cssProp(frame.style, "color"));
+      if (fg && isWhiteIsh(fg)) {
+        let hasBg = false;
+        for (let i = stack.length - 1; i >= 0; i--) {
+          const a = stack[i];
+          if (
+            parseColor(cssProp(a.style, "background-color")) ||
+            parseColor(cssProp(a.style, "background")) ||
+            parseColor(a.bgcolorAttr)
+          ) {
+            hasBg = true;
+            break;
+          }
+        }
+        if (!hasBg) bare.push({ tag: frame.tag, fg });
+      }
+    }
+    const raw = m[0];
+    const tagName = m[1].toLowerCase();
+    const isClose = raw.startsWith("</");
+    if (isClose) {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].tag === tagName) {
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
+    if (SELF_CLOSING_TAGS.has(tagName)) continue;
+    const isSelfClosing = /\/\s*>$/.test(raw);
+    if (isSelfClosing) continue;
+    stack.push({
+      tag: tagName,
+      style: (m[2].match(/\bstyle\s*=\s*["']([^"']+)["']/i) || [])[1] ?? "",
+      bgcolorAttr: (m[2].match(/\bbgcolor\s*=\s*["']([^"']+)["']/i) || [])[1] ?? null,
+    });
+  }
+  return bare;
+}
+
+function stripInnerTags(s) {
+  return String(s).replace(/<[^>]+>/g, "");
 }

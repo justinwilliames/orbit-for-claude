@@ -29,16 +29,16 @@ import { slugify, writeJson, writeText } from "./utils.js";
 // ---------------------------------------------------------------------------
 
 // Stripo emits three top-level containers per block: es-header,
-// es-content (repeated), es-footer. Parsing on these boundaries gives
-// one module per visual block, which matches how Stripo itself thinks
-// of a template.
-const STRIPO_BLOCK_PATTERN =
-  /<table\s+[^>]*class\s*=\s*["'][^"']*\bes-(header|content|footer)\b[^"']*["'][^>]*>[\s\S]*?<\/table>\s*(?=<table|<\/body|$)/gi;
-
-// Fallback: split on top-level <table> siblings inside <body> if the
-// es-* markers aren't present. Rare — but keeps the tool useful for
-// non-Stripo Markup that still happens to be table-based email.
-const TOP_LEVEL_TABLE_PATTERN = /<table\b[^>]*>[\s\S]*?<\/table>/gi;
+// es-content (repeated), es-footer. Matching against those classes
+// (case-insensitive) identifies the start of each module. We pair
+// the start with its balanced `</table>` via depth tracking — a
+// plain regex can't do balanced matching, and earlier iterations
+// that used a lazy quantifier + lookahead silently truncated
+// modules with sibling inner tables.
+const STRIPO_BLOCK_OPEN_PATTERN =
+  /<table\s+[^>]*class\s*=\s*["'][^"']*\bes-(header|content|footer)\b[^"']*["'][^>]*>/gi;
+const TABLE_OPEN_PATTERN = /<table\b[^>]*>/gi;
+const TABLE_CLOSE_PATTERN = /<\/table\s*>/gi;
 
 // ---------------------------------------------------------------------------
 // Public: learnEmailTemplate
@@ -293,38 +293,50 @@ export function modifyEmailTemplate({
 // ---------------------------------------------------------------------------
 
 function parseIntoStripoModules(html) {
-  const modules = [];
-
   const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
   const body = bodyMatch ? bodyMatch[0] : html;
 
-  const matches = [...body.matchAll(STRIPO_BLOCK_PATTERN)];
-  if (matches.length >= 1) {
-    matches.forEach((m, i) => {
-      const fullHtml = m[0];
-      const role = m[1].toLowerCase(); // header | content | footer
-      const classified = classifyModuleByStructure(fullHtml, role);
+  // Stage 1: find the starting offsets of every es-header / es-content
+  // / es-footer module. Record the role for later classification.
+  const opens = [];
+  for (const m of body.matchAll(STRIPO_BLOCK_OPEN_PATTERN)) {
+    opens.push({ start: m.index, openLen: m[0].length, role: m[1].toLowerCase() });
+  }
+
+  // Stage 2: for each module start, walk forward and balance
+  // <table> / </table> until depth returns to 0. That's the
+  // module's real closing. Regex-lazy + lookahead can't do this
+  // correctly when a module contains sibling inner tables.
+  const modules = [];
+  if (opens.length > 0) {
+    for (let i = 0; i < opens.length; i++) {
+      const { start, role } = opens[i];
+      const moduleHtml = extractBalancedTable(body, start);
+      if (!moduleHtml) continue;
+      const classified = classifyModuleByStructure(moduleHtml, role);
       modules.push({
-        id: `m${i + 1}`,
-        index: i + 1,
+        id: `m${modules.length + 1}`,
+        index: modules.length + 1,
         role,
         type: classified.type,
         name: classified.name,
         description: classified.description,
-        slots: extractSlots(fullHtml),
-        images: extractImagesFromHtml(fullHtml),
-        has_cta: /\bes-button\b/.test(fullHtml),
-        html: fullHtml,
+        slots: extractSlots(moduleHtml),
+        images: extractImagesFromHtml(moduleHtml),
+        has_cta: /\bes-button\b/.test(moduleHtml),
+        html: moduleHtml,
       });
-    });
-    return modules;
+    }
+    if (modules.length > 0) return modules;
   }
 
-  // Fallback: split by top-level tables in body.
-  const fallback = [...body.matchAll(TOP_LEVEL_TABLE_PATTERN)];
-  fallback.forEach((m, i) => {
-    const fullHtml = m[0];
-    const classified = classifyModuleByStructure(fullHtml, "content");
+  // Fallback: no Stripo markers found. Walk the body and grab every
+  // top-level table (depth-0 at the start of the match), skipping
+  // tables that are descendants of a larger table we've already
+  // captured.
+  const topLevel = extractTopLevelTables(body);
+  topLevel.forEach((moduleHtml, i) => {
+    const classified = classifyModuleByStructure(moduleHtml, "content");
     modules.push({
       id: `m${i + 1}`,
       index: i + 1,
@@ -332,14 +344,72 @@ function parseIntoStripoModules(html) {
       type: classified.type,
       name: classified.name,
       description: classified.description,
-      slots: extractSlots(fullHtml),
-      images: extractImagesFromHtml(fullHtml),
-      has_cta: /\bes-button\b/.test(fullHtml),
-      html: fullHtml,
+      slots: extractSlots(moduleHtml),
+      images: extractImagesFromHtml(moduleHtml),
+      has_cta: /\bes-button\b/.test(moduleHtml),
+      html: moduleHtml,
     });
   });
-
   return modules;
+}
+
+// Given an index that points at a `<table ...>` opening tag in the
+// source, return the substring from that open tag through the
+// balanced `</table>` (inclusive). Returns null if no balanced close
+// is found — a defensive guard against malformed HTML.
+function extractBalancedTable(source, openIdx) {
+  let depth = 0;
+  let cursor = openIdx;
+  // Reset lastIndex on a fresh regex object for each pass since
+  // matchAll / lastIndex interactions are not shared.
+  const opens = new RegExp(TABLE_OPEN_PATTERN.source, "gi");
+  const closes = new RegExp(TABLE_CLOSE_PATTERN.source, "gi");
+  opens.lastIndex = openIdx;
+  closes.lastIndex = openIdx;
+
+  // Step through opens + closes in source order, maintaining depth.
+  while (cursor < source.length) {
+    opens.lastIndex = cursor;
+    closes.lastIndex = cursor;
+    const nextOpen = opens.exec(source);
+    const nextClose = closes.exec(source);
+    if (!nextClose) return null;
+    // If there's an open before the next close, depth++; advance past
+    // it. Otherwise consume the close and depth--.
+    if (nextOpen && nextOpen.index < nextClose.index) {
+      depth += 1;
+      cursor = nextOpen.index + nextOpen[0].length;
+    } else {
+      depth -= 1;
+      cursor = nextClose.index + nextClose[0].length;
+      if (depth === 0) {
+        return source.slice(openIdx, cursor);
+      }
+    }
+  }
+  return null;
+}
+
+// Depth-0 tables from the body — used only when no es-* markers were
+// found. Prevents returning inner tables whose parent we already
+// captured.
+function extractTopLevelTables(body) {
+  const out = [];
+  const openRe = new RegExp(TABLE_OPEN_PATTERN.source, "gi");
+  let cursor = 0;
+  while (cursor < body.length) {
+    openRe.lastIndex = cursor;
+    const open = openRe.exec(body);
+    if (!open) break;
+    const moduleHtml = extractBalancedTable(body, open.index);
+    if (!moduleHtml) {
+      cursor = open.index + open[0].length;
+      continue;
+    }
+    out.push(moduleHtml);
+    cursor = open.index + moduleHtml.length;
+  }
+  return out;
 }
 
 // Structural classifier — looks at the module's markup to infer the

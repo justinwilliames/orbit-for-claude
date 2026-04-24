@@ -120,6 +120,14 @@ import {
   calcReplenishment,
   buildExecReport
 } from "./ecomm-calcs.js";
+import { qaEmail } from "./email-qa-wrapper.js";
+import { renderEmailPreview } from "./email-preview.js";
+import { parsePostmasterSignal } from "./postmaster-parse.js";
+import {
+  forecastListGrowth,
+  auditGdprConsent,
+  parseTestReadout
+} from "./lifecycle-helpers.js";
 import {
   generateBrazeName,
   listBrazeNamerDimensions
@@ -4264,6 +4272,8 @@ function registerTools() {
         period_label: z.string().min(1).describe('Period label — e.g. "Q1 2026" or "March 2026".'),
         channel_stats_json: z.string().min(1).describe("JSON array of { channel, sends, opens, clicks, conversions, revenue, baseline_open_rate_pct?, baseline_click_rate_pct?, baseline_revenue? } objects."),
         program_highlights_json: z.string().optional().describe("Optional JSON array of short program-highlight strings to call out."),
+        currency_code: z.string().optional().describe('ISO 4217 currency code (USD, EUR, GBP, AUD, JPY, …). Default USD.'),
+        currency_symbol: z.string().optional().describe("Explicit currency symbol. Overrides the lookup from currency_code."),
         output_dir: z.string().optional().describe("Optional directory to write the markdown + JSON files.")
       }
     },
@@ -4271,6 +4281,8 @@ function registerTools() {
       period_label: periodLabel,
       channel_stats_json: channelStatsJson,
       program_highlights_json: programHighlightsJson,
+      currency_code: currencyCode,
+      currency_symbol: currencySymbol,
       output_dir: outputDir
     }) => {
       const { value: channelStats, error: e1 } = parseToolJson(channelStatsJson, "channel_stats_json", []);
@@ -4281,7 +4293,162 @@ function registerTools() {
         periodLabel,
         channelStats,
         programHighlights,
+        currencyCode,
+        currencySymbol,
         outputDir
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // 0.17.0: QA wrapper, preview render, postmaster parser, lifecycle helpers.
+  // -------------------------------------------------------------------
+
+  registerToolSafe(
+    "orbit_qa_email",
+    {
+      title: "QA Email (combined pre-send gate)",
+      description:
+        "One-shot pre-send gate. Runs accessibility lint, dark-mode risk check, and Gmail 102 KB size check on the supplied HTML and returns a single combined verdict (pass/warn/fail) with per-finding remediation. Use this as the default \"is this email ready to send?\" check — it replaces chaining the three individual tools manually.",
+      inputSchema: {
+        html: z.string().min(1).describe("The email HTML to QA."),
+        include_size_check: z.boolean().optional().describe("Include the Gmail-clipping size check (default: true).")
+      }
+    },
+    async ({ html, include_size_check: includeSizeCheck }) => {
+      const result = qaEmail({ html, includeSizeCheck: includeSizeCheck !== false });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_render_email_preview",
+    {
+      title: "Render Email Preview (desktop / mobile / dark)",
+      description:
+        "Produce desktop, mobile, and dark-mode preview HTML for arbitrary email HTML. Each preview wraps the source in a viewport-matched frame so Claude Desktop can display it as an inline artifact. Not a rasteriser — no PNG generation, no headless browser dependency. Use this when the user hands you raw HTML and wants to see how it renders across common clients.",
+      inputSchema: {
+        html: z.string().min(1).describe("The email HTML to preview."),
+        label: z.string().optional().describe("Short label used in the preview header + output filenames."),
+        output_dir: z.string().optional().describe("Optional directory to write the three preview HTML files.")
+      }
+    },
+    async ({ html, label, output_dir: outputDir }) => {
+      const result = renderEmailPreview({ html, label, outputDir });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_parse_postmaster_signal",
+    {
+      title: "Parse Gmail Postmaster Signal",
+      description:
+        "Interpret Gmail Postmaster Tools data. Accept either the CSV export from Postmaster's UI (string) or a structured snapshot { spam_rate_pct, domain_reputation, ip_reputation, authenticated_traffic_pct, delivery_errors_pct }. Returns per-metric pass/warn/fail verdicts with Gmail-threshold context and recommended actions.",
+      inputSchema: {
+        csv: z.string().optional().describe("Raw CSV export from Gmail Postmaster Tools UI."),
+        snapshot_json: z.string().optional().describe("Structured snapshot as JSON: { spam_rate_pct, domain_reputation, ip_reputation, authenticated_traffic_pct, delivery_errors_pct, feedback_loop_pct? }.")
+      }
+    },
+    async ({ csv, snapshot_json: snapshotJson }) => {
+      const { value: snapshot, error } = parseToolJson(snapshotJson, "snapshot_json", null);
+      if (error) return error;
+      const result = parsePostmasterSignal({ csv, snapshot });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_list_growth_forecast",
+    {
+      title: "List Growth Forecast",
+      description:
+        "Project a subscriber list's 12-month trajectory from current size, monthly acquisition, monthly churn, and (optional) acquisition growth rate. Returns a month-by-month table plus break-even, halving, and steady-state-acquisition metrics. Use in planning conversations to quantify the list cost of inaction.",
+      inputSchema: {
+        current_list_size: z.number().describe("Current active subscribers."),
+        monthly_acquisition: z.number().describe("New signups per month at the starting point."),
+        monthly_churn_pct: z.number().describe("Monthly churn rate as a percentage (0-100)."),
+        months: z.number().optional().describe("Horizon in months (default 12, max 60)."),
+        acquisition_growth_pct: z.number().optional().describe("Monthly growth rate of acquisition, in percent (0-100, default 0).")
+      }
+    },
+    async ({
+      current_list_size: currentListSize,
+      monthly_acquisition: monthlyAcquisition,
+      monthly_churn_pct: monthlyChurnPct,
+      months,
+      acquisition_growth_pct: acquisitionGrowthPct
+    }) => {
+      const result = forecastListGrowth({
+        currentListSize,
+        monthlyAcquisition,
+        monthlyChurnPct,
+        months: months ?? 12,
+        acquisitionGrowthPct: acquisitionGrowthPct ?? 0
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_gdpr_consent_audit",
+    {
+      title: "GDPR Consent Audit",
+      description:
+        "Scan signup-page / email-footer / preference-centre HTML for GDPR-style consent signals: pre-ticked checkboxes (explicitly prohibited), sender identifiability, opt-in checkbox presence, purpose specificity, right-to-withdraw language, privacy-policy link, double-opt-in signals. Returns per-signal pass/warn/fail with remediation. Advisory — not legal advice.",
+      inputSchema: {
+        html: z.string().min(1).describe("The HTML to audit."),
+        kind: z.string().optional().describe('"signup_page" (default) | "email_footer" | "preference_centre" — tunes which checks apply.')
+      }
+    },
+    async ({ html, kind }) => {
+      const result = auditGdprConsent({ html, kind: kind ?? "signup_page" });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_parse_test_readout",
+    {
+      title: "Parse A/B Test Readout",
+      description:
+        "Take a completed A/B test's numbers (control + variant visitors & conversions) and produce a written read-out: significance z/p, 95% CI on absolute-rate difference, plain-language verdict (winner / loser / inconclusive), and a ship/do-not-ship recommendation. Wraps the existing significance math with narrative framing.",
+      inputSchema: {
+        test_name: z.string().optional().describe("Short name for the test (appears in the narrative header)."),
+        hypothesis: z.string().optional().describe("The hypothesis under test, in plain language."),
+        control_visitors: z.number().describe("Number of users exposed to control."),
+        control_conversions: z.number().describe("Number of conversions in control."),
+        variant_visitors: z.number().describe("Number of users exposed to variant."),
+        variant_conversions: z.number().describe("Number of conversions in variant."),
+        confidence_level: z.number().optional().describe("Confidence level (0.95 default, 0.99 for stricter)."),
+        primary_metric: z.string().optional().describe('Plain-language name of the primary metric (default "conversion rate").'),
+        guardrail_metrics_json: z.string().optional().describe("Optional JSON array of guardrail metric names to remind the user to verify before shipping.")
+      }
+    },
+    async ({
+      test_name: testName,
+      hypothesis,
+      control_visitors: controlVisitors,
+      control_conversions: controlConversions,
+      variant_visitors: variantVisitors,
+      variant_conversions: variantConversions,
+      confidence_level: confidenceLevel,
+      primary_metric: primaryMetric,
+      guardrail_metrics_json: guardrailMetricsJson
+    }) => {
+      const { value: guardrailMetrics, error } = parseToolJson(guardrailMetricsJson, "guardrail_metrics_json", []);
+      if (error) return error;
+      const result = parseTestReadout({
+        testName,
+        hypothesis,
+        controlVisitors,
+        controlConversions,
+        variantVisitors,
+        variantConversions,
+        confidenceLevel: confidenceLevel ?? 0.95,
+        primaryMetric: primaryMetric ?? "conversion rate",
+        guardrailMetrics
       });
       return makeJsonToolResponse(result);
     }
