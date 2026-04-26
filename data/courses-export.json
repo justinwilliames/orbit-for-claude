@@ -1,7 +1,7 @@
 {
   "version": "1",
   "siteBaseUrl": "https://get.yourorbit.team",
-  "generatedAt": "2026-04-23T01:56:09.411Z",
+  "generatedAt": "2026-04-26T23:28:57.989Z",
   "courses": [
     {
       "slug": "lifecycle-fundamentals",
@@ -178,6 +178,26 @@
       "guideCount": 6,
       "quizPool": 30,
       "url": "https://get.yourorbit.team/courses/advanced-experimentation"
+    },
+    {
+      "slug": "ai-personalisation-at-scale",
+      "title": "AI Personalisation at Scale",
+      "level": "advanced",
+      "levelLabel": "Advanced",
+      "tagline": "The architecture, models, governance, and measurement that decide whether AI personalisation moves revenue or moves nothing. Braze-grounded, vendor-honest.",
+      "description": "For senior operators evaluating, deploying, or scaling AI personalisation across lifecycle programs. Covers the four-layer architecture (events, profile, content, activation), how Braze Sage / Predictive Suite / Connected Content / Catalogs map to it, predictive models (churn, propensity, recommendations), generative content with governance, the data foundation, the ethics line, and the measurement framework that survives a CFO. Seven guides, roughly 60 minutes end-to-end.",
+      "guideSlugs": [
+        "ai-personalisation-architecture",
+        "custom-attributes-design",
+        "predictive-models-lifecycle",
+        "generative-content-lifecycle",
+        "email-send-time-optimization",
+        "personalisation-not-creepy",
+        "ai-personalisation-measurement"
+      ],
+      "guideCount": 7,
+      "quizPool": 30,
+      "url": "https://get.yourorbit.team/courses/ai-personalisation-at-scale"
     }
   ]
 }
