@@ -2,17 +2,17 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.18.4",
+  "version": "0.18.5",
   "icon": "icon.png",
   "icons": [
     {
       "src": "icon-light.png",
-      "size": "1024x1024",
+      "size": "512x512",
       "theme": "light"
     },
     {
       "src": "icon-dark.png",
-      "size": "1024x1024",
+      "size": "512x512",
       "theme": "dark"
     }
   ],
