@@ -5,7 +5,7 @@ description: >
   communications at scale — including AI-generated subject lines, dynamic email body copy,
   predictive send-time optimisation, next-best-action models, AI-powered recommendations,
   or generative content blocks. Also trigger when evaluating AI personalisation features
-  in ESPs (Braze Sage AI, Iterable AI, Klaviyo AI, etc.), or when the operator wants to
+  in ESPs (BrazeAI — formerly Sage AI — Iterable AI, Klaviyo AI, etc.), or when the operator wants to
   move beyond rule-based segmentation toward model-driven personalisation. Distinct from
   copy-framework (which handles human-written copy) — this skill handles AI as the
   authoring or decision layer.
