@@ -21,6 +21,13 @@ jobs:
 
       - run: npm ci
 
+      # Fail the build only on high-or-critical severity advisories so
+      # noise from low/moderate findings doesn't block shipping. Pinned
+      # to --production so dev-only deps (esbuild, mcpb tooling) don't
+      # gate releases — they don't ship in the .mcpb.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - run: npm run build:extension
 
       # Package the .mcpb bundle for distribution.
