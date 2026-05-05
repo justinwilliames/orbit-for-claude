@@ -3,7 +3,7 @@
     "name": "ai-personalization",
     "title": "AI Personalisation Protocol",
     "category": "creative-personalisation",
-    "description": "Use this skill whenever Orbit is asked about using AI or LLMs to personalise lifecycle communications at scale — including AI-generated subject lines, dynamic email body copy, predictive send-time optimisation, next-best-action models, AI-powered recommendations, or generative content blocks. Also trigger when evaluating AI personalisation features in ESPs (Braze Sage AI, Iterable AI, Klaviyo AI, etc.), or when the operator wants to move beyond rule-based segmentation toward model-driven personalisation. Distinct from copy-framework (which handles human-written copy) — this skill handles AI as the authoring or decision layer.",
+    "description": "Use this skill whenever Orbit is asked about using AI or LLMs to personalise lifecycle communications at scale — including AI-generated subject lines, dynamic email body copy, predictive send-time optimisation, next-best-action models, AI-powered recommendations, or generative content blocks. Also trigger when evaluating AI personalisation features in ESPs (BrazeAI — formerly Sage AI — Iterable AI, Klaviyo AI, etc.), or when the operator wants to move beyond rule-based segmentation toward model-driven personalisation. Distinct from copy-framework (which handles human-written copy) — this skill handles AI as the authoring or decision layer.",
     "trigger_phrases": [],
     "exclusion_phrases": [],
     "disambiguators": [],
@@ -62,7 +62,7 @@
       "beyond",
       "blocks",
       "body",
-      "braze",
+      "brazeai",
       "communications",
       "content",
       "copy",
@@ -75,6 +75,7 @@
       "etc",
       "evaluating",
       "features",
+      "formerly",
       "generative",
       "handles",
       "human-written",
@@ -243,6 +244,117 @@
       "web",
       "whether",
       "writing"
+    ]
+  },
+  {
+    "name": "apple-mpp-response",
+    "title": "Apple Mail Privacy Protection (MPP) Response",
+    "category": "other",
+    "description": "Use this skill when the user is puzzled by inflated open rates, asks why their opens went from 20% to 60%, questions whether open-rate A/B test results are real, plans a send-time optimisation project, tries to suppress non-openers, or mentions Apple Mail Privacy Protection / MPP / iOS. Trigger on phrases like \"opens look too high\", \"opens don't correlate with clicks anymore\", \"send time optimisation\", \"suppress non-openers\", \"MPP\", \"privacy protection\", \"pre-fetched pixels\". Apple MPP changed the open-rate signal for ~25-40% of typical audiences — this skill reframes engagement metrics honestly and recommends what to use instead.",
+    "trigger_phrases": [
+      "opens look too high",
+      "opens don't correlate with clicks anymore",
+      "send time optimisation",
+      "suppress non-openers",
+      "privacy protection",
+      "pre-fetched pixels"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "25-40",
+      "a/b",
+      "anymore",
+      "apple",
+      "apple-mpp-response",
+      "are",
+      "audiences",
+      "changed",
+      "clicks",
+      "correlate",
+      "deliverable",
+      "don",
+      "engagement",
+      "high",
+      "honestly",
+      "inflated",
+      "instead",
+      "ios",
+      "like",
+      "look",
+      "mail",
+      "mentions",
+      "metrics",
+      "mpp",
+      "non-openers",
+      "open",
+      "open-rate",
+      "opens",
+      "optimisation",
+      "phrases",
+      "pixels",
+      "plans",
+      "pre-fetched",
+      "privacy",
+      "project",
+      "protection",
+      "puzzled",
+      "questions",
+      "rates",
+      "real",
+      "recommends",
+      "reframes",
+      "response",
+      "results",
+      "send",
+      "send-time",
+      "signal",
+      "suppress",
+      "test",
+      "time",
+      "too",
+      "tries",
+      "trigger",
+      "typical",
+      "user",
+      "went",
+      "whether",
+      "why"
     ]
   },
   {
@@ -2437,6 +2549,100 @@
     ]
   },
   {
+    "name": "email-production-qa",
+    "title": "Email Production QA",
+    "category": "other",
+    "description": "Use this skill before any lifecycle email send to verify it's ready to ship. Triggers on \"QA this email\", \"is this ready to send?\", \"pre-send check\", \"check this HTML\", \"will this render properly?\", \"validate before launch\", \"what could go wrong\", or whenever a user is about to push an email to Braze / production and wants a defensible gate check. This is the canonical pre-send protocol — the single entry point that chains accessibility, dark- mode, Gmail-clipping, and render-QA into one combined verdict.",
+    "trigger_phrases": [
+      "qa this email",
+      "is this ready to send?",
+      "pre-send check",
+      "check this html",
+      "will this render properly?",
+      "validate before launch",
+      "what could go wrong"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "accessibility",
+      "any",
+      "braze",
+      "canonical",
+      "chains",
+      "check",
+      "combined",
+      "could",
+      "dark",
+      "defensible",
+      "deliverable",
+      "email",
+      "email-production-qa",
+      "entry",
+      "gate",
+      "gmail-clipping",
+      "html",
+      "launch",
+      "lifecycle",
+      "mode",
+      "one",
+      "point",
+      "pre-send",
+      "production",
+      "properly",
+      "protocol",
+      "push",
+      "ready",
+      "render",
+      "render-qa",
+      "send",
+      "ship",
+      "single",
+      "triggers",
+      "user",
+      "validate",
+      "verdict",
+      "verify",
+      "wants",
+      "wrong"
+    ]
+  },
+  {
     "name": "email-production-system",
     "title": "Email Production System",
     "category": "production-operations",
@@ -2618,6 +2824,218 @@
     ]
   },
   {
+    "name": "email-template-learning",
+    "title": "Email Template Learning",
+    "category": "other",
+    "description": "Use this skill when the user pastes or points at an existing HTML email template and wants Orbit to learn it, remember its modules, and build future on-brand emails from it. Trigger on \"here's my email template\", \"learn this email\", \"remember this template\", \"build an email like this one\", \"use the same template\", \"remove the testimonial section\", \"change the CTA text\", \"swap the hero image\", or any request that implies long-term reuse of a specific master template's modular structure. Orbit persists the learned template in its library and preserves Stripo's es-* / esd-* markup so assembled HTML remains editable when pasted back into Stripo.",
+    "trigger_phrases": [
+      "here's my email template",
+      "learn this email",
+      "remember this template",
+      "build an email like this one",
+      "use the same template",
+      "remove the testimonial section",
+      "change the cta text",
+      "swap the hero image"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "any",
+      "assembled",
+      "back",
+      "build",
+      "change",
+      "cta",
+      "deliverable",
+      "editable",
+      "email",
+      "email-template-learning",
+      "emails",
+      "esd",
+      "existing",
+      "future",
+      "here",
+      "hero",
+      "html",
+      "image",
+      "implies",
+      "its",
+      "learn",
+      "learned",
+      "learning",
+      "library",
+      "like",
+      "long-term",
+      "markup",
+      "master",
+      "modular",
+      "modules",
+      "on-brand",
+      "one",
+      "pasted",
+      "pastes",
+      "persists",
+      "points",
+      "preserves",
+      "remains",
+      "remember",
+      "remove",
+      "request",
+      "reuse",
+      "same",
+      "section",
+      "specific",
+      "stripo",
+      "structure",
+      "swap",
+      "template",
+      "testimonial",
+      "text",
+      "trigger",
+      "user",
+      "wants"
+    ]
+  },
+  {
+    "name": "esp-migration",
+    "title": "ESP Migration",
+    "category": "other",
+    "description": "Use this skill when the user is moving from one ESP to another (e.g. Mailchimp → Braze, HubSpot → Iterable, Klaviyo → Braze, etc.), planning a migration timeline, mapping custom attributes between platforms, designing a parallel-send / cutover strategy, or asking how to avoid a deliverability dip during transition. Trigger on \"migrating to Braze\", \"moving off Mailchimp\", \"ESP switch\", \"cutover plan\", \"deprecate the old ESP\", \"dual-send\", \"parallel running\". Different from `martech-audit` (evaluation of which ESP to use) and `ip-warmup-braze` (IP warming on a new platform).",
+    "trigger_phrases": [
+      "migrating to braze",
+      "moving off mailchimp",
+      "esp switch",
+      "cutover plan",
+      "deprecate the old esp",
+      "dual-send",
+      "parallel running"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "another",
+      "asking",
+      "attributes",
+      "avoid",
+      "between",
+      "braze",
+      "custom",
+      "cutover",
+      "deliverability",
+      "deliverable",
+      "deprecate",
+      "designing",
+      "different",
+      "dip",
+      "dual-send",
+      "during",
+      "esp",
+      "esp-migration",
+      "etc",
+      "evaluation",
+      "how",
+      "hubspot",
+      "ip-warmup-braze",
+      "iterable",
+      "klaviyo",
+      "mailchimp",
+      "mapping",
+      "martech-audit",
+      "migrating",
+      "migration",
+      "moving",
+      "new",
+      "off",
+      "old",
+      "one",
+      "parallel",
+      "parallel-send",
+      "plan",
+      "planning",
+      "platform",
+      "platforms",
+      "running",
+      "strategy",
+      "switch",
+      "timeline",
+      "transition",
+      "trigger",
+      "user",
+      "warming"
+    ]
+  },
+  {
     "name": "experiment-design",
     "title": "Experiment Design Protocol",
     "category": "measurement-economics",
@@ -2706,6 +3124,112 @@
       "wants",
       "without",
       "worked"
+    ]
+  },
+  {
+    "name": "gmail-bulk-sender-compliance",
+    "title": "Gmail / Yahoo Bulk-Sender Compliance (2024+)",
+    "category": "other",
+    "description": "Use this skill when the user asks about Gmail / Yahoo's 2024 bulk-sender rules, is about to cross the 5,000-per-day threshold, gets a sudden inbox-placement drop attributable to Feb 2024+ enforcement, wants to audit their compliance, or mentions \"one-click unsubscribe\", \"List-Unsubscribe-Post header\", \"SPF/DKIM/DMARC alignment\", \"complaint threshold 0.3%\", \"bulk sender requirements\". Trigger on \"am I compliant?\", \"Gmail rejected my email\", \"Yahoo bounces\", \"complaint rate flagged\". This skill is the defensible checklist against the published Google + Yahoo spec, not general deliverability advice.",
+    "trigger_phrases": [
+      "one-click unsubscribe",
+      "list-unsubscribe-post header",
+      "spf/dkim/dmarc alignment",
+      "complaint threshold 0.3%",
+      "bulk sender requirements",
+      "am i compliant?",
+      "gmail rejected my email",
+      "yahoo bounces",
+      "complaint rate flagged"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "000-per-day",
+      "2024",
+      "2024+",
+      "advice",
+      "against",
+      "alignment",
+      "attributable",
+      "audit",
+      "bounces",
+      "bulk",
+      "bulk-sender",
+      "checklist",
+      "complaint",
+      "compliance",
+      "compliant",
+      "cross",
+      "defensible",
+      "deliverability",
+      "deliverable",
+      "drop",
+      "email",
+      "enforcement",
+      "feb",
+      "flagged",
+      "general",
+      "gets",
+      "gmail",
+      "gmail-bulk-sender-compliance",
+      "google",
+      "header",
+      "inbox-placement",
+      "list-unsubscribe-post",
+      "mentions",
+      "not",
+      "one-click",
+      "published",
+      "rate",
+      "rejected",
+      "requirements",
+      "rules",
+      "sender",
+      "spec",
+      "spf/dkim/dmarc",
+      "sudden",
+      "threshold",
+      "trigger",
+      "unsubscribe",
+      "user",
+      "wants",
+      "yahoo"
     ]
   },
   {
@@ -4106,6 +4630,95 @@
     ]
   },
   {
+    "name": "postmaster-tools-setup",
+    "title": "Gmail Postmaster Tools — Setup + First Read",
+    "category": "other",
+    "description": "Use this skill when the user hasn't set up Gmail Postmaster Tools, or when they're trying to interpret their Postmaster data. Trigger on \"set up Postmaster\", \"add my domain to Postmaster\", \"Postmaster isn't showing data\", \"what am I looking at in Postmaster?\", \"domain verification for Postmaster\", \"add TXT record for Postmaster\", \"my reputation shows as ---\", \"connect Postmaster\". Postmaster Tools is the primary Gmail telemetry every bulk sender needs; this skill walks setup and first-read.",
+    "trigger_phrases": [
+      "set up postmaster",
+      "add my domain to postmaster",
+      "postmaster isn't showing data",
+      "what am i looking at in postmaster?",
+      "domain verification for postmaster",
+      "add txt record for postmaster",
+      "my reputation shows as ---",
+      "connect postmaster"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "add",
+      "bulk",
+      "connect",
+      "data",
+      "deliverable",
+      "domain",
+      "every",
+      "first",
+      "first-read",
+      "gmail",
+      "hasn",
+      "interpret",
+      "isn",
+      "looking",
+      "needs",
+      "postmaster",
+      "postmaster-tools-setup",
+      "primary",
+      "read",
+      "record",
+      "reputation",
+      "sender",
+      "set",
+      "setup",
+      "showing",
+      "shows",
+      "telemetry",
+      "tools",
+      "trigger",
+      "trying",
+      "txt",
+      "user",
+      "verification",
+      "walks"
+    ]
+  },
+  {
     "name": "pre-launch-review",
     "title": "Pre-Launch Review Protocol",
     "category": "lifecycle-design-execution",
@@ -4409,6 +5022,207 @@
       "work",
       "working-plan",
       "workstream"
+    ]
+  },
+  {
+    "name": "quarterly-planning",
+    "title": "Quarterly Planning for Lifecycle",
+    "category": "other",
+    "description": "Use this skill when the user is planning a quarter or half-year of lifecycle work, needs to turn annual OKRs into a concrete program backlog, prioritising multiple candidate programs against each other, building a quarterly roadmap for exec approval, or committing to a set of lifecycle experiments for Q1/Q2/Q3/Q4. Trigger on \"quarterly planning\", \"Q1 roadmap\", \"half-year plan\", \"OKRs into lifecycle\", \"which programs this quarter\", \"CRM roadmap\". Different from `project-kickoff` (tactical — one program) and `strategic-stress-test` (one decision). This is the backlog-level prioritisation protocol.",
+    "trigger_phrases": [
+      "quarterly planning",
+      "q1 roadmap",
+      "half-year plan",
+      "okrs into lifecycle",
+      "which programs this quarter",
+      "crm roadmap"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "against",
+      "annual",
+      "approval",
+      "backlog",
+      "backlog-level",
+      "building",
+      "candidate",
+      "committing",
+      "concrete",
+      "crm",
+      "decision",
+      "deliverable",
+      "different",
+      "each",
+      "exec",
+      "experiments",
+      "half-year",
+      "lifecycle",
+      "multiple",
+      "needs",
+      "okrs",
+      "one",
+      "other",
+      "plan",
+      "planning",
+      "prioritisation",
+      "prioritising",
+      "program",
+      "programs",
+      "project-kickoff",
+      "protocol",
+      "q1/q2/q3/q4",
+      "quarter",
+      "quarterly",
+      "quarterly-planning",
+      "roadmap",
+      "set",
+      "strategic-stress-test",
+      "tactical",
+      "trigger",
+      "turn",
+      "user",
+      "work"
+    ]
+  },
+  {
+    "name": "reputation-recovery",
+    "title": "Reputation Recovery",
+    "category": "other",
+    "description": "Use this skill when a sender is in active deliverability trouble — bounce rate above 2%, complaint rate above 0.3%, sudden inbox-placement drop at Gmail / Microsoft / Yahoo, domain blacklisted on Spamhaus / SURBL / SpamCop, SNDS flagged red, or Postmaster Tools reputation in the \"bad\" band. Trigger on phrases like \"deliverability tanked\", \"we're blacklisted\", \"Gmail started going to spam\", \"bounces spiked overnight\", \"complaint rate is red\", \"reputation recovery\". This is an emergency playbook — diagnose in hours, not weeks, and intervene surgically rather than re-starting the warm-up from zero.",
+    "trigger_phrases": [
+      "deliverability tanked",
+      "we're blacklisted",
+      "gmail started going to spam",
+      "bounces spiked overnight",
+      "complaint rate is red",
+      "reputation recovery"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "above",
+      "active",
+      "bad",
+      "band",
+      "blacklisted",
+      "bounce",
+      "bounces",
+      "complaint",
+      "deliverability",
+      "deliverable",
+      "diagnose",
+      "domain",
+      "drop",
+      "emergency",
+      "flagged",
+      "gmail",
+      "going",
+      "hours",
+      "inbox-placement",
+      "intervene",
+      "like",
+      "microsoft",
+      "not",
+      "overnight",
+      "phrases",
+      "playbook",
+      "postmaster",
+      "rate",
+      "rather",
+      "re-starting",
+      "recovery",
+      "red",
+      "reputation",
+      "reputation-recovery",
+      "sender",
+      "snds",
+      "spam",
+      "spamcop",
+      "spamhaus",
+      "spiked",
+      "started",
+      "sudden",
+      "surbl",
+      "surgically",
+      "tanked",
+      "tools",
+      "trigger",
+      "trouble",
+      "warm-up",
+      "weeks",
+      "yahoo",
+      "zero"
     ]
   },
   {
