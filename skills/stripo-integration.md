@@ -43,6 +43,10 @@ When this skill is active, apply this sequence before diving into the user's spe
 5. **Approve before pushing.** Wait for the user's confirmation before re-calling the tool with
    `push: true`. Pushing creates an editable email in their Stripo workspace via the
    `generateemail` endpoint — it's their data being modified.
+6. **One email at a time, even when the brief covers many.** If the user's brief contains
+   multiple emails (a welcome series, a winback flow, a 5-email re-engagement programme, a launch
+   campaign with cross-sell follow-ups, etc.), do NOT batch-build the sequence. Build email 1
+   only, render its preview, and stop. See **Multi-Email Briefs** below for the full protocol.
 
 ---
 
@@ -53,10 +57,78 @@ orbit_setup_stripo                      → confirm all 3 creds + master templat
 orbit_sync_stripo_modules               → pull custom modules into local library
 orbit_document_stripo_design_system     → generate markdown brief, read it
 orbit_list_stripo_modules               → load the catalog Claude picks from
-orbit_compose_stripo_email              → assemble + auto-render artifact preview
+orbit_compose_stripo_email              → assemble + auto-render artifact preview (ONE email)
                                           ↓ user approves in conversation ↓
 orbit_compose_stripo_email push: true   → POST to Stripo's workspace
+                                          ↓ for series briefs only ↓
+                                  ASK: next email, change this one, or stop?
+                                          ↓ wait for explicit answer ↓
+                              repeat compose for email N+1 only on green light
 ```
+
+---
+
+## Multi-Email Briefs (Series Mode)
+
+When the user's brief covers more than one email — welcome series, onboarding sequence,
+winback flow, launch campaign with follow-ups, abandoned-cart trio, anything where the
+plan from `program-brief` or `orbit_build_message_plan` enumerates multiple email steps —
+this skill operates in **series mode**: build one, gate, build the next.
+
+**The rule is non-negotiable: one email composed and previewed per turn, then stop and ask.**
+
+### Why this matters
+
+- Each composed email is the user's data being shaped. Pushing five emails in one go means
+  five things to scrap and redo if the first one missed the brief.
+- Modules, tone, hero structure, CTA pattern — all get refined on email 1 and inherited by
+  email 2+. Building 1 → confirming → building 2 keeps that learning loop alive.
+- The `orbit_compose_stripo_email` push step writes to the user's Stripo workspace. Batch
+  pushes mean batch cleanup if they want changes.
+
+### The protocol
+
+1. **Acknowledge the series scope up front.** When you spot a multi-email brief, name it:
+   *"This is a 4-email welcome series. Orbit will build them one at a time — email 1 first,
+   then we'll review and decide whether to push, refine, or move to email 2."*
+2. **Build email 1 only.** Compose with `orbit_compose_stripo_email` (no `push:true` yet).
+   Preview renders automatically.
+3. **Stop.** Do not call the compose tool again. Do not draft email 2's module sequence.
+   Do not pre-empt the user's choice.
+4. **Ask the gate question explicitly:**
+   > "Email 1 of [N] is rendered above. What next?
+   >  • **Push to Stripo** — send this version to your workspace as an editable email.
+   >  • **Change something** — name what to adjust (copy, modules, hero, CTA) and I'll re-compose.
+   >  • **Move to email 2** — leave this one as a preview-only draft and start the next.
+   >  • **Stop** — I'll save the brief and come back to it."
+5. **Wait for explicit instruction.** Implicit "carry on" is not consent — series mode
+   requires a clear answer before the next compose call.
+6. **On 'change' →** re-compose email 1 with the user's adjustments, render again, ask again.
+   Do not advance to email 2 until email 1 is parked (pushed or explicitly approved as a draft).
+7. **On 'push' →** call `orbit_compose_stripo_email` with `push:true`, confirm the Stripo
+   editor URL was returned, then re-ask the gate question for email 2.
+8. **On 'next' →** acknowledge email 1 stays as a preview-only draft, then compose email 2.
+   Repeat the gate.
+9. **On 'stop' →** summarise what's done, what's drafted, what's still in the brief, and
+   leave the user a clean point to resume from.
+
+### What NOT to do
+
+- ❌ Compose all N emails in one turn and ask the user to review them as a batch.
+- ❌ Push email 1, then auto-compose email 2 because "the user said do the welcome series".
+- ❌ Skip the preview step on later emails — email 3 still gets the artifact render and the
+  same gate question. Consistency carries through the whole series.
+- ❌ Treat "looks good" on email 1 as authorisation to fire emails 2–N. It authorises
+  email 1's push or its progression, nothing more.
+
+### When the user explicitly opts out of the gate
+
+If the user says something like *"just build all four, I'll review at the end"* or
+*"don't ask between each, push them all once you're done"*, that's an explicit override.
+Honour it — but confirm the override once before proceeding (*"Confirmed: building all 4
+without checking in between. I'll surface them as one batch at the end."*) and still build
+sequentially under the hood (compose → compose → compose), pushing only after the batch
+review. The gate is the default; opting out requires a clear instruction, not an inference.
 
 ---
 

@@ -27,9 +27,10 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import { listLibraryItems, loadLibraryItem } from "./template-library.js";
 import { stripoRestPost, validateStripoRestSetup } from "./stripo-api.js";
-import { readCachedAsDataUri } from "./stripo-image-cache.js";
+import { ensureDir } from "./config.js";
 
 const TAG_SYNCED = "stripo_synced";
 const TAG_ARCHIVED = "stripo_archived";
@@ -87,6 +88,34 @@ export async function composeStripoEmail({
   const validation = validateComposition(resolved);
   if (validation.error) return validation.error;
 
+  // ─── Bug 1 guard: overrides cannot be applied via Stripo push ─────
+  //
+  // copy_overrides and image_overrides are applied client-side to the
+  // assembled preview HTML by applyCopyOverrides / applyImageOverrides
+  // below. The push path, however, sends module UIDs in canonical JSON
+  // (dataSources[].value[].id) and Stripo regenerates the email server-
+  // side from its OWN copy of each module — local string substitutions
+  // never reach the rendered email. Pushing with overrides would
+  // silently drop them, making the tool lie about what it pushed.
+  //
+  // Per-module slot overrides via the canonical-JSON `values` field are
+  // future work — Stripo's findmodules API doesn't yet expose slot keys,
+  // so we can't construct that payload reliably. Until that lands, hard
+  // fail here so the user knows their edits won't take effect.
+  const hasCopyOverrides = Object.keys(copyOverrides ?? {}).length > 0;
+  const hasImageOverrides = Object.keys(imageOverrides ?? {}).length > 0;
+  if (push && (hasCopyOverrides || hasImageOverrides)) {
+    return {
+      status: "overrides_not_pushable",
+      offending: [
+        ...(hasCopyOverrides ? ["copy_overrides"] : []),
+        ...(hasImageOverrides ? ["image_overrides"] : []),
+      ],
+      message:
+        "Overrides aren't applied via Stripo push — Stripo regenerates modules server-side from its own copy of each module, so client-side substitutions are dropped. Two ways forward: (1) call this tool with `push: false` to receive the assembled HTML (with overrides applied) for manual paste-in to a Stripo email, or (2) push without overrides and apply your edits in Stripo's editor afterwards. Per-module slot overrides via Stripo's canonical-JSON `values` field are on the roadmap but not wired yet.",
+    };
+  }
+
   // Stitch.
   const assembled = assembleEmail({
     config,
@@ -97,21 +126,26 @@ export async function composeStripoEmail({
     imageOverrides,
   });
 
-  // ─── Preview-only image inlining ───────────────────────────────────
-  //
-  // Claude artifacts run in a sandboxed iframe with a strict CSP that
-  // blocks external img-src. Stripo CDN images would render as broken-
-  // image icons. So for the preview path ONLY, swap external image
-  // URLs for data: URIs sourced from the local image cache (built at
-  // sync time by orbit_sync_stripo_modules).
-  //
-  // Critical: this transformation happens ONLY on `assembled.html`
-  // (the preview/artifact HTML). The push path below does NOT use
-  // this — it sends module UIDs to Stripo via canonical JSON, and
-  // Stripo composes server-side from its OWN copy of the module
-  // markup, which still has the original CDN URLs. Data: URIs never
-  // leave Orbit and never reach Stripo.
-  const previewHtml = inlineImagesAsDataUris({ config, html: assembled.html });
+  // External image URLs are left as-is in the preview HTML. Claude's
+  // artifact iframe blocks external img-src under its CSP, so the
+  // inline preview will show broken-image icons — that's expected.
+  // The artifact directive tells the user to save the HTML and open
+  // it in a browser to see the email with images, or push to Stripo
+  // and preview there. We previously inlined images as data: URIs to
+  // work around the CSP, but bulky base64 payloads pushed the tool
+  // result over the 1 MB MCP cap on emails with 4+ images.
+  const previewHtml = assembled.html;
+
+  // Always write the assembled HTML to disk so the user has a stable
+  // file to open in a browser (the only way to verify the email with
+  // images, since the artifact iframe blocks external img-src). Path
+  // is timestamp-keyed so repeat composes don't overwrite each other.
+  const composeOutputDir = path.join(config.defaultOutputDir, "stripo-compose");
+  ensureDir(composeOutputDir);
+  const timestampForFile = new Date().toISOString().replace(/[:.]/g, "-");
+  const htmlFilePath = path.join(composeOutputDir, `${timestampForFile}.html`);
+  fs.writeFileSync(htmlFilePath, previewHtml);
+  const htmlByteCount = Buffer.byteLength(previewHtml, "utf8");
 
   const compositionPlan = resolved.map((item, idx) => ({
     position: idx,
@@ -142,13 +176,19 @@ export async function composeStripoEmail({
         message:
           "Pushing to Stripo requires a master template ID. Run orbit_setup_stripo for instructions on creating one in Stripo's UI (and marking a generation area inside it), then paste the ID into Stripo Master Template ID in Orbit's extension settings.",
         composition_plan: compositionPlan,
-        preview_html: previewHtml,
+        html_path: htmlFilePath,
+        html_byte_count: htmlByteCount,
       };
     }
 
     const restSetupError = validateStripoRestSetup(config);
     if (restSetupError) {
-      return { ...restSetupError, composition_plan: compositionPlan, preview_html: previewHtml };
+      return {
+        ...restSetupError,
+        composition_plan: compositionPlan,
+        html_path: htmlFilePath,
+        html_byte_count: htmlByteCount,
+      };
     }
 
     const templateIdNumber = Number(config.stripoMasterTemplateId);
@@ -157,7 +197,8 @@ export async function composeStripoEmail({
         status: "invalid_master_template_id",
         message: `Configured Stripo Master Template ID "${config.stripoMasterTemplateId}" is not a valid integer. Stripo template IDs are numeric (e.g. 4431390). Check your extension settings.`,
         composition_plan: compositionPlan,
-        preview_html: previewHtml,
+        html_path: htmlFilePath,
+        html_byte_count: htmlByteCount,
       };
     }
 
@@ -182,7 +223,8 @@ export async function composeStripoEmail({
         error_message: err.message,
         canonical_payload: canonicalPayload,
         composition_plan: compositionPlan,
-        preview_html: previewHtml,
+        html_path: htmlFilePath,
+        html_byte_count: htmlByteCount,
       };
     }
 
@@ -200,7 +242,6 @@ export async function composeStripoEmail({
         raw_response: pushResponse,
       },
       composition_plan: compositionPlan,
-      preview_html: previewHtml,
       message:
         `Created a new email in your Stripo workspace using master template ${templateIdNumber}. ` +
         "The master template was NOT modified. Open Stripo to find the new email in the email folder.",
@@ -210,7 +251,10 @@ export async function composeStripoEmail({
   // Default path: return composition + the artifact-render directive.
   // The directive is the user-facing text — Claude reads it and
   // renders the HTML inline as an artifact, so the user sees the
-  // assembled email immediately without asking.
+  // assembled email immediately without asking. Images render as
+  // broken-image icons in the artifact (CSP blocks external img-src);
+  // user must open the saved file in a browser or push to Stripo
+  // to see images.
   const directiveText = [
     `# Email composition complete`,
     "",
@@ -223,9 +267,19 @@ export async function composeStripoEmail({
       (p) => `- **${p.role}:** ${p.name} (\`${p.classification}\` · Stripo ID ${p.stripo_id})`,
     ),
     "",
+    "## ⚠️ Images won't load in the artifact preview",
+    "",
+    `The HTML below renders as an artifact with **broken-image icons** in place of every photo, logo, and hero graphic. Claude's artifact iframe blocks external image URLs under its Content Security Policy — that's a sandbox limitation, not a problem with the email. The underlying \`<img src>\` URLs are correct and point at Stripo's CDN.`,
+    "",
+    `**To preview with images, open the saved file in a browser:**`,
+    "",
+    `\`${htmlFilePath}\``,
+    "",
+    `Or approve and push to Stripo (\`push: true\`) — once the email's in your Stripo workspace, the editor preview shows it correctly.`,
+    "",
     "## Preview",
     "",
-    "Render the HTML below as an HTML artifact NOW so the user can review the assembled email. The HTML is a full standalone email document with all modules stitched, CSS deduped, and every `esd-custom-block-id` preserved for Stripo round-tripping.",
+    "Render the HTML below as an HTML artifact NOW so the user can review the assembled email layout. The HTML is a full standalone email document with all modules stitched, CSS deduped, and every `esd-custom-block-id` preserved for Stripo round-tripping. Reminder: images will show as broken icons — that's expected; tell the user to open the file path above to see images.",
     "",
     "```html",
     previewHtml,
@@ -233,6 +287,7 @@ export async function composeStripoEmail({
     "",
     "## Next steps",
     "",
+    "- View with images: open `" + htmlFilePath + "` in any browser.",
     "- Approve and push: re-call this tool with the same `module_sequence` plus `push: true`.",
     "- Revise: change `module_sequence`, `copy_overrides`, or `image_overrides` and re-run.",
   ]
@@ -242,10 +297,11 @@ export async function composeStripoEmail({
   return {
     status: "composed",
     composition_plan: compositionPlan,
-    preview_html: previewHtml,
     css_warnings: assembled.css_warnings,
     artifact_directive: directiveText,
-    message: `Composed ${resolved.length}-module email. Preview HTML returned for artifact rendering. Use push: true to send to Stripo.`,
+    html_path: htmlFilePath,
+    html_byte_count: htmlByteCount,
+    message: `Composed ${resolved.length}-module email (${(htmlByteCount / 1024).toFixed(1)} KB). Preview rendered as artifact (images show as broken icons — open ${htmlFilePath} in a browser to view with images, or push to Stripo). Use push: true to send to Stripo.`,
   };
 }
 
@@ -402,31 +458,6 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-/**
- * Replace external <img src> URLs with data: URIs from the local
- * image cache. Used ONLY for the preview HTML rendered as a Claude
- * artifact — the push payload never sees this transformation.
- *
- * Behaviour:
- *   - Only rewrites http(s) URLs (data:, blob:, cid: are left alone)
- *   - If the URL isn't in the local cache (sync hasn't run, image
- *     wasn't reachable, etc.), the original URL is left in place —
- *     the artifact will show a broken-image icon for that one image
- *     but the rest of the preview still works
- *   - Stripo CDN URLs are content-addressed so cache hits are
- *     guaranteed-correct; no staleness risk
- */
-function inlineImagesAsDataUris({ config, html }) {
-  return html.replace(
-    /(<img\b[^>]*\bsrc=["'])(https?:[^"']+)(["'][^>]*>)/gi,
-    (match, before, url, after) => {
-      const dataUri = readCachedAsDataUri({ config, url });
-      if (!dataUri) return match;
-      return `${before}${dataUri}${after}`;
-    },
-  );
 }
 
 // loadLibraryItem is imported for future per-call lazy loading paths;

@@ -135,6 +135,18 @@ async function probeMasterTemplate(config) {
   return {
     status: "configured",
     detail: `Master template ID configured: ${config.stripoMasterTemplateId}. Confirm it exists in Stripo by opening it in the Templates list.`,
+    // Explicit gap: an automated probe that checks the gen-area's
+    // parent Structure for non-zero padding would catch the
+    // "lopsided pushed modules" class of setup error. Wiring it
+    // requires the GET /template/<id> endpoint (response shape
+    // unproven) plus an HTML walker. Tracked as a follow-up; for
+    // now the docs in Step 3 + the Troubleshooting block cover it
+    // and a manual check in Stripo's editor is the reliable path.
+    padding_probe: {
+      status: "not_implemented",
+      detail:
+        "Automated check for non-zero padding on the gen-area's parent Structure is not yet wired. Verify manually in Stripo: open the master template, select the Structure containing the generation-area Container, and confirm Spacing → top/right/bottom/left are all 0.",
+    },
   };
 }
 
@@ -265,12 +277,14 @@ function buildInstructionsMarkdown(presence, probeResults = null) {
     "",
     "1. In Stripo, go to **Templates → Create new template**.",
     "2. Name it `Orbit Master`.",
-    "3. Drag a **Structure** block onto the canvas. Inside it, add an empty **Container** block.",
-    "4. Select the Container, open the right-side panel, and mark it as the **Generation area** (Stripo's term for the API-fillable region — sometimes labelled `esd-email-gen-area` in the underlying markup).",
-    "5. Optionally add static elements **above** the generation area (e.g., a tracking pixel script, a global header) — Orbit will leave those untouched and only fill the marked area.",
-    "6. Save the template. Open it and copy the **template ID** from the URL (it's the numeric/alphanumeric ID after `/templates/`).",
-    "7. In Claude Desktop: **Settings → Extensions → Orbit → Configure**, paste it into `Stripo Master Template ID`.",
-    "8. Restart Claude Desktop.",
+    "3. Drag a **Structure** block onto the canvas.",
+    "4. **Important — zero out the Structure's padding before going further.** Select the Structure, open the right-side panel → **Spacing** (or **Settings → Padding** depending on your Stripo version), and set top / right / bottom / left padding to `0`. If you skip this, every email Orbit pushes will render with ~24 px of dead space on the left and right inside Stripo, because pushed modules inherit the parent Structure's padding. The Structure is just the wrapper — composed modules bring their own padding.",
+    "5. Add an empty **Container** block inside the Structure.",
+    "6. Select the Container, open the right-side panel, and mark it as the **Generation area** (Stripo's term for the API-fillable region — sometimes labelled `esd-email-gen-area` in the underlying markup).",
+    "7. Optionally add static elements **above** the generation area (e.g., a tracking pixel script, a global header) — Orbit will leave those untouched and only fill the marked area.",
+    "8. Save the template. Open it and copy the **template ID** from the URL (it's the numeric/alphanumeric ID after `/templates/`).",
+    "9. In Claude Desktop: **Settings → Extensions → Orbit → Configure**, paste it into `Stripo Master Template ID`.",
+    "10. Restart Claude Desktop.",
     "",
     "## Step 4 — Verify",
     "",
@@ -300,6 +314,7 @@ function buildInstructionsMarkdown(presence, probeResults = null) {
     "- **REST API call fails with 402/403:** your Stripo plan doesn't include REST API access. Stripo's custom modules and REST API are typically Business or Enterprise tier.",
     "- **Modules sync returns 0 modules:** you have no custom saved modules in Stripo yet. Save some in Stripo's editor first (right-click any block → Save as module).",
     "- **Composed emails render lopsided / with weird padding:** an orphaned-float bug — your module captured a multi-column row. Run `orbit_audit_stripo_modules` to identify, then `orbit_fix_stripo_module` to get the corrected HTML for paste-back.",
+    "- **Pushed modules render with ~24 px of dead space on the left / right inside Stripo, even though the module itself is full-bleed:** the master template's wrapping Structure has non-zero padding. Open the master template in Stripo, select the Structure containing the generation-area Container, and zero out its padding (right-side panel → Spacing → set all four sides to `0`). The Structure is just a wrapper; padding belongs on individual modules, not on the gen-area's parent.",
     "- **Liquid variables in composed emails appear as literal text** (e.g., `{{content_blocks.${footer-year}}}` shows up unsubstituted): expected Stripo behaviour. The `generateemail` endpoint does NOT process Liquid at generation time — variables carry through as literal strings and get substituted by your ESP at send time, OR via Stripo's content_blocks data-source mechanism if configured. Not an Orbit bug.",
     "",
     !pluginOk || !restOk || !templateOk
