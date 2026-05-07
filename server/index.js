@@ -110,6 +110,7 @@ import { setupStripo } from "./stripo-onboarding.js";
 import { syncStripoModules, listStripoSyncedModules } from "./stripo-modules.js";
 import { documentStripoDesignSystem } from "./stripo-design-system.js";
 import { composeStripoEmail } from "./stripo-compose.js";
+import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
 import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
@@ -4052,6 +4053,52 @@ function registerTools() {
           }
         };
       }
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_audit_stripo_modules",
+    {
+      title: "Audit Stripo Modules for Structural Issues",
+      description:
+        "Run a structural audit against every synced Stripo module. Catches orphaned es-right/es-left floats (the lopsided-block bug), STRIPE modules that captured multi-column layouts, sub-600px widths, missing image alt text, footer modules without unsubscribe Liquid vars, and (optionally) broken image URLs. Generates a markdown audit doc at ~/Orbit/outputs/stripo-audit/. Run after orbit_sync_stripo_modules. Fixable findings can be patched via orbit_fix_stripo_module (returns corrected HTML for paste-back into Stripo's module editor — the REST API is read-only for modules).",
+      inputSchema: {
+        check_image_urls: z
+          .boolean()
+          .optional()
+          .describe(
+            "If true, also HEAD-check every image URL across modules and flag 4xx/5xx as image_url_unreachable. Slower (one HTTP request per unique image). Default false."
+          )
+      }
+    },
+    async ({ check_image_urls }) => {
+      const result = await auditStripoModules({ config: runtimeConfig, check_image_urls });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_fix_stripo_module",
+    {
+      title: "Generate Corrected HTML for a Stripo Module",
+      description:
+        "Returns the corrected HTML for a Stripo module + step-by-step paste-back instructions for Stripo's module editor. Auto-fixes are available for orphaned_float and sub_600_width findings. Stripo's REST API does not expose module editing, so the fix is necessarily manual: paste, save in Stripo, re-sync. Run orbit_audit_stripo_modules first to discover findings.",
+      inputSchema: {
+        stripo_id: z
+          .union([z.number(), z.string()])
+          .describe("The Stripo numeric module ID (from orbit_audit_stripo_modules findings)."),
+        fix_class: z
+          .enum(["orphaned_float", "sub_600_width"])
+          .describe("Which check class to apply. Only auto-fixable codes are accepted.")
+      }
+    },
+    async ({ stripo_id, fix_class }) => {
+      const result = fixStripoModule({
+        config: runtimeConfig,
+        stripo_id,
+        fix_class
+      });
       return makeJsonToolResponse(result);
     }
   );

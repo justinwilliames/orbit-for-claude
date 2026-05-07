@@ -1,13 +1,13 @@
 # Stripo API probe findings
 
-Generated: 2026-05-07T00:01:34.110Z
+Generated: 2026-05-07T01:22:16.962Z
 
 ## Credential presence
 
 - `ORBIT_STRIPO_PLUGIN_ID`: set
 - `ORBIT_STRIPO_SECRET_KEY`: set
 - `ORBIT_STRIPO_REST_API_TOKEN`: set
-- `ORBIT_STRIPO_MASTER_TEMPLATE_ID`: missing (generateemail probe will be skipped)
+- `ORBIT_STRIPO_MASTER_TEMPLATE_ID`: set
 - `ORBIT_STRIPO_FOLDER_ID`: missing (will use account default)
 
 ## Probe results
@@ -17,7 +17,7 @@ Generated: 2026-05-07T00:01:34.110Z
 **Status:** pass
 
 ```
-JWT minted: eyJhbG…qm7Q (243 chars)
+JWT minted: eyJhbG…HmZQ (243 chars)
 Response shape keys: token
 ```
 
@@ -26,7 +26,7 @@ Response shape keys: token
 **Status:** pass
 
 ```
-JWT minted: eyJhbG…uvHw (242 chars)
+JWT minted: eyJhbG…rTqw (242 chars)
 Response shape keys: token
 ```
 
@@ -35,7 +35,7 @@ Response shape keys: token
 **Status:** fail
 
 ```
-HTTP 401 — {"timestamp":"2026-05-07T00:01:31.583Z","status":401,"error":"Unauthorized","path":"/v1/modules"}
+HTTP 401 — {"timestamp":"2026-05-07T01:22:13.888Z","status":401,"error":"Unauthorized","path":"/v1/modules"}
 ```
 
 ### findmodules via plugin-API-JWT + includeContent=true
@@ -43,7 +43,7 @@ HTTP 401 — {"timestamp":"2026-05-07T00:01:31.583Z","status":401,"error":"Unaut
 **Status:** fail
 
 ```
-HTTP 401 — {"timestamp":"2026-05-07T00:01:32.785Z","status":401,"error":"Unauthorized","path":"/v1/modules"}
+HTTP 401 — {"timestamp":"2026-05-07T01:22:15.211Z","status":401,"error":"Unauthorized","path":"/v1/modules"}
 ```
 
 ### findmodules via plugin-API-JWT + withContent=true
@@ -51,7 +51,7 @@ HTTP 401 — {"timestamp":"2026-05-07T00:01:32.785Z","status":401,"error":"Unaut
 **Status:** fail
 
 ```
-HTTP 401 — {"timestamp":"2026-05-07T00:01:33.070Z","status":401,"error":"Unauthorized","path":"/v1/modules"}
+HTTP 401 — {"timestamp":"2026-05-07T01:22:15.520Z","status":401,"error":"Unauthorized","path":"/v1/modules"}
 ```
 
 ### findmodules via REST token (Stripo-Api-Auth header)
@@ -78,10 +78,10 @@ Sample (first 1500 chars):
 
 ### generateemail
 
-**Status:** skip
+**Status:** fail
 
 ```
-ORBIT_STRIPO_MASTER_TEMPLATE_ID not provided.
+HTTP 400 — {"date":"2026-05-07T01:22:16.814Z","endpoint":"/v1/email","errors":[{"field":"dataSources","rejectedValue":null,"reason":"must not be null"}],"message":"Validation Error"}
 ```
 
 ## Decisions to make

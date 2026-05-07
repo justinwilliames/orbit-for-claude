@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.18.8",
+  "version": "0.18.9",
   "icon": "icon.png",
   "icons": [
     {
@@ -124,13 +124,13 @@
     "stripo_master_template_id": {
       "type": "string",
       "title": "Stripo Master Template ID",
-      "description": "Optional ID of the Stripo template Orbit uses as the skeleton when creating new emails. Run orbit_setup_stripo to create one.",
+      "description": "Numeric ID of the Stripo template Orbit uses as the skeleton when creating new emails. Find it in the URL when editing the template in Stripo: my.stripo.email/editor/v5/<projectId>/template/<thisId>. The template must contain a stripe block with the esd-email-gen-area attribute set on its td (Orbit_setup_stripo walks you through this). Required for the orbit_compose_stripo_email push step; not needed for the sync/list/document tools.",
       "default": ""
     },
     "stripo_default_folder_id": {
       "type": "string",
       "title": "Stripo Default Folder ID",
-      "description": "Optional Stripo folder ID where new Orbit-generated emails should land. Defaults to the account's default folder when blank.",
+      "description": "Optional Stripo folder ID where Orbit-composed emails should land. Find it in your workspace's URL when viewing a folder. Defaults to the account's root folder when blank.",
       "default": ""
     }
   },
@@ -402,6 +402,14 @@
     {
       "name": "orbit_compose_stripo_email",
       "description": "Compose an email from a sequence of synced Stripo modules. Validates exactly one header + one footer. Stitches modules into a full HTML email document with CSS deduped and esd-custom-block-id preserved. Returns assembled HTML with a directive for Claude to render an HTML artifact preview immediately. Use push: true to send to Stripo (requires master template configured first)."
+    },
+    {
+      "name": "orbit_audit_stripo_modules",
+      "description": "Audit synced Stripo modules for structural issues — orphaned floats (the lopsided-block bug), STRIPE-with-columns anti-pattern, sub-600 widths, missing alt text, footer compliance gaps, optionally broken image URLs. Generates a markdown audit doc at ~/Orbit/outputs/stripo-audit/. Run after sync. Auto-fixable findings can be patched via orbit_fix_stripo_module."
+    },
+    {
+      "name": "orbit_fix_stripo_module",
+      "description": "Returns corrected HTML for a Stripo module + paste-back instructions. Auto-fixes available for orphaned_float and sub_600_width. Manual paste required because Stripo's REST API is read-only for modules. Run orbit_audit_stripo_modules first to find what needs fixing."
     },
     {
       "name": "orbit_learn_email_template",

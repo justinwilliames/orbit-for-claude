@@ -183,6 +183,38 @@ export async function stripoRestDelete({ config, endpoint, params = {}, auth = "
 }
 
 async function stripoRestRequest({ config, endpoint, params, body, auth, method }) {
+  // ─── Defence-in-depth: never mutate the master template. ────────────
+  //
+  // Sir's hard rule: Orbit must NEVER edit the Master template provided
+  // by the user. This guard is the single structural enforcement point.
+  // Refuses every non-GET request whose endpoint path touches /template
+  // or /templates — covers PUT, PATCH, POST-with-template-modify-side-
+  // effect, DELETE, regardless of which calling code asked for it.
+  //
+  // Allowed: GET on /templates/* (read-only — confirming a template
+  // exists, fetching its metadata, etc.).
+  // Allowed: POST /email — creates a NEW email entry FROM a template
+  // (the template is INPUT, not the modification target).
+  // Forbidden: anything else touching /template paths.
+  //
+  // If a future endpoint legitimately needs to mutate templates, this
+  // guard MUST be revisited consciously rather than worked around in
+  // calling code.
+  const normalisedEndpoint = String(endpoint || "").toLowerCase();
+  const touchesTemplatePath = /(^|\/)templates?(\/|$|\?)/.test(normalisedEndpoint);
+  const isMutatingMethod = method !== "GET" && method !== "HEAD";
+  if (touchesTemplatePath && isMutatingMethod) {
+    const err = new Error(
+      `Refused: Orbit must never modify Stripo templates. Blocked ${method} ${endpoint}. ` +
+        "If you genuinely need to mutate a template, revisit the guard in stripoRestRequest() " +
+        "rather than working around it in calling code.",
+    );
+    err.code = "stripo_template_write_refused";
+    err.endpoint = endpoint;
+    err.method = method;
+    throw err;
+  }
+
   let token;
   if (auth === "plugin-api-jwt") {
     token = await mintStripoPluginJwt({ config, role: "API" });
@@ -273,6 +305,25 @@ export function classifyStripoError({ status, parsed, text, endpoint, surface })
   } else if (status >= 500) {
     code = "stripo_upstream_error";
     hint = "Stripo's API returned a server error. This is usually transient — retry shortly.";
+  } else if (
+    status === 400 &&
+    typeof detail === "string" &&
+    /can ?not find area|gen[_ -]?area|ESDEV_DEFAULT_GEN_AREA/i.test(detail)
+  ) {
+    // Specific 400 surface for the most common setup gap: the master
+    // template exists, the API works, but the user hasn't marked a
+    // generation area inside the template via Stripo's UI. Distinct
+    // code so the calling tool can render a precise actionable hint
+    // rather than a generic unknown-error message.
+    code = "stripo_no_gen_area";
+    hint =
+      "Your master template exists but does not contain a marked generation area. " +
+      "In Stripo's editor, open the template, select a Structure block, and toggle " +
+      "'Generation area' (sometimes labelled 'Container for auto-generation') in the " +
+      "right-side panel. Save the template, then retry.";
+  } else if (status === 400) {
+    code = "stripo_validation";
+    hint = "Stripo rejected the request payload. The detail above usually points at the problem field.";
   }
 
   const err = new Error(`Stripo API ${status} on ${endpoint}: ${detail}${hint ? ` — ${hint}` : ""}`);

@@ -7,21 +7,28 @@
  * at the last index). The tool's job is to:
  *   1. Validate the constraint (exactly one header, exactly one
  *      footer, all modules exist in the local library).
- *   2. Stitch the modules into a full HTML email document, deduping
- *      CSS and preserving every esd-custom-block-id attribute so the
- *      result round-trips back into Stripo.
- *   3. Return the assembled HTML in a response shape that prompts
- *      Claude to render an HTML artifact immediately (no extra step
- *      from the user).
- *   4. If push:true is passed AND a master template is configured,
- *      POST to Stripo's generateemail endpoint to create the email
- *      in the user's workspace. (The push half is stubbed until
- *      Phase 0 follow-up confirms generateemail's exact payload and
- *      response shape — the master template ID is required first.)
+ *   2. Stitch the modules into a full HTML email document for the
+ *      LOCAL preview — CSS deduped, esd-custom-block-id preserved.
+ *      Returned with an artifact-render directive so Claude shows
+ *      the user what they'll get before any push.
+ *   3. If push:true is passed AND a master template is configured,
+ *      POST to Stripo's /emailgeneration/v1/email endpoint using the
+ *      CANONICAL JSON shape — { dataSources: [{ name, type: 'RAW',
+ *      value: [{ id: <stripoModuleId> }, ...] }], templateId,
+ *      emailName }. Stripo composes server-side using the template's
+ *      generation area as the destination. Result: a NEW email entry
+ *      in the user's workspace; the master template is never modified
+ *      (defence-in-depth guard in stripo-api.js refuses any non-GET
+ *      to /template paths).
+ *
+ * Schema discovered via probe against support.stripo.email/articles/
+ * 5986297 — canonical JSON guide. Module IDs from findmodules go
+ * straight into dataSources[].value[].id.
  */
 
 import fs from "node:fs";
 import { listLibraryItems, loadLibraryItem } from "./template-library.js";
+import { stripoRestPost, validateStripoRestSetup } from "./stripo-api.js";
 
 const TAG_SYNCED = "stripo_synced";
 const TAG_ARCHIVED = "stripo_archived";
@@ -105,26 +112,81 @@ export async function composeStripoEmail({
   }));
 
   if (push) {
-    // Push path: stubbed until Phase 0 follow-up runs generateemail
-    // against a real master template. Returning a clean explanation
-    // rather than a half-broken API call.
+    // Push path — wired against the canonical-JSON schema discovered via
+    // probe (POST /emailgeneration/v1/email). Module IDs from findmodules
+    // go straight into dataSources[].value[].id; Stripo composes server-
+    // side using the template's marked generation area. The master
+    // template itself is read-only (programmatically guarded in
+    // stripo-api.js).
     if (!config.stripoMasterTemplateId) {
       return {
         status: "push_not_configured",
+        missing: ["stripo_master_template_id"],
         message:
-          "Pushing to Stripo requires a master template. Run orbit_setup_stripo for instructions on creating one in Stripo's UI, then paste its ID into Stripo Master Template ID in Orbit's extension settings.",
+          "Pushing to Stripo requires a master template ID. Run orbit_setup_stripo for instructions on creating one in Stripo's UI (and marking a generation area inside it), then paste the ID into Stripo Master Template ID in Orbit's extension settings.",
         composition_plan: compositionPlan,
         preview_html: assembled.html,
       };
     }
+
+    const restSetupError = validateStripoRestSetup(config);
+    if (restSetupError) {
+      return { ...restSetupError, composition_plan: compositionPlan, preview_html: assembled.html };
+    }
+
+    const templateIdNumber = Number(config.stripoMasterTemplateId);
+    if (!Number.isInteger(templateIdNumber) || templateIdNumber <= 0) {
+      return {
+        status: "invalid_master_template_id",
+        message: `Configured Stripo Master Template ID "${config.stripoMasterTemplateId}" is not a valid integer. Stripo template IDs are numeric (e.g. 4431390). Check your extension settings.`,
+        composition_plan: compositionPlan,
+        preview_html: assembled.html,
+      };
+    }
+
+    const canonicalPayload = buildCanonicalPayload({
+      modules: resolved,
+      templateId: templateIdNumber,
+      subject,
+      preheader,
+    });
+
+    let pushResponse;
+    try {
+      pushResponse = await stripoRestPost({
+        config,
+        endpoint: "/email",
+        body: canonicalPayload,
+      });
+    } catch (err) {
+      return {
+        status: "push_failed",
+        error_code: err.code ?? "stripo_unknown",
+        error_message: err.message,
+        canonical_payload: canonicalPayload,
+        composition_plan: compositionPlan,
+        preview_html: assembled.html,
+      };
+    }
+
     return {
-      status: "push_not_yet_implemented",
-      message:
-        "The push-to-Stripo half of the compose tool is pending Phase 4 part 2 — Stripo's generateemail endpoint needs a probe against a real master template to confirm payload + response shape before we wire it up. The composition itself is complete; preview HTML is below.",
+      status: "pushed",
+      stripo: {
+        new_email_id:
+          pushResponse?.emailId ??
+          pushResponse?.id ??
+          pushResponse?.generatedEmailId ??
+          null,
+        email_name: canonicalPayload.emailName,
+        master_template_id: templateIdNumber,
+        master_template_modified: false, // Hard-guaranteed by stripo-api.js guard.
+        raw_response: pushResponse,
+      },
       composition_plan: compositionPlan,
       preview_html: assembled.html,
-      next_step:
-        "When the generateemail endpoint shape is captured, this tool will POST the preview HTML to Stripo and return the new email's ID + workspace location.",
+      message:
+        `Created a new email in your Stripo workspace using master template ${templateIdNumber}. ` +
+        "The master template was NOT modified. Open Stripo to find the new email in the email folder.",
     };
   }
 
@@ -329,3 +391,87 @@ function escapeHtml(s) {
 // keep the symbol referenced so module-graph dead-code passes don't
 // strip it before it's wired in.
 void loadLibraryItem;
+
+// ---------------------------------------------------------------------------
+// Canonical-JSON payload builder for Stripo's POST /email endpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the canonical-JSON payload Stripo's /emailgeneration/v1/email
+ * expects.
+ *
+ * Schema (per Stripo support article 5986297):
+ *   {
+ *     "dataSources": [{
+ *       "name":  "<any identifier>",
+ *       "type":  "RAW" | "LINK",
+ *       "value": [{ "id": "<stripoModuleId>" }, ...]
+ *     }],
+ *     "transformers": [],
+ *     "composers":    [],
+ *     "templateId":   <Long>,
+ *     "emailName":    "<optional>",
+ *     "title":        "<optional>",
+ *     "preheader":    "<optional>"
+ *   }
+ *
+ * Each module entry can also carry `values` for slot overrides and
+ * `content` for nested-container module data — not used yet (Stripo's
+ * findmodules doesn't expose slot keys), but the shape supports it
+ * when we add per-slot copy/image overrides later.
+ *
+ * The emailName carries a timestamp so repeat composes don't collide
+ * in the user's workspace folder.
+ */
+function buildCanonicalPayload({ modules, templateId, subject, preheader }) {
+  // ─── Stripo's dataSources[].value[].id is the module UID, NOT the
+  // numeric module ID. Discovered the hard way: posting numeric IDs
+  // produced silent empty emails — Stripo accepted the request, stripped
+  // the gen-area marker, and filled with nothing. Posting UIDs (the
+  // short positional string like "STRIPE1" / "STRUCTURE7") produces
+  // correctly-composed emails. The SRT transformer documentation
+  // confirms this — `id` is the "Unique Identifier of the module that
+  // has been saved to the Library."
+  //
+  // Fail loud if a module is missing its UID — that means a sync ran
+  // against an older Stripo API surface that didn't return the field.
+  // Better to surface the gap than push silently-empty emails again.
+  const moduleRefs = modules.map((item) => {
+    const stripoUid = item.metadata?.stripo_uid;
+    if (!stripoUid) {
+      throw new Error(
+        `Module ${item.metadata?.stripo_id ?? item.id} has no stripo_uid in metadata. ` +
+          "Re-run orbit_sync_stripo_modules to repopulate the UID field.",
+      );
+    }
+    return { id: String(stripoUid) };
+  });
+
+  // Stripo's API rejects emailNames containing square brackets with a
+  // generic "Can not save generated email" 400 — discovered the hard
+  // way by probing 4451727 and isolating one variable at a time. Stick
+  // to a middot-separated `Orbit · subject · timestamp` format. Other
+  // common ASCII characters (parens, slashes, ampersands, Unicode
+  // arrows, the middot itself) all save fine — the brackets are the
+  // outlier.
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const baseName = subject ? subject.slice(0, 60) : "Orbit-composed";
+  const emailName = `Orbit · ${baseName} · ${timestamp}`;
+
+  const payload = {
+    dataSources: [
+      {
+        name: "orbit_compose",
+        type: "RAW",
+        value: moduleRefs,
+      },
+    ],
+    transformers: [],
+    composers: [],
+    templateId,
+    emailName,
+  };
+  if (subject) payload.title = subject;
+  if (preheader) payload.preheader = preheader;
+  return payload;
+}
