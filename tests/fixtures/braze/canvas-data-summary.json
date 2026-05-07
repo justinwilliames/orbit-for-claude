@@ -1,0 +1,49 @@
+{
+  "data": {
+    "name": "onboarding_new_trial_v2",
+    "total_stats": {
+      "entries": 505,
+      "conversions": 42,
+      "conversions_by_send_time": 39,
+      "revenue": 0
+    },
+    "step_stats": {
+      "welcome_email": {
+        "name": "Welcome Email",
+        "revenue": 0,
+        "conversions": 30,
+        "messages": {
+          "email": [
+            {
+              "sent": 505,
+              "delivered": 498,
+              "unique_opens": 220,
+              "unique_clicks": 60,
+              "bounces": 5,
+              "soft_bounces": 2,
+              "unsubscribes": 3
+            }
+          ]
+        }
+      },
+      "feature_highlight": {
+        "name": "Feature Highlight",
+        "revenue": 0,
+        "conversions": 12,
+        "messages": {
+          "email": [
+            {
+              "sent": 480,
+              "delivered": 476,
+              "unique_opens": 180,
+              "unique_clicks": 35,
+              "bounces": 3,
+              "soft_bounces": 1,
+              "unsubscribes": 2
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "data": {
+    "name": "spring_blast_2026",
+    "total_stats": {
+      "entries": 0,
+      "conversions": 0,
+      "conversions_by_send_time": 0,
+      "revenue": 0
+    },
+    "step_stats": {
+      "blast_step": {
+        "name": "Spring Blast Email",
+        "revenue": 0,
+        "conversions": 0,
+        "messages": {
+          "email": [
+            {
+              "sent": 582,
+              "delivered": 575,
+              "unique_opens": 290,
+              "unique_clicks": 88,
+              "bounces": 5,
+              "soft_bounces": 2,
+              "unsubscribes": 4
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -66,6 +66,7 @@ export async function startMockApiServer() {
     setResponse("GET", "/email/hard_bounces", { emails: [] });
     setResponse("GET", "/email/unsubscribes", { emails: [] });
     setResponse("GET", "/canvas/data_series", loadFixture("braze", "canvas-data-series"));
+    setResponse("GET", "/canvas/data_summary", loadFixture("braze", "canvas-data-summary"));
     setResponse("GET", "/campaigns/data_series", loadFixture("braze", "campaign-data-series"));
     setResponse("GET", "/users/export/ids", { users: [] });
 
