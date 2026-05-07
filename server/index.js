@@ -245,19 +245,70 @@ const server = new McpServer({
     "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
 });
 
-// Process-level safety net. MCP uses stdio for the transport so we only
-// ever write diagnostics to stderr. An unhandled error here shouldn't
-// crash the Claude Desktop extension without a trace.
+// ─── Process lifecycle ─────────────────────────────────────────────────
+//
+// Claude Desktop spawns the MCP server as a stdio child. The MCP SDK's
+// StdioServerTransport listens for stdin 'data'/'error' but NOT 'end'
+// or 'close', so when the parent closes its end of the pipe we'd
+// otherwise sit forever on a dead stdin. Combined with the previous
+// uncaughtException handler that swallowed fatal errors, that produced
+// the zombie-process accumulation pattern users hit (multiple
+// long-lived server/index.js instances burning CPU after Claude
+// Desktop quit).
+//
+// The fix below funnels every "your parent's gone, stop running"
+// signal — SIGTERM/SIGINT/SIGHUP, stdin EOF, transport close,
+// uncaughtException, parent-orphaned — into one idempotent shutdown
+// path. shutdown() is set up early so the handlers can reference it,
+// but it lazily reads the transport via a closure so we don't have
+// to hoist the variable.
+
+let _transport = null;
+let _shuttingDown = false;
+function shutdown(reason, exitCode = 0) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  try { process.stderr.write(`[Orbit] shutdown: ${reason}\n`); } catch { /* best-effort */ }
+  // Best-effort transport close — don't let it block the exit.
+  try { _transport?.close?.(); } catch { /* best-effort */ }
+  // Hard-exit after a short grace window. If anything is keeping the
+  // event loop alive (timers, sockets), we still want to terminate.
+  // unref() so this timer alone can't keep the process alive.
+  setTimeout(() => process.exit(exitCode), 200).unref();
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGHUP", () => shutdown("SIGHUP"));
+
+// stdin EOF / close — Claude Desktop closes its end of the pipe when
+// the extension is unloaded or the app quits. The SDK transport
+// doesn't react to this, so we do it here. Both events fire in
+// practice; shutdown() is idempotent so duplicate calls are fine.
+process.stdin.on("end", () => shutdown("stdin-end"));
+process.stdin.on("close", () => shutdown("stdin-close"));
+
+// Replace previous swallow-and-continue uncaughtException with
+// exit-after-log. A process in an undefined state shouldn't keep
+// serving requests — Claude Desktop will respawn cleanly on next
+// call. Same logic for unhandled rejections (which are upgraded to
+// uncaughtException in modern Node by default).
 process.on("uncaughtException", (err) => {
-  try {
-    process.stderr.write(`[Orbit] uncaughtException: ${err?.stack ?? err}\n`);
-  } catch { /* best-effort */ }
+  try { process.stderr.write(`[Orbit] uncaughtException: ${err?.stack ?? err}\n`); } catch { /* best-effort */ }
+  shutdown("uncaughtException", 1);
 });
 process.on("unhandledRejection", (reason) => {
-  try {
-    process.stderr.write(`[Orbit] unhandledRejection: ${reason?.stack ?? reason}\n`);
-  } catch { /* best-effort */ }
+  try { process.stderr.write(`[Orbit] unhandledRejection: ${reason?.stack ?? reason}\n`); } catch { /* best-effort */ }
+  shutdown("unhandledRejection", 1);
 });
+
+// Parent-alive watchdog. macOS has no PR_SET_PDEATHSIG so we poll
+// process.ppid. Becomes 1 (init/launchd) when our parent is reaped
+// and we're orphaned — exit. unref() so this interval can't keep
+// the event loop alive on its own.
+setInterval(() => {
+  if (process.ppid === 1) shutdown("parent-orphaned");
+}, 30_000).unref();
 
 registerResources();
 registerPrompts();
@@ -270,8 +321,12 @@ startVersionNag({ installedVersion: ORBIT_VERSION });
 // Fire a session_start telemetry event if opted in (no-op otherwise).
 trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+_transport = new StdioServerTransport();
+// Wire the SDK's own close hook symmetrically — if the SDK shuts the
+// transport for any reason (programmatic close, test harness, etc.)
+// the server should exit too.
+_transport.onclose = () => shutdown("transport-onclose");
+await server.connect(_transport);
 
 function registerResources() {
   server.registerResource(
