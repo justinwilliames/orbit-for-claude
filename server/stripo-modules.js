@@ -27,6 +27,8 @@
  * Orbit's compose pool. We never hard-delete from the library.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import { validateStripoRestSetup, stripoRestGet } from "./stripo-api.js";
 import { saveLibraryItem, listLibraryItems } from "./template-library.js";
 import {
@@ -34,6 +36,7 @@ import {
   extractLiquidVariables,
   extractBrandTokens,
 } from "./stripo-template-learning.js";
+import { cacheImageBatch, pruneOrphans } from "./stripo-image-cache.js";
 
 const STRIPO_PAGE_SIZE = 100;
 const TAG_SYNCED = "stripo_synced";
@@ -74,17 +77,66 @@ export async function syncStripoModules({ config }) {
   // whose Stripo ID no longer appears in the API response).
   const archivedCount = archiveStaleModules({ config, fetchedIds, syncWarnings });
 
+  // Cache module image URLs locally so the compose tool can inline
+  // them as data: URIs in the Claude artifact preview (Claude's
+  // artifact iframe has a strict CSP that blocks external img-src,
+  // even though Stripo's CDN serves the images publicly). The cache
+  // is keyed by URL hash so re-syncs skip already-downloaded images.
+  // Stripo CDN URLs are content-addressed, so a same URL guarantees
+  // identical bytes — safe cache hits across runs.
+  const allImageUrls = collectImageUrls({ modules: fetchedModules });
+  const imageCache = await cacheImageBatch({ config, urls: allImageUrls });
+  for (const err of imageCache.errors ?? []) {
+    syncWarnings.push({
+      code: "image_cache_failed",
+      detail: `Could not cache ${err.url} (${err.error}). Preview will fall back to the external URL for this image.`,
+    });
+  }
+
+  // Sweep cache entries that no module references anymore (e.g.,
+  // a module was edited in Stripo to use a different image — the old
+  // URL goes orphan).
+  const prune = pruneOrphans({ config, referencedUrls: allImageUrls });
+
   return {
     status: "ok",
     total_fetched: fetchedModules.length,
     total_saved: savedCount,
     total_archived: archivedCount,
     by_classification: byClassification,
+    image_cache: {
+      total_referenced: imageCache.total,
+      newly_downloaded: imageCache.downloaded,
+      already_cached: imageCache.cached,
+      failed: imageCache.failed,
+      orphans_pruned: prune.pruned,
+      bytes_freed: prune.freedBytes,
+    },
     sync_warnings: syncWarnings,
-    message: `Synced ${savedCount} module(s) from Stripo.${
-      archivedCount > 0 ? ` Archived ${archivedCount} stale module(s).` : ""
-    }`,
+    message:
+      `Synced ${savedCount} module(s) from Stripo.` +
+      (archivedCount > 0 ? ` Archived ${archivedCount} stale module(s).` : "") +
+      (imageCache.downloaded > 0
+        ? ` Cached ${imageCache.downloaded} new image(s) (${imageCache.cached} already cached).`
+        : ` Image cache up to date (${imageCache.cached} hit, 0 new).`) +
+      (prune.pruned > 0 ? ` Pruned ${prune.pruned} orphan image(s) freeing ${(prune.freedBytes / 1024).toFixed(1)} KB.` : ""),
   };
+}
+
+/**
+ * Pull image URLs out of every fetched module's markup. Returns a
+ * flat de-duped array. Used to drive the post-sync image-cache batch.
+ */
+function collectImageUrls({ modules }) {
+  const urls = new Set();
+  for (const m of modules) {
+    const markup = m.markup ?? "";
+    for (const match of markup.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) {
+      const url = match[1];
+      if (url && /^https?:\/\//i.test(url)) urls.add(url);
+    }
+  }
+  return [...urls];
 }
 
 async function fetchAllStripoModules({ config }) {

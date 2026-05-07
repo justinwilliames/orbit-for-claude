@@ -29,6 +29,7 @@
 import fs from "node:fs";
 import { listLibraryItems, loadLibraryItem } from "./template-library.js";
 import { stripoRestPost, validateStripoRestSetup } from "./stripo-api.js";
+import { readCachedAsDataUri } from "./stripo-image-cache.js";
 
 const TAG_SYNCED = "stripo_synced";
 const TAG_ARCHIVED = "stripo_archived";
@@ -96,6 +97,22 @@ export async function composeStripoEmail({
     imageOverrides,
   });
 
+  // ─── Preview-only image inlining ───────────────────────────────────
+  //
+  // Claude artifacts run in a sandboxed iframe with a strict CSP that
+  // blocks external img-src. Stripo CDN images would render as broken-
+  // image icons. So for the preview path ONLY, swap external image
+  // URLs for data: URIs sourced from the local image cache (built at
+  // sync time by orbit_sync_stripo_modules).
+  //
+  // Critical: this transformation happens ONLY on `assembled.html`
+  // (the preview/artifact HTML). The push path below does NOT use
+  // this — it sends module UIDs to Stripo via canonical JSON, and
+  // Stripo composes server-side from its OWN copy of the module
+  // markup, which still has the original CDN URLs. Data: URIs never
+  // leave Orbit and never reach Stripo.
+  const previewHtml = inlineImagesAsDataUris({ config, html: assembled.html });
+
   const compositionPlan = resolved.map((item, idx) => ({
     position: idx,
     role:
@@ -125,13 +142,13 @@ export async function composeStripoEmail({
         message:
           "Pushing to Stripo requires a master template ID. Run orbit_setup_stripo for instructions on creating one in Stripo's UI (and marking a generation area inside it), then paste the ID into Stripo Master Template ID in Orbit's extension settings.",
         composition_plan: compositionPlan,
-        preview_html: assembled.html,
+        preview_html: previewHtml,
       };
     }
 
     const restSetupError = validateStripoRestSetup(config);
     if (restSetupError) {
-      return { ...restSetupError, composition_plan: compositionPlan, preview_html: assembled.html };
+      return { ...restSetupError, composition_plan: compositionPlan, preview_html: previewHtml };
     }
 
     const templateIdNumber = Number(config.stripoMasterTemplateId);
@@ -140,7 +157,7 @@ export async function composeStripoEmail({
         status: "invalid_master_template_id",
         message: `Configured Stripo Master Template ID "${config.stripoMasterTemplateId}" is not a valid integer. Stripo template IDs are numeric (e.g. 4431390). Check your extension settings.`,
         composition_plan: compositionPlan,
-        preview_html: assembled.html,
+        preview_html: previewHtml,
       };
     }
 
@@ -165,7 +182,7 @@ export async function composeStripoEmail({
         error_message: err.message,
         canonical_payload: canonicalPayload,
         composition_plan: compositionPlan,
-        preview_html: assembled.html,
+        preview_html: previewHtml,
       };
     }
 
@@ -183,7 +200,7 @@ export async function composeStripoEmail({
         raw_response: pushResponse,
       },
       composition_plan: compositionPlan,
-      preview_html: assembled.html,
+      preview_html: previewHtml,
       message:
         `Created a new email in your Stripo workspace using master template ${templateIdNumber}. ` +
         "The master template was NOT modified. Open Stripo to find the new email in the email folder.",
@@ -211,7 +228,7 @@ export async function composeStripoEmail({
     "Render the HTML below as an HTML artifact NOW so the user can review the assembled email. The HTML is a full standalone email document with all modules stitched, CSS deduped, and every `esd-custom-block-id` preserved for Stripo round-tripping.",
     "",
     "```html",
-    assembled.html,
+    previewHtml,
     "```",
     "",
     "## Next steps",
@@ -225,7 +242,7 @@ export async function composeStripoEmail({
   return {
     status: "composed",
     composition_plan: compositionPlan,
-    preview_html: assembled.html,
+    preview_html: previewHtml,
     css_warnings: assembled.css_warnings,
     artifact_directive: directiveText,
     message: `Composed ${resolved.length}-module email. Preview HTML returned for artifact rendering. Use push: true to send to Stripo.`,
@@ -385,6 +402,31 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * Replace external <img src> URLs with data: URIs from the local
+ * image cache. Used ONLY for the preview HTML rendered as a Claude
+ * artifact — the push payload never sees this transformation.
+ *
+ * Behaviour:
+ *   - Only rewrites http(s) URLs (data:, blob:, cid: are left alone)
+ *   - If the URL isn't in the local cache (sync hasn't run, image
+ *     wasn't reachable, etc.), the original URL is left in place —
+ *     the artifact will show a broken-image icon for that one image
+ *     but the rest of the preview still works
+ *   - Stripo CDN URLs are content-addressed so cache hits are
+ *     guaranteed-correct; no staleness risk
+ */
+function inlineImagesAsDataUris({ config, html }) {
+  return html.replace(
+    /(<img\b[^>]*\bsrc=["'])(https?:[^"']+)(["'][^>]*>)/gi,
+    (match, before, url, after) => {
+      const dataUri = readCachedAsDataUri({ config, url });
+      if (!dataUri) return match;
+      return `${before}${dataUri}${after}`;
+    },
+  );
 }
 
 // loadLibraryItem is imported for future per-call lazy loading paths;
