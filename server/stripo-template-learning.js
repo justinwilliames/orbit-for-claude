@@ -292,7 +292,7 @@ export function modifyEmailTemplate({
 // Internals: parsing
 // ---------------------------------------------------------------------------
 
-function parseIntoStripoModules(html) {
+export function parseIntoStripoModules(html) {
   const bodyMatch = html.match(/<body[\s\S]*?<\/body>/i);
   const body = bodyMatch ? bodyMatch[0] : html;
 
@@ -587,7 +587,7 @@ function extractSlots(html) {
   return slots;
 }
 
-function extractImagesFromHtml(html) {
+export function extractImagesFromHtml(html) {
   const images = [];
   const imgRegex = /<img\b[^>]*>/gi;
   for (const m of html.matchAll(imgRegex)) {
@@ -606,7 +606,7 @@ function extractImagesFromHtml(html) {
   return images;
 }
 
-function extractImageInventory(html, modules) {
+export function extractImageInventory(html, modules) {
   const seen = new Set();
   const inventory = [];
   modules.forEach((m) => {
@@ -634,9 +634,14 @@ function extractHost(url) {
   }
 }
 
-function extractLiquidVariables(html) {
+export function extractLiquidVariables(html) {
+  // Stripo content-block references are wrapped as
+  // `{{content_blocks.${var-name}}}` — the inner `${...}` contains a
+  // `}` that breaks a naive non-greedy `\{\{(.*?)\}\}` (it stops at
+  // the first `}}` and loses the trailing `}` from the inner group).
+  // The pattern below allows zero or more `${...}` segments inside.
   const vars = new Set();
-  const liquidRegex = /\{\{([\s\S]*?)\}\}/g;
+  const liquidRegex = /\{\{([^{}]*(?:\$\{[^}]*\}[^{}]*)*)\}\}/g;
   for (const m of html.matchAll(liquidRegex)) {
     vars.add(m[1].trim());
   }
@@ -647,7 +652,7 @@ function extractLiquidVariables(html) {
 // Internals: brand-token extraction
 // ---------------------------------------------------------------------------
 
-function extractBrandTokens(html, modules) {
+export function extractBrandTokens(html, modules) {
   const tokens = {
     primary_button_color: null,
     primary_button_text_color: null,

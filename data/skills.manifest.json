@@ -5934,6 +5934,100 @@
     ]
   },
   {
+    "name": "stripo-integration",
+    "title": "Stripo Integration",
+    "category": "other",
+    "description": "Use this skill whenever the user wants to connect a Stripo account to Orbit, sync their saved custom modules from Stripo, document the Stripo-side design system, or compose new emails directly into Stripo via API. Trigger on \"connect Stripo\", \"sync my Stripo modules\", \"pull modules from Stripo\", \"build an email in Stripo\", \"compose email and push to Stripo\", \"use my Stripo modules\", or any mention of using Stripo's API as opposed to copy-pasting HTML out of Stripo. Do NOT trigger for the older paste-driven `orbit_learn_email_template` flow — that's the email-template-learning skill.",
+    "trigger_phrases": [
+      "connect stripo",
+      "sync my stripo modules",
+      "pull modules from stripo",
+      "build an email in stripo",
+      "compose email and push to stripo",
+      "use my stripo modules"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "account",
+      "any",
+      "api",
+      "build",
+      "compose",
+      "connect",
+      "copy-pasting",
+      "custom",
+      "deliverable",
+      "design",
+      "directly",
+      "document",
+      "email",
+      "email-template-learning",
+      "emails",
+      "flow",
+      "html",
+      "integration",
+      "learn",
+      "mention",
+      "modules",
+      "new",
+      "not",
+      "older",
+      "opposed",
+      "out",
+      "paste-driven",
+      "pull",
+      "push",
+      "saved",
+      "stripo",
+      "stripo-integration",
+      "stripo-side",
+      "sync",
+      "system",
+      "template",
+      "trigger",
+      "user",
+      "using",
+      "via",
+      "wants"
+    ]
+  },
+  {
     "name": "template-library-management",
     "title": "Template Library Management",
     "category": "production-operations",

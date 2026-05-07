@@ -106,6 +106,10 @@ import {
   buildEmailFromTemplate,
   modifyEmailTemplate
 } from "./stripo-template-learning.js";
+import { setupStripo } from "./stripo-onboarding.js";
+import { syncStripoModules, listStripoSyncedModules } from "./stripo-modules.js";
+import { documentStripoDesignSystem } from "./stripo-design-system.js";
+import { composeStripoEmail } from "./stripo-compose.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
 import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
@@ -3893,6 +3897,162 @@ function registerTools() {
       } finally {
         releaseCheckpoint(token);
       }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // Stripo API integration — onboarding, sync, design system, compose
+  // -------------------------------------------------------------------
+
+  registerToolSafe(
+    "orbit_setup_stripo",
+    {
+      title: "Connect Stripo to Orbit",
+      description:
+        "Walk the user through connecting their Stripo account to Orbit. Reports which Stripo credentials are present, runs live probes against Stripo's Plugin and REST APIs, and returns a step-by-step markdown checklist (Plugin ID + Secret Key, REST API token, Master Template setup). Run this first before any other orbit_*_stripo_* tool.",
+      inputSchema: {
+        action: z
+          .enum(["check", "instructions"])
+          .optional()
+          .describe(
+            "'check' (default) probes any present credentials live against Stripo. 'instructions' returns the markdown checklist without making network calls."
+          )
+      }
+    },
+    async ({ action }) => {
+      const result = await setupStripo({ config: runtimeConfig, action: action ?? "check" });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_sync_stripo_modules",
+    {
+      title: "Sync Stripo Modules to Orbit Library",
+      description:
+        "Pull all custom saved modules from the user's Stripo workspace via the REST API and save each into Orbit's local library. Classifies modules using Stripo's own category taxonomy (header / hero / content / footer). Modules previously synced but no longer present in Stripo are tagged as archived (never hard-deleted). Re-run any time saved modules change in Stripo.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await syncStripoModules({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_list_stripo_modules",
+    {
+      title: "List Synced Stripo Modules",
+      description:
+        "Read Stripo modules from Orbit's local library (does NOT call Stripo's API). Filter by classification (header / hero / content / footer) or free-text search. Returns lightweight per-module summaries by default; pass include_html: true to get file paths for the assembler. Use this before composing an email to see what modules are available.",
+      inputSchema: {
+        classification: z
+          .enum(["header", "hero", "content", "footer", "other"])
+          .optional()
+          .describe("Filter to one classification bucket. Omit to list everything."),
+        query: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe("Free-text filter applied to title, slug, tags, and notes."),
+        include_archived: z
+          .boolean()
+          .optional()
+          .describe("Include modules tagged stripo_archived (default false)."),
+        include_html: z
+          .boolean()
+          .optional()
+          .describe("Return file paths for module.html / module.css (default false; keeps responses small).")
+      }
+    },
+    async ({ classification, query, include_archived, include_html }) => {
+      const result = listStripoSyncedModules({
+        config: runtimeConfig,
+        classification,
+        query,
+        include_archived,
+        include_html
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_document_stripo_design_system",
+    {
+      title: "Document Stripo Design System",
+      description:
+        "Read all synced Stripo modules and produce a markdown brief covering the module inventory, detected brand tokens (colours, fonts, dimensions), inferred composition rules, and risks (duplicate names, missing footer Liquid vars, unclassified modules). Saves to <workspace>/outputs/stripo-design-system/stripo-design-system.md. Run this after orbit_sync_stripo_modules and BEFORE orbit_compose_stripo_email — it's the source of truth Claude reads to make on-brand composition decisions.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = documentStripoDesignSystem({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_compose_stripo_email",
+    {
+      title: "Compose Stripo Email From Synced Modules",
+      description:
+        "Compose an email from a sequence of synced Stripo modules. Validates the one-header / one-footer constraint, stitches the modules into a full HTML email document with CSS deduped and esd-custom-block-id attributes preserved (so the result round-trips into Stripo). Returns the assembled HTML with an explicit directive for Claude to render it as an HTML artifact immediately. Re-call with push:true to send to Stripo (requires a master template configured first).",
+      inputSchema: {
+        subject: z.string().min(1).max(MAX_SHORT_STRING).describe("The email subject line."),
+        preheader: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe("Optional preheader (preview text shown after subject in inbox)."),
+        module_sequence: z
+          .array(z.union([z.number(), z.string()]))
+          .min(2)
+          .max(MAX_MEDIUM_ARRAY)
+          .describe(
+            "Ordered array of module references. Each entry is either a Stripo numeric ID (from orbit_list_stripo_modules) or a library ID (`module:stripo-<id>:v1`). Position 0 must be a header; the last position must be a footer; everything in between is body content."
+          ),
+        copy_overrides: z
+          .record(z.string(), z.record(z.string(), z.string()))
+          .optional()
+          .describe(
+            "Per-module text replacements: { '<stripo_id>': { 'find string': 'replace with' } }. Use to swap default copy in a module without re-saving it in Stripo."
+          ),
+        image_overrides: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Global image src replacements: { 'old_url': 'new_url' }."),
+        push: z
+          .boolean()
+          .optional()
+          .describe(
+            "If true, attempt to push the assembled email to Stripo via generateemail (requires Stripo Master Template ID set). Default false: returns the preview only."
+          )
+      }
+    },
+    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, push }) => {
+      const result = await composeStripoEmail({
+        config: runtimeConfig,
+        subject,
+        preheader,
+        module_sequence,
+        copy_overrides,
+        image_overrides,
+        push
+      });
+      // When the tool returns an artifact_directive, surface that as
+      // the primary text content so Claude renders the HTML artifact
+      // automatically. Other status paths return structured JSON only.
+      if (result.artifact_directive) {
+        return {
+          content: [{ type: "text", text: result.artifact_directive }],
+          structuredContent: {
+            status: result.status,
+            composition_plan: result.composition_plan,
+            css_warnings: result.css_warnings
+          }
+        };
+      }
+      return makeJsonToolResponse(result);
     }
   );
 

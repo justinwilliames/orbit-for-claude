@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.18.5",
+  "version": "0.18.7",
   "icon": "icon.png",
   "icons": [
     {
@@ -38,7 +38,13 @@
         "ORBIT_GOOGLE_AI_API_KEY": "${user_config.google_ai_api_key}",
         "ORBIT_FIGMA_API_TOKEN": "${user_config.figma_api_token}",
         "ORBIT_BRAZE_API_KEY": "${user_config.braze_api_key}",
-        "ORBIT_BRAZE_REST_ENDPOINT": "${user_config.braze_rest_endpoint}"
+        "ORBIT_BRAZE_REST_ENDPOINT": "${user_config.braze_rest_endpoint}",
+        "ORBIT_STRIPO_PLUGIN_ID": "${user_config.stripo_plugin_id}",
+        "ORBIT_STRIPO_SECRET_KEY": "${user_config.stripo_secret_key}",
+        "ORBIT_STRIPO_REST_API_TOKEN": "${user_config.stripo_rest_api_token}",
+        "ORBIT_STRIPO_WORKSPACE_ID": "${user_config.stripo_workspace_id}",
+        "ORBIT_STRIPO_MASTER_TEMPLATE_ID": "${user_config.stripo_master_template_id}",
+        "ORBIT_STRIPO_DEFAULT_FOLDER_ID": "${user_config.stripo_default_folder_id}"
       }
     }
   },
@@ -86,6 +92,45 @@
       "type": "string",
       "title": "Braze REST Endpoint",
       "description": "Optional Braze REST API endpoint, for example https://rest.iad-01.braze.com.",
+      "default": ""
+    },
+    "stripo_plugin_id": {
+      "type": "string",
+      "title": "Stripo Plugin ID",
+      "description": "Stripo Plugin ID used to mint editor JWTs. Find it in Stripo under Account → Plugin. Required to use any Stripo tool.",
+      "sensitive": true,
+      "default": ""
+    },
+    "stripo_secret_key": {
+      "type": "string",
+      "title": "Stripo Secret Key",
+      "description": "Stripo Plugin Secret Key paired with the Plugin ID. Required to use any Stripo tool.",
+      "sensitive": true,
+      "default": ""
+    },
+    "stripo_rest_api_token": {
+      "type": "string",
+      "title": "Stripo REST API Token",
+      "description": "Per-project REST API token from Stripo (Settings → Workspace → Projects → REST API). Required to sync saved modules and create emails. Distinct from the Plugin ID and Secret Key.",
+      "sensitive": true,
+      "default": ""
+    },
+    "stripo_workspace_id": {
+      "type": "string",
+      "title": "Stripo Workspace ID",
+      "description": "Optional Stripo workspace identifier. Only set if your Stripo account requires workspace scoping for module or email API calls.",
+      "default": ""
+    },
+    "stripo_master_template_id": {
+      "type": "string",
+      "title": "Stripo Master Template ID",
+      "description": "Optional ID of the Stripo template Orbit uses as the skeleton when creating new emails. Run orbit_setup_stripo to create one.",
+      "default": ""
+    },
+    "stripo_default_folder_id": {
+      "type": "string",
+      "title": "Stripo Default Folder ID",
+      "description": "Optional Stripo folder ID where new Orbit-generated emails should land. Defaults to the account's default folder when blank.",
       "default": ""
     }
   },
@@ -337,6 +382,26 @@
     {
       "name": "orbit_check_version",
       "description": "Compare your installed Orbit version against the latest release on GitHub. Returns up_to_date, update_available, or ahead with a download link when an update is available."
+    },
+    {
+      "name": "orbit_setup_stripo",
+      "description": "Connect Stripo to Orbit. Reports which Stripo credentials are present (Plugin ID + Secret Key, REST API token, Master Template ID), runs live probes against Stripo's APIs, and returns a step-by-step markdown checklist. Run this first before any other Stripo API integration tool."
+    },
+    {
+      "name": "orbit_sync_stripo_modules",
+      "description": "Pull all custom saved modules from the user's Stripo workspace via the REST API into Orbit's local library. Classifies via Stripo's own category taxonomy (header / hero / content / footer). Stale modules are tagged archived, never hard-deleted. Re-run any time saved modules change in Stripo."
+    },
+    {
+      "name": "orbit_list_stripo_modules",
+      "description": "Read Stripo modules from Orbit's local library (no API call). Filter by classification or free-text search. Use this before composing an email to see what's available. Pass include_html for file paths the composer needs."
+    },
+    {
+      "name": "orbit_document_stripo_design_system",
+      "description": "Generate a markdown design-system brief from synced Stripo modules: inventory, detected brand tokens, inferred composition rules, risks. Saves to <workspace>/outputs/stripo-design-system/. Run after sync and before composing — this is the canonical reference for on-brand decisions."
+    },
+    {
+      "name": "orbit_compose_stripo_email",
+      "description": "Compose an email from a sequence of synced Stripo modules. Validates exactly one header + one footer. Stitches modules into a full HTML email document with CSS deduped and esd-custom-block-id preserved. Returns assembled HTML with a directive for Claude to render an HTML artifact preview immediately. Use push: true to send to Stripo (requires master template configured first)."
     },
     {
       "name": "orbit_learn_email_template",

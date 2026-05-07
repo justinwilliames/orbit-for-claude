@@ -37,6 +37,16 @@ export function loadRuntimeConfig(rootDir) {
       cleanString(process.env.ORBIT_FIGMA_API_BASE_URL) ?? "https://api.figma.com/v1",
     brazeApiKey: cleanString(process.env.ORBIT_BRAZE_API_KEY),
     brazeRestEndpoint: cleanString(process.env.ORBIT_BRAZE_REST_ENDPOINT),
+    stripoPluginId: cleanString(process.env.ORBIT_STRIPO_PLUGIN_ID),
+    stripoSecretKey: cleanString(process.env.ORBIT_STRIPO_SECRET_KEY),
+    stripoRestApiToken: cleanString(process.env.ORBIT_STRIPO_REST_API_TOKEN),
+    stripoWorkspaceId: cleanString(process.env.ORBIT_STRIPO_WORKSPACE_ID),
+    stripoMasterTemplateId: cleanString(process.env.ORBIT_STRIPO_MASTER_TEMPLATE_ID),
+    stripoDefaultFolderId: cleanString(process.env.ORBIT_STRIPO_DEFAULT_FOLDER_ID),
+    stripoPluginAuthUrl:
+      cleanString(process.env.ORBIT_STRIPO_PLUGIN_AUTH_URL) ?? "https://plugins.stripo.email/api/v1/auth",
+    stripoRestBaseUrl:
+      cleanString(process.env.ORBIT_STRIPO_REST_BASE_URL) ?? "https://my.stripo.email/emailgeneration/v1",
     brandProfile,
     brandProfileError,
     homeWorkspace,

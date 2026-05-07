@@ -1,7 +1,7 @@
 {
   "version": "1",
   "siteBaseUrl": "https://get.yourorbit.team",
-  "generatedAt": "2026-04-26T23:28:57.989Z",
+  "generatedAt": "2026-05-02T09:10:04.075Z",
   "courses": [
     {
       "slug": "lifecycle-fundamentals",
@@ -185,7 +185,7 @@
       "level": "advanced",
       "levelLabel": "Advanced",
       "tagline": "The architecture, models, governance, and measurement that decide whether AI personalisation moves revenue or moves nothing. Braze-grounded, vendor-honest.",
-      "description": "For senior operators evaluating, deploying, or scaling AI personalisation across lifecycle programs. Covers the four-layer architecture (events, profile, content, activation), how Braze Sage / Predictive Suite / Connected Content / Catalogs map to it, predictive models (churn, propensity, recommendations), generative content with governance, the data foundation, the ethics line, and the measurement framework that survives a CFO. Seven guides, roughly 60 minutes end-to-end.",
+      "description": "For senior operators evaluating, deploying, or scaling AI personalisation across lifecycle programs. Covers the four-layer architecture (events, profile, content, activation), how BrazeAI / Predictive Suite / Connected Content / Catalogs map to it, predictive models (churn, propensity, recommendations), generative content with governance, the data foundation, the ethics line, and the measurement framework that survives a CFO. Seven guides, roughly 60 minutes end-to-end.",
       "guideSlugs": [
         "ai-personalisation-architecture",
         "custom-attributes-design",

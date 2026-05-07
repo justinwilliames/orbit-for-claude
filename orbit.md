@@ -318,6 +318,7 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `email-design-ingestion` | Ingest Figma frames or PDF references into reusable Orbit design records |
 | `design-to-email-componentization` | Break a design into reusable, contract-based email components |
 | `email-template-learning` | Learn an existing HTML email template (Stripo-aware) — remember its modules + brand tokens and build/modify on-brand emails from it on request |
+| `stripo-integration` | Connect a Stripo account via API to sync saved modules, document the design system, and compose emails directly into the user's Stripo workspace |
 | `braze-template-sync` | Publish reusable components and final HTML templates into Braze |
 | `reputation-recovery` | Emergency playbook when a sender is already in deliverability trouble (bounces/complaints/blacklist/placement drop) |
 | `apple-mpp-response` | Reframe engagement metrics and program decisions for audiences dominated by Apple Mail Privacy Protection |
@@ -363,6 +364,9 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 
 **Learn an existing HTML template and build from it going forward:**
 `email-template-learning` (run orbit_learn_email_template on the pasted HTML first, then reference the returned template_id in every subsequent email build / edit)
+
+**Compose emails directly into a Stripo workspace via API:**
+`stripo-integration` — canonical sequence is `orbit_setup_stripo` (one-time credential + master template walkthrough) → `orbit_sync_stripo_modules` (pulls saved modules, run any time the user changes modules in Stripo) → `orbit_document_stripo_design_system` (markdown brief Claude reads before composing) → `orbit_compose_stripo_email` (assembles + auto-renders an HTML artifact preview; re-call with `push: true` to send to Stripo). Exactly one header and one footer per email is enforced programmatically.
 
 **Emergency deliverability recovery:**
 `reputation-recovery` → `orbit_check_email_auth` → `orbit_check_deliverability` → `orbit_rfm_score` (identify engaged tier) → `gmail-bulk-sender-compliance` (if Gmail-specific)
