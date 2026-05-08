@@ -46,6 +46,7 @@ import {
   stripoRestGet,
   stripoRestPost,
   stripoRestPut,
+  stripoRestPatch,
 } from "./stripo-api.js";
 import { ensureDir } from "./config.js";
 
@@ -108,19 +109,36 @@ export async function probeStripoInlineHtml({ config }) {
   // a best-guess default and surface the warning in the report.
   let genAreaName = null;
   let templateHtmlPreview = null;
-  try {
-    const tpl = await stripoRestGet({ config, endpoint: `/template/${templateId}` });
-    const tplHtml = tpl?.html ?? tpl?.markup ?? null;
-    if (typeof tplHtml === "string") {
-      templateHtmlPreview = tplHtml.slice(0, 500);
-      const m = tplHtml.match(/esd-email-gen-area=["']([^"']+)["']/i);
-      if (m) genAreaName = m[1];
+  let templateLookupOk = false;
+  for (const tplPath of [`/templates/${templateId}`, `/template/${templateId}`]) {
+    try {
+      const tpl = await stripoRestGet({ config, endpoint: tplPath });
+      const tplHtml = tpl?.html ?? tpl?.markup ?? null;
+      if (typeof tplHtml === "string") {
+        templateHtmlPreview = tplHtml.slice(0, 500);
+        const m = tplHtml.match(/esd-email-gen-area=["']([^"']+)["']/i);
+        if (m) genAreaName = m[1];
+        templateLookupOk = true;
+        record(
+          "Master template lookup",
+          "pass",
+          `Endpoint that worked: GET ${tplPath}\nGen-area name: ${genAreaName ?? "(not in HTML)"}`,
+        );
+        break;
+      }
+    } catch (err) {
+      record(
+        `Master template lookup — GET ${tplPath}`,
+        "fail",
+        `${err.code ?? "unknown"} — ${err.message?.slice(0, 200)}`,
+      );
     }
-  } catch (err) {
+  }
+  if (!templateLookupOk) {
     record(
       "Master template lookup",
       "fail",
-      `GET /template/${templateId} failed: ${err.code ?? "unknown"} — ${err.message?.slice(0, 200)}`,
+      "Neither /templates/<id> nor /template/<id> returned a usable response.",
     );
   }
 
@@ -392,16 +410,17 @@ async function runPathD({ config, emailId, snip }) {
   // mutation isn't documented. If none accept the payload, this
   // path is unworkable and the probe records "fail".
   const candidates = [
+    // Plural form — same convention as the working GET /emails/<id>.
     {
-      shape: "PUT /email/<id> with html field",
+      shape: "PUT /emails/<id> with html field",
       method: "PUT",
-      endpoint: `/email/${emailId}`,
+      endpoint: `/emails/${emailId}`,
       body: { html: snip.html },
     },
     {
-      shape: "PUT /email/<id> with dataSources inline html",
+      shape: "PUT /emails/<id> with dataSources inline html",
       method: "PUT",
-      endpoint: `/email/${emailId}`,
+      endpoint: `/emails/${emailId}`,
       body: {
         dataSources: [
           { name: "orbit_path_d", type: "RAW", value: [{ html: snip.html }] },
@@ -409,17 +428,39 @@ async function runPathD({ config, emailId, snip }) {
       },
     },
     {
-      shape: "PUT /email/<id> with areas",
+      shape: "PUT /emails/<id> with areas",
+      method: "PUT",
+      endpoint: `/emails/${emailId}`,
+      body: { areas: [{ name: "orbit-content", html: snip.html }] },
+    },
+    // PATCH alternative — partial update semantics.
+    {
+      shape: "PATCH /emails/<id> with html field",
+      method: "PATCH",
+      endpoint: `/emails/${emailId}`,
+      body: { html: snip.html },
+    },
+    // Singular fallback retained in case Stripo exposes both forms.
+    {
+      shape: "PUT /email/<id> with html field (singular fallback)",
       method: "PUT",
       endpoint: `/email/${emailId}`,
-      body: { areas: [{ name: "orbit-content", html: snip.html }] },
+      body: { html: snip.html },
     },
   ];
 
   const attempts = [];
   for (const c of candidates) {
     try {
-      const r = await stripoRestPut({ config, endpoint: c.endpoint, body: c.body });
+      // PUT vs PATCH dispatch. The shared stripoRestRequest helper
+      // routes by method; we use the public PUT helper for PUT and
+      // call the request layer indirectly via a tiny wrapper for
+      // PATCH (Stripo's API treats PATCH as a partial update if
+      // it supports it at all).
+      const r =
+        c.method === "PATCH"
+          ? await stripoRestPatch({ config, endpoint: c.endpoint, body: c.body })
+          : await stripoRestPut({ config, endpoint: c.endpoint, body: c.body });
       attempts.push({ shape: c.shape, ok: true, response: JSON.stringify(r).slice(0, 500) });
     } catch (err) {
       attempts.push({

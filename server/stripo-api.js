@@ -178,6 +178,10 @@ export async function stripoRestPut({ config, endpoint, body = {}, params = {}, 
   return stripoRestRequest({ config, endpoint, params, body, auth, method: "PUT" });
 }
 
+export async function stripoRestPatch({ config, endpoint, body = {}, params = {}, auth = "rest-token" }) {
+  return stripoRestRequest({ config, endpoint, params, body, auth, method: "PATCH" });
+}
+
 export async function stripoRestDelete({ config, endpoint, params = {}, auth = "rest-token" }) {
   return stripoRestRequest({ config, endpoint, params, auth, method: "DELETE" });
 }
