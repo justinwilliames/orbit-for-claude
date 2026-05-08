@@ -112,6 +112,7 @@ import { documentStripoDesignSystem } from "./stripo-design-system.js";
 import { composeStripoEmail } from "./stripo-compose.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
+import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
 import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
@@ -4185,6 +4186,20 @@ function registerTools() {
         config: runtimeConfig,
         options: { module_a_id, module_b_id }
       });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_probe_stripo_inline_html",
+    {
+      title: "Probe Stripo Inline-HTML Push Paths",
+      description:
+        "Find a Stripo API shape that lets Orbit push its locally-assembled HTML into a Stripo email AND survive Stripo's server-side regen — without requiring per-module data-stripo-slot markup or any user setup beyond what's already in place. Tests three paths in stability order: (1) legacy `areas: [{ name, html }]` shape filling the gen-area on the master template, (2) modern `dataSources` shape with inline `{ html }` instead of `{ id }`, (3) edit-after-push via `PUT /email/<id>`. Auto-discovers the gen-area name from the master template (never hardcoded). Stops on the first path that returns 2xx AND has the sentinel HTML appearing in the fetched rendered email. Writes findings to <workspace>/outputs/stripo-inline-html-probe/<timestamp>.md. Decision-blocking before fully-automated push can land on orbit_compose_stripo_email.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await probeStripoInlineHtml({ config: runtimeConfig });
       return makeJsonToolResponse(result);
     }
   );

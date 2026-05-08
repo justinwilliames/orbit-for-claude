@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.18.14",
+  "version": "0.18.15",
   "icon": "icon.png",
   "icons": [
     {
