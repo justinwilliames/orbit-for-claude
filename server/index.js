@@ -111,6 +111,7 @@ import { syncStripoModules, listStripoSyncedModules } from "./stripo-modules.js"
 import { documentStripoDesignSystem } from "./stripo-design-system.js";
 import { composeStripoEmail } from "./stripo-compose.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
+import { probeStripoValues } from "./stripo-values-probe.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
 import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
@@ -4153,6 +4154,36 @@ function registerTools() {
         config: runtimeConfig,
         stripo_id,
         fix_class
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_probe_stripo_values",
+    {
+      title: "Probe Stripo `values` Field (Path A spike)",
+      description:
+        "Empirical validation of Stripo's `values` field on POST /email — the API contract spike for slot-aware overrides (Path A). Creates up to 10 throwaway emails in your Stripo workspace (all named `Orbit · values-probe ·` for easy bulk-delete), exercising baseline, per-module + top-level value placement, empty strings, script injection, Liquid passthrough, unknown keys, and HTML in slot values. Auto-picks Module A (no data-stripo-slot markup) and Module B (has markup) from your synced modules; tests against Module B are skipped if no marked-up module exists yet. Writes findings to <workspace>/outputs/stripo-values-probe/<timestamp>.md. Decision-blocking before slot_values can be added to orbit_compose_stripo_email.",
+      inputSchema: {
+        module_a_id: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            "Optional Stripo numeric module ID to use as Module A (the unmarked baseline). Default: auto-pick the first synced module with zero data-stripo-slot attributes."
+          ),
+        module_b_id: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            "Optional Stripo numeric module ID to use as Module B (the marked-up module). Default: auto-pick the first synced module that contains data-stripo-slot attributes. Module B tests skip cleanly if neither override nor auto-pick succeeds."
+          )
+      }
+    },
+    async ({ module_a_id, module_b_id }) => {
+      const result = await probeStripoValues({
+        config: runtimeConfig,
+        options: { module_a_id, module_b_id }
       });
       return makeJsonToolResponse(result);
     }

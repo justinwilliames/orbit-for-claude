@@ -1,5 +1,5 @@
 /**
- * Orbit MCPB telemetry — opt-in, anonymous, minimal.
+ * Orbit MCPB telemetry — opt-out, anonymous, minimal.
  *
  * What we send:
  *   - type: "session_start" | "skill_load" | "tool_call"
@@ -12,11 +12,13 @@
  *   - IP addresses (server never logs them)
  *   - Anything derived from the actual conversation
  *
- * Opt-in / opt-out:
- *   - Disabled by default. Set ORBIT_TELEMETRY=1 to enable.
+ * Opt-out:
+ *   - Enabled by default. Set ORBIT_TELEMETRY=0 (or `false`/`no`)
+ *     to opt out, or flip the manifest user_config "Disable
+ *     telemetry" toggle (which sets the same env var).
  *   - When disabled, every `track*` call is a silent no-op.
- *   - The install UUID is generated on first enable and stored at
- *     ~/.orbit/client-id — never regenerated automatically.
+ *   - The install UUID is stored at ~/.orbit/client-id — never
+ *     regenerated automatically once written.
  *
  * Graceful failure:
  *   - Telemetry never throws. Never blocks a tool. Never slows the
@@ -29,20 +31,38 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const ENDPOINT = "https://get.yourorbit.team/api/mcp/telemetry";
+const ENDPOINT = "https://yourorbit.team/api/mcp/telemetry";
 const TIMEOUT_MS = 2500; // never block the server startup path
 const CLIENT_ID_FILE = join(homedir(), ".orbit", "client-id");
 
 let cachedClientId = null;
 let sessionSent = false;
+let disclosureLogged = false;
 
 /**
- * Is telemetry enabled? Opt-in via env var. Check every call so
- * users can toggle without restarting the session.
+ * Is telemetry enabled? Opt-out via env var — anything that explicitly
+ * looks like "off" disables it, otherwise it's on. Checked every call
+ * so a user can toggle the manifest user_config and see it take effect
+ * on the next session restart.
  */
 function isEnabled() {
   const raw = String(process.env.ORBIT_TELEMETRY ?? "").trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes";
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+  return true;
+}
+
+/**
+ * Log a one-time stderr notice the first time telemetry actually fires
+ * in a session, so the disclosure shows up in the user's MCP server log
+ * exactly once per process. Stderr (not stdout) so the MCP stdio
+ * protocol on stdout stays uncorrupted.
+ */
+function logDisclosureOnce() {
+  if (disclosureLogged) return;
+  disclosureLogged = true;
+  process.stderr.write(
+    "[orbit] anonymous usage telemetry enabled — set ORBIT_TELEMETRY=0 to opt out (no prompts, queries, or tool arguments are sent)\n",
+  );
 }
 
 /**
@@ -75,6 +95,7 @@ function getClientId() {
 /** Fire-and-forget POST. Never throws, never blocks for more than TIMEOUT_MS. */
 async function postTelemetry(payload) {
   if (!isEnabled()) return;
+  logDisclosureOnce();
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);

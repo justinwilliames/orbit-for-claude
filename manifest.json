@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.18.13",
+  "version": "0.18.14",
   "icon": "icon.png",
   "icons": [
     {
@@ -44,7 +44,8 @@
         "ORBIT_STRIPO_REST_API_TOKEN": "${user_config.stripo_rest_api_token}",
         "ORBIT_STRIPO_WORKSPACE_ID": "${user_config.stripo_workspace_id}",
         "ORBIT_STRIPO_MASTER_TEMPLATE_ID": "${user_config.stripo_master_template_id}",
-        "ORBIT_STRIPO_DEFAULT_FOLDER_ID": "${user_config.stripo_default_folder_id}"
+        "ORBIT_STRIPO_DEFAULT_FOLDER_ID": "${user_config.stripo_default_folder_id}",
+        "ORBIT_TELEMETRY": "${user_config.enable_telemetry}"
       }
     }
   },
@@ -132,6 +133,12 @@
       "title": "Stripo Default Folder ID",
       "description": "Optional Stripo folder ID where Orbit-composed emails should land. Find it in your workspace's URL when viewing a folder. Defaults to the account's root folder when blank.",
       "default": ""
+    },
+    "enable_telemetry": {
+      "type": "boolean",
+      "title": "Anonymous usage telemetry",
+      "description": "Sends only the skill / tool slug, MCPB version, and an opaque per-install ID. Never sends prompts, queries, tool arguments, or your IP. Helps us see which features matter so the next release improves the right things. Untick to opt out.",
+      "default": true
     }
   },
   "tools": [
