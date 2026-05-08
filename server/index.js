@@ -113,6 +113,7 @@ import { composeStripoEmail } from "./stripo-compose.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
 import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
+import { probeStripoSmartElement } from "./stripo-smart-element-probe.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
 import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
@@ -4200,6 +4201,30 @@ function registerTools() {
     },
     async () => {
       const result = await probeStripoInlineHtml({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_probe_stripo_smart_element",
+    {
+      title: "Probe Stripo Smart Element API substitution",
+      description:
+        "Empirically confirm that pushing `values` via the canonical-JSON API substitutes correctly into a module marked up with Stripo's `esd-dynamic-block` Smart Element bindings (the documented native pattern for API-editable defined fields per compose). Auto-picks the first synced module containing `esd-dynamic-block`, parses the JSON config to discover variable names, sends a sentinel value for each variable via POST /email, fetches the rendered email back via GET /emails/<id>, and verifies every sentinel appears. If all sentinels substitute correctly, this is the production path for orbit_compose_stripo_email's per-send content variation. Writes findings to <workspace>/outputs/stripo-smart-element-probe/<timestamp>.md.",
+      inputSchema: {
+        stripo_id: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            "Optional Stripo numeric module ID to use instead of auto-pick. Default: first synced module containing esd-dynamic-block markup."
+          )
+      }
+    },
+    async ({ stripo_id }) => {
+      const result = await probeStripoSmartElement({
+        config: runtimeConfig,
+        options: { stripo_id }
+      });
       return makeJsonToolResponse(result);
     }
   );
