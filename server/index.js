@@ -4217,13 +4217,25 @@ function registerTools() {
           .optional()
           .describe(
             "Optional Stripo numeric module ID to use instead of auto-pick. Default: first synced module containing esd-dynamic-block markup."
+          ),
+        custom_module_stripo_id: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            "OPTIONAL — for the q.2.manual arm. Stripo numeric ID of a module that you have manually JSON-edited via Stripo's editor to add a custom variable binding. Pair with custom_variable_name. If omitted, the q.2.manual arm reports needs_setup with manual-setup instructions."
+          ),
+        custom_variable_name: z
+          .string()
+          .optional()
+          .describe(
+            "OPTIONAL — for the q.2.manual arm. The name of the custom variable you added to the manually-edited module's variables array (e.g. 'cta_text'). Pair with custom_module_stripo_id."
           )
       }
     },
-    async ({ stripo_id }) => {
+    async ({ stripo_id, custom_module_stripo_id, custom_variable_name }) => {
       const result = await probeStripoSmartElement({
         config: runtimeConfig,
-        options: { stripo_id }
+        options: { stripo_id, custom_module_stripo_id, custom_variable_name }
       });
       return makeJsonToolResponse(result);
     }
