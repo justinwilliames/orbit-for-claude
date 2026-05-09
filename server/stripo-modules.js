@@ -41,6 +41,73 @@ const STRIPO_PAGE_SIZE = 100;
 const TAG_SYNCED = "stripo_synced";
 const TAG_ARCHIVED = "stripo_archived";
 
+// ---------------------------------------------------------------------------
+// Smart Element variable extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the `esd-dynamic-block` attribute from module HTML and return
+ * a normalised `slot_definitions` map.
+ *
+ * Each entry in the `variables` array of the JSON config looks like:
+ *   { name, cssClass, attribute? }
+ *
+ * Mapping rules (per Stripo wizard binding types):
+ *   attribute absent / ""  →  kind "text"      (innerText binding)
+ *   attribute "href"       →  kind "url"        (link href)
+ *   attribute "src"        →  kind "image_src"  (image src)
+ *   attribute "alt"        →  kind "image_alt"  (image alt)
+ *   anything else          →  kind "attr:<value>" (forward-compatible)
+ *
+ * The top-level `link` field that Stripo's wizard auto-detects is NOT
+ * included here — it is fed by OG-tag crawling, not by canonical-JSON
+ * `values`, so it cannot be addressed via the API. Users must create
+ * an explicit `variables`-array entry with attribute="href" instead.
+ *
+ * Returns null if the module contains no esd-dynamic-block.
+ */
+function extractSmartElementSlotDefs(markup) {
+  if (!markup || !markup.includes("esd-dynamic-block")) return null;
+
+  // The attribute value is a JSON string embedded in HTML. Extract the
+  // raw JSON via a simple regex — cheerio is not in scope for this file.
+  // We look for the first occurrence of esd-dynamic-block="..." where
+  // the value may span multiple lines and use single or double quotes.
+  const attrMatch = markup.match(/esd-dynamic-block=['"](\{[\s\S]*?\})["']/);
+  if (!attrMatch) return null;
+
+  let config;
+  try {
+    // HTML entities may have been escaped — decode minimal set.
+    const raw = attrMatch[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+    config = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const variables = Array.isArray(config.variables) ? config.variables : [];
+  if (variables.length === 0) return null;
+
+  const defs = {};
+  for (const v of variables) {
+    const varName = v.name ?? v.cssClass;
+    if (!varName) continue;
+    const attr = (v.attribute ?? "").trim().toLowerCase();
+    let kind;
+    if (!attr) kind = "text";
+    else if (attr === "href") kind = "url";
+    else if (attr === "src") kind = "image_src";
+    else if (attr === "alt") kind = "image_alt";
+    else kind = `attr:${attr}`;
+    defs[varName] = {
+      kind,
+      css_class: v.cssClass ?? null,
+      attribute: attr || null,
+    };
+  }
+  return Object.keys(defs).length > 0 ? defs : null;
+}
+
 // Stripo's category taxonomy → Orbit's normalised classification.
 // Anything not in this map falls through to `other` and is flagged
 // in sync_warnings so we can revisit if Stripo adds new categories.
@@ -136,6 +203,7 @@ function saveStripoModuleToLibrary({ config, stripoModule, syncWarnings }) {
   };
   const brandTokens = safeExtractBrandTokens(markup, [moduleWrapper], syncWarnings, stripoId);
   const liquidVars = safeExtractLiquidVars(markup, syncWarnings, stripoId);
+  const slotDefs = extractSmartElementSlotDefs(markup);
 
   const stripoTags = (stripoModule.tagObjects ?? [])
     .map((t) => t?.name ?? t?.key)
@@ -170,6 +238,7 @@ function saveStripoModuleToLibrary({ config, stripoModule, syncWarnings }) {
     })),
     brand_tokens: brandTokens,
     liquid_vars: liquidVars,
+    slot_definitions: slotDefs ?? null,
     last_synced_at: new Date().toISOString(),
     source_html_length: markup.length,
     source_css_length: css.length,
@@ -187,6 +256,7 @@ function saveStripoModuleToLibrary({ config, stripoModule, syncWarnings }) {
     stripo_uid: stripoModule.uid,
     name,
     classification,
+    slot_definitions: slotDefs ?? null,
     metadata,
   };
 
@@ -368,6 +438,7 @@ function projectListedItem(item, includeHtml) {
     description: item.metadata?.description ?? null,
     image_count: (item.metadata?.image_inventory ?? []).length,
     liquid_vars: item.metadata?.liquid_vars ?? [],
+    slot_definitions: item.metadata?.slot_definitions ?? null,
     icon_url: item.metadata?.icon_url ?? null,
     width: item.metadata?.width ?? null,
     height: item.metadata?.height ?? null,

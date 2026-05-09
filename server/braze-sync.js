@@ -392,6 +392,79 @@ export async function uploadImagesToBraze({
   };
 }
 
+// ---------------------------------------------------------------------------
+// Single-image upload helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Upload a single image to the Braze media library.
+ *
+ * Accepts one of:
+ *   asset_url       — publicly accessible remote URL; Braze fetches it
+ *                     server-side (no size limit applied here).
+ *   file_path       — absolute local path; read and base64-encoded.
+ *                     Capped at 4 MB pre-encoding (inflates ~33%).
+ *   image_data_base64 — raw base64 string the caller has already encoded.
+ *                       Passed directly; Braze's ~5 MB cap applies.
+ *
+ * Returns { status, url, name, size } on success or { status, error } on failure.
+ */
+export async function uploadSingleImageToBraze({ config, asset_url, file_path, image_data_base64, name }) {
+  const brazeSetup = validateBrazeSetup(config);
+  if (brazeSetup) return brazeSetup;
+
+  if (!name || typeof name !== "string") {
+    return { status: "invalid_input", error: "`name` is required and must be a non-empty string." };
+  }
+
+  const MAX_LOCAL_IMAGE_BYTES = 4 * 1024 * 1024;
+  let requestBody;
+
+  if (asset_url) {
+    requestBody = { asset_url, name };
+  } else if (file_path) {
+    const fs = await import("node:fs");
+    if (!fs.existsSync(file_path)) {
+      return { status: "file_not_found", error: `File not found: ${file_path}` };
+    }
+    const stat = fs.statSync(file_path);
+    if (stat.size > MAX_LOCAL_IMAGE_BYTES) {
+      return {
+        status: "file_too_large",
+        error: `File is ${Math.round(stat.size / 1024)} KB; Braze base64 upload cap is ${MAX_LOCAL_IMAGE_BYTES / 1024} KB. Compress or host the image on a CDN and pass it via asset_url.`,
+      };
+    }
+    const fileData = fs.readFileSync(file_path);
+    requestBody = { asset_file: fileData.toString("base64"), name };
+  } else if (image_data_base64) {
+    requestBody = { asset_file: image_data_base64, name };
+  } else {
+    return {
+      status: "invalid_input",
+      error: "Provide one of: asset_url, file_path, or image_data_base64.",
+    };
+  }
+
+  try {
+    const response = await callBrazeApi({ config, endpoint: "/media_library/create", method: "POST", body: requestBody });
+    const asset = response.new_assets?.[0] ?? null;
+    if (asset?.url) {
+      return {
+        status: "ok",
+        url: asset.url,
+        name: asset.name ?? name,
+        size: asset.size ?? null,
+        host: "braze",
+      };
+    }
+    return { status: "failed", error: "Braze returned no asset URL.", raw_response: response };
+  } catch (err) {
+    return { status: "failed", error: err.message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 function collectImageManifest(generatedComponents) {
   const images = [];
   let counter = 0;

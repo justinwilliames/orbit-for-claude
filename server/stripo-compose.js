@@ -42,6 +42,7 @@ export async function composeStripoEmail({
   module_sequence: moduleSequence,
   copy_overrides: copyOverrides = {},
   image_overrides: imageOverrides = {},
+  slot_values: slotValues = {},
   push = false,
 }) {
   if (!Array.isArray(moduleSequence) || moduleSequence.length === 0) {
@@ -88,20 +89,15 @@ export async function composeStripoEmail({
   const validation = validateComposition(resolved);
   if (validation.error) return validation.error;
 
-  // ─── Bug 1 guard: overrides cannot be applied via Stripo push ─────
+  // ─── Bug 1 guard: copy/image_overrides cannot be applied via Stripo push ──
   //
   // copy_overrides and image_overrides are applied client-side to the
-  // assembled preview HTML by applyCopyOverrides / applyImageOverrides
-  // below. The push path, however, sends module UIDs in canonical JSON
-  // (dataSources[].value[].id) and Stripo regenerates the email server-
-  // side from its OWN copy of each module — local string substitutions
-  // never reach the rendered email. Pushing with overrides would
-  // silently drop them, making the tool lie about what it pushed.
-  //
-  // Per-module slot overrides via the canonical-JSON `values` field are
-  // future work — Stripo's findmodules API doesn't yet expose slot keys,
-  // so we can't construct that payload reliably. Until that lands, hard
-  // fail here so the user knows their edits won't take effect.
+  // assembled preview HTML. The push path sends module UIDs in canonical
+  // JSON (dataSources[].value[].id) and Stripo regenerates server-side
+  // from its OWN copy of each module — local string substitutions are
+  // silently dropped. slot_values, by contrast, are threaded into the
+  // canonical-JSON `values` field and ARE sent to Stripo, so they work
+  // on the push path.
   const hasCopyOverrides = Object.keys(copyOverrides ?? {}).length > 0;
   const hasImageOverrides = Object.keys(imageOverrides ?? {}).length > 0;
   if (push && (hasCopyOverrides || hasImageOverrides)) {
@@ -112,7 +108,62 @@ export async function composeStripoEmail({
         ...(hasImageOverrides ? ["image_overrides"] : []),
       ],
       message:
-        "Overrides aren't applied via Stripo push — Stripo regenerates modules server-side from its own copy of each module, so client-side substitutions are dropped. Two ways forward: (1) call this tool with `push: false` to receive the assembled HTML (with overrides applied) for manual paste-in to a Stripo email, or (2) push without overrides and apply your edits in Stripo's editor afterwards. Per-module slot overrides via Stripo's canonical-JSON `values` field are on the roadmap but not wired yet.",
+        "copy_overrides and image_overrides aren't applied via Stripo push — Stripo regenerates modules server-side, so client-side substitutions are dropped. Use slot_values instead: define Smart Element variable bindings in Stripo's module editor once, then pass per-send values here. Alternatively, push without overrides and edit in Stripo's editor afterwards.",
+    };
+  }
+
+  // ─── slot_values validation ────────────────────────────────────────────────
+  //
+  // slot_values shape: { [stripoModuleId]: { [varName]: value } }
+  // Client-side validation is mandatory because Stripo silently ignores
+  // unknown variable names — a typo produces no error and no substitution.
+  //
+  // We validate that:
+  //   1. Each key in slot_values refers to a module that's in the sequence.
+  //   2. Each var name within that module exists in the module's slot_definitions.
+  //
+  // If a module has no slot_definitions (no esd-dynamic-block markup), any
+  // slot_values entry for it is rejected — the user needs to add bindings
+  // in Stripo's Smart Elements wizard first.
+  const hasSlotValues = slotValues && Object.keys(slotValues).length > 0;
+  const slotValidationErrors = [];
+  if (hasSlotValues) {
+    const resolvedById = new Map(resolved.map((item) => [String(item.metadata?.stripo_id ?? ""), item]));
+    for (const [moduleRef, varMap] of Object.entries(slotValues)) {
+      const item = resolvedById.get(String(moduleRef));
+      if (!item) {
+        slotValidationErrors.push({
+          module_ref: moduleRef,
+          error: `Module "${moduleRef}" is in slot_values but not in module_sequence. Remove it from slot_values or add it to the sequence.`,
+        });
+        continue;
+      }
+      const slotDefs = item.metadata?.slot_definitions ?? null;
+      if (!slotDefs) {
+        slotValidationErrors.push({
+          module_ref: moduleRef,
+          name: item.title,
+          error: `Module "${item.title}" (ID ${moduleRef}) has no Smart Element variable bindings. Open it in Stripo's module editor, go to the Config tab, and add variable bindings (text / href / src / alt) to each field you want to control per-send. Then re-run orbit_sync_stripo_modules.`,
+        });
+        continue;
+      }
+      for (const varName of Object.keys(varMap ?? {})) {
+        if (!slotDefs[varName]) {
+          slotValidationErrors.push({
+            module_ref: moduleRef,
+            name: item.title,
+            var_name: varName,
+            error: `Variable "${varName}" is not defined in module "${item.title}". Known variables: ${Object.keys(slotDefs).join(", ") || "(none)"}. Check spelling or add the binding in Stripo.`,
+          });
+        }
+      }
+    }
+  }
+  if (slotValidationErrors.length > 0) {
+    return {
+      status: "slot_values_invalid",
+      errors: slotValidationErrors,
+      message: `${slotValidationErrors.length} slot_values error(s). Fix the issues above and retry.`,
     };
   }
 
@@ -207,6 +258,7 @@ export async function composeStripoEmail({
       templateId: templateIdNumber,
       subject,
       preheader,
+      slotValues,
     });
 
     let pushResponse;
@@ -496,7 +548,7 @@ void loadLibraryItem;
  * The emailName carries a timestamp so repeat composes don't collide
  * in the user's workspace folder.
  */
-function buildCanonicalPayload({ modules, templateId, subject, preheader }) {
+function buildCanonicalPayload({ modules, templateId, subject, preheader, slotValues = {} }) {
   // ─── Stripo's dataSources[].value[].id is the module UID, NOT the
   // numeric module ID. Discovered the hard way: posting numeric IDs
   // produced silent empty emails — Stripo accepted the request, stripped
@@ -509,6 +561,10 @@ function buildCanonicalPayload({ modules, templateId, subject, preheader }) {
   // Fail loud if a module is missing its UID — that means a sync ran
   // against an older Stripo API surface that didn't return the field.
   // Better to surface the gap than push silently-empty emails again.
+  //
+  // slot_values are threaded into the `values` field of each module ref.
+  // Shape: dataSources[].value[].values = { varName: "substituted text" }
+  // Stripo silently drops unknown var names (validated client-side above).
   const moduleRefs = modules.map((item) => {
     const stripoUid = item.metadata?.stripo_uid;
     if (!stripoUid) {
@@ -517,7 +573,12 @@ function buildCanonicalPayload({ modules, templateId, subject, preheader }) {
           "Re-run orbit_sync_stripo_modules to repopulate the UID field.",
       );
     }
-    return { id: String(stripoUid) };
+    const ref = { id: String(stripoUid) };
+    const moduleSlotVals = slotValues?.[String(item.metadata?.stripo_id)] ?? null;
+    if (moduleSlotVals && Object.keys(moduleSlotVals).length > 0) {
+      ref.values = moduleSlotVals;
+    }
+    return ref;
   });
 
   // Stripo's API rejects emailNames containing square brackets with a

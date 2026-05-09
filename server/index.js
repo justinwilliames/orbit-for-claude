@@ -144,7 +144,8 @@ import {
   publishEmailToBraze,
   syncBrazeContentBlocks,
   syncBrazeEmailTemplate,
-  uploadImagesToBraze
+  uploadImagesToBraze,
+  uploadSingleImageToBraze
 } from "./braze-sync.js";
 import {
   buildBrandKitDraft,
@@ -2850,6 +2851,31 @@ function registerTools() {
   );
 
   registerToolSafe(
+    "orbit_upload_image_to_braze",
+    {
+      title: "Upload Single Image to Braze",
+      description:
+        "Upload a single image to Braze's media library and get back a hosted CDN URL. Designed for use with orbit_compose_stripo_email's slot_values parameter — pass the returned URL as the value for an image_src or url Smart Element variable. Accepts a remote URL (Braze fetches it server-side, no size limit), a local file path (base64-encoded, 4 MB cap before encoding), or raw base64 data. Returns { status, url, name, size, host: 'braze' } on success.",
+      inputSchema: {
+        name: z.string().min(1).max(MAX_SHORT_STRING).describe("Filename to store in Braze (e.g. 'hero-banner-summer.png'). Braze uses this for the media library listing."),
+        asset_url: z.string().url().max(MAX_PATH_STRING).optional().describe("Publicly accessible remote image URL. Braze fetches it server-side — no local size limit applies. Preferred over file_path for externally-hosted images."),
+        file_path: z.string().max(MAX_PATH_STRING).optional().describe("Absolute local file path. Read and base64-encoded before upload. Capped at 4 MB pre-encoding (Braze's base64 upload cap is ~5 MB; the 33% encoding overhead is the constraint)."),
+        image_data_base64: z.string().max(MAX_LONG_STRING).optional().describe("Raw base64-encoded image data. Use when you've already encoded the file. Braze's ~5 MB cap applies to the encoded string.")
+      }
+    },
+    async ({ name, asset_url, file_path, image_data_base64 }) => {
+      const result = await uploadSingleImageToBraze({
+        config: runtimeConfig,
+        name,
+        asset_url,
+        file_path,
+        image_data_base64
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
     "orbit_reconcile_image_urls",
     {
       title: "Reconcile Image URLs",
@@ -4003,7 +4029,7 @@ function registerTools() {
     {
       title: "List Synced Stripo Modules",
       description:
-        "Read Stripo modules from Orbit's local library (does NOT call Stripo's API). Filter by classification (header / hero / content / footer) or free-text search. Returns lightweight per-module summaries by default; pass include_html: true to get file paths for the assembler. Use this before composing an email to see what modules are available.",
+        "Read Stripo modules from Orbit's local library (does NOT call Stripo's API). Filter by classification (header / hero / content / footer) or free-text search. Returns lightweight per-module summaries by default; pass include_html: true to get file paths for the assembler. Each item includes slot_definitions (if the module has Smart Element variable bindings) — these are the varNames to reference in orbit_compose_stripo_email's slot_values parameter. Use this before composing an email to see what modules are available and which support per-send content variation.",
       inputSchema: {
         classification: z
           .enum(["header", "hero", "content", "footer", "other"])
@@ -4079,7 +4105,13 @@ function registerTools() {
         image_overrides: z
           .record(z.string(), z.string())
           .optional()
-          .describe("Global image src replacements: { 'old_url': 'new_url' }."),
+          .describe("Global image src replacements: { 'old_url': 'new_url' }. Applied to the local preview only — not sent to Stripo on push. Use slot_values for push-time image substitution."),
+        slot_values: z
+          .record(z.string(), z.record(z.string(), z.string()))
+          .optional()
+          .describe(
+            "Per-module Smart Element variable substitutions that are baked into the Stripo-generated email at push time. Shape: { '<stripo_module_id>': { '<varName>': '<value>' } }. Each varName must match a binding defined in Stripo's Smart Elements wizard (Config tab → add variable). Text, URL (href), image src, and alt bindings are all supported. Client-side validation runs before push — unknown var names are rejected with an error listing what's available. Requires push:true to take effect; ignored on preview-only compose. To discover available varNames for each module, call orbit_list_stripo_modules (field: slot_definitions)."
+          ),
         push: z
           .boolean()
           .optional()
@@ -4088,7 +4120,7 @@ function registerTools() {
           )
       }
     },
-    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, push }) => {
+    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, slot_values, push }) => {
       const result = await composeStripoEmail({
         config: runtimeConfig,
         subject,
@@ -4096,6 +4128,7 @@ function registerTools() {
         module_sequence,
         copy_overrides,
         image_overrides,
+        slot_values,
         push
       });
       // When the tool returns an artifact_directive, surface that as
@@ -4893,6 +4926,7 @@ const PER_TOOL_TIMEOUT_MS = {
   orbit_braze_performance: 75_000,
   orbit_sync_to_braze: 90_000,
   orbit_upload_images_to_braze: 90_000,
+  orbit_upload_image_to_braze: 60_000,
   orbit_upload_template_images: 90_000
 };
 
