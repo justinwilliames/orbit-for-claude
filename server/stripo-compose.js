@@ -28,8 +28,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { load as cheerioLoad } from "cheerio";
 import { listLibraryItems, loadLibraryItem } from "./template-library.js";
-import { stripoRestPost, validateStripoRestSetup } from "./stripo-api.js";
+import { stripoRestPost, stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
 import { ensureDir } from "./config.js";
 
 const TAG_SYNCED = "stripo_synced";
@@ -43,6 +44,7 @@ export async function composeStripoEmail({
   copy_overrides: copyOverrides = {},
   image_overrides: imageOverrides = {},
   slot_values: slotValues = {},
+  html_overrides: htmlOverrides = null,
   push = false,
 }) {
   if (!Array.isArray(moduleSequence) || moduleSequence.length === 0) {
@@ -280,23 +282,51 @@ export async function composeStripoEmail({
       };
     }
 
+    const newEmailId =
+      pushResponse?.emailId ??
+      pushResponse?.id ??
+      pushResponse?.generatedEmailId ??
+      null;
+
+    // ─── html_overrides: GET rendered HTML from Stripo, Cheerio-patch ─
+    //
+    // html_overrides.cta_text / cta_href are applied AFTER Stripo
+    // generates the email server-side. We fetch the rendered HTML from
+    // GET /emails/<id> and patch a.es-button elements client-side.
+    // This completely sidesteps Stripo's write-API dead ends (PUT/PATCH
+    // both return 405; dataSources inline-html is silently regenerated).
+    // The patched HTML is returned for downstream Braze sync — Stripo
+    // is source-of-structure only and is never written back to.
+    let htmlOverridesResult = null;
+    if (htmlOverrides && newEmailId) {
+      htmlOverridesResult = await applyHtmlOverrides({
+        config,
+        emailId: newEmailId,
+        overrides: htmlOverrides,
+        outputDir: composeOutputDir,
+        timestampForFile,
+      });
+    }
+
     return {
       status: "pushed",
       stripo: {
-        new_email_id:
-          pushResponse?.emailId ??
-          pushResponse?.id ??
-          pushResponse?.generatedEmailId ??
-          null,
+        new_email_id: newEmailId,
         email_name: canonicalPayload.emailName,
         master_template_id: templateIdNumber,
         master_template_modified: false, // Hard-guaranteed by stripo-api.js guard.
         raw_response: pushResponse,
       },
+      html_overrides_result: htmlOverridesResult,
       composition_plan: compositionPlan,
       message:
         `Created a new email in your Stripo workspace using master template ${templateIdNumber}. ` +
-        "The master template was NOT modified. Open Stripo to find the new email in the email folder.",
+        "The master template was NOT modified. Open Stripo to find the new email in the email folder." +
+        (htmlOverridesResult?.status === "patched"
+          ? ` CTA patched (${htmlOverridesResult.buttons_found} button(s) found). Patched HTML written to ${htmlOverridesResult.patched_html_path}.`
+          : htmlOverridesResult
+          ? ` CTA patch result: ${htmlOverridesResult.status}.`
+          : ""),
     };
   }
 
@@ -354,6 +384,84 @@ export async function composeStripoEmail({
     html_path: htmlFilePath,
     html_byte_count: htmlByteCount,
     message: `Composed ${resolved.length}-module email (${(htmlByteCount / 1024).toFixed(1)} KB). Preview rendered as artifact (images show as broken icons — open ${htmlFilePath} in a browser to view with images, or push to Stripo). Use push: true to send to Stripo.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// HTML overrides — GET rendered email from Stripo, Cheerio-patch CTA
+// ---------------------------------------------------------------------------
+
+async function applyHtmlOverrides({ config, emailId, overrides, outputDir, timestampForFile }) {
+  // Fetch the rendered email from Stripo. GET /emails/<id> returns a JSON
+  // object with `css` and `html` fields (and other metadata). The `html`
+  // field contains the rendered body; we need the full document.
+  let rendered;
+  try {
+    rendered = await stripoRestGet({ config, endpoint: `/emails/${emailId}` });
+  } catch (err) {
+    return {
+      status: "fetch_failed",
+      email_id: emailId,
+      error: err.message?.slice(0, 300),
+    };
+  }
+
+  // Extract the HTML string. Stripo returns { css, html, ... } — try `html`
+  // first, fall back to stringified JSON if the field name differs.
+  const htmlStr =
+    typeof rendered === "string"
+      ? rendered
+      : typeof rendered?.html === "string"
+      ? rendered.html
+      : typeof rendered?.markup === "string"
+      ? rendered.markup
+      : null;
+
+  if (!htmlStr) {
+    return {
+      status: "html_not_extractable",
+      email_id: emailId,
+      response_keys: typeof rendered === "object" && rendered ? Object.keys(rendered) : [],
+    };
+  }
+
+  // Load into Cheerio and patch a.es-button elements.
+  const $ = cheerioLoad(htmlStr, { xmlMode: false, decodeEntities: false });
+  const buttons = $("a.es-button");
+
+  if (buttons.length === 0) {
+    return {
+      status: "no_buttons_found",
+      email_id: emailId,
+      selector: "a.es-button",
+      note: "The rendered HTML has no a.es-button elements. Check the module HTML or adjust the selector.",
+    };
+  }
+
+  const patched = [];
+  buttons.each((i, el) => {
+    if (overrides.cta_text !== undefined) {
+      $(el).text(overrides.cta_text);
+      patched.push({ index: i, field: "text", value: overrides.cta_text });
+    }
+    if (overrides.cta_href !== undefined) {
+      $(el).attr("href", overrides.cta_href);
+      patched.push({ index: i, field: "href", value: overrides.cta_href });
+    }
+  });
+
+  const patchedHtml = $.html();
+  const patchedPath = path.join(outputDir, `${timestampForFile}-patched.html`);
+  fs.writeFileSync(patchedPath, patchedHtml);
+
+  return {
+    status: "patched",
+    email_id: emailId,
+    buttons_found: buttons.length,
+    patches_applied: patched,
+    patched_html_path: patchedPath,
+    patched_html_byte_count: Buffer.byteLength(patchedHtml, "utf8"),
+    note: "Patched HTML is Stripo-rendered with CTA overrides applied client-side. Use this for Braze sync — do NOT push back to Stripo.",
   };
 }
 

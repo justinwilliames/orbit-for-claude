@@ -4112,6 +4112,15 @@ function registerTools() {
           .describe(
             "Per-module Smart Element variable substitutions that are baked into the Stripo-generated email at push time. Shape: { '<stripo_module_id>': { '<varName>': '<value>' } }. Each varName must match a binding defined in Stripo's Smart Elements wizard (Config tab → add variable). Text, URL (href), image src, and alt bindings are all supported. Client-side validation runs before push — unknown var names are rejected with an error listing what's available. Requires push:true to take effect; ignored on preview-only compose. To discover available varNames for each module, call orbit_list_stripo_modules (field: slot_definitions)."
           ),
+        html_overrides: z
+          .object({
+            cta_text: z.string().max(200).optional().describe("Replace the text content of all a.es-button CTA buttons in the Stripo-rendered email. Applied after Stripo generates the email server-side (client-side Cheerio patch). Requires push:true."),
+            cta_href: z.string().max(2000).optional().describe("Replace the href attribute on all a.es-button CTA buttons. Requires push:true."),
+          })
+          .optional()
+          .describe(
+            "Post-render HTML overrides applied to the Stripo-generated email via Cheerio before Braze sync. Bypasses Stripo's write-API dead ends (PUT/PATCH return 405; inline-html dataSources are silently regenerated). Stripo is used as source-of-structure only — the patched HTML is returned for Braze and never pushed back to Stripo. Requires push:true."
+          ),
         push: z
           .boolean()
           .optional()
@@ -4120,7 +4129,7 @@ function registerTools() {
           )
       }
     },
-    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, slot_values, push }) => {
+    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, slot_values, html_overrides, push }) => {
       const result = await composeStripoEmail({
         config: runtimeConfig,
         subject,
@@ -4129,6 +4138,7 @@ function registerTools() {
         copy_overrides,
         image_overrides,
         slot_values,
+        html_overrides,
         push
       });
       // When the tool returns an artifact_directive, surface that as
