@@ -302,6 +302,7 @@ export async function composeStripoEmail({
       htmlOverridesResult = await applyHtmlOverrides({
         config,
         emailId: newEmailId,
+        previewUrl: pushResponse?.previewUrl ?? null,
         overrides: htmlOverrides,
         outputDir: composeOutputDir,
         timestampForFile,
@@ -391,38 +392,94 @@ export async function composeStripoEmail({
 // HTML overrides — GET rendered email from Stripo, Cheerio-patch CTA
 // ---------------------------------------------------------------------------
 
-async function applyHtmlOverrides({ config, emailId, overrides, outputDir, timestampForFile }) {
-  // Fetch the rendered email from Stripo. GET /emails/<id> returns a JSON
-  // object with `css` and `html` fields (and other metadata). The `html`
-  // field contains the rendered body; we need the full document.
-  let rendered;
-  try {
-    rendered = await stripoRestGet({ config, endpoint: `/emails/${emailId}` });
-  } catch (err) {
-    return {
-      status: "fetch_failed",
-      email_id: emailId,
-      error: err.message?.slice(0, 300),
-    };
+async function applyHtmlOverrides({ config, emailId, previewUrl, overrides, outputDir, timestampForFile }) {
+  // ── Source 1: previewUrl (public, no auth, returns full HTML document) ──
+  // Stripo's POST /email response includes a previewUrl that serves the
+  // fully-rendered email as a standalone HTML page. No auth required,
+  // no JSON field-name guessing — just fetch and load into Cheerio.
+  let htmlStr = null;
+  let fetchSource = null;
+
+  if (previewUrl) {
+    try {
+      const resp = await fetch(previewUrl, {
+        signal: AbortSignal.timeout(15_000),
+        headers: { Accept: "text/html,application/xhtml+xml" },
+      });
+      if (resp.ok) {
+        const text = await resp.text();
+        if (text.length > 200 && (text.includes("<html") || text.includes("<!DOCTYPE"))) {
+          htmlStr = text;
+          fetchSource = `previewUrl (${previewUrl})`;
+        }
+      }
+    } catch {
+      // fall through to REST fallback
+    }
   }
 
-  // Extract the HTML string. Stripo returns { css, html, ... } — try `html`
-  // first, fall back to stringified JSON if the field name differs.
-  const htmlStr =
-    typeof rendered === "string"
-      ? rendered
-      : typeof rendered?.html === "string"
-      ? rendered.html
-      : typeof rendered?.markup === "string"
-      ? rendered.markup
-      : null;
-
+  // ── Source 2: GET /emails/<id> — JSON response, smart field scan ────
+  // Stripo returns a JSON object whose fields we can't reliably predict
+  // from docs alone. Try known names first (html, markup), then scan all
+  // string fields for one that looks like HTML content. Log the response
+  // keys on failure so the next iteration can hard-code the right name.
   if (!htmlStr) {
-    return {
-      status: "html_not_extractable",
-      email_id: emailId,
-      response_keys: typeof rendered === "object" && rendered ? Object.keys(rendered) : [],
-    };
+    let rendered;
+    try {
+      rendered = await stripoRestGet({ config, endpoint: `/emails/${emailId}` });
+    } catch (err) {
+      return {
+        status: "fetch_failed",
+        email_id: emailId,
+        preview_url: previewUrl,
+        error: err.message?.slice(0, 300),
+      };
+    }
+
+    if (typeof rendered === "string") {
+      htmlStr = rendered;
+      fetchSource = `GET /emails/${emailId} (bare string)`;
+    } else if (rendered && typeof rendered === "object") {
+      // Try known field names first, then scan for any string that looks like HTML.
+      for (const field of ["html", "markup", "body", "template", "htmlContent", "emailHtml"]) {
+        if (typeof rendered[field] === "string" && rendered[field].length > 200) {
+          htmlStr = rendered[field];
+          fetchSource = `GET /emails/${emailId} .${field}`;
+          break;
+        }
+      }
+      if (!htmlStr) {
+        // Scan all string fields — pick the longest one containing HTML markers
+        for (const [key, val] of Object.entries(rendered)) {
+          if (
+            typeof val === "string" &&
+            val.length > 500 &&
+            key !== "css" &&
+            (val.includes("<!DOCTYPE") || val.includes("<html") || val.includes("<body") || val.includes("es-button"))
+          ) {
+            htmlStr = val;
+            fetchSource = `GET /emails/${emailId} .${key} (auto-detected)`;
+            break;
+          }
+        }
+      }
+      if (!htmlStr) {
+        return {
+          status: "html_not_extractable",
+          email_id: emailId,
+          preview_url: previewUrl,
+          response_keys: Object.entries(rendered).map(([k, v]) => `${k} (${typeof v}${typeof v === "string" ? `, ${v.length} chars` : ""})`),
+          hint: "None of the known HTML field names matched. Check response_keys to identify which field holds the HTML content and update applyHtmlOverrides() accordingly.",
+        };
+      }
+    } else {
+      return {
+        status: "html_not_extractable",
+        email_id: emailId,
+        preview_url: previewUrl,
+        rendered_type: typeof rendered,
+      };
+    }
   }
 
   // Load into Cheerio and patch a.es-button elements.
@@ -433,8 +490,11 @@ async function applyHtmlOverrides({ config, emailId, overrides, outputDir, times
     return {
       status: "no_buttons_found",
       email_id: emailId,
+      fetch_source: fetchSource,
       selector: "a.es-button",
-      note: "The rendered HTML has no a.es-button elements. Check the module HTML or adjust the selector.",
+      html_length: htmlStr.length,
+      html_excerpt: htmlStr.slice(0, 500),
+      note: "The rendered HTML has no a.es-button elements. Check the module HTML or the fetch_source/html_excerpt above.",
     };
   }
 
@@ -457,6 +517,7 @@ async function applyHtmlOverrides({ config, emailId, overrides, outputDir, times
   return {
     status: "patched",
     email_id: emailId,
+    fetch_source: fetchSource,
     buttons_found: buttons.length,
     patches_applied: patched,
     patched_html_path: patchedPath,
