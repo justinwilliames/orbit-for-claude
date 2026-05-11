@@ -32,12 +32,8 @@ import { fileURLToPath } from "node:url";
 const SUITE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.resolve(SUITE_DIR, "..", "fixtures", "stripo-module-bindings.json");
 
-// Resolve the project root — one level up from workspace/ — to import
-// the real server modules from the orbit-for-claude project.
-// When running from the delegate workspace, PROJECT_ROOT must be set in
-// the environment, or we fall back to a relative heuristic.
-const PROJECT_ROOT = process.env.ORBIT_PROJECT_ROOT
-  ?? path.resolve(SUITE_DIR, "..", "..", "..", "..", "..", "..", "Users", "justin", "code", "orbit-for-claude");
+// Project root is two levels up from any file in tests/suites/.
+const PROJECT_ROOT = path.resolve(SUITE_DIR, "..", "..");
 
 // Dynamic imports — resolved after we know the project root.
 let inspectStripoModuleBindings;
