@@ -1,0 +1,142 @@
+{
+  "status": "ok",
+  "library_dir": "/tmp/orbit-test-library",
+  "item_count": 4,
+  "items": [
+    {
+      "id": "module:stripo-1001:v1",
+      "type": "module",
+      "slug": "stripo-1001",
+      "version": "v1",
+      "title": "Brand Header",
+      "tags": ["stripo_synced"],
+      "status": "synced",
+      "favorite": false,
+      "notes": null,
+      "item_dir": "/tmp/orbit-test-library/modules/stripo-1001/v1",
+      "artifact_path": null,
+      "files": {
+        "module.html": "/tmp/orbit-test-library/modules/stripo-1001/v1/module.html",
+        "module.css": "/tmp/orbit-test-library/modules/stripo-1001/v1/module.css"
+      },
+      "metadata": {
+        "stripo_id": 1001,
+        "stripo_uid": "structure_with_hero_section",
+        "classification": "header",
+        "stripo_block_type": "STRIPE",
+        "purpose_summary": "Top-of-email brand header",
+        "slot_definitions": {
+          "hero_cta_text": { "type": "text" },
+          "hero_cta_url": { "type": "href" }
+        }
+      },
+      "source": {
+        "provider": "stripo",
+        "synced_at": "2026-05-11T00:00:00.000Z"
+      },
+      "updated_at": "2026-05-11T00:00:00.000Z"
+    },
+    {
+      "id": "module:stripo-2002:v1",
+      "type": "module",
+      "slug": "stripo-2002",
+      "version": "v1",
+      "title": "3-Up Product Smart Container",
+      "tags": ["stripo_synced"],
+      "status": "synced",
+      "favorite": false,
+      "notes": null,
+      "item_dir": "/tmp/orbit-test-library/modules/stripo-2002/v1",
+      "artifact_path": null,
+      "files": {
+        "module.html": "/tmp/orbit-test-library/modules/stripo-2002/v1/module.html",
+        "module.css": "/tmp/orbit-test-library/modules/stripo-2002/v1/module.css"
+      },
+      "metadata": {
+        "stripo_id": 2002,
+        "stripo_uid": "structure_empty_3_containers",
+        "classification": "content",
+        "stripo_block_type": "STRUCTURE",
+        "purpose_summary": "Three-slot smart container for product cards",
+        "slot_definitions": {
+          "section_title": { "type": "text" },
+          "section_cta_url": { "type": "href" }
+        }
+      },
+      "source": {
+        "provider": "stripo",
+        "synced_at": "2026-05-11T00:00:00.000Z"
+      },
+      "updated_at": "2026-05-11T00:00:00.000Z"
+    },
+    {
+      "id": "module:stripo-3003:v1",
+      "type": "module",
+      "slug": "stripo-3003",
+      "version": "v1",
+      "title": "Product Card",
+      "tags": ["stripo_synced"],
+      "status": "synced",
+      "favorite": false,
+      "notes": null,
+      "item_dir": "/tmp/orbit-test-library/modules/stripo-3003/v1",
+      "artifact_path": null,
+      "files": {
+        "module.html": "/tmp/orbit-test-library/modules/stripo-3003/v1/module.html",
+        "module.css": "/tmp/orbit-test-library/modules/stripo-3003/v1/module.css"
+      },
+      "metadata": {
+        "stripo_id": 3003,
+        "stripo_uid": "product_card",
+        "classification": "content",
+        "stripo_block_type": "STRIPE",
+        "purpose_summary": "Reusable product-card child module",
+        "slot_definitions": {
+          "url": { "type": "href" },
+          "p_name": { "type": "text" },
+          "p_image": { "type": "src" },
+          "p_price": { "type": "text" },
+          "p_description": { "type": "text" }
+        }
+      },
+      "source": {
+        "provider": "stripo",
+        "synced_at": "2026-05-11T00:00:00.000Z"
+      },
+      "updated_at": "2026-05-11T00:00:00.000Z"
+    },
+    {
+      "id": "module:stripo-4004:v1",
+      "type": "module",
+      "slug": "stripo-4004",
+      "version": "v1",
+      "title": "Footer CTA",
+      "tags": ["stripo_synced"],
+      "status": "synced",
+      "favorite": false,
+      "notes": null,
+      "item_dir": "/tmp/orbit-test-library/modules/stripo-4004/v1",
+      "artifact_path": null,
+      "files": {
+        "module.html": "/tmp/orbit-test-library/modules/stripo-4004/v1/module.html",
+        "module.css": "/tmp/orbit-test-library/modules/stripo-4004/v1/module.css"
+      },
+      "metadata": {
+        "stripo_id": 4004,
+        "stripo_uid": "structure_with_cta",
+        "classification": "footer",
+        "stripo_block_type": "STRIPE",
+        "purpose_summary": "Bottom CTA + footer module",
+        "slot_definitions": {
+          "footer_cta_text": { "type": "text" },
+          "footer_cta_url": { "type": "href" }
+        }
+      },
+      "source": {
+        "provider": "stripo",
+        "synced_at": "2026-05-11T00:00:00.000Z"
+      },
+      "updated_at": "2026-05-11T00:00:00.000Z"
+    }
+  ]
+}

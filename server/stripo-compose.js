@@ -62,11 +62,7 @@ export async function composeStripoEmail({
     (item) => !(item.tags ?? []).includes(TAG_ARCHIVED),
   );
 
-  const indexById = new Map();
-  for (const item of live) {
-    indexById.set(String(item.metadata?.stripo_id ?? ""), item);
-    indexById.set(item.id, item);
-  }
+  const indexById = buildModuleLookup(live);
 
   const resolved = [];
   const missing = [];
@@ -116,13 +112,23 @@ export async function composeStripoEmail({
 
   // ─── slot_values validation ────────────────────────────────────────────────
   //
-  // slot_values shape: { [stripoModuleId]: { [varName]: value } }
+  // slot_values shape:
+  //   { [stripoModuleId]: { [varName]: value } }
+  // or
+  //   {
+  //     [stripoModuleId]: {
+  //       values:  { [varName]: value },
+  //       content: [{ id: <stripoModuleId|stripoUid|libraryId>, values: { ... } }, ...]
+  //     }
+  //   }
   // Client-side validation is mandatory because Stripo silently ignores
   // unknown variable names — a typo produces no error and no substitution.
   //
   // We validate that:
   //   1. Each key in slot_values refers to a module that's in the sequence.
   //   2. Each var name within that module exists in the module's slot_definitions.
+  //   3. Each content[] child module resolves against the synced library.
+  //   4. Each child values{} key exists in that child's slot_definitions.
   //
   // If a module has no slot_definitions (no esd-dynamic-block markup), any
   // slot_values entry for it is rejected — the user needs to add bindings
@@ -131,7 +137,7 @@ export async function composeStripoEmail({
   const slotValidationErrors = [];
   if (hasSlotValues) {
     const resolvedById = new Map(resolved.map((item) => [String(item.metadata?.stripo_id ?? ""), item]));
-    for (const [moduleRef, varMap] of Object.entries(slotValues)) {
+    for (const [moduleRef, slotEntry] of Object.entries(slotValues)) {
       const item = resolvedById.get(String(moduleRef));
       if (!item) {
         slotValidationErrors.push({
@@ -140,24 +146,44 @@ export async function composeStripoEmail({
         });
         continue;
       }
-      const slotDefs = item.metadata?.slot_definitions ?? null;
-      if (!slotDefs) {
+
+      validateSlotValueMap({
+        item,
+        moduleRef,
+        values: extractSlotValueMap(slotEntry),
+        slotValidationErrors,
+      });
+
+      if (!isStructuredSlotEntry(slotEntry)) continue;
+
+      if (slotEntry.content !== undefined && !Array.isArray(slotEntry.content)) {
         slotValidationErrors.push({
           module_ref: moduleRef,
           name: item.title,
-          error: `Module "${item.title}" (ID ${moduleRef}) has no Smart Element variable bindings. Open it in Stripo's module editor, go to the Config tab, and add variable bindings (text / href / src / alt) to each field you want to control per-send. Then re-run orbit_sync_stripo_modules.`,
+          error: `slot_values["${moduleRef}"].content must be an array of child module refs with optional values objects.`,
         });
         continue;
       }
-      for (const varName of Object.keys(varMap ?? {})) {
-        if (!slotDefs[varName]) {
+
+      for (const [childIndex, childEntry] of (slotEntry.content ?? []).entries()) {
+        const childRef = childEntry?.id;
+        const childItem = resolveModuleRef(indexById, childRef);
+        if (!childItem) {
           slotValidationErrors.push({
             module_ref: moduleRef,
-            name: item.title,
-            var_name: varName,
-            error: `Variable "${varName}" is not defined in module "${item.title}". Known variables: ${Object.keys(slotDefs).join(", ") || "(none)"}. Check spelling or add the binding in Stripo.`,
+            child_ref: childRef,
+            error: `Child module reference "${childRef}" in slot_values["${moduleRef}"].content[${childIndex}] isn't in the synced library. Run orbit_list_stripo_modules to see what's available, or orbit_sync_stripo_modules if Stripo has new modules.`,
           });
+          continue;
         }
+
+        validateSlotValueMap({
+          item: childItem,
+          moduleRef,
+          values: extractContentValueMap(childEntry),
+          slotValidationErrors,
+          childRef,
+        });
       }
     }
   }
@@ -257,6 +283,7 @@ export async function composeStripoEmail({
 
     const canonicalPayload = buildCanonicalPayload({
       modules: resolved,
+      moduleLookupByRef: indexById,
       templateId: templateIdNumber,
       subject,
       preheader,
@@ -575,6 +602,78 @@ function validateComposition(modules) {
   return { error: null };
 }
 
+function buildModuleLookup(items) {
+  const indexById = new Map();
+  for (const item of items ?? []) {
+    const stripoId = item.metadata?.stripo_id;
+    const stripoUid = item.metadata?.stripo_uid;
+    if (stripoId !== undefined && stripoId !== null && stripoId !== "") {
+      indexById.set(String(stripoId), item);
+    }
+    if (stripoUid) {
+      indexById.set(String(stripoUid), item);
+    }
+    if (item.id) {
+      indexById.set(String(item.id), item);
+    }
+  }
+  return indexById;
+}
+
+function resolveModuleRef(indexById, ref) {
+  if (ref === undefined || ref === null || ref === "") return null;
+  return indexById.get(String(ref)) ?? null;
+}
+
+function isStructuredSlotEntry(entry) {
+  return Boolean(entry) && typeof entry === "object" && !Array.isArray(entry) && ("values" in entry || "content" in entry);
+}
+
+function extractSlotValueMap(entry) {
+  if (isStructuredSlotEntry(entry)) return normalizeValuesObject(entry.values);
+  return normalizeValuesObject(entry);
+}
+
+function extractContentValueMap(entry) {
+  return normalizeValuesObject(entry?.values);
+}
+
+function normalizeValuesObject(values) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) return {};
+  return values;
+}
+
+function validateSlotValueMap({ item, moduleRef, values, slotValidationErrors, childRef = null }) {
+  if (Object.keys(values).length === 0) return;
+
+  const slotDefs = item.metadata?.slot_definitions ?? null;
+  if (!slotDefs) {
+    slotValidationErrors.push({
+      module_ref: moduleRef,
+      child_ref: childRef,
+      name: item.title,
+      error: childRef
+        ? `Child module "${item.title}" (ref ${childRef}) has no Smart Element variable bindings. Open it in Stripo's module editor, go to the Config tab, and add variable bindings (text / href / src / alt) to each field you want to control per-send. Then re-run orbit_sync_stripo_modules.`
+        : `Module "${item.title}" (ID ${moduleRef}) has no Smart Element variable bindings. Open it in Stripo's module editor, go to the Config tab, and add variable bindings (text / href / src / alt) to each field you want to control per-send. Then re-run orbit_sync_stripo_modules.`,
+    });
+    return;
+  }
+
+  for (const varName of Object.keys(values)) {
+    if (!slotDefs[varName]) {
+      slotValidationErrors.push({
+        module_ref: moduleRef,
+        child_ref: childRef,
+        name: item.title,
+        var_name: varName,
+        error: childRef
+          ? `Variable "${varName}" is not defined in child module "${item.title}" (ref ${childRef}). Known variables: ${Object.keys(slotDefs).join(", ") || "(none)"}. Check spelling or add the binding in Stripo.`
+          : `Variable "${varName}" is not defined in module "${item.title}". Known variables: ${Object.keys(slotDefs).join(", ") || "(none)"}. Check spelling or add the binding in Stripo.`,
+      });
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // HTML assembly
 // ---------------------------------------------------------------------------
@@ -710,14 +809,19 @@ void loadLibraryItem;
  *   }
  *
  * Each module entry can also carry `values` for slot overrides and
- * `content` for nested-container module data — not used yet (Stripo's
- * findmodules doesn't expose slot keys), but the shape supports it
- * when we add per-slot copy/image overrides later.
+ * `content` for nested-container module data.
  *
  * The emailName carries a timestamp so repeat composes don't collide
  * in the user's workspace folder.
  */
-function buildCanonicalPayload({ modules, templateId, subject, preheader, slotValues = {} }) {
+function buildCanonicalPayload({
+  modules,
+  moduleLookupByRef = new Map(),
+  templateId,
+  subject,
+  preheader,
+  slotValues = {},
+}) {
   // ─── Stripo's dataSources[].value[].id is the module UID, NOT the
   // numeric module ID. Discovered the hard way: posting numeric IDs
   // produced silent empty emails — Stripo accepted the request, stripped
@@ -734,18 +838,24 @@ function buildCanonicalPayload({ modules, templateId, subject, preheader, slotVa
   // slot_values are threaded into the `values` field of each module ref.
   // Shape: dataSources[].value[].values = { varName: "substituted text" }
   // Stripo silently drops unknown var names (validated client-side above).
+  const libraryLookup =
+    moduleLookupByRef instanceof Map ? moduleLookupByRef : buildModuleLookup(moduleLookupByRef);
   const moduleRefs = modules.map((item) => {
-    const stripoUid = item.metadata?.stripo_uid;
-    if (!stripoUid) {
-      throw new Error(
-        `Module ${item.metadata?.stripo_id ?? item.id} has no stripo_uid in metadata. ` +
-          "Re-run orbit_sync_stripo_modules to repopulate the UID field.",
-      );
-    }
-    const ref = { id: String(stripoUid) };
-    const moduleSlotVals = slotValues?.[String(item.metadata?.stripo_id)] ?? null;
-    if (moduleSlotVals && Object.keys(moduleSlotVals).length > 0) {
-      ref.values = moduleSlotVals;
+    const moduleSlotEntry = slotValues?.[String(item.metadata?.stripo_id)] ?? null;
+    const ref = buildCanonicalModuleRef(item, extractSlotValueMap(moduleSlotEntry));
+
+    if (isStructuredSlotEntry(moduleSlotEntry) && Array.isArray(moduleSlotEntry.content) && moduleSlotEntry.content.length > 0) {
+      ref.content = moduleSlotEntry.content.map((childEntry) => {
+        const childRef = childEntry?.id;
+        const childItem = resolveModuleRef(libraryLookup, childRef);
+        if (!childItem) {
+          throw new Error(
+            `Child module ${childRef} referenced under parent ${item.metadata?.stripo_id ?? item.id} isn't in the synced library. ` +
+              "Re-run orbit_sync_stripo_modules and verify the child module reference.",
+          );
+        }
+        return buildCanonicalModuleRef(childItem, extractContentValueMap(childEntry));
+      });
     }
     return ref;
   });
@@ -777,4 +887,19 @@ function buildCanonicalPayload({ modules, templateId, subject, preheader, slotVa
   if (subject) payload.title = subject;
   if (preheader) payload.preheader = preheader;
   return payload;
+}
+
+function buildCanonicalModuleRef(item, values = null) {
+  const stripoUid = item.metadata?.stripo_uid;
+  if (!stripoUid) {
+    throw new Error(
+      `Module ${item.metadata?.stripo_id ?? item.id} has no stripo_uid in metadata. ` +
+        "Re-run orbit_sync_stripo_modules to repopulate the UID field.",
+    );
+  }
+  const ref = { id: String(stripoUid) };
+  if (values && Object.keys(values).length > 0) {
+    ref.values = values;
+  }
+  return ref;
 }

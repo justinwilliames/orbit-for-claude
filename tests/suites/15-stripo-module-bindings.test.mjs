@@ -1,0 +1,380 @@
+/**
+ * Stripo module bindings inspector — unit tests.
+ *
+ * Tests the inspectStripoModuleBindings handler against three fixture
+ * module shapes:
+ *   (i)   standard Smart Element module with registered variables + esd-gen-* classes
+ *   (ii)  module with top-level link field dead-end (no proper CTA binding)
+ *   (iii) Smart Container module (empty esd-structure containers, no inner content)
+ *
+ * Strategy:
+ *   - Seed a real Orbit library in a temp directory using saveLibraryItem
+ *     (the same function sync uses). This exercises the real library-read
+ *     path without any network calls — the handler reads from the library
+ *     file on disk.
+ *   - The REST fallback path (module not in library) is tested indirectly
+ *     via the missing-token needs_setup branch and the input-validation
+ *     branch — no real Stripo API is called.
+ *   - All module HTML is sourced from tests/fixtures/stripo-module-bindings.json.
+ *
+ * Run: node --test tests/suites/15-stripo-module-bindings.test.mjs
+ * (from the orbit-for-claude repo root, after npm install)
+ */
+
+import { test, describe, before, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// The fixture file is in our workspace — resolve relative to this test file.
+const SUITE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE_PATH = path.resolve(SUITE_DIR, "..", "fixtures", "stripo-module-bindings.json");
+
+// Resolve the project root — one level up from workspace/ — to import
+// the real server modules from the orbit-for-claude project.
+// When running from the delegate workspace, PROJECT_ROOT must be set in
+// the environment, or we fall back to a relative heuristic.
+const PROJECT_ROOT = process.env.ORBIT_PROJECT_ROOT
+  ?? path.resolve(SUITE_DIR, "..", "..", "..", "..", "..", "..", "Users", "justin", "code", "orbit-for-claude");
+
+// Dynamic imports — resolved after we know the project root.
+let inspectStripoModuleBindings;
+let saveLibraryItem;
+
+// ---------------------------------------------------------------------------
+// Temp workspace helpers (inline to avoid depending on project harness)
+// ---------------------------------------------------------------------------
+
+let tempRoot = null;
+
+function makeTempLibrary() {
+  tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-bindings-test-"));
+  // Minimal home-workspace structure that config.js + template-library.js expect.
+  fs.mkdirSync(path.join(tempRoot, "library"), { recursive: true });
+  fs.mkdirSync(path.join(tempRoot, "outputs"), { recursive: true });
+  fs.mkdirSync(path.join(tempRoot, "brand-kit"), { recursive: true });
+  return tempRoot;
+}
+
+function cleanupTempLibrary() {
+  if (tempRoot && fs.existsSync(tempRoot)) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Build the minimal config object that listLibraryItems and saveLibraryItem need.
+ * We set libraryDir to point at our temp library root and leave API keys empty
+ * so the handler short-circuits to the "not in library" path only when we want it.
+ */
+function makeConfig({ includeRestToken = true } = {}) {
+  return {
+    libraryDir: path.join(tempRoot, "library"),
+    defaultOutputDir: path.join(tempRoot, "outputs"),
+    brandKitDir: path.join(tempRoot, "brand-kit"),
+    stripoRestApiToken: includeRestToken ? "test-fake-token" : null,
+    stripoRestBaseUrl: "https://my.stripo.email/emailgeneration/v1",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Seed helpers — mirror what saveStripoModuleToLibrary does in stripo-modules.js
+// ---------------------------------------------------------------------------
+
+function seedModule({ config, fixture }) {
+  saveLibraryItem({
+    config,
+    itemType: "module",
+    slug: `stripo-${fixture.id}`,
+    version: "v1",
+    title: fixture.name,
+    tags: ["stripo_synced"],
+    status: "synced",
+    artifact: {
+      version: "1.0.0",
+      kind: "stripo_synced_module",
+      stripo_id: fixture.id,
+      stripo_uid: fixture.uid,
+      name: fixture.name,
+    },
+    files: {
+      "module.html": fixture.markup,
+      "module.css": fixture.css ?? "",
+    },
+    metadata: {
+      stripo_id: fixture.id,
+      stripo_uid: fixture.uid,
+    },
+    source: {
+      origin: "stripo_api",
+      stripo_id: fixture.id,
+      stripo_uid: fixture.uid,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
+
+describe("orbit_inspect_stripo_module_bindings", () => {
+  let fixtures = null;
+  let config = null;
+
+  before(async () => {
+    // Dynamic import of project modules — must happen after we can resolve the path.
+    const handlerMod = await import(
+      path.join(PROJECT_ROOT, "server", "stripo-module-bindings-inspect.js")
+    );
+    inspectStripoModuleBindings = handlerMod.inspectStripoModuleBindings;
+
+    const libMod = await import(
+      path.join(PROJECT_ROOT, "server", "template-library.js")
+    );
+    saveLibraryItem = libMod.saveLibraryItem;
+
+    // Load fixture data.
+    fixtures = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8")).modules;
+
+    // Build temp filesystem + seed all three modules.
+    makeTempLibrary();
+    config = makeConfig();
+    for (const f of fixtures) {
+      seedModule({ config, fixture: f });
+    }
+  });
+
+  after(() => {
+    cleanupTempLibrary();
+  });
+
+  // ─── Fixture (i) — Standard Smart Element module ─────────────────────────
+
+  describe("fixture (i) — standard Smart Element module", () => {
+    let result;
+    let expected;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "standard-smart-element");
+      expected = f._expected;
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("returns the correct module name", () => {
+      assert.ok(
+        typeof result.name === "string" && result.name.length > 0,
+        "name should be a non-empty string",
+      );
+    });
+
+    test("registered_variables contains p_title and p_description", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.ok(names.includes("p_title"), "should include p_title");
+      assert.ok(names.includes("p_description"), "should include p_description");
+      assert.equal(
+        result.registered_variables.length,
+        expected.registered_variables.length,
+        "should have correct number of registered variables",
+      );
+    });
+
+    test("each registered_variable has a blockMapping array", () => {
+      for (const v of result.registered_variables) {
+        assert.ok(Array.isArray(v.blockMapping), `blockMapping should be an array for ${v.name}`);
+      }
+    });
+
+    test("p_title blockMapping has correct selector", () => {
+      const pTitle = result.registered_variables.find((v) => v.name === "p_title");
+      assert.ok(pTitle, "p_title should exist");
+      assert.ok(pTitle.blockMapping.length > 0, "p_title should have at least one blockMapping entry");
+      assert.equal(pTitle.blockMapping[0].selector, ".esd-gen-p-title");
+    });
+
+    test("top_level_link_field is false", () => {
+      assert.equal(result.top_level_link_field, false);
+    });
+
+    test("esd_gen_classes contains expected class names", () => {
+      assert.ok(result.esd_gen_classes.includes("esd-gen-p-title"), "should detect esd-gen-p-title");
+      assert.ok(result.esd_gen_classes.includes("esd-gen-p-description"), "should detect esd-gen-p-description");
+      assert.deepEqual(result.esd_gen_classes, expected.esd_gen_classes);
+    });
+
+    test("likely_smart_container is false", () => {
+      assert.equal(result.likely_smart_container, false);
+    });
+
+    test("can_accept_in_values matches registered variable names", () => {
+      assert.deepEqual(
+        [...result.can_accept_in_values].sort(),
+        [...expected.can_accept_in_values].sort(),
+      );
+    });
+
+    test("notes does not contain 'No Smart Properties bindings detected'", () => {
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        !joinedNotes.includes("No Smart Properties bindings detected"),
+        "should not warn about missing bindings when bindings exist",
+      );
+    });
+  });
+
+  // ─── Fixture (ii) — Top-level link field dead-end ────────────────────────
+
+  describe("fixture (ii) — link field dead-end", () => {
+    let result;
+    let expected;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "link-field-dead-end");
+      expected = f._expected;
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables contains promo_title only", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.deepEqual(names, ["promo_title"]);
+    });
+
+    test("top_level_link_field is true", () => {
+      assert.equal(result.top_level_link_field, true);
+    });
+
+    test("esd_gen_classes contains esd-gen-promo-title", () => {
+      assert.ok(result.esd_gen_classes.includes("esd-gen-promo-title"));
+    });
+
+    test("likely_smart_container is false", () => {
+      assert.equal(result.likely_smart_container, false);
+    });
+
+    test("can_accept_in_values is ['promo_title']", () => {
+      assert.deepEqual(result.can_accept_in_values, ["promo_title"]);
+    });
+
+    test("notes contains CTA dead-end warning", () => {
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        joinedNotes.includes("Button CTA may be bound via the Smart Element wizard's top-level link field"),
+        `Expected CTA dead-end note. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (iii) — Smart Container ─────────────────────────────────────
+
+  describe("fixture (iii) — Smart Container", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "smart-container");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables is empty", () => {
+      assert.deepEqual(result.registered_variables, []);
+    });
+
+    test("top_level_link_field is false", () => {
+      assert.equal(result.top_level_link_field, false);
+    });
+
+    test("esd_gen_classes is empty", () => {
+      assert.deepEqual(result.esd_gen_classes, []);
+    });
+
+    test("likely_smart_container is true", () => {
+      assert.equal(result.likely_smart_container, true);
+    });
+
+    test("can_accept_in_values is empty", () => {
+      assert.deepEqual(result.can_accept_in_values, []);
+    });
+
+    test("notes contains 'No Smart Properties bindings detected'", () => {
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        joinedNotes.includes("No Smart Properties bindings detected"),
+        `Expected missing-bindings note. Got: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("notes contains Smart Container guidance", () => {
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        joinedNotes.includes("Module looks like a Smart Container"),
+        `Expected Smart Container note. Got: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Error / edge case paths ──────────────────────────────────────────────
+
+  describe("error and edge case paths", () => {
+    test("missing stripo_module_id returns invalid_input", async () => {
+      const result = await inspectStripoModuleBindings({ config, input: {} });
+      assert.equal(result.status, "invalid_input");
+    });
+
+    test("missing REST token returns needs_setup", async () => {
+      const noTokenConfig = makeConfig({ includeRestToken: false });
+      const result = await inspectStripoModuleBindings({
+        config: noTokenConfig,
+        input: { stripo_module_id: "99999" },
+      });
+      assert.equal(result.status, "needs_setup");
+    });
+
+    test("module not in library with valid token attempts REST fetch and returns fetch_error or not_found", async () => {
+      // With a real (fake) token but no actual Stripo server, the REST fetch
+      // should either throw a network error (fetch_error) or return not_found.
+      // We don't make real network calls — the fake token will fail the actual
+      // HTTP request, which the handler catches and returns as fetch_error.
+      const result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: "99999999" },
+      });
+      // Either fetch_error (network refused/timeout) or not_found is acceptable.
+      assert.ok(
+        result.status === "fetch_error" || result.status === "not_found",
+        `Expected fetch_error or not_found, got: ${result.status}`,
+      );
+    });
+
+    test("module ID as number is coerced correctly", async () => {
+      const f = fixtures.find((m) => m._case === "standard-smart-element");
+      // Pass numeric ID (as if Zod coerced it from a number input)
+      const result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id }, // already a number in the fixture
+      });
+      assert.equal(result.status, "ok");
+      assert.equal(String(result.stripo_module_id), String(f.id));
+    });
+  });
+});

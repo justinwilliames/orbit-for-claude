@@ -114,6 +114,7 @@ import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
 import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
 import { probeStripoSmartElement } from "./stripo-smart-element-probe.js";
+import { inspectStripoModuleBindings } from "./stripo-module-bindings-inspect.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
 import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
@@ -4107,10 +4108,29 @@ function registerTools() {
           .optional()
           .describe("Global image src replacements: { 'old_url': 'new_url' }. Applied to the local preview only — not sent to Stripo on push. Use slot_values for push-time image substitution."),
         slot_values: z
-          .record(z.string(), z.record(z.string(), z.string()))
+          .record(
+            z.string(),
+            z.union([
+              z.record(z.string(), z.string()),
+              z.object({
+                values: z.record(z.string(), z.string()).optional(),
+                content: z
+                  .array(
+                    z.object({
+                      id: z.union([z.string(), z.number()]),
+                      values: z.record(z.string(), z.string()).optional()
+                    })
+                  )
+                  .optional()
+              })
+            ])
+          )
           .optional()
           .describe(
-            "Per-module Smart Element variable substitutions that are baked into the Stripo-generated email at push time. Shape: { '<stripo_module_id>': { '<varName>': '<value>' } }. Each varName must match a binding defined in Stripo's Smart Elements wizard (Config tab → add variable). Text, URL (href), image src, and alt bindings are all supported. Client-side validation runs before push — unknown var names are rejected with an error listing what's available. Requires push:true to take effect; ignored on preview-only compose. To discover available varNames for each module, call orbit_list_stripo_modules (field: slot_definitions)."
+            "Per-module Smart Element variable substitutions baked into the Stripo-generated email at push time. Two accepted shapes per module — pick whichever fits the module: " +
+            "(1) Flat for standalone modules with Smart Element bindings — { '<stripo_module_id>': { '<varName>': '<value>' } }. " +
+            "(2) Nested for Smart Container modules whose layout slots host child modules (per Stripo canonical-JSON content[] spec) — { '<stripo_module_id>': { values: { ... }, content: [{ id: '<childId>', values: { ... } }, ...] } }. " +
+            "varNames must match bindings registered in the module's Data tab (Smart Properties) in the Stripo editor. Text, URL (href), image src, and alt bindings are all supported. Unknown varNames and unknown child module ids are rejected before push with a clear error. Requires push:true; ignored on preview-only compose. To discover available varNames and whether a module is a Smart Container, call orbit_inspect_stripo_module_bindings."
           ),
         html_overrides: z
           .object({
@@ -4244,6 +4264,29 @@ function registerTools() {
     },
     async () => {
       const result = await probeStripoInlineHtml({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_inspect_stripo_module_bindings",
+    {
+      title: "Inspect Stripo Module Bindings",
+      description:
+        "Diagnostic report on a single Stripo module: which Smart Property variables are registered (and therefore substitutable via slot_values), which esd-gen-* CSS class hooks exist in the module HTML, whether the module looks like a Smart Container (layout shell with empty slots that accept child modules via content[]), and whether the module has a top-level OG-preview link field (the Smart Element wizard dead-end that silently drops CTA bindings). Returns the recommended varNames to pass in slot_values today and short actionable notes for the author when bindings are missing or mis-routed. Reads the synced library first; falls back to Stripo's /modules/{id} endpoint if not cached. Use this to verify a module's bindings before composing against it.",
+      inputSchema: {
+        stripo_module_id: z
+          .union([z.string(), z.number()])
+          .describe(
+            "Stripo module ID — either the numeric library ID (e.g. 1653410) or the module UID string (e.g. STRUCTURE7). Coerced to string internally; both forms accepted."
+          )
+      }
+    },
+    async ({ stripo_module_id }) => {
+      const result = await inspectStripoModuleBindings({
+        config: runtimeConfig,
+        input: { stripo_module_id }
+      });
       return makeJsonToolResponse(result);
     }
   );

@@ -1,0 +1,79 @@
+{
+  "_comment": "Three synthetic Stripo module shapes used by 15-stripo-module-bindings.test.mjs. Each mirrors the output of saveStripoModuleToLibrary in stripo-modules.js — i.e. what ends up as a library entry after sync. The module HTML is embedded inline in the fixture for use by tests that bypass the filesystem.",
+
+  "modules": [
+    {
+      "_case": "standard-smart-element",
+      "_desc": "Module WITH registered_variables (p_title + p_description bindings) and matching esd-gen-* classes. This is the canonical Smart Element module shape.",
+      "id": 1653410,
+      "uid": "abc-uid-1653410",
+      "name": "Hero Banner — Smart Element",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-title&quot;,&quot;attribute&quot;:&quot;innerText&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description copy.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-description&quot;,&quot;attribute&quot;:&quot;innerText&quot;}]}]}\"><h1 class=\"esd-gen-p-title\" style=\"font-size:24px\">Default Title</h1><p class=\"esd-gen-p-description\" style=\"font-size:14px\">Default description copy.</p></div></td></tr></table>",
+      "css": ".esd-gen-p-title { font-weight: bold; } .esd-gen-p-description { color: #333; }",
+
+      "_expected": {
+        "registered_variables": [
+          {
+            "name": "p_title",
+            "blockMapping": [{ "selector": ".esd-gen-p-title", "attribute": "innerText" }]
+          },
+          {
+            "name": "p_description",
+            "blockMapping": [{ "selector": ".esd-gen-p-description", "attribute": "innerText" }]
+          }
+        ],
+        "top_level_link_field": false,
+        "esd_gen_classes": ["esd-gen-p-description", "esd-gen-p-title"],
+        "likely_smart_container": false,
+        "can_accept_in_values": ["p_title", "p_description"],
+        "notes_should_not_contain": "No Smart Properties bindings detected"
+      }
+    },
+
+    {
+      "_case": "link-field-dead-end",
+      "_desc": "Module with a top-level `link` field in esd-dynamic-block AND no proper CTA variable bindings in the variables array. This is the OG-preview dead-end case the probe documented — the wizard emits a top-level link when it crawls an anchor target, but the API silently ignores it at compose time.",
+      "id": 1799900,
+      "uid": "def-uid-1799900",
+      "name": "Promo Card — CTA Dead-End",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;promo_title&quot;,&quot;defaultValue&quot;:&quot;Promo Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-promo-title&quot;,&quot;attribute&quot;:&quot;innerText&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h2 class=\"esd-gen-promo-title\">Promo Title</h2><a href=\"https://example.com/promo\" style=\"background:#000;color:#fff;padding:10px 20px\">Shop Now</a></div></td></tr></table>",
+      "css": ".esd-gen-promo-title { font-size: 20px; }",
+
+      "_expected": {
+        "registered_variables": [
+          {
+            "name": "promo_title",
+            "blockMapping": [{ "selector": ".esd-gen-promo-title", "attribute": "innerText" }]
+          }
+        ],
+        "top_level_link_field": true,
+        "esd_gen_classes": ["esd-gen-promo-title"],
+        "likely_smart_container": false,
+        "can_accept_in_values": ["promo_title"],
+        "notes_should_contain": "Button CTA may be bound via the Smart Element wizard's top-level link field"
+      }
+    },
+
+    {
+      "_case": "smart-container",
+      "_desc": "Smart Container module — empty esd-structure TDs with no inner content, no registered variables, no esd-gen-* classes. Requires the slot_values[] path at compose time.",
+      "id": 2001001,
+      "uid": "ghi-uid-2001001",
+      "name": "2-Column Smart Container",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"width:50%;padding:10px\">   </td><td class=\"esd-structure\" style=\"width:50%;padding:10px\">   </td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "registered_variables": [],
+        "top_level_link_field": false,
+        "esd_gen_classes": [],
+        "likely_smart_container": true,
+        "can_accept_in_values": [],
+        "notes_should_contain_all": [
+          "No Smart Properties bindings detected",
+          "Module looks like a Smart Container"
+        ]
+      }
+    }
+  ]
+}
