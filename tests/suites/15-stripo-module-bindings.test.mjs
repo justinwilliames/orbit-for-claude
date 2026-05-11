@@ -224,6 +224,16 @@ describe("orbit_inspect_stripo_module_bindings", () => {
         "should not warn about missing bindings when bindings exist",
       );
     });
+
+    test("notes does not flag properly bound classes as unmapped (0.19.4 regression check)", () => {
+      // All esd-gen classes in this fixture have matching blockMapping selectors,
+      // so the unmapped-classes note should not fire at all.
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        !joinedNotes.includes("no corresponding registered variable"),
+        `should not flag bound classes as unmapped. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
   });
 
   // ─── Fixture (ii) — Top-level link field dead-end ────────────────────────
@@ -271,6 +281,93 @@ describe("orbit_inspect_stripo_module_bindings", () => {
       assert.ok(
         joinedNotes.includes("Button CTA may be bound via the Smart Element wizard's top-level link field"),
         `Expected CTA dead-end note. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (iv) — Naming mismatch with orphan CTA classes ──────────────
+  // This is the canary regression case for the 0.19.4 fix. The live module
+  // 1653410 has p_title bound to .esd-gen-title (not .esd-gen-p-title), AND
+  // additional esd-gen-* classes on the button with no Smart Property
+  // registration. Under the old inferred-name cross-reference, all classes
+  // including the bound ones were flagged as unmapped — a false positive that
+  // gave authors contradictory guidance. The fix is selector-based.
+
+  describe("fixture (iv) — naming mismatch with orphan CTA classes", () => {
+    let result;
+    let expected;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "naming-mismatch-with-orphans");
+      expected = f._expected;
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables contains p_title bound to .esd-gen-title (not .esd-gen-p-title)", () => {
+      const pTitle = result.registered_variables.find((v) => v.name === "p_title");
+      assert.ok(pTitle, "p_title should be registered");
+      assert.equal(pTitle.blockMapping[0].selector, ".esd-gen-title");
+    });
+
+    test("top_level_link_field is true (wizard wrote OG-preview link)", () => {
+      assert.equal(result.top_level_link_field, true);
+    });
+
+    test("esd_gen_classes contains all five expected classes", () => {
+      assert.deepEqual(result.esd_gen_classes, expected.esd_gen_classes);
+    });
+
+    test("CTA dead-end note fires", () => {
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        joinedNotes.includes(expected.notes_should_contain),
+        `Expected CTA dead-end note. Got: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("unmapped-classes note flags ONLY the orphan classes (the fix)", () => {
+      const joinedNotes = result.notes.join(" ");
+      assert.ok(
+        joinedNotes.includes("no corresponding registered variable"),
+        `Expected unmapped-classes note for orphans. Got: ${JSON.stringify(result.notes)}`,
+      );
+      for (const orphan of expected.unmapped_classes_expected) {
+        assert.ok(
+          joinedNotes.includes(orphan),
+          `Expected orphan class ${orphan} to be listed in unmapped note. Got: ${JSON.stringify(result.notes)}`,
+        );
+      }
+    });
+
+    test("unmapped-classes note does NOT flag bound classes (regression check)", () => {
+      // Find the unmapped-classes note specifically, then verify the bound
+      // classes are absent from it — a substring check on the joined notes
+      // could miss the case where esd-gen-title appears in a different note.
+      const unmappedNote = result.notes.find((n) => n.includes("no corresponding registered variable"));
+      assert.ok(unmappedNote, "unmapped-classes note should exist");
+      for (const bound of expected.unmapped_classes_must_not_include) {
+        assert.ok(
+          !unmappedNote.includes(bound),
+          `Bound class ${bound} must NOT appear in unmapped-classes note. Got: ${unmappedNote}`,
+        );
+      }
+    });
+
+    test("CTA dead-end note no longer hardcodes cta_text / cta_href (softening check)", () => {
+      const ctaNote = result.notes.find((n) =>
+        n.includes("Button CTA may be bound via the Smart Element wizard's top-level link field"),
+      );
+      assert.ok(ctaNote, "CTA dead-end note should exist");
+      assert.ok(
+        ctaNote.includes("existing naming convention"),
+        `CTA note should reference workspace naming convention. Got: ${ctaNote}`,
       );
     });
   });

@@ -310,7 +310,7 @@ function buildNotes({ registeredVariables, topLevelLinkField, esdGenClasses, lik
     });
     if (!hasCTAVariable) {
       notes.push(
-        "Button CTA may be bound via the Smart Element wizard's top-level link field, which is silently ignored at compose time. Add cta_text / cta_href to Smart Properties via the Data tab and bind via .esd-gen-cta-text / .esd-gen-cta-href.",
+        "Button CTA may be bound via the Smart Element wizard's top-level link field, which is silently ignored at compose time. Register Smart Properties for the button's text and href via the Data tab — match the workspace's existing naming convention if one is in use (e.g. p_cta_text + p_link when the module uses a p_* prefix).",
       );
     }
   }
@@ -322,13 +322,17 @@ function buildNotes({ registeredVariables, topLevelLinkField, esdGenClasses, lik
     );
   }
 
-  // esd-gen classes present but no matching registered variable
-  const registeredNames = new Set(registeredVariables.map((v) => v.name.toLowerCase()));
-  const unmappedGenClasses = esdGenClasses.filter((cls) => {
-    // esd-gen-cta-text → infer variable name as "cta_text" (hyphens to underscores, strip prefix)
-    const inferredName = cls.replace(/^esd-gen-/, "").replace(/-/g, "_");
-    return !registeredNames.has(inferredName) && !registeredNames.has(cls.replace(/^esd-gen-/, ""));
-  });
+  // esd-gen classes present but not actually bound by any registered variable selector
+  const boundSelectors = new Set();
+  for (const v of registeredVariables) {
+    for (const m of v.blockMapping ?? []) {
+      if (typeof m?.selector === "string") {
+        boundSelectors.add(m.selector);
+      }
+    }
+  }
+
+  const unmappedGenClasses = esdGenClasses.filter((cls) => !boundSelectors.has(`.${cls}`));
   if (unmappedGenClasses.length > 0) {
     notes.push(
       `Found ${unmappedGenClasses.length} esd-gen-* class(es) with no corresponding registered variable: ${unmappedGenClasses.join(", ")}. Open the module in the Stripo Data tab and register matching Smart Properties to make these bindable.`,

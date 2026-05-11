@@ -55,6 +55,36 @@
     },
 
     {
+      "_case": "naming-mismatch-with-orphans",
+      "_desc": "Mirrors the live module 1653410 from production: Smart Properties registered with names that do NOT match their bound class basename (p_title bound to .esd-gen-title, not .esd-gen-p-title), AND a top-level link field, AND additional orphan esd-gen-* classes on the button that have no matching registered variable. This is the canary case for the 0.19.4 fix — under the old inferred-name cross-reference, ALL esd-gen classes (including the two properly bound ones) were flagged as unmapped. With the selector-based cross-reference, only the three orphan classes should be flagged.",
+      "id": 1653411,
+      "uid": "jkl-uid-1653411",
+      "name": "Text + body + CTA",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a.esd-gen-Link&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h1 class=\"esd-gen-title\">Default Title</h1><p class=\"esd-gen-description\">Default description.</p><a class=\"esd-gen-Link esd-gen-p-link\" href=\"https://example.com\"><span class=\"esd-gen-p-cta-text\">Click</span></a></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "registered_variables": [
+          {
+            "name": "p_title",
+            "blockMapping": [{ "selector": ".esd-gen-title", "attribute": "" }]
+          },
+          {
+            "name": "p_description",
+            "blockMapping": [{ "selector": ".esd-gen-description", "attribute": "" }]
+          }
+        ],
+        "top_level_link_field": true,
+        "esd_gen_classes": ["esd-gen-Link", "esd-gen-description", "esd-gen-p-cta-text", "esd-gen-p-link", "esd-gen-title"],
+        "likely_smart_container": false,
+        "can_accept_in_values": ["p_title", "p_description"],
+        "notes_should_contain": "Button CTA may be bound via the Smart Element wizard's top-level link field",
+        "unmapped_classes_expected": ["esd-gen-Link", "esd-gen-p-cta-text", "esd-gen-p-link"],
+        "unmapped_classes_must_not_include": ["esd-gen-title", "esd-gen-description"]
+      }
+    },
+
+    {
       "_case": "smart-container",
       "_desc": "Smart Container module — empty esd-structure TDs with no inner content, no registered variables, no esd-gen-* classes. Requires the slot_values[] path at compose time.",
       "id": 2001001,
