@@ -6,8 +6,11 @@ on:
     paths:
       - 'server/**'
       - 'skills/**'
+      - 'tests/**'
       - 'manifest.json'
       - 'package.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
 
 jobs:
   build:
