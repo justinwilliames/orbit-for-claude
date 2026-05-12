@@ -8,7 +8,7 @@
  * the actually-documented Stripo path: modules marked up with
  * `esd-dynamic-block` config + `esd-gen-<name>` classes.
  *
- * Baseline arm (already confirmed at 0.18.17 against module 1653410):
+ * Baseline arm:
  *   1. Auto-pick the first synced module whose HTML contains an
  *      `esd-dynamic-block` attribute (or accept a stripo_id override).
  *   2. Parse the JSON config out of the attribute to discover the

@@ -4273,12 +4273,12 @@ function registerTools() {
     {
       title: "Inspect Stripo Module Bindings",
       description:
-        "Diagnostic report on a single Stripo module: which Smart Property variables are registered (and therefore substitutable via slot_values), which esd-gen-* CSS class hooks exist in the module HTML, whether the module looks like a Smart Container (layout shell with empty slots that accept child modules via content[]), and whether the module has a top-level OG-preview link field (the Smart Element wizard dead-end that silently drops CTA bindings). Returns the recommended varNames to pass in slot_values today and short actionable notes for the author when bindings are missing or mis-routed. Reads the synced library first; falls back to Stripo's /modules/{id} endpoint if not cached. Use this to verify a module's bindings before composing against it.",
+        "Diagnostic report on a single Stripo module: which Smart Property variables are registered (and therefore substitutable via slot_values), which esd-gen-* CSS class hooks exist in the module HTML, whether the module looks like a Smart Container (layout shell with empty slots that accept child modules via content[]), and whether the module has a top-level OG-preview link field (the Smart Element wizard dead-end that silently drops CTA bindings). Returns the recommended varNames to pass in slot_values today and short actionable notes for the author when bindings are missing or mis-routed. Reads the synced library first; falls back to Stripo's /modules/{id} endpoint if not cached. Use this to verify a module's bindings before composing against it. When notes flag orphan classes or unbound elements, invoke the `stripo-module-bindings` skill for the step-by-step registration walkthrough.",
       inputSchema: {
         stripo_module_id: z
           .union([z.string(), z.number()])
           .describe(
-            "Stripo module ID — either the numeric library ID (e.g. 1653410) or the module UID string (e.g. STRUCTURE7). Coerced to string internally; both forms accepted."
+            "Stripo module ID — either the numeric library ID returned by orbit_sync_stripo_modules or the module UID string used inside dataSources payloads. Coerced to string internally; both forms accepted."
           )
       }
     },

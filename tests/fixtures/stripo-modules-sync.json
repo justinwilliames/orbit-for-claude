@@ -1,0 +1,8 @@
+{
+  "module": {
+    "markup": "<div esd-dynamic-block='{\"variables\":[{\"variable\":\"p_title\",\"name\":\"Title\",\"cssClass\":\"esd-gen-title\",\"attribute\":\"\"},{\"name\":\"Legacy Title\",\"cssClass\":\"esd-gen-legacy\",\"attribute\":\"href\"},{\"cssClass\":\"esd-gen-fallback\",\"attribute\":\"src\"}]}'></div>"
+  },
+  "moduleWithBlockMapping": {
+    "markup": "<div esd-dynamic-block='{\"variables\":[{\"variable\":\"p_title\",\"name\":\"Title\",\"attribute\":\"\",\"blockMapping\":[{\"selector\":\".esd-gen-title\"}]},{\"variable\":\"p_link\",\"name\":\"CTA Link\",\"attribute\":\"href\",\"blockMapping\":[{\"selector\":\".esd-gen-cta\"}]}]}'></div>"
+  }
+}

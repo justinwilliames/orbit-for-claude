@@ -50,7 +50,11 @@ const TAG_ARCHIVED = "stripo_archived";
  * a normalised `slot_definitions` map.
  *
  * Each entry in the `variables` array of the JSON config looks like:
- *   { name, cssClass, attribute? }
+ *   { variable?, name?, cssClass?, attribute? }
+ *
+ * `variable` is the canonical API-facing key for Stripo's /email
+ * values-map. `name` is the human-readable editor label, and older
+ * modules may only have `name` or `cssClass`.
  *
  * Mapping rules (per Stripo wizard binding types):
  *   attribute absent / ""  →  kind "text"      (innerText binding)
@@ -90,7 +94,7 @@ function extractSmartElementSlotDefs(markup) {
 
   const defs = {};
   for (const v of variables) {
-    const varName = v.name ?? v.cssClass;
+    const varName = v.variable ?? v.name ?? v.cssClass;
     if (!varName) continue;
     const attr = (v.attribute ?? "").trim().toLowerCase();
     let kind;
@@ -99,9 +103,15 @@ function extractSmartElementSlotDefs(markup) {
     else if (attr === "src") kind = "image_src";
     else if (attr === "alt") kind = "image_alt";
     else kind = `attr:${attr}`;
+    // Stripo records the bound CSS class on each variable's blockMapping
+    // entry as a full selector (e.g. ".esd-gen-title"). The top-level
+    // `cssClass` field is only populated for legacy / degraded variables,
+    // so prefer the blockMapping selector and strip the leading dot.
+    const blockSelector = Array.isArray(v.blockMapping) ? v.blockMapping[0]?.selector : null;
+    const cssClass = blockSelector ? blockSelector.replace(/^\./, "") : (v.cssClass ?? null);
     defs[varName] = {
       kind,
-      css_class: v.cssClass ?? null,
+      css_class: cssClass,
       attribute: attr || null,
     };
   }

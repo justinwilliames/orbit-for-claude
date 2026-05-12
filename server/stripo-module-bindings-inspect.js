@@ -213,8 +213,8 @@ function parseDynamicBlockConfig(html) {
 
   const rawVars = Array.isArray(dynamicConfig?.variables) ? dynamicConfig.variables : [];
 
-  // Field name: live API uses `variable` (confirmed by probe against module 1653410).
-  // stripo-modules.js older mapping also checked `name ?? cssClass` — handle both
+  // Field name: live API uses `variable`. Older mapping in stripo-modules.js also
+  // checked `name ?? cssClass` — handle both for backwards compatibility.
   // so the tool works against modules synced under either convention.
   const variables = rawVars
     .map((v) => {
