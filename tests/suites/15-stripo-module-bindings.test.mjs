@@ -426,6 +426,100 @@ describe("orbit_inspect_stripo_module_bindings", () => {
     });
   });
 
+  // ─── Fixture (v) — Selector-without-target ───────────────────────────────
+  // Regression case for the selector_without_target note added in v0.19.7.
+  // Module 1654785 (Text + body + CTA - max prominence): p_image is registered
+  // against .esd-gen-image but no element in the HTML carries that class.
+  // The inspector must flag this with a per-variable note so authors know the
+  // binding will silently no-op at compose time.
+
+  describe("fixture (v) — selector-without-target", () => {
+    let result;
+    let expected;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "selector-without-target");
+      expected = f._expected;
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables contains p_title, p_description, and p_image", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.ok(names.includes("p_title"), "should include p_title");
+      assert.ok(names.includes("p_description"), "should include p_description");
+      assert.ok(names.includes("p_image"), "should include p_image");
+    });
+
+    test("esd_gen_classes does NOT contain esd-gen-image (that class is absent from HTML)", () => {
+      assert.ok(
+        !result.esd_gen_classes.includes("esd-gen-image"),
+        `esd-gen-image should not be in esd_gen_classes. Got: ${JSON.stringify(result.esd_gen_classes)}`,
+      );
+      assert.deepEqual(result.esd_gen_classes, expected.esd_gen_classes);
+    });
+
+    test("can_accept_in_values includes p_image despite its selector being absent", () => {
+      // The variable is still registered — compose calls accept it. The note warns
+      // about the silent no-op; it does not prevent the variable from appearing here.
+      assert.ok(
+        result.can_accept_in_values.includes("p_image"),
+        `p_image should appear in can_accept_in_values. Got: ${JSON.stringify(result.can_accept_in_values)}`,
+      );
+    });
+
+    test("notes contains selector_without_target warning for p_image", () => {
+      const selectorNote = result.notes.find(
+        (n) =>
+          n.includes("p_image") &&
+          n.includes(".esd-gen-image") &&
+          n.includes("not present in the module's HTML"),
+      );
+      assert.ok(
+        selectorNote,
+        `Expected a selector_without_target note for p_image / .esd-gen-image. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("selector_without_target note mentions compose-time silent no-op", () => {
+      const selectorNote = result.notes.find(
+        (n) => n.includes("p_image") && n.includes("not present in the module's HTML"),
+      );
+      assert.ok(selectorNote, "selector_without_target note should exist");
+      assert.ok(
+        selectorNote.includes("silently no-op at compose time"),
+        `Note should mention silent no-op at compose time. Got: ${selectorNote}`,
+      );
+    });
+
+    test("notes does NOT fire selector_without_target for p_title or p_description (their selectors exist)", () => {
+      // .esd-gen-title and .esd-gen-description ARE in the HTML, so no warning for them.
+      const spuriousNote = result.notes.find(
+        (n) =>
+          n.includes("not present in the module's HTML") &&
+          (n.includes("p_title") || n.includes("p_description")),
+      );
+      assert.ok(
+        !spuriousNote,
+        `Should not fire selector_without_target for p_title or p_description. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("top_level_link_field is false", () => {
+      assert.equal(result.top_level_link_field, false);
+    });
+
+    test("likely_smart_container is false", () => {
+      assert.equal(result.likely_smart_container, false);
+    });
+  });
+
   // ─── Error / edge case paths ──────────────────────────────────────────────
 
   describe("error and edge case paths", () => {

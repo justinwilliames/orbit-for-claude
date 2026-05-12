@@ -210,14 +210,28 @@ diagnosis is Block Type targeting until proven otherwise. Re-bind via CSS Select
 ## Naming Conventions
 
 Use `snake_case` with a `p_` prefix. The `p_` matches Stripo's own auto-created variables and
-keeps the workspace consistent across modules:
+keeps the workspace consistent across modules.
 
-- `p_title` — main heading text
-- `p_description` — body copy
-- `p_image` — image src
-- `p_link` — primary link href
-- `p_cta_text` — button inner text
-- `p_cta_href` — button href
+### Canonical variable names
+
+| Variable | Target element | Attribute setting |
+|---|---|---|
+| `p_title` | heading text element | empty (inner text) |
+| `p_description` | body copy element | empty (inner text) |
+| `p_cta_text` | button `<a>` element | empty (inner text) |
+| `p_cta_link` | button `<a>` element | `href` |
+| `p_image` | `<img>` element | `src` |
+| `p_image_link` | wrapping `<a>` around the image | `href` |
+| `p_image_alt` | `<img>` element | `alt` — only register if you need INDEPENDENT alt control; Stripo otherwise auto-binds alt from `p_title` or `p_name` on most module types |
+
+Note: `p_cta_link` is the canonical href name, not `p_cta_href`. Earlier modules used `p_link` —
+both work but `p_cta_link` is clearer. If you maintain modules with `p_link`, keep that name for
+consistency within that module family rather than mixing conventions.
+
+**Variable naming inconsistency caught in verification (2026-05-12):** Module 1639983 (Quote)
+uses `p_image_url` where convention says `p_image_link`. If you author or update that module,
+migrate the variable name to `p_image_link` and update any compose calls that reference
+`p_image_url`.
 
 For modules with more than one element of the same kind (two CTAs in a single module, two
 images side by side), suffix with `_secondary`, `_tertiary`, or a positional name that reads
@@ -261,6 +275,155 @@ Only the Variable (API key) field has the naming constraint.
 - **Keep Module Styles toggled off accidentally.** The `esd-gen-*` class disappears on save.
   The variable's selector still points at a class that no longer exists in the module HTML.
   Toggle on, re-add the class, re-save.
+
+---
+
+## Verification Checklist Before Treating a Module as Done
+
+Run this before handing any module off to the compose step. Each point maps to a silent
+failure mode — skipping it means the failure surfaces at compose time, not now.
+
+1. **Every registered variable's selector exists in `esd_gen_classes`.**
+   Run `orbit_inspect_stripo_module_bindings <module_id>`. For each entry in
+   `registered_variables`, check that its `blockMapping[].selector` (e.g. `.esd-gen-image`)
+   appears in the `esd_gen_classes` list. A variable whose selector is absent from
+   `esd_gen_classes` will silently no-op at compose — the module accepts the value, substitutes
+   nothing, and ships the master-template default. The inspector will flag these with a
+   `selector_without_target` note in v0.19.7+.
+
+2. **For image bindings, confirm the `<img>` element has the registered class.**
+   Open HTML view in Stripo's editor. Find the `<img>` tag. Confirm the class in the binding's
+   selector (e.g. `esd-gen-image`) is on the `<img>` element itself, not a wrapper `<div>` or
+   `<td>`. A class on a wrapper element with a text-binding attribute substitutes on the wrapper's
+   inner text, which is typically empty — the visible image content is the child `<img>`, which
+   is untouched.
+
+3. **For CTA bindings, confirm BOTH variables are registered.**
+   A complete CTA requires two variables: one for the button inner text (attribute blank, selector
+   on the button's `<a>` element) and one for the href (attribute `href`, same selector). If only
+   one is present, the other slot silently retains the master-template value. Convention:
+   `p_cta_text` + `p_cta_link`.
+
+4. **For modules with `top_level_link_field: true`, confirm that's intentional.**
+   If the inspector returns `top_level_link_field: true` AND the `registered_variables` list has
+   no CTA bindings, the button href is bound via the Smart Element wizard's top-level link field.
+   That field is silently ignored at compose time — the inspector will flag it. The fix is to
+   register a proper `p_cta_link` variable via the Data tab (CSS selector targeting, attribute
+   `href`). Only leave `top_level_link_field: true` untouched when no CTA substitution is needed.
+
+5. **Run a sentinel-value probe before declaring the module compose-ready.**
+   See the end-to-end verification section below. The checklist above catches structural gaps;
+   the probe confirms actual substitution fires in the compiled output.
+
+---
+
+## How to Verify Substitution End-to-End
+
+The inspector confirms registration. It cannot confirm that a registered variable's selector
+actually targets a live element in the module's compiled HTML. This is the step that catches
+the "class registered, class present in HTML but on the wrong element" failure mode.
+
+The empirical pattern that works:
+
+```
+1. orbit_sync_stripo_modules
+2. orbit_inspect_stripo_module_bindings <module_id>
+   → confirm can_accept_in_values lists all expected variables
+   → confirm no selector_without_target notes in the notes array
+3. orbit_probe_stripo_values OR orbit_compose_stripo_email with sentinel values
+   → pass distinctive probe strings as values: e.g.
+       p_title:       "PROBE_TITLE_SENTINEL"
+       p_description: "PROBE_DESC_SENTINEL"
+       p_cta_text:    "PROBE_CTA_SENTINEL"
+       p_cta_link:    "https://probe-link-sentinel.example.com"
+       p_image:       "https://probe-image-sentinel.example.com/img.png"
+4. Fetch the rendered preview HTML and grep for the sentinels.
+   The Stripo preview endpoint returns the compiled HTML:
+     GET https://viewstripo.email/cabinet/stripeapi/v2/preview/web/<preview-uuid>
+   The preview UUID is returned in the compose response. The response is JSON;
+   the compiled HTML is in the `html` field. Search that HTML for each sentinel string.
+5. Any sentinel that does NOT appear in the compiled HTML = the variable's substitution
+   is silently no-opping. Diagnose via the silent no-op patterns below.
+```
+
+Sentinel strings should be distinctive enough that they cannot appear in default content —
+`PROBE_TITLE_SENTINEL` is better than `Test` which might already be in the module. A sentinel
+that IS present in the compiled output confirms end-to-end substitution for that variable.
+
+---
+
+## Common Silent No-Op Patterns
+
+These are the failure modes that pass inspector checks but still fail at compose time. Ordered
+by frequency in production.
+
+### Pattern 1 — Selector-without-target
+
+**What it looks like:** A variable is registered in Stripo's Data tab with a CSS selector and
+an attribute. The variable appears in `can_accept_in_values`. The compose call accepts the value
+without error. But the variable's selector doesn't exist on any element in the module's HTML.
+Substitution silently no-ops — the compiled email contains the master-template default.
+
+**Worked example (module 1654785 — Text + body + CTA, max prominence):**
+`p_image` was registered with selector `.esd-gen-image` and attribute `src`. The inspector's
+`esd_gen_classes` list for that module contained only `esd-gen-cta`, `esd-gen-description`,
+`esd-gen-title` — no `esd-gen-image`. The `<img>` element in the module's HTML never had the
+class hook added. Every compose call accepted `p_image` values and produced emails with the
+static master-template image.
+
+**Detection:** `orbit_inspect_stripo_module_bindings` will now flag this with a note:
+```
+Variable `p_image` is registered with selector `.esd-gen-image` which is not present in
+the module's HTML. Substitution will silently no-op at compose time.
+```
+
+**Fix:** Open the module in Stripo's Design tab → HTML view → find the `<img>` element → add
+`esd-gen-image` to its class list → Save Configuration → Save Module (Keep Module Styles ON) →
+re-sync → re-inspect.
+
+---
+
+### Pattern 2 — Class-on-wrapper, text-on-child
+
+**What it looks like:** A variable is registered with a selector that DOES appear in
+`esd_gen_classes`. Substitution fires. But the compiled email doesn't reflect the substituted
+value — the output contains the default content.
+
+**Root cause:** the `esd-gen-*` class is on a wrapper element (`<td>`, `<div>`, outer `<a>`)
+whose direct text node is empty. The visible content is in nested child elements with their own
+class hierarchy. Stripo's renderer writes the substituted value as inner text on the wrapper
+element. The rich-content child elements remain untouched — visually the module looks unchanged.
+
+**Worked example (module 1639978 — Comparison table):**
+Variables `p_row_title_1`, `p_row_title_2`, `p_row_title_3` were registered against
+`.esd-gen-p-row_title_1/2/3` (attribute blank). These classes existed in `esd_gen_classes`.
+Sentinel probe values were passed for all three. The compiled HTML contained none of the
+sentinels. The `esd-gen-p-row_title_*` classes were on `<td>` wrapper elements; the visible
+row-title text was in nested `<p>` or `<span>` elements with different classes. Stripo wrote
+the substituted text onto the wrapper's direct text node — which rendered before the child
+elements and was invisible in the final layout.
+
+**Detection:** this pattern is NOT caught by the inspector because the selector DOES exist in
+`esd_gen_classes`. The sentinel-probe step is the only reliable detector.
+
+**Fix:** move the `esd-gen-*` class onto the actual text-bearing child element (the `<p>` or
+`<span>` that carries the visible text), OR rebuild the row-title structure so the class wraps
+the visible text directly. Re-register the variable if the selector changes.
+
+---
+
+### Pattern 3 — Smart Element wizard top-level link field (confirmed on module 1654775)
+
+Already documented in the Failure Modes section. The verification pass confirmed this on module
+1654775 (Text + body + CTA — standard): the module had `p_title` and `p_description` registered
+correctly, but the CTA button had no Smart Properties — it was bound via the wizard's top-level
+link field only. That field is silently ignored at compose time. Result: every compose call that
+passed `p_cta_text` / `p_cta_link` values found them accepted by the compose validator and then
+dropped — the button rendered the module's static default label and href.
+
+**Inspector now flags this:** `top_level_link_field: true` with no CTA variable in
+`registered_variables` produces the CTA dead-end note. Fix: register `p_cta_text` and
+`p_cta_link` via the Data tab using CSS selector targeting on the button's `<a>` element.
 
 ---
 

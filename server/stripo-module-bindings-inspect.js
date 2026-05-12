@@ -339,5 +339,23 @@ function buildNotes({ registeredVariables, topLevelLinkField, esdGenClasses, lik
     );
   }
 
+  // Selector-without-target: registered variable points at a .esd-gen-* selector that is not
+  // present in the module's HTML. Substitution will silently no-op at compose time — the
+  // compose call accepts the value, Stripo's renderer finds no matching elements, and the
+  // master-template default is emitted instead. One note per affected variable.
+  for (const v of registeredVariables) {
+    for (const m of v.blockMapping ?? []) {
+      const selector = m?.selector;
+      if (typeof selector === "string" && selector.startsWith(".esd-gen-")) {
+        const className = selector.slice(1); // strip leading dot
+        if (!esdGenClasses.includes(className)) {
+          notes.push(
+            `Variable \`${v.name}\` is registered with selector \`${selector}\` which is not present in the module's HTML. Substitution will silently no-op at compose time. Add the missing class to the target element in Stripo's Design tab, or remove the variable registration.`,
+          );
+        }
+      }
+    }
+  }
+
   return notes;
 }

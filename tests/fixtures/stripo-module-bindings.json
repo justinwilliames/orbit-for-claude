@@ -85,6 +85,39 @@
     },
 
     {
+      "_case": "selector-without-target",
+      "_desc": "Module where a registered variable's selector (.esd-gen-image) does not exist on any element in the HTML. The esd_gen_classes list only contains esd-gen-cta, esd-gen-description, esd-gen-title. p_image should trigger a selector_without_target note. Mirrors the production failure on module 1654785.",
+      "id": 1654785,
+      "uid": "mno-uid-1654785",
+      "name": "Text + body + CTA - max prominence",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/default.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><h1 class=\"esd-gen-title\">Default Title</h1><p class=\"esd-gen-description\">Default description.</p><a class=\"esd-gen-cta\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "registered_variables": [
+          {
+            "name": "p_title",
+            "blockMapping": [{ "selector": ".esd-gen-title", "attribute": "" }]
+          },
+          {
+            "name": "p_description",
+            "blockMapping": [{ "selector": ".esd-gen-description", "attribute": "" }]
+          },
+          {
+            "name": "p_image",
+            "blockMapping": [{ "selector": ".esd-gen-image", "attribute": "src" }]
+          }
+        ],
+        "top_level_link_field": false,
+        "esd_gen_classes": ["esd-gen-cta", "esd-gen-description", "esd-gen-title"],
+        "likely_smart_container": false,
+        "can_accept_in_values": ["p_title", "p_description", "p_image"],
+        "selector_without_target_variable": "p_image",
+        "selector_without_target_selector": ".esd-gen-image"
+      }
+    },
+
+    {
       "_case": "smart-container",
       "_desc": "Smart Container module — empty esd-structure TDs with no inner content, no registered variables, no esd-gen-* classes. Requires the slot_values[] path at compose time.",
       "id": 2001001,
