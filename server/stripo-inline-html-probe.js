@@ -1,35 +1,23 @@
 /**
- * Stripo inline-HTML probe — empirical validation of three "push
- * Orbit's locally-rendered HTML straight into Stripo" paths, since
- * the slot-markup path (orbit_probe_stripo_values) is blocked by
- * plan-tier limits and per-module manual setup.
+ * Stripo inline-HTML probe — diagnostic confirmation that all inline-HTML
+ * push paths to Stripo's API are dead.
  *
- * The constraint we're solving:
- *   Stripo regenerates module references server-side at push time.
- *   So `dataSources[].value[].id` references rebuild from the saved
- *   module copy, ignoring any local mutation Orbit did. We need a
- *   shape where Orbit's locally-assembled HTML survives Stripo's
- *   regen — i.e. Stripo treats Orbit's HTML as the source, not as
- *   a starting point to be regenerated.
+ * DIAGNOSTIC NOTE: this probe empirically confirms all inline-HTML push
+ * paths to Stripo are dead. The only production shape for content
+ * substitution is Path A — Smart Element variable bindings via
+ * `esd-dynamic-block` markup. See the `stripo-module-bindings` skill.
+ * This probe is kept for regression-detection; it is not user setup guidance.
  *
- * Paths probed, in order of expected stability:
- *   1. PATH_E_AREAS — legacy `areas: [{ name, html }]` shape, where
- *      `name` matches the `esd-email-gen-area` attribute on the
- *      user's master template. Most stable: documented Stripo
- *      pattern, gen-area is already wired into the operator's template.
- *   2. PATH_C_DATASOURCES_INLINE — modern `dataSources` shape but
- *      with `{ html }` instead of `{ id }` in the value array.
- *      Speculative — undocumented schema mixing.
- *   3. PATH_C_DATASOURCES_BOTH — same shape but with BOTH `id` and
- *      `html` (in case Stripo treats id as default and html as
- *      override).
- *   4. PATH_D_PUT_EMAIL — push a normal email shell, then PUT
- *      /email/<id> with new content. Least stable: REST writes
- *      have a poor track record.
- *
- * Probe stops on the first successful path (success = 2xx + sentinel
- * appears in fetched rendered HTML), but always runs all four so
- * the report covers the full picture.
+ * Internal arms tested (all confirmed dead):
+ *   1. internal-legacy-areas — `areas: [{ name, html }]` shape filling
+ *      the gen-area on the master template. 400 validation reject.
+ *   2. internal-datasources-inline-html — `dataSources` shape with
+ *      `{ html }` instead of `{ id }`. 2xx response, sentinel silently
+ *      absent from rendered HTML.
+ *   3. internal-datasources-id-plus-html — same shape with BOTH `id`
+ *      and `html`. Same silent no-op.
+ *   4. internal-put-edit-after-push — `PUT /email/<id>` with new content.
+ *      405 method not supported (all variants).
  *
  * Per-user discipline: nothing in this probe hardcodes Stripo IDs.
  * Master template ID, gen-area name, module IDs, etc. all come from
@@ -162,37 +150,37 @@ export async function probeStripoInlineHtml({ config }) {
   // can disambiguate which rendered output came from which path.
   const paths = [];
 
-  // ─── Path E: areas shape (most stable) ─────────────────────────
-  // Try the discovered name first; fall back to common defaults.
+  // ─── internal-legacy-areas: areas shape ────────────────────────
+  // Try the discovered gen-area name first; fall back to common defaults.
   const genAreaCandidates = genAreaName
     ? [genAreaName]
     : ["orbit-content", "main-area", "content"];
   for (const name of genAreaCandidates) {
-    const snip = buildSnippet(`E_AREAS_${name}`);
+    const snip = buildSnippet(`LEGACY_AREAS_${name}`);
     paths.push({
-      label: `Path E (areas) — name="${name}"`,
+      label: `internal-legacy-areas — name="${name}"`,
       sentinel: snip.sentinel,
       method: "POST",
       endpoint: "/email",
       body: {
         templateId,
-        emailName: `Orbit · inline-html-probe · E areas ${name} · ${new Date().toISOString().replace(/[:.]/g, "-")}`,
+        emailName: `Orbit · inline-html-probe · legacy-areas ${name} · ${new Date().toISOString().replace(/[:.]/g, "-")}`,
         areas: [{ name, html: snip.html }],
       },
     });
   }
 
-  // ─── Path C: dataSources with inline html only ─────────────────
+  // ─── internal-datasources-inline-html ──────────────────────────
   {
-    const snip = buildSnippet("C_INLINE");
+    const snip = buildSnippet("DS_INLINE");
     paths.push({
-      label: "Path C (dataSources, inline html only)",
+      label: "internal-datasources-inline-html",
       sentinel: snip.sentinel,
       method: "POST",
       endpoint: "/email",
       body: {
         templateId,
-        emailName: `Orbit · inline-html-probe · C inline · ${new Date().toISOString().replace(/[:.]/g, "-")}`,
+        emailName: `Orbit · inline-html-probe · ds-inline · ${new Date().toISOString().replace(/[:.]/g, "-")}`,
         dataSources: [
           {
             name: "orbit_inline",
@@ -206,11 +194,9 @@ export async function probeStripoInlineHtml({ config }) {
     });
   }
 
-  // ─── Path C variant: dataSources with both id and html ─────────
-  // Speculative: maybe Stripo treats html as override when both
-  // are present. Need a real module UID to use as id — pull the
-  // first synced module from the workspace (auto-discovery, no
-  // hardcoded IDs).
+  // ─── internal-datasources-id-plus-html ─────────────────────────
+  // Need a real module UID to use as id — pull the first synced
+  // module from the workspace (auto-discovery, no hardcoded IDs).
   let modulesAvailable = [];
   try {
     const resp = await stripoRestGet({
@@ -224,15 +210,15 @@ export async function probeStripoInlineHtml({ config }) {
   }
   if (modulesAvailable.length > 0) {
     const refModule = modulesAvailable[0];
-    const snip = buildSnippet("C_BOTH");
+    const snip = buildSnippet("DS_ID_PLUS_HTML");
     paths.push({
-      label: `Path C variant (dataSources, id + html together) — using module uid="${refModule.uid}"`,
+      label: `internal-datasources-id-plus-html — module uid="${refModule.uid}"`,
       sentinel: snip.sentinel,
       method: "POST",
       endpoint: "/email",
       body: {
         templateId,
-        emailName: `Orbit · inline-html-probe · C both · ${new Date().toISOString().replace(/[:.]/g, "-")}`,
+        emailName: `Orbit · inline-html-probe · ds-id-plus-html · ${new Date().toISOString().replace(/[:.]/g, "-")}`,
         dataSources: [
           {
             name: "orbit_inline_both",
@@ -246,9 +232,9 @@ export async function probeStripoInlineHtml({ config }) {
     });
   } else {
     record(
-      "Path C variant skipped",
+      "internal-datasources-id-plus-html skipped",
       "skip",
-      "No synced modules available to construct an id+html combined payload. Run orbit_sync_stripo_modules first if you want this variant covered.",
+      "No synced modules available to construct an id+html combined payload. Run orbit_sync_stripo_modules first if you want this arm covered.",
     );
   }
 
@@ -309,20 +295,20 @@ export async function probeStripoInlineHtml({ config }) {
   }
 
   if (putTargetId) {
-    const snip = buildSnippet("D_PUT");
+    const snip = buildSnippet("PUT_EDIT");
     const result = await runPathD({ config, emailId: putTargetId, snip });
     record(
-      `Path D (PUT /email/${putTargetId}) — edit-after-push`,
+      `internal-put-edit-after-push (PUT /email/${putTargetId})`,
       result.status,
       result.detail,
       { emailId: putTargetId, sentinel: snip.sentinel },
     );
     if (result.status === "pass" && !firstWinner) {
-      firstWinner = `Path D (PUT /email/${putTargetId})`;
+      firstWinner = `internal-put-edit-after-push (PUT /email/${putTargetId})`;
     }
   } else {
     record(
-      "Path D skipped",
+      "internal-put-edit-after-push skipped",
       "skip",
       "No target emailId available — every prior POST /email attempt failed and no module was available to create a shell.",
     );
@@ -537,13 +523,15 @@ function writeReport({ config, findings, firstWinner, genAreaName }) {
     "",
     `Generated: ${new Date().toISOString()}`,
     "",
+    "> **Diagnostic note:** this probe empirically confirms all inline-HTML push paths to Stripo are dead.",
+    "> The only production shape for content substitution is Path A — Smart Element variable bindings",
+    "> via `esd-dynamic-block` markup. See the `stripo-module-bindings` skill.",
+    "",
     "## Purpose",
     "",
-    "Find a way to push Orbit's locally-assembled HTML straight into a Stripo",
-    "email — surviving Stripo's server-side regen — without per-module slot",
-    "markup or paste-in. Three paths probed: legacy `areas` shape (most",
-    "stable), modern `dataSources` shape with inline `html` instead of `id`,",
-    "and edit-after-push via `PUT /email/<id>`.",
+    "Diagnostic confirmation that pushing locally-assembled HTML into a Stripo email is not supported",
+    "by Stripo's API. All four internal arms (legacy areas, dataSources inline html, dataSources",
+    "id+html, edit-after-push via PUT) are confirmed dead. Kept for regression-detection only.",
     "",
     "## Setup",
     "",
@@ -553,7 +541,7 @@ function writeReport({ config, findings, firstWinner, genAreaName }) {
     "",
     firstWinner
       ? `**${firstWinner}**`
-      : "_No path produced a 2xx + sentinel-in-rendered-output result._",
+      : "_No path produced a 2xx + sentinel-in-rendered-output result. This is the expected outcome — all inline-HTML paths are dead._",
     "",
     "## All probe results",
     "",
@@ -569,12 +557,11 @@ function writeReport({ config, findings, firstWinner, genAreaName }) {
       details ? "```" : "",
       "",
     ]),
-    "## Decision",
+    "## Conclusion",
     "",
-    "_Pick the path to take through to production:_",
-    "",
-    "- ✅ **First-winner path becomes the production push path** — wire `composeStripoEmail` to use this shape, drop the `overrides_not_pushable` gate, ship 0.19.0.",
-    "- ⚠️ **All paths failed** — no inline-HTML route exists. Either pay for the Stripo plan tier that exposes Custom HTML attributes (Path A) or accept the paste-in workflow indefinitely.",
+    "All inline-HTML push paths to Stripo's API are dead — confirmed by this probe.",
+    "The production path for content substitution is Path A: `esd-dynamic-block` Smart Element",
+    "variable bindings registered via Stripo's editor wizard. See the `stripo-module-bindings` skill.",
     "",
   ].filter((l) => l !== "");
 

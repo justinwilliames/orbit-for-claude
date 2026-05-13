@@ -4287,9 +4287,9 @@ function registerTools() {
   registerToolSafe(
     "orbit_probe_stripo_values",
     {
-      title: "Probe Stripo `values` Field (Path A spike)",
+      title: "Probe Stripo `values` Field (Diagnostic)",
       description:
-        "Empirical validation of Stripo's `values` field on POST /email — the API contract spike for slot-aware overrides (Path A). Creates up to 10 throwaway emails in your Stripo workspace (all named `Orbit · values-probe ·` for easy bulk-delete), exercising baseline, per-module + top-level value placement, empty strings, script injection, Liquid passthrough, unknown keys, and HTML in slot values. Auto-picks Module A (no data-stripo-slot markup) and Module B (has markup) from your synced modules; tests against Module B are skipped if no marked-up module exists yet. Writes findings to <workspace>/outputs/stripo-values-probe/<timestamp>.md. Decision-blocking before slot_values can be added to orbit_compose_stripo_email.",
+        "Diagnostic probe — exercises the older `data-stripo-slot` markup pattern (NOT what Orbit's production setup uses). Production modules use `esd-dynamic-block` Smart Element bindings instead. Creates up to 10 throwaway emails in your Stripo workspace (all named `Orbit · values-probe ·` for easy bulk-delete), exercising baseline, per-module + top-level value placement, empty strings, script injection, Liquid passthrough, unknown keys, and HTML in slot values. Auto-picks Module A (no data-stripo-slot markup) and Module B (has markup) from your synced modules; tests against Module B are skipped if no marked-up module exists yet. Writes findings to <workspace>/outputs/stripo-values-probe/<timestamp>.md. Kept for regression-detection if Stripo's API behaviour changes.",
       inputSchema: {
         module_a_id: z
           .union([z.number(), z.string()])
@@ -4317,9 +4317,9 @@ function registerTools() {
   registerToolSafe(
     "orbit_probe_stripo_inline_html",
     {
-      title: "Probe Stripo Inline-HTML Push Paths",
+      title: "Probe Stripo Inline-HTML Push Paths (Diagnostic)",
       description:
-        "Find a Stripo API shape that lets Orbit push its locally-assembled HTML into a Stripo email AND survive Stripo's server-side regen — without requiring per-module data-stripo-slot markup or any user setup beyond what's already in place. Tests three paths in stability order: (1) legacy `areas: [{ name, html }]` shape filling the gen-area on the master template, (2) modern `dataSources` shape with inline `{ html }` instead of `{ id }`, (3) edit-after-push via `PUT /email/<id>`. Auto-discovers the gen-area name from the master template (never hardcoded). Stops on the first path that returns 2xx AND has the sentinel HTML appearing in the fetched rendered email. Writes findings to <workspace>/outputs/stripo-inline-html-probe/<timestamp>.md. Decision-blocking before fully-automated push can land on orbit_compose_stripo_email.",
+        "Diagnostic probe — empirically confirms that pushing locally-assembled HTML into a Stripo email is NOT supported by Stripo's API. All three inline-HTML paths (legacy `areas` shape, `dataSources` inline html, edit-after-push via PUT) fail — the first two silently. Tests each path in turn and verifies the sentinel HTML appears in the fetched rendered email. Auto-discovers the gen-area name from the master template (never hardcoded). Writes findings to <workspace>/outputs/stripo-inline-html-probe/<timestamp>.md. Kept for regression-detection. Not user setup guidance.",
       inputSchema: {}
     },
     async () => {
@@ -4354,9 +4354,9 @@ function registerTools() {
   registerToolSafe(
     "orbit_probe_stripo_smart_element",
     {
-      title: "Probe Stripo Smart Element API substitution",
+      title: "Probe Stripo Smart Element API substitution (Production Path)",
       description:
-        "Empirically confirm that pushing `values` via the canonical-JSON API substitutes correctly into a module marked up with Stripo's `esd-dynamic-block` Smart Element bindings (the documented native pattern for API-editable defined fields per compose). Auto-picks the first synced module containing `esd-dynamic-block`, parses the JSON config to discover variable names, sends a sentinel value for each variable via POST /email, fetches the rendered email back via GET /emails/<id>, and verifies every sentinel appears. If all sentinels substitute correctly, this is the production path for orbit_compose_stripo_email's per-send content variation. Writes findings to <workspace>/outputs/stripo-smart-element-probe/<timestamp>.md.",
+        "Tests the production path for content substitution: pushing `values` via the canonical-JSON API into modules marked up with Stripo's `esd-dynamic-block` Smart Element bindings. Auto-picks the first synced module containing `esd-dynamic-block`, parses the JSON config to discover variable names, sends a sentinel value for each variable via POST /email, fetches the rendered email back via GET /emails/<id>, and verifies every sentinel appears in the rendered output. This is the only supported production path for per-send content variation in orbit_compose_stripo_email — modules must have `esd-dynamic-block` bindings registered via Stripo's Smart Elements wizard for substitution to work. Writes findings to <workspace>/outputs/stripo-smart-element-probe/<timestamp>.md.",
       inputSchema: {
         stripo_id: z
           .union([z.number(), z.string()])

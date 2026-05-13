@@ -179,6 +179,18 @@ export async function inspectStripoModuleBindings({ config, input = {} }) {
     moduleHtml,
   });
 
+  // ─── 8. Append next-steps for unbound modules ────────────────────
+  // If can_accept_in_values is empty or near-empty, the module isn't
+  // marked up for Path A substitution. Surface hand-holding for that
+  // case only — don't nag when variables are already registered.
+  const SPARSE_THRESHOLD = 1; // 0 or 1 variables is considered sparse
+  const nextStepsBlock =
+    canAcceptInValues.length <= SPARSE_THRESHOLD
+      ? [
+          "**This module isn't marked up for content substitution yet.** Orbit's compose tool substitutes content via Stripo's `esd-dynamic-block` Smart Element variables; without bindings registered, `slot_values` overrides are silently dropped. To set this up: open the module in Stripo's editor, use the Smart Elements wizard to register a variable per piece of substitutable content (title, body, CTA text/link, image src/alt), save, then run `orbit_sync_stripo_modules`. Full walkthrough: see the `stripo-module-bindings` skill.",
+        ]
+      : null;
+
   return {
     status: "ok",
     stripo_module_id: moduleId,
@@ -189,6 +201,7 @@ export async function inspectStripoModuleBindings({ config, input = {} }) {
     likely_smart_container: likelySmartContainer,
     can_accept_in_values: canAcceptInValues,
     notes,
+    ...(nextStepsBlock ? { next_steps: nextStepsBlock } : {}),
   };
 }
 

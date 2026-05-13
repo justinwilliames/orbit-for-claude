@@ -222,8 +222,8 @@ function nextStepFor(presence, probeResults = null) {
   }
   return {
     step: 4,
-    action: "Setup looks complete. Run orbit_sync_stripo_modules to pull your saved modules.",
-    where: "Inside Claude Desktop with Orbit installed",
+    action: "Credentials configured. Mark up your modules with esd-dynamic-block Smart Element bindings in Stripo's editor, then run orbit_sync_stripo_modules to pull your modules.",
+    where: "Stripo editor → Data tab (Smart Elements wizard) per module",
   };
 }
 
@@ -286,9 +286,24 @@ function buildInstructionsMarkdown(presence, probeResults = null) {
     "9. In Claude Desktop: **Settings → Extensions → Orbit → Configure**, paste it into `Stripo Master Template ID`.",
     "10. Restart Claude Desktop.",
     "",
-    "## Step 4 — Verify",
+    "## Step 4 — Mark up your modules for Smart Element bindings",
     "",
-    "Re-run `orbit_setup_stripo` after restarting Claude Desktop. All three steps should show ✅.",
+    "Orbit's compose tool substitutes content into modules via Stripo's Smart Element variables (`esd-dynamic-block` bindings). Without bindings registered, `slot_values` overrides are silently dropped — module defaults fill in instead.",
+    "",
+    "For each module that needs substitutable content:",
+    "",
+    "1. Open the module in Stripo's editor.",
+    "2. Use the **Smart Elements wizard** (Data tab) to register a variable per piece of substitutable content: title text, body text, CTA text, CTA href, image src, image alt.",
+    "3. Each binding needs: a **variable name**, a **CSS selector** targeting the element, and an **attribute mapping** — `innerText` for text fields, `href` for links, `src` for image URLs, `alt` for image alt-text.",
+    "4. Save the module.",
+    "",
+    "Verify: run `orbit_sync_stripo_modules` to pull the updated config into Orbit's library, then run `orbit_inspect_stripo_module_bindings` against each module to confirm variables are registered and selectors target real elements.",
+    "",
+    "Full walkthrough: see the `stripo-module-bindings` skill.",
+    "",
+    "## Step 5 — Verify",
+    "",
+    "Re-run `orbit_setup_stripo` after restarting Claude Desktop. All three credential steps should show ✅.",
     "",
     "Then you're ready to:",
     "- `orbit_sync_stripo_modules` — pull your saved modules into Orbit's local library.",

@@ -1,17 +1,14 @@
 /**
- * Stripo `values` field probe — empirical validation of the slot
- * substitution path before committing to slot-aware overrides
- * (Path A) in orbit_compose_stripo_email.
+ * Stripo `values` field probe — diagnostic tool targeting the older
+ * `data-stripo-slot` markup pattern.
  *
- * What this answers:
- *   1. Does POST /email accept a `values` field at all?
- *   2. Where does it live — per-module entry inside dataSources[].value[],
- *      or top-level on the payload (or both, or neither)?
- *   3. How are HTML, Liquid, empty strings, unknown keys, and script
- *      injection handled?
- *   4. Can the rendered email be fetched back via REST so the
- *      round-trip integration test in step 9 of the plan can verify
- *      slot substitution programmatically?
+ * DIAGNOSTIC NOTE: this probe targets the older `data-stripo-slot`
+ * markup pattern, which Orbit's production setup does NOT use. Orbit
+ * modules use `esd-dynamic-block` Smart Element bindings instead. This
+ * probe is kept for regression-detection if Stripo's API behaviour changes.
+ * The production path is Path A — use orbit_probe_stripo_smart_element to
+ * test esd-dynamic-block substitution, or orbit_inspect_stripo_module_bindings
+ * to verify a module's registered variables.
  *
  * Output: structured JSON return + a markdown findings doc at
  * <workspace>/outputs/stripo-values-probe/<timestamp>.md.
@@ -457,10 +454,16 @@ function writeReport({ config, findings, options }) {
     "",
     `Generated: ${new Date().toISOString()}`,
     "",
+    "> **Diagnostic note:** this probe targets the older `data-stripo-slot` markup pattern,",
+    "> which Orbit's production setup does NOT use. Orbit modules use `esd-dynamic-block`",
+    "> Smart Element bindings instead. This probe is kept for regression-detection.",
+    "> The production path is Path A (Smart Element variables via `esd-dynamic-block` markup).",
+    "> See the `stripo-module-bindings` skill for the canonical setup walkthrough.",
+    "",
     "## Purpose",
     "",
-    "Empirical validation of Stripo's `values` field on POST /email before",
-    "committing to slot-aware overrides (Path A) in orbit_compose_stripo_email.",
+    "Diagnostic validation of Stripo's `values` field on POST /email targeting",
+    "the older `data-stripo-slot` markup pattern (not Orbit's production setup).",
     "",
     "## Options",
     "",
@@ -498,7 +501,7 @@ function writeReport({ config, findings, options }) {
     "",
     "- ✅ **Proceed with implementation per the plan** — `values` works, shape confirmed, round-trip verifiable.",
     "- ⚠️ **Update the plan and re-confirm with the operator** — `values` works but in a different shape than assumed.",
-    "- ❌ **Stop. Ship Path B (paste-in flow) instead** — `values` doesn't work or is a no-op.",
+    "- ❌ **Path B is dead** — the `dataSources: [{ html }]` shape is a silent no-op on Stripo's API. The production path is Path A: register `esd-dynamic-block` Smart Element bindings on your modules via Stripo's editor wizard. See the `stripo-module-bindings` skill.",
     "",
   ].filter((l) => l !== "");
 

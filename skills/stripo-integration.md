@@ -10,6 +10,20 @@ description: >
   skill.
 ---
 
+# Foundational requirement: Smart Element bindings (Path A)
+
+Orbit's compose tool requires modules to be marked up with `esd-dynamic-block` Smart Element variable bindings via Stripo's editor wizard. This is the only production path for content substitution — Stripo's API silently drops inline HTML and unknown variable names. Modules without bindings will compose with their default content regardless of any `slot_values` you pass.
+
+Before composing emails, every module that needs substitutable content needs:
+
+1. `esd-dynamic-block` markup registered (via Stripo's Smart Elements wizard)
+2. A variable per piece of substitutable content (title, body, CTA text/link, image src/alt)
+3. A CSS selector + attribute mapping per variable
+
+Full walkthrough: `stripo-module-bindings` skill.
+
+---
+
 # Stripo Integration
 
 Orbit's protocol for using a user's Stripo account through the API: pulling their custom saved
