@@ -460,6 +460,58 @@ orbit_inspect_stripo_module_bindings <id>  → confirm registered_variables + ca
 
 ---
 
+## Acknowledging static-asset intent
+
+When `orbit_inspect_stripo_module_bindings` flags the `static-asset pattern` note, the recommended
+fix is to document the intent in the module's HTML so that future authors — and the inspector —
+know the registered variables are part of the design, not dynamic content.
+
+### Marker 1 — Suppress the static-asset note for the whole module
+
+Add this comment at the top of the module HTML (before the outer `<table>`):
+
+```html
+<!--
+  Static asset markers — DO NOT bind via Smart Properties at compose time.
+  Swap src in the module HTML for per-row state.
+  YES_ASSET_URL=https://your-cdn.example.com/tick.png
+  NO_ASSET_URL=https://your-cdn.example.com/cross.png
+  Layout: Row 1 Col 1 defaults to YES, adjust per row as needed.
+-->
+```
+
+The inspector looks for the phrase `Static asset markers` on the first non-whitespace line of any
+HTML comment. When found, the `static-asset pattern` note is suppressed entirely for that module.
+The variables remain in `registered_variables` and `can_accept_in_values` — compose calls still
+accept them. The marker tells the inspector (and human authors) that populating them at compose
+time is wrong by design.
+
+### Marker 2 — Acknowledge a specific selector-without-target as intentional
+
+If a variable is registered against a selector that is deliberately absent from the module HTML
+(e.g., a selector kept for forwards compatibility but not yet wired up, or one intentionally
+left dormant), add a per-variable ACK comment:
+
+```html
+<!-- ACK: p_title.alt selector-without-target is intentional -->
+```
+
+The attribute qualifier (`.alt`) is optional. Without it, the ACK suppresses all
+`selector-without-target` notes for that variable regardless of attribute:
+
+```html
+<!-- ACK: p_description selector-without-target is intentional -->
+```
+
+Regex the inspector matches:
+`<!-- ACK: <varName>(.<attrName>)? selector-without-target is intentional -->`
+
+Any typo in the phrase (`selector-without-targets`, `intentionall`, etc.) is treated as a
+non-match — the note still fires. This is intentional: silent over-suppression via a mistyped
+marker is worse than a spurious note.
+
+---
+
 ## What this skill does NOT cover
 
 - The compose call itself — `slot_values`, `module_sequence`, push:true. See `stripo-integration`.

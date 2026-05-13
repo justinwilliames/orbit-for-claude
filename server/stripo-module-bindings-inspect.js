@@ -176,6 +176,7 @@ export async function inspectStripoModuleBindings({ config, input = {} }) {
     likelySmartContainer,
     staticAssetVariables,
     nestingHazards,
+    moduleHtml,
   });
 
   return {
@@ -318,33 +319,46 @@ function detectSmartContainer(html) {
 // ---------------------------------------------------------------------------
 
 /**
- * Detect the "static-asset" pattern: ≥3 registered variables that bind to
- * the `src` attribute (image/asset URLs), suggesting a repeating-image
- * design like tick markers, badge grids, or brand-logo walls. These are
- * almost always meant to be static-by-design — the LLM should not be
- * populating them at compose time. Surface a recommendation to document
- * intent via an HTML comment at the top of the module.
+ * A variable is "image-src-bound" only if its FIRST blockMapping entry has
+ * attribute === "src". Secondary mappings (alt/title for re-use) do not
+ * qualify — variables that are primarily text variables but also touch an
+ * image's alt/title attribute via a later mapping must not pad the count.
+ *
+ * @param {{ blockMapping?: Array<{ attribute?: string }> }} variable
+ * @returns {boolean}
+ */
+function isImageSrcPrimary(variable) {
+  if (!variable?.blockMapping?.length) return false;
+  // Only the first blockMapping entry determines primacy.
+  return String(variable.blockMapping[0].attribute ?? "").toLowerCase() === "src";
+}
+
+/**
+ * Detect the "static-asset" pattern: ≥3 registered variables whose PRIMARY
+ * blockMapping entry binds to the `src` attribute (image/asset URLs),
+ * suggesting a repeating-image design like tick markers, badge grids, or
+ * brand-logo walls. These are almost always meant to be static-by-design —
+ * the LLM should not be populating them at compose time. Surface a
+ * recommendation to document intent via an HTML comment at the top of the
+ * module.
+ *
+ * Variables whose attribute===src appears only on a SECONDARY mapping
+ * (i.e., they're primarily a text variable that also touches an image's
+ * alt/title) are explicitly excluded.
  *
  * Returns the array of variable names that match the pattern (or [] if
- * the threshold is not met).
+ * the threshold is not met or a static-asset intent marker is present).
  */
 export function detectStaticAssetPattern({ registeredVariables, moduleHtml }) {
+  // P3: honour the static-asset intent marker. If the module HTML contains
+  // the canonical comment header, the author has explicitly documented that
+  // these are design-static assets — suppress the note entirely.
+  if (hasStaticAssetMarker(moduleHtml)) return [];
+
   const candidates = [];
   for (const v of registeredVariables) {
-    for (const m of v.blockMapping ?? []) {
-      const attr = String(m?.attribute ?? "").toLowerCase();
-      const selector = String(m?.selector ?? "");
-      // src binding → image asset. We also accept esd-gen-image* selectors
-      // even when the attribute field is empty, since some wizard versions
-      // omit the attribute for image-class targets.
-      const looksLikeImage =
-        attr === "src" ||
-        /\.esd-gen-image/i.test(selector) ||
-        /^p_image/i.test(v.name);
-      if (looksLikeImage) {
-        candidates.push({ name: v.name, defaultValue: v.defaultValue ?? null });
-        break;
-      }
+    if (isImageSrcPrimary(v)) {
+      candidates.push({ name: v.name, defaultValue: v.defaultValue ?? null });
     }
   }
   // Threshold: 3+ image-bound variables is the precondition. Fewer than 3
@@ -469,6 +483,123 @@ export function detectNestingHazards({ registeredVariables, moduleHtml }) {
 }
 
 // ---------------------------------------------------------------------------
+// P2 — Button-element detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Heuristic: does the module HTML contain a button-shaped element?
+ *
+ * Matches any of:
+ *   - <a> with class containing "es-button", "esd-button", or "button" (case-insensitive)
+ *   - role="button" attribute
+ *   - <button> element
+ *   - <table> with class containing "es-button-" or "esd-block-button"
+ *
+ * Used by the top-level-link-field note gate (P2) so the note only fires
+ * when the module has an actual button whose href could be bound.
+ *
+ * @param {string} html
+ * @returns {boolean}
+ */
+function hasButtonElement(html) {
+  if (!html) return false;
+  const $ = cheerioLoad(html, { decodeEntities: false });
+
+  // <a> with button-related class
+  let found = false;
+  $("a[class]").each((_i, el) => {
+    if (found) return;
+    const cls = ($(el).attr("class") ?? "").toLowerCase();
+    if (cls.includes("es-button") || cls.includes("esd-button") || cls.includes("button")) {
+      found = true;
+    }
+  });
+  if (found) return true;
+
+  // role="button"
+  if ($("[role='button'], [role=\"button\"]").length > 0) return true;
+
+  // <button> element
+  if ($("button").length > 0) return true;
+
+  // <table> with button-wrapper class
+  $("table[class]").each((_i, el) => {
+    if (found) return;
+    const cls = ($(el).attr("class") ?? "").toLowerCase();
+    if (cls.includes("es-button-") || cls.includes("esd-block-button")) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// P3 — HTML-comment ACK marker helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse module HTML for the canonical static-asset intent marker:
+ *
+ *   <!-- Static asset markers — DO NOT bind via Smart Properties at compose time. ... -->
+ *
+ * Trigger: an HTML comment whose first non-whitespace line contains the
+ * literal phrase "Static asset markers" (case-sensitive).
+ *
+ * @param {string} html
+ * @returns {boolean}
+ */
+function hasStaticAssetMarker(html) {
+  if (!html) return false;
+  // Match all HTML comments and check if any contain the trigger phrase on
+  // the first non-whitespace line.
+  const commentRe = /<!--([\s\S]*?)-->/g;
+  let m;
+  while ((m = commentRe.exec(html)) !== null) {
+    const body = m[1];
+    // Find the first non-whitespace line.
+    const firstLine = body.split("\n").find((l) => l.trim().length > 0) ?? "";
+    if (firstLine.includes("Static asset markers")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Parse module HTML for per-variable ACK markers for selector-without-target:
+ *
+ *   <!-- ACK: p_title.alt selector-without-target is intentional -->
+ *   <!-- ACK: p_description selector-without-target is intentional -->
+ *
+ * Returns true if any ACK marker covers the given (variableName, attribute) pair.
+ * The attribute part is optional — a bare-variable ACK suppresses ALL attributes
+ * for that variable.
+ *
+ * @param {string} html
+ * @param {string} variableName  — e.g. "p_title"
+ * @param {string} attribute     — e.g. "alt" or "" (empty string for inner-text)
+ * @returns {boolean}
+ */
+function isAcknowledgedSelectorWithoutTarget(html, variableName, attribute) {
+  if (!html) return false;
+  // Regex: <!-- ACK: <varName>(.<attrName>)? selector-without-target is intentional -->
+  // The attribute part is optional.
+  const ackRe =
+    /<!--\s*ACK:\s*(\w+)(?:\.(\w+))?\s+selector-without-target\s+is\s+intentional\s*-->/g;
+  let m;
+  while ((m = ackRe.exec(html)) !== null) {
+    const ackVar = m[1];
+    const ackAttr = m[2] ?? null; // null means "all attributes for this variable"
+    if (ackVar !== variableName) continue;
+    // Bare variable-name ACK → suppress ALL attributes for this variable.
+    if (ackAttr === null) return true;
+    // Specific attribute ACK → only suppress when the attribute matches.
+    if (ackAttr === attribute) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Notes builder
 // ---------------------------------------------------------------------------
 
@@ -482,6 +613,7 @@ function buildNotes({
   likelySmartContainer,
   staticAssetVariables = [],
   nestingHazards = [],
+  moduleHtml = "",
 }) {
   const notes = [];
 
@@ -492,13 +624,17 @@ function buildNotes({
     );
   }
 
-  // Top-level link field present but no CTA bindings in registered_variables
-  if (topLevelLinkField) {
-    const hasCTAVariable = registeredVariables.some((v) => {
-      const n = v.name.toLowerCase();
-      return n.includes("cta") || n.includes("href") || n.includes("link") || n.includes("url") || n.includes("button");
-    });
-    if (!hasCTAVariable) {
+  // Top-level link field present — gate on actual button presence (P2).
+  // Only emit if: (1) top_level_link_field is true, AND (2) the module HTML
+  // contains a button-shaped element, AND (3) no registered variable has an
+  // href binding whose selector covers that button element.
+  if (topLevelLinkField && hasButtonElement(moduleHtml)) {
+    const hasHrefBinding = registeredVariables.some((v) =>
+      (v.blockMapping ?? []).some(
+        (m) => String(m?.attribute ?? "").toLowerCase() === "href",
+      ),
+    );
+    if (!hasHrefBinding) {
       notes.push(
         "Button CTA may be bound via the Smart Element wizard's top-level link field, which is silently ignored at compose time. Register Smart Properties for the button's text and href via the Data tab — match the workspace's existing naming convention if one is in use (e.g. p_cta_text + p_link when the module uses a p_* prefix).",
       );
@@ -579,12 +715,19 @@ function buildNotes({
   // present in the module's HTML. Substitution will silently no-op at compose time — the
   // compose call accepts the value, Stripo's renderer finds no matching elements, and the
   // master-template default is emitted instead. One note per affected variable.
+  //
+  // P3: suppress individual (variable, attribute) pairs that have an ACK marker in the HTML.
   for (const v of registeredVariables) {
     for (const m of v.blockMapping ?? []) {
       const selector = m?.selector;
       if (typeof selector === "string" && selector.startsWith(".esd-gen-")) {
         const className = selector.slice(1); // strip leading dot
         if (!esdGenClasses.includes(className)) {
+          // P3: check for per-variable or per-(variable,attribute) ACK marker.
+          const attr = String(m?.attribute ?? "");
+          if (isAcknowledgedSelectorWithoutTarget(moduleHtml, v.name, attr)) {
+            continue;
+          }
           notes.push(
             `Variable \`${v.name}\` is registered with selector \`${selector}\` which is not present in the module's HTML. Substitution will silently no-op at compose time. Add the missing class to the target element in Stripo's Design tab, or remove the variable registration.`,
           );

@@ -795,6 +795,279 @@ describe("orbit_inspect_stripo_module_bindings", () => {
     });
   });
 
+  // ─── Fixture (xi) — P1: alt/title secondary mappings must not pad count ─────
+  // Regression for the isImageSrcPrimary tightening. One variable has src as its
+  // primary (first) blockMapping; three others have src only on a SECONDARY mapping
+  // (their first mapping is empty-attribute / inner-text). The old predicate counted
+  // all four as "image-bound" (via name prefix OR alt/title secondary attribute),
+  // pushing the count to 4 and falsely firing. The new predicate counts only 1 —
+  // below the ≥3 threshold — no note.
+
+  describe("fixture (xi) — alt/title secondary mappings must not pad count (P1)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "static-asset-alt-title-padding");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables includes all four variables", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.ok(names.includes("p_image"), "should include p_image");
+      assert.ok(names.includes("p_title"), "should include p_title");
+      assert.ok(names.includes("p_caption"), "should include p_caption");
+      assert.ok(names.includes("p_label"), "should include p_label");
+    });
+
+    test("static-asset note does NOT fire despite p_title/p_caption/p_label carrying alt/title secondary mappings", () => {
+      const note = result.notes.find((n) => n.includes("static-asset pattern"));
+      assert.ok(
+        !note,
+        `static-asset note must not fire when only one variable has src as its primary mapping. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (xii) — P2: real button present, no href binding → note fires ──
+
+  describe("fixture (xii) — P2: real button, no href binding (note fires)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "wizard-button-no-binding");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("top_level_link_field is true", () => {
+      assert.equal(result.top_level_link_field, true);
+    });
+
+    test("CTA dead-end note fires when button is present and no href binding exists", () => {
+      const note = result.notes.find((n) =>
+        n.includes("Button CTA may be bound via the Smart Element wizard's top-level link field"),
+      );
+      assert.ok(
+        note,
+        `Expected CTA dead-end note when es-button present and no href variable. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (xiii) — P2: real button present, href binding covers it → suppressed ──
+
+  describe("fixture (xiii) — P2: real button, href binding present (note suppressed)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "wizard-button-binding-present");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("top_level_link_field is true", () => {
+      assert.equal(result.top_level_link_field, true);
+    });
+
+    test("CTA dead-end note is suppressed when a registered variable has an href binding", () => {
+      const note = result.notes.find((n) =>
+        n.includes("Button CTA may be bound via the Smart Element wizard's top-level link field"),
+      );
+      assert.ok(
+        !note,
+        `CTA dead-end note must be suppressed when an href binding is registered. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (xiv) — P2: top-level link but no button element → suppressed ──
+
+  describe("fixture (xiv) — P2: top-level link, no button element (note suppressed)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "wizard-no-button-top-level-link");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("top_level_link_field is true", () => {
+      assert.equal(result.top_level_link_field, true);
+    });
+
+    test("CTA dead-end note is suppressed when no button-shaped element exists in the HTML", () => {
+      const note = result.notes.find((n) =>
+        n.includes("Button CTA may be bound via the Smart Element wizard's top-level link field"),
+      );
+      assert.ok(
+        !note,
+        `CTA dead-end note must be suppressed when module has no button element. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (xv) — P3: static-asset intent marker suppresses note ──────────
+
+  describe("fixture (xv) — P3: static-asset intent marker suppresses note", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "static-asset-with-marker");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("static-asset note is suppressed when intent marker is present in HTML", () => {
+      const note = result.notes.find((n) => n.includes("static-asset pattern"));
+      assert.ok(
+        !note,
+        `static-asset note must be suppressed when the HTML comment marker is present. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("module still has three registered src-bound variables", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.ok(names.includes("p_image"), "should include p_image");
+      assert.ok(names.includes("p_image2"), "should include p_image2");
+      assert.ok(names.includes("p_image3"), "should include p_image3");
+    });
+  });
+
+  // ─── Fixture (xvi) — P3: ACK marker suppresses specific attr note ────────────
+
+  describe("fixture (xvi) — P3: ACK per-attr marker suppresses specific selector-without-target note", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "selector-without-target-ack-attr");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("selector-without-target note for p_image is suppressed by the ACK marker", () => {
+      const spuriousNote = result.notes.find(
+        (n) => n.includes("p_image") && n.includes("not present in the module's HTML"),
+      );
+      assert.ok(
+        !spuriousNote,
+        `selector-without-target for p_image must be suppressed by ACK marker. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("p_title still passes inspection (its selector .esd-gen-title IS in the HTML)", () => {
+      const spuriousNote = result.notes.find(
+        (n) => n.includes("p_title") && n.includes("not present in the module's HTML"),
+      );
+      assert.ok(
+        !spuriousNote,
+        `No selector-without-target note should fire for p_title — its selector is present. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (xvii) — P3: bare ACK suppresses all attrs for that variable ────
+
+  describe("fixture (xvii) — P3: bare variable ACK suppresses all selector-without-target notes for that variable", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "selector-without-target-ack-bare");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("selector-without-target notes for p_image are suppressed (bare ACK covers all attrs)", () => {
+      const spuriousNote = result.notes.find(
+        (n) => n.includes("p_image") && !n.includes("p_image_alt") && n.includes("not present in the module's HTML"),
+      );
+      assert.ok(
+        !spuriousNote,
+        `selector-without-target notes for p_image must be suppressed by bare ACK. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("selector-without-target note for p_image_alt still fires (no ACK for it)", () => {
+      const note = result.notes.find(
+        (n) => n.includes("p_image_alt") && n.includes("not present in the module's HTML"),
+      );
+      assert.ok(
+        note,
+        `selector-without-target for p_image_alt must still fire — no ACK covers it. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (xviii) — P3: mistyped ACK marker → notes still fire ────────────
+
+  describe("fixture (xviii) — P3: mistyped ACK marker does not suppress notes", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "selector-without-target-ack-mistyped");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("selector-without-target note for p_image fires despite mistyped ACK marker", () => {
+      const note = result.notes.find(
+        (n) => n.includes("p_image") && n.includes("not present in the module's HTML"),
+      );
+      assert.ok(
+        note,
+        `selector-without-target for p_image must fire when the ACK marker is mistyped. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
   // ─── Error / edge case paths ──────────────────────────────────────────────
 
   describe("error and edge case paths", () => {
