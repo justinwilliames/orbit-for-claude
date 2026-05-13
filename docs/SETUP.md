@@ -1,8 +1,8 @@
 # Orbit Setup
 
-Orbit works locally inside Claude Desktop.
+Orbit runs locally in two places: Claude Desktop (the canonical install path) and Claude Code CLI (optional, for terminal sessions).
 
-## Core Setup
+## Core Setup (Claude Desktop)
 
 1. Install the Orbit `.mcpb` extension in Claude Desktop.
 2. Open `Settings > Extensions`.
@@ -14,6 +14,43 @@ Orbit works locally inside Claude Desktop.
    - `Figma API Token`
    - `Braze API Key`
    - `Braze REST Endpoint`
+
+## Running Orbit in Claude Code CLI
+
+Desktop's MCPB extensions and the CLI are separate processes with separate config sources. Installing the `.mcpb` in Desktop does not load Orbit MCP in CLI sessions. To use Orbit MCP from `claude` in a terminal, register the same server at CLI user scope.
+
+There are two source paths you can point CLI at:
+
+| Source | Path | When to pick it |
+|---|---|---|
+| Unpacked MCPB | `~/Library/Application Support/Claude/Claude Extensions/local.mcpb.<id>/server/index.js` | You want CLI to match Desktop exactly, including auto-updates. Path changes if Desktop bumps the version. |
+| Dev source (recommended for contributors) | `~/code/orbit-for-claude/server/index.js` | You want CLI to run the latest local checkout. Stable path. Decouples from Desktop's update cycle. |
+
+Registration command (replace each `<value>` with the matching credential):
+
+```bash
+claude mcp add --scope user \
+  --env=ORBIT_COMPANY_NAME='<your company>' \
+  --env=ORBIT_DEFAULT_PLATFORM='<braze|iterable|hubspot|other>' \
+  --env=ORBIT_DEFAULT_GEOGRAPHY='<eg. AU, NZ, UK>' \
+  --env=ORBIT_GOOGLE_AI_API_KEY='<key>' \
+  --env=ORBIT_BRAZE_API_KEY='<key>' \
+  --env=ORBIT_BRAZE_REST_ENDPOINT='<rest endpoint>' \
+  --env=ORBIT_STRIPO_PLUGIN_ID='<id>' \
+  --env=ORBIT_STRIPO_SECRET_KEY='<key>' \
+  --env=ORBIT_STRIPO_REST_API_TOKEN='<token>' \
+  --env=ORBIT_STRIPO_WORKSPACE_ID='<id>' \
+  --env=ORBIT_STRIPO_MASTER_TEMPLATE_ID='<id>' \
+  orbit -- node /path/to/orbit-for-claude/server/index.js
+```
+
+Three things to know:
+
+- **Use `--env=KEY=VAL` (long form with `=`), not `-e KEY=VAL`.** The short variadic form slurps the server name as another env value and the registration fails.
+- **Credentials are encrypted at rest** by the CLI in `~/.claude.json` (`__encrypted__:` prefix). No plaintext storage.
+- **Already-running CLI sessions won't see the new server.** MCP servers register at session start. Open a new `claude` session and run `claude mcp list` to confirm `orbit: ... ✓ Connected`.
+
+To remove or re-register: `claude mcp remove orbit -s user`, then re-run the add command.
 
 ## Orbit Home Workspace
 
