@@ -23,8 +23,8 @@
  *
  * Lives in server/ rather than scripts/ so it can run inside the MCP
  * process and pick up runtimeConfig — that's the whole reason we built
- * it as a tool instead of a standalone script (Sir's keys live in the
- * MCP env, not the terminal env).
+ * it as a tool instead of a standalone script (the operator's API keys
+ * live in the MCP env, not the terminal env).
  */
 
 import fs from "node:fs";
@@ -446,7 +446,8 @@ function finalResult({ findings, reportPath, moduleA, moduleB }) {
 }
 
 function writeReport({ config, findings, options }) {
-  const reportDir = path.join(config.defaultOutputDir, "outputs", REPORT_DIR);
+  // config.defaultOutputDir is already ~/Orbit/outputs — don't double-nest.
+  const reportDir = path.join(config.defaultOutputDir, REPORT_DIR);
   ensureDir(reportDir);
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const reportPath = path.join(reportDir, `${timestamp}.md`);
@@ -496,7 +497,7 @@ function writeReport({ config, findings, options }) {
     "_Choose one:_",
     "",
     "- ✅ **Proceed with implementation per the plan** — `values` works, shape confirmed, round-trip verifiable.",
-    "- ⚠️ **Update the plan and re-confirm with Sir** — `values` works but in a different shape than assumed.",
+    "- ⚠️ **Update the plan and re-confirm with the operator** — `values` works but in a different shape than assumed.",
     "- ❌ **Stop. Ship Path B (paste-in flow) instead** — `values` doesn't work or is a no-op.",
     "",
   ].filter((l) => l !== "");

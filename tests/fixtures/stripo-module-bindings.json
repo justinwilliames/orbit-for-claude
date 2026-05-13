@@ -86,10 +86,10 @@
 
     {
       "_case": "selector-without-target",
-      "_desc": "Module where a registered variable's selector (.esd-gen-image) does not exist on any element in the HTML. The esd_gen_classes list only contains esd-gen-cta, esd-gen-description, esd-gen-title. p_image should trigger a selector_without_target note. Mirrors the production failure on module 1654785.",
-      "id": 1654785,
-      "uid": "mno-uid-1654785",
-      "name": "Text + body + CTA - max prominence",
+      "_desc": "Module where a registered variable's selector (.esd-gen-image) does not exist on any element in the HTML. The esd_gen_classes list only contains esd-gen-cta, esd-gen-description, esd-gen-title. p_image should trigger a selector_without_target note. Mirrors the silent-no-op pattern in text+body+CTA style modules where the class hook was never added to the <img> element.",
+      "id": 9001,
+      "uid": "mno-uid-9001",
+      "name": "Text + body + CTA — selector-without-target example",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/default.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><h1 class=\"esd-gen-title\">Default Title</h1><p class=\"esd-gen-description\">Default description.</p><a class=\"esd-gen-cta\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
       "css": "",
 
@@ -135,6 +135,95 @@
         "notes_should_contain_all": [
           "No Smart Properties bindings detected",
           "Module looks like a Smart Container"
+        ]
+      }
+    },
+
+    {
+      "_case": "three-unique-dynamic-images",
+      "_desc": "Module with 3 p_image* variables — each with a UNIQUE defaultValue URL, suggesting legitimately dynamic product images. After the Item-1 tightening, the static-asset pattern note must NOT fire even though the count threshold (≥3 image-bound vars) is met. Mirrors a product-grid or recommendation module where the images are real product photography rather than canonical tick/cross markers.",
+      "id": 9003,
+      "uid": "stu-uid-9003",
+      "name": "Product grid — three unique dynamic images",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/product-a.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/product-b.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image3&quot;,&quot;defaultValue&quot;:&quot;https://example.com/product-c.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image3&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/product-a.jpg\" /><img class=\"esd-gen-image2\" src=\"https://example.com/product-b.jpg\" /><img class=\"esd-gen-image3\" src=\"https://example.com/product-c.jpg\" /></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "top_level_link_field": false,
+        "likely_smart_container": false,
+        "image_variable_names": ["p_image", "p_image2", "p_image3"],
+        "static_asset_note_should_not_fire": true
+      }
+    },
+
+    {
+      "_case": "two-image-vars-below-threshold",
+      "_desc": "Module with only 2 image-bound variables. Below the ≥3 threshold, the static-asset note must NOT fire regardless of defaultValue uniqueness.",
+      "id": 9004,
+      "uid": "vwx-uid-9004",
+      "name": "Hero + secondary — two image vars",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" /><img class=\"esd-gen-image2\" src=\"https://example.com/tick.png\" /></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "top_level_link_field": false,
+        "likely_smart_container": false,
+        "image_variable_names": ["p_image", "p_image2"],
+        "static_asset_note_should_not_fire": true
+      }
+    },
+
+    {
+      "_case": "href-outer-wrapping-text-inner",
+      "_desc": "Module where an outer <a class=\"esd-gen-link\"> binds via attribute=href (NOT text-replacing) wrapping an inner <span class=\"esd-gen-cta-text\"> bound via empty attribute (text-replacing). After Item-2's attribute-kind filter, this must NOT fire the nesting-hazard note — href writes don't clobber inner children. This mirrors the standard Stripo button pattern where the link URL is one binding and the button label text is another.",
+      "id": 9005,
+      "uid": "yza-uid-9005",
+      "name": "Button — href wrapping text (safe pattern)",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_cta_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com/cta&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-link&quot;,&quot;attribute&quot;:&quot;href&quot;}]},{&quot;variable&quot;:&quot;p_cta_text&quot;,&quot;defaultValue&quot;:&quot;Click here&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-cta-text&quot;,&quot;attribute&quot;:&quot;&quot;}]}]}\"><a class=\"esd-gen-link\" href=\"https://example.com/cta\"><span class=\"esd-gen-cta-text\">Click here</span></a></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "top_level_link_field": false,
+        "likely_smart_container": false,
+        "nesting_hazard_should_not_fire": true
+      }
+    },
+
+    {
+      "_case": "deeply-nested-only-one-registered",
+      "_desc": "Module with deeply nested DOM where the outer text-bound element contains an inner <span class=\"esd-gen-other\"> that is NOT registered as a binding. With only one binding actually registered, there is no ancestor/descendant pair to evaluate — no nesting-hazard note should fire.",
+      "id": 9006,
+      "uid": "bcd-uid-9006",
+      "name": "Single text binding with unbound inner span",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_outer&quot;,&quot;defaultValue&quot;:&quot;Default outer text&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-outer&quot;,&quot;attribute&quot;:&quot;&quot;}]}]}\"><div class=\"esd-gen-outer\">Default outer text <span class=\"esd-gen-other\">unbound inner</span></div></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "top_level_link_field": false,
+        "likely_smart_container": false,
+        "nesting_hazard_should_not_fire": true
+      }
+    },
+
+    {
+      "_case": "static-asset-and-nesting",
+      "_desc": "Comparison-table style module with 3 p_image* variables bound to src on .esd-gen-image* classes (static tick markers that should NOT be LLM-populated), plus a nesting hazard where p_description's outer <p>.esd-gen-description wraps an inner <strong>.esd-gen-p-row_title_1 binding. Inspector should flag both patterns + suggest the HTML-comment contract.",
+      "id": 9002,
+      "uid": "pqr-uid-9002",
+      "name": "Comparison table — static asset + nesting hazard example",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/cross.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image3&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image3&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_row_title_1&quot;,&quot;defaultValue&quot;:&quot;Row 1&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-row_title_1&quot;,&quot;attribute&quot;:&quot;&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" /><img class=\"esd-gen-image2\" src=\"https://example.com/cross.png\" /><img class=\"esd-gen-image3\" src=\"https://example.com/tick.png\" /><p class=\"esd-gen-description\">Intro text <strong class=\"esd-gen-p-row_title_1\">Row 1</strong> trailing text.</p></div></td></tr></table>",
+      "css": "",
+
+      "_expected": {
+        "top_level_link_field": false,
+        "likely_smart_container": false,
+        "static_asset_variables": ["p_image", "p_image2", "p_image3"],
+        "nesting_hazard_outer": "p_description",
+        "nesting_hazard_inner": "p_row_title_1",
+        "notes_should_contain_all": [
+          "static-asset pattern",
+          "DO NOT bind via Smart Properties",
+          "Nesting hazard"
         ]
       }
     }

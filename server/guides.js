@@ -13,7 +13,7 @@
  * accurate source of practitioner knowledge Orbit controls. Exposing
  * them as MCP resources lets Claude cite the exact guide that matches
  * a user's question — without a live web fetch — so answers are
- * grounded in content Justin wrote rather than generic training data.
+ * grounded in Orbit's authored content rather than generic training data.
  *
  * Resource URIs
  * -------------

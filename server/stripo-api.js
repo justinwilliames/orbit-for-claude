@@ -189,8 +189,8 @@ export async function stripoRestDelete({ config, endpoint, params = {}, auth = "
 async function stripoRestRequest({ config, endpoint, params, body, auth, method }) {
   // ─── Defence-in-depth: never mutate the master template. ────────────
   //
-  // Sir's hard rule: Orbit must NEVER edit the Master template provided
-  // by the user. This guard is the single structural enforcement point.
+  // Hard rule: Orbit must NEVER edit the Master template provided by the
+  // user. This guard is the single structural enforcement point.
   // Refuses every non-GET request whose endpoint path touches /template
   // or /templates — covers PUT, PATCH, POST-with-template-modify-side-
   // effect, DELETE, regardless of which calling code asked for it.

@@ -150,7 +150,7 @@ Body: [One supporting detail + implied next step]
 **Constraints:** 160 characters per segment. Every word is expensive.
 
 Rules:
-- Identify the sender in the first word or two (brand name or context) — "Sophiie: your quote is ready"
+- Identify the sender in the first word or two (brand name or context) — "Acme: your quote is ready"
 - One link maximum, always shortened, always tracked
 - Opt-out instruction required: "Reply STOP to unsubscribe" — include this or risk compliance failure
 - SMS is for genuinely time-sensitive or transactional content. Marketing SMS to cold lists is deliverability and trust suicide.

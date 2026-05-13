@@ -501,7 +501,7 @@ export async function probeStripoSmartElement({ config, options = {} }) {
       [
         "This arm requires a Stripo-editor manual setup step that the API cannot perform (/modules is read-only).",
         "",
-        "Steps for Sir to run before this arm can fire:",
+        "Steps the operator must run before this arm can fire:",
         "  1. In Stripo's editor, open the test module (or duplicate it for safety).",
         "  2. Open the module's HTML via the code-edit panel (the < > icon).",
         "  3. Locate the `esd-dynamic-block` attribute on the wrapping element.",
@@ -592,7 +592,7 @@ export async function probeStripoSmartElement({ config, options = {} }) {
         f.name.startsWith("q.2.manual"),
       );
       if (manualFinding?.status === "pass") {
-        return `Manual JSON-edit path confirmed via q.2.manual — Sir can add cta_text to the module's variables array via Stripo's code editor, bind it to .esd-gen-cta-text, save, re-sync.`;
+        return `Manual JSON-edit path confirmed via q.2.manual — the operator can add cta_text to the module's variables array via Stripo's code editor, bind it to .esd-gen-cta-text, save, re-sync.`;
       }
     }
     return "Unresolved. q.1 found no working top-level shape, and q.2.manual either was not run or did not pass. Without API write access to /modules, the remaining options are: (a) advocate that Stripo expose CTA text in the wizard, (b) post-process the rendered HTML server-side to inject CTA text, (c) live with the wizard's auto-picked text.";

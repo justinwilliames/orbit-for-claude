@@ -274,7 +274,7 @@ export async function composeStripoEmail({
     if (!Number.isInteger(templateIdNumber) || templateIdNumber <= 0) {
       return {
         status: "invalid_master_template_id",
-        message: `Configured Stripo Master Template ID "${config.stripoMasterTemplateId}" is not a valid integer. Stripo template IDs are numeric (e.g. 4431390). Check your extension settings.`,
+        message: `Configured Stripo Master Template ID "${config.stripoMasterTemplateId}" is not a valid integer. Stripo template IDs are numeric (e.g. 1234567). Check your extension settings.`,
         composition_plan: compositionPlan,
         html_path: htmlFilePath,
         html_byte_count: htmlByteCount,
@@ -862,8 +862,9 @@ function buildCanonicalPayload({
 
   // Stripo's API rejects emailNames containing square brackets with a
   // generic "Can not save generated email" 400 — discovered the hard
-  // way by probing 4451727 and isolating one variable at a time. Stick
-  // to a middot-separated `Orbit · subject · timestamp` format. Other
+  // way by probing a master template and isolating one variable at a
+  // time. Stick to a middot-separated `Orbit · subject · timestamp`
+  // format. Other
   // common ASCII characters (parens, slashes, ampersands, Unicode
   // arrows, the middot itself) all save fine — the brackets are the
   // outlier.

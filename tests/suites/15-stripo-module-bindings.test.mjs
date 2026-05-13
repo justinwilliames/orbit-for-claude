@@ -428,7 +428,7 @@ describe("orbit_inspect_stripo_module_bindings", () => {
 
   // ─── Fixture (v) — Selector-without-target ───────────────────────────────
   // Regression case for the selector_without_target note added in v0.19.7.
-  // Module 1654785 (Text + body + CTA - max prominence): p_image is registered
+  // Fixture mirrors a common silent-no-op pattern: p_image is registered
   // against .esd-gen-image but no element in the HTML carries that class.
   // The inspector must flag this with a per-variable note so authors know the
   // binding will silently no-op at compose time.
@@ -517,6 +517,281 @@ describe("orbit_inspect_stripo_module_bindings", () => {
 
     test("likely_smart_container is false", () => {
       assert.equal(result.likely_smart_container, false);
+    });
+  });
+
+  // ─── Fixture (vi) — Static-asset pattern + nesting hazards ──────────────
+  // Mirrors a comparison-table style module. The inspector must flag BOTH
+  // the repeating image-bound variables (static-asset pattern) AND the
+  // outer/inner Smart Property binding pair (nesting hazard). The notes
+  // should include the canonical HTML-comment contract so the author has
+  // a paste-ready snippet to document static intent.
+
+  describe("fixture (vi) — static-asset pattern + nesting hazard", () => {
+    let result;
+    let expected;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "static-asset-and-nesting");
+      expected = f._expected;
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables includes the three p_image* + p_description + p_row_title_1", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      for (const n of [...expected.static_asset_variables, "p_description", "p_row_title_1"]) {
+        assert.ok(names.includes(n), `should include ${n}`);
+      }
+    });
+
+    test("notes contains the static-asset pattern recommendation", () => {
+      const note = result.notes.find((n) => n.includes("static-asset pattern"));
+      assert.ok(note, `Expected a static-asset note. Got: ${JSON.stringify(result.notes)}`);
+      for (const v of expected.static_asset_variables) {
+        assert.ok(note.includes(v), `static-asset note should mention ${v}. Got: ${note}`);
+      }
+    });
+
+    test("static-asset note includes the HTML-comment contract snippet", () => {
+      const note = result.notes.find((n) => n.includes("static-asset pattern"));
+      assert.ok(note.includes("DO NOT bind via Smart Properties"), "should include comment-contract preamble");
+      assert.ok(note.includes("YES_ASSET_URL=") && note.includes("NO_ASSET_URL="), "should include canonical URL placeholders");
+    });
+
+    test("notes contains a nesting-hazard warning for p_description → p_row_title_1", () => {
+      const note = result.notes.find(
+        (n) => n.includes("Nesting hazard") && n.includes(expected.nesting_hazard_outer) && n.includes(expected.nesting_hazard_inner),
+      );
+      assert.ok(note, `Expected nesting-hazard note. Got: ${JSON.stringify(result.notes)}`);
+      assert.ok(note.includes("clobbered"), "nesting note should warn that the inner value will be clobbered");
+    });
+
+    test("notes does not fire for the harmless image bindings (they are not ancestors of anything)", () => {
+      const spuriousNesting = result.notes.find(
+        (n) => n.includes("Nesting hazard") && n.includes("p_image"),
+      );
+      assert.ok(!spuriousNesting, `p_image should not appear in nesting-hazard notes. Got: ${JSON.stringify(result.notes)}`);
+    });
+  });
+
+  // ─── Fixture (vii) — Three unique dynamic images, NO static-asset note ───
+  // Negative test for Item 1: the static-asset pattern detector tightening.
+  // Three p_image* variables all bound to `src` on `esd-gen-image*` selectors,
+  // but each carries a UNIQUE defaultValue URL. The repeating-default signal
+  // should suppress the note — these look like dynamic product images, not
+  // canonical tick/cross markers.
+
+  describe("fixture (vii) — three unique dynamic images (NO static-asset note)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "three-unique-dynamic-images");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables includes all three p_image* variables", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.ok(names.includes("p_image"));
+      assert.ok(names.includes("p_image2"));
+      assert.ok(names.includes("p_image3"));
+    });
+
+    test("static-asset pattern note does NOT fire despite ≥3 image-bound vars", () => {
+      const note = result.notes.find((n) => n.includes("static-asset pattern"));
+      assert.ok(
+        !note,
+        `static-asset note must not fire when defaults are unique. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (viii) — Two image vars below threshold, NO note ─────────────
+  // Negative test for Item 1: the ≥3 precondition still holds.
+
+  describe("fixture (viii) — two image vars below threshold (NO static-asset note)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "two-image-vars-below-threshold");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("static-asset pattern note does NOT fire with only 2 image vars", () => {
+      const note = result.notes.find((n) => n.includes("static-asset pattern"));
+      assert.ok(
+        !note,
+        `static-asset note must not fire below the ≥3 threshold. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (ix) — href outer wrapping text inner (NO nesting hazard) ────
+  // Negative test for Item 2: the attribute-kind filter. Outer binding writes
+  // to `href` (attribute write, not innerHTML), so the inner text binding is
+  // NOT clobbered. Standard Stripo button pattern — must not flag.
+
+  describe("fixture (ix) — href outer wrapping text inner (NO nesting hazard)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "href-outer-wrapping-text-inner");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("registered_variables includes both p_cta_link and p_cta_text", () => {
+      const names = result.registered_variables.map((v) => v.name);
+      assert.ok(names.includes("p_cta_link"));
+      assert.ok(names.includes("p_cta_text"));
+    });
+
+    test("nesting-hazard note does NOT fire when outer binding writes href", () => {
+      const note = result.notes.find((n) => n.includes("Nesting hazard"));
+      assert.ok(
+        !note,
+        `Nesting-hazard note must not fire for href-bound outer wrappers. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Fixture (x) — Single registered binding, inner element unregistered ─
+  // Negative test for Item 2: only one binding is registered, so there is no
+  // outer/inner registered pair to evaluate. No nesting hazard regardless of
+  // DOM nesting.
+
+  describe("fixture (x) — single registered binding, no pair (NO nesting hazard)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "deeply-nested-only-one-registered");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("nesting-hazard note does NOT fire with only one registered binding", () => {
+      const note = result.notes.find((n) => n.includes("Nesting hazard"));
+      assert.ok(
+        !note,
+        `Nesting-hazard note must not fire when only one binding is registered. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  // ─── Audit-tier coverage for new finding codes ──────────────────────────
+  // Item 5: ensure the audit pipeline produces `static_asset_pattern` and
+  // `nesting_hazard` finding objects with the correct severity, stripo_id,
+  // module_name, and fix_description (including the HTML-comment contract).
+
+  describe("audit-tier coverage — new finding codes", () => {
+    let auditModule;
+    let findings;
+
+    before(async () => {
+      const auditMod = await import(
+        path.join(PROJECT_ROOT, "server", "stripo-audit.js")
+      );
+      auditModule = auditMod;
+      const result = await auditModule.auditStripoModules({ config });
+      findings = result.findings ?? [];
+    });
+
+    test("audit produces a static_asset_pattern finding for the static-asset fixture", () => {
+      const f = fixtures.find((m) => m._case === "static-asset-and-nesting");
+      const finding = findings.find(
+        (x) => x.code === "static_asset_pattern" && String(x.stripo_id) === String(f.id),
+      );
+      assert.ok(
+        finding,
+        `Expected a static_asset_pattern finding for stripo_id ${f.id}. Got findings: ${JSON.stringify(findings.map((x) => ({ code: x.code, stripo_id: x.stripo_id })))}`,
+      );
+      assert.equal(finding.severity, "info", "static_asset_pattern severity should be info");
+      assert.equal(finding.module_name, f.name, "module_name should propagate");
+      assert.ok(
+        finding.fix_description.includes("DO NOT bind via Smart Properties"),
+        `fix_description should include the HTML-comment contract snippet. Got: ${finding.fix_description}`,
+      );
+      assert.ok(
+        finding.fix_description.includes("YES_ASSET_URL=") &&
+          finding.fix_description.includes("NO_ASSET_URL="),
+        "fix_description should include canonical URL placeholders",
+      );
+    });
+
+    test("audit produces a nesting_hazard finding for the static-asset fixture", () => {
+      const f = fixtures.find((m) => m._case === "static-asset-and-nesting");
+      const finding = findings.find(
+        (x) => x.code === "nesting_hazard" && String(x.stripo_id) === String(f.id),
+      );
+      assert.ok(
+        finding,
+        `Expected a nesting_hazard finding for stripo_id ${f.id}. Got findings: ${JSON.stringify(findings.map((x) => ({ code: x.code, stripo_id: x.stripo_id })))}`,
+      );
+      assert.equal(finding.severity, "warning", "nesting_hazard severity should be warning");
+      assert.equal(finding.module_name, f.name, "module_name should propagate");
+      assert.ok(
+        finding.message.includes("p_description") && finding.message.includes("p_row_title_1"),
+        `nesting_hazard message should name the outer + inner variables. Got: ${finding.message}`,
+      );
+      assert.ok(
+        finding.fix_description.includes("Tighten the outer selector") ||
+          finding.fix_description.includes("unregister"),
+        `fix_description should describe a concrete remediation path. Got: ${finding.fix_description}`,
+      );
+    });
+
+    test("audit does NOT produce static_asset_pattern for the three-unique-dynamic-images fixture", () => {
+      const f = fixtures.find((m) => m._case === "three-unique-dynamic-images");
+      const finding = findings.find(
+        (x) => x.code === "static_asset_pattern" && String(x.stripo_id) === String(f.id),
+      );
+      assert.ok(
+        !finding,
+        `static_asset_pattern must not fire for ${f.id} (unique defaults). Got: ${JSON.stringify(finding)}`,
+      );
+    });
+
+    test("audit does NOT produce nesting_hazard for the href-outer fixture", () => {
+      const f = fixtures.find((m) => m._case === "href-outer-wrapping-text-inner");
+      const finding = findings.find(
+        (x) => x.code === "nesting_hazard" && String(x.stripo_id) === String(f.id),
+      );
+      assert.ok(
+        !finding,
+        `nesting_hazard must not fire for ${f.id} (href is not text-replacing). Got: ${JSON.stringify(finding)}`,
+      );
     });
   });
 

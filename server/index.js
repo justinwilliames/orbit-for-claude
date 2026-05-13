@@ -2694,11 +2694,21 @@ function registerTools() {
       output_dir: outputDir,
       version
     }) => {
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = generateEmailComponents({
         config: runtimeConfig,
         componentMap: componentMapJson,
         libraryDir,
-        outputDir,
+        outputDir: resolvedOutputDir,
         version
       });
       return makeJsonToolResponse(result);
@@ -2732,12 +2742,22 @@ function registerTools() {
     }) => {
       const { value: messageMetadata, error: metaError } = parseToolJson(messageMetadataJson, "message_metadata_json", {});
       if (metaError) return metaError;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = assembleEmailTemplateFromComponents({
         config: runtimeConfig,
         componentMap: componentMapJson,
         componentRefs: componentRefs ?? [],
         messageMetadata,
-        outputDir,
+        outputDir: resolvedOutputDir,
         libraryDir,
         saveToLibrary,
         version
@@ -2841,10 +2861,20 @@ function registerTools() {
     }) => {
       const { value: generatedComponents, error: parseError } = parseToolJson(generatedComponentsJson, "generated_components_json", []);
       if (parseError) return parseError;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = await uploadImagesToBraze({
         config: runtimeConfig,
         generatedComponents,
-        outputDir,
+        outputDir: resolvedOutputDir,
         dryRun
       });
       return makeJsonToolResponse(result);
@@ -2896,9 +2926,19 @@ function registerTools() {
     }) => {
       const { value: uploadedImages, error: parseError } = parseToolJson(uploadedImagesJson, "uploaded_images_json", []);
       if (parseError) return parseError;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = reconcileImageUrls({
         uploadedImages,
-        outputDir,
+        outputDir: resolvedOutputDir,
         stripTemplatePath
       });
       return makeJsonToolResponse(result);
@@ -2928,6 +2968,16 @@ function registerTools() {
     }) => {
       const { value: emailAssets, error: emailAssetsError } = parseToolJson(emailAssetsJson, "email_assets_json", []);
       if (emailAssetsError) return emailAssetsError;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = buildBrazePack({
         rootDir: ROOT_DIR,
         config: runtimeConfig,
@@ -2935,7 +2985,7 @@ function registerTools() {
         briefMarkdown,
         messagePlan: messagePlanJson,
         emailAssets,
-        outputDir
+        outputDir: resolvedOutputDir
       });
       return makeJsonToolResponse(result);
     }
@@ -2981,6 +3031,16 @@ function registerTools() {
       if (packError) return packError;
       const { value: entryFilters, error: filtersError } = parseToolJson(entryFiltersJson, "entry_filters_json", null);
       if (filtersError) return filtersError;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = await createBrazeCanvas({
         config: runtimeConfig,
         brazePack: brazePack,
@@ -2993,7 +3053,7 @@ function registerTools() {
         entryFilters,
         tags: tags ?? [],
         dryRun: dryRun !== false,
-        outputDir
+        outputDir: resolvedOutputDir
       });
       return makeJsonToolResponse(result);
     }
@@ -3995,7 +4055,7 @@ function registerTools() {
     {
       title: "Connect Stripo to Orbit",
       description:
-        "Walk the user through connecting their Stripo account to Orbit. Reports which Stripo credentials are present, runs live probes against Stripo's Plugin and REST APIs, and returns a step-by-step markdown checklist (Plugin ID + Secret Key, REST API token, Master Template setup). Run this first before any other orbit_*_stripo_* tool.",
+        "Walk the user through connecting their Stripo account to Orbit. Reports which Stripo credentials are present, runs live probes against Stripo's Plugin and REST APIs, and returns a step-by-step markdown checklist (Plugin ID + Secret Key, REST API token, Master Template setup). Onboarding instructions also cover the HTML-comment best-practice for documenting static-asset Smart Property intent (durable across Stripo's wizard re-registration passes). Run this first before any other orbit_*_stripo_* tool.",
       inputSchema: {
         action: z
           .enum(["check", "instructions"])
@@ -4183,7 +4243,7 @@ function registerTools() {
     {
       title: "Audit Stripo Modules for Structural Issues",
       description:
-        "Run a structural audit against every synced Stripo module. Catches orphaned es-right/es-left floats (the lopsided-block bug), STRIPE modules that captured multi-column layouts, sub-600px widths, missing image alt text, footer modules without unsubscribe Liquid vars, and (optionally) broken image URLs. Generates a markdown audit doc at ~/Orbit/outputs/stripo-audit/. Run after orbit_sync_stripo_modules. Fixable findings can be patched via orbit_fix_stripo_module (returns corrected HTML for paste-back into Stripo's module editor — the REST API is read-only for modules).",
+        "Run a structural audit against every synced Stripo module. Catches orphaned es-right/es-left floats (the lopsided-block bug), STRIPE modules that captured multi-column layouts, sub-600px widths, missing image alt text, footer modules without unsubscribe Liquid vars, static-asset Smart Property patterns missing the HTML-comment intent marker, nesting hazards (esd-gen-* classes on wrappers that swallow inner-element edits), and (optionally) broken image URLs. Generates a markdown audit doc at ~/Orbit/outputs/stripo-audit/. Run after orbit_sync_stripo_modules. Fixable findings can be patched via orbit_fix_stripo_module (returns corrected HTML for paste-back into Stripo's module editor — the REST API is read-only for modules).",
       inputSchema: {
         check_image_urls: z
           .boolean()
@@ -4273,12 +4333,12 @@ function registerTools() {
     {
       title: "Inspect Stripo Module Bindings",
       description:
-        "Diagnostic report on a single Stripo module: which Smart Property variables are registered (and therefore substitutable via slot_values), which esd-gen-* CSS class hooks exist in the module HTML, whether the module looks like a Smart Container (layout shell with empty slots that accept child modules via content[]), and whether the module has a top-level OG-preview link field (the Smart Element wizard dead-end that silently drops CTA bindings). Returns the recommended varNames to pass in slot_values today and short actionable notes for the author when bindings are missing or mis-routed. Reads the synced library first; falls back to Stripo's /modules/{id} endpoint if not cached. Use this to verify a module's bindings before composing against it. When notes flag orphan classes or unbound elements, invoke the `stripo-module-bindings` skill for the step-by-step registration walkthrough.",
+        "Diagnostic report on a single Stripo module: which Smart Property variables are registered (and therefore substitutable via slot_values), which esd-gen-* CSS class hooks exist in the module HTML, whether the module looks like a Smart Container (layout shell with empty slots that accept child modules via content[]), and whether the module has a top-level OG-preview link field (the Smart Element wizard dead-end that silently drops CTA bindings). Also flags static-asset patterns (repeating fixed assets registered as Smart Properties without an HTML-comment intent marker) and nesting hazards (esd-gen-* classes on wrapper elements that swallow inner-element edits). Returns the recommended varNames to pass in slot_values today and short actionable notes for the author when bindings are missing or mis-routed. Reads the synced library first; falls back to Stripo's /modules/{id} endpoint if not cached. Use this to verify a module's bindings before composing against it. When notes flag orphan classes or unbound elements, invoke the `stripo-module-bindings` skill for the step-by-step registration walkthrough.",
       inputSchema: {
         stripo_module_id: z
           .union([z.string(), z.number()])
           .describe(
-            "Stripo module ID — either the numeric library ID returned by orbit_sync_stripo_modules or the module UID string used inside dataSources payloads. Coerced to string internally; both forms accepted."
+            "Stripo numeric module ID (as returned by orbit_sync_stripo_modules and shown in audit/inspect findings). Coerced to string internally; number or numeric-string both accepted."
           )
       }
     },
@@ -4515,7 +4575,17 @@ function registerTools() {
     async ({ users_json: usersJson, reference_date: referenceDate, output_dir: outputDir }) => {
       const { value: users, error } = parseToolJson(usersJson, "users_json", []);
       if (error) return error;
-      const result = scoreRfm({ users, referenceDate, outputDir });
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
+      const result = scoreRfm({ users, referenceDate, outputDir: resolvedOutputDir });
       return makeJsonToolResponse(result);
     }
   );
@@ -4547,13 +4617,23 @@ function registerTools() {
       if (e1) return e1;
       const { value: events, error: e2 } = parseToolJson(eventsJson, "events_json", []);
       if (e2) return e2;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = buildCohortRetention({
         enrollments,
         events,
         periodDays: periodDays ?? 30,
         periodsToTrack: periodsToTrack ?? 12,
         referenceDate,
-        outputDir
+        outputDir: resolvedOutputDir
       });
       return makeJsonToolResponse(result);
     }
@@ -4720,13 +4800,23 @@ function registerTools() {
       if (e1) return e1;
       const { value: programHighlights, error: e2 } = parseToolJson(programHighlightsJson, "program_highlights_json", []);
       if (e2) return e2;
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
       const result = buildExecReport({
         periodLabel,
         channelStats,
         programHighlights,
         currencyCode,
         currencySymbol,
-        outputDir
+        outputDir: resolvedOutputDir
       });
       return makeJsonToolResponse(result);
     }
@@ -4766,7 +4856,17 @@ function registerTools() {
       }
     },
     async ({ html, label, output_dir: outputDir }) => {
-      const result = renderEmailPreview({ html, label, outputDir });
+      let resolvedOutputDir;
+      try {
+        resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
+      } catch (err) {
+        return makeJsonToolResponse({
+          status: "error",
+          code: err.code ?? "invalid_path",
+          message: err.message
+        });
+      }
+      const result = renderEmailPreview({ html, label, outputDir: resolvedOutputDir });
       return makeJsonToolResponse(result);
     }
   );

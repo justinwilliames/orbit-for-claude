@@ -192,7 +192,7 @@ All SMS programs must handle these keywords immediately and without exception:
 ### Format Rules
 
 - **160 characters per segment** (standard GSM encoding). Longer messages are split — avoid splits where possible as they cost more and can arrive out of order.
-- **Sender identification:** brand name or context in the first 10 characters. "Sophiie: [message]" — never send from an unknown number with no context.
+- **Sender identification:** brand name or context in the first 10 characters. "Acme: [message]" — never send from an unknown number with no context.
 - **One link maximum.** Always shortened. Always tracked. Never include raw UTM links.
 - **Opt-out instruction required on every marketing message.** "Reply STOP to opt out." This is legally required in most jurisdictions and keeps opt-out rates from spiking from users who forget they consented.
 - **Never use URL shorteners associated with spam** (bit.ly in certain contexts). Use branded shorteners where possible.

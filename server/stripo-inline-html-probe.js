@@ -16,7 +16,7 @@
  *   1. PATH_E_AREAS — legacy `areas: [{ name, html }]` shape, where
  *      `name` matches the `esd-email-gen-area` attribute on the
  *      user's master template. Most stable: documented Stripo
- *      pattern, gen-area is already wired into Sir's template.
+ *      pattern, gen-area is already wired into the operator's template.
  *   2. PATH_C_DATASOURCES_INLINE — modern `dataSources` shape but
  *      with `{ html }` instead of `{ id }` in the value array.
  *      Speculative — undocumented schema mixing.

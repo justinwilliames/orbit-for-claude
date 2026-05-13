@@ -42,6 +42,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { listLibraryItems } from "./template-library.js";
 import { ensureDir } from "./config.js";
+import {
+  parseDynamicBlockConfig,
+  detectStaticAssetPattern,
+  detectNestingHazards,
+} from "./stripo-module-bindings-inspect.js";
 
 const TAG_SYNCED = "stripo_synced";
 const TAG_ARCHIVED = "stripo_archived";
@@ -128,6 +133,8 @@ function auditOneModule({ item }) {
   findings.push(...checkSubSixHundredWidth({ item, html }));
   findings.push(...checkMissingAltText({ item, html }));
   findings.push(...checkFooterCompliance({ item, html }));
+  findings.push(...checkStaticAssetPattern({ item, html }));
+  findings.push(...checkNestingHazards({ item, html }));
   return findings;
 }
 
@@ -260,6 +267,80 @@ function checkFooterCompliance({ item, html }) {
         "If this footer is intentionally non-marketing (transactional), you can ignore this warning.",
     },
   ];
+}
+
+/**
+ * Flag modules that bind ≥3 image-src variables — almost always a
+ * repeating-asset design (tick markers, badge grid, brand-logo wall)
+ * where the URLs are part of the design, not dynamic content. Surfaced
+ * by comparison-table style modules with multiple p_image* variables
+ * acting as fixed yes/no tick markers that should never be LLM-populated.
+ * The durable fix is an HTML comment at the top of the module documenting
+ * which variables are static-by-design + the canonical asset URLs.
+ * Stripo's Smart Element wizard auto-re-registers esd-gen-* classes on
+ * module re-open, so Data-tab deregistration alone does not stick.
+ */
+function checkStaticAssetPattern({ item, html }) {
+  const { variables } = parseDynamicBlockConfig(html);
+  const staticVars = detectStaticAssetPattern({
+    registeredVariables: variables,
+    moduleHtml: html,
+  });
+  if (staticVars.length === 0) return [];
+
+  const varList = staticVars.map((n) => `\`${n}\``).join(", ");
+  return [
+    {
+      severity: "info",
+      code: "static_asset_pattern",
+      stripo_id: item.metadata?.stripo_id,
+      module_name: item.title,
+      message:
+        `${staticVars.length} image-bound variables (${varList}) look like a repeating-asset design (tick markers, badge grid, brand-logo wall). ` +
+        "If these URLs are part of the module's *design* rather than dynamic content, the LLM should not be populating them at compose time.",
+      auto_fixable: false,
+      fix_description:
+        "Add an HTML comment at the top of the module documenting which variables are static-by-design + the canonical asset URLs. " +
+        "Stripo's Smart Element wizard auto-re-registers `esd-gen-*` classes on module re-open, so Data-tab deregistration alone does not stick — " +
+        "the HTML comment is the durable contract. Example:\n\n" +
+        "<!--\n" +
+        "  Static asset markers — DO NOT bind via Smart Properties at compose time.\n" +
+        "  YES_ASSET_URL=https://your-cdn.example.com/tick.png\n" +
+        "  NO_ASSET_URL=https://your-cdn.example.com/cross.png\n" +
+        "  Layout: Row 1 Col 1 defaults to YES.\n" +
+        "-->",
+    },
+  ];
+}
+
+/**
+ * Flag modules where one Smart Property selector is an ancestor of
+ * another's target. Stripo writes the outer binding by replacing the
+ * inner element wholesale — the inner value is clobbered at compose
+ * time. Common in comparison-table style modules where multiple outer
+ * paragraph bindings (e.g. p_description, p_text2, p_text5) target outer
+ * `<p>` wrappers containing nested `<strong>` row_title bindings.
+ */
+function checkNestingHazards({ item, html }) {
+  const { variables } = parseDynamicBlockConfig(html);
+  const hazards = detectNestingHazards({
+    registeredVariables: variables,
+    moduleHtml: html,
+  });
+  if (hazards.length === 0) return [];
+
+  return hazards.map((h) => ({
+    severity: "warning",
+    code: "nesting_hazard",
+    stripo_id: item.metadata?.stripo_id,
+    module_name: item.title,
+    message:
+      `Variable \`${h.outer}\` (selector \`${h.outer_selector}\`) is an ancestor of variable \`${h.inner}\` (selector \`${h.inner_selector}\`). ` +
+      "When Stripo writes the outer binding at compose time, the inner element's content is replaced wholesale — the inner variable's value will be clobbered.",
+    auto_fixable: false,
+    fix_description:
+      "Tighten the outer selector at the HTML layer — add a dedicated inner `<span>` (e.g., `.esd-gen-p-outer-text`) for the outer content so the two bindings target sibling elements rather than ancestor/descendant. Alternatively, unregister one of the two bindings in Stripo's Data tab and document the choice in an HTML comment at the top of the module.",
+  }));
 }
 
 async function auditImageUrls({ modules }) {
@@ -505,6 +586,20 @@ function buildAuditMarkdown({ modules, findings, findingsByModule, bySeverity, b
   lines.push("- **Capturing a multi-column row as a STRIPE module.** The entire row including its column-positioning markup gets saved. When that STRIPE is plopped into a different context (like Orbit's gen-area), the floated children render lopsided. Save modules as single-column standalone blocks instead.");
   lines.push("- **Hardcoded sub-600 widths.** Modules designed for narrower contexts (e.g., a 552px column inside a 1200px parent) carry that width when reused. Aim for 600px (the standard email canvas) on top-level content tables.");
   lines.push("- **Footers without unsubscribe Liquid variables.** Sender compliance frameworks (CAN-SPAM, CASL, GDPR) typically require an unsubscribe mechanism. Bake `{{unsubscribe_url}}` (or your ESP's equivalent) into footer modules at save time.");
+  lines.push("- **Repeating static assets bound as Smart Properties.** When a module contains ≥3 image-bound variables that document fixed icons / badges / tick markers, Stripo's wizard treats them as dynamic — but they're really part of the design. Add an HTML comment at the top of the module documenting the static contract + canonical URLs. The wizard re-registers `esd-gen-*` classes on module re-open, so the comment is the only durable record of intent.");
+  lines.push("- **Nested Smart Property bindings.** When one variable's selector wraps another's target element, Stripo replaces the outer wholesale at compose time and the inner value is silently clobbered. Tighten the outer selector to a dedicated inner `<span>`, or unregister one of the two bindings.");
+  lines.push("");
+  lines.push("**HTML-comment contract** for complex modules — paste this above the module's outer `<table>` in the Stripo code editor:");
+  lines.push("");
+  lines.push("```html");
+  lines.push("<!--");
+  lines.push("  Static asset markers — DO NOT bind via Smart Properties at compose time.");
+  lines.push("  Swap src in the module HTML for per-row state.");
+  lines.push("  YES_ASSET_URL=https://your-cdn.example.com/tick.png");
+  lines.push("  NO_ASSET_URL=https://your-cdn.example.com/cross.png");
+  lines.push("  Layout: Row 1 Col 1 defaults to YES, adjust per row as needed.");
+  lines.push("-->");
+  lines.push("```");
   lines.push("");
   lines.push("Orbit cannot patch your saved modules via API — Stripo's REST surface is read-only for modules. The fix workflow is:");
   lines.push("");

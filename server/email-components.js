@@ -1325,7 +1325,10 @@ function findHtmlFiles(dir) {
 }
 
 function buildStripoAssembly(moduleBlocks, brandColors, config) {
-  const companyName = config.companyName ?? "Sophiie";
+  // Generic fallback matches the convention used in email-templates.js / brand-headers.js
+  // / brand-kit.js (Brand / Brand Team / TBD Brand Name). Configure ORBIT_COMPANY_NAME
+  // in the extension settings to replace this.
+  const companyName = config.companyName ?? "Brand";
   const bgColor = "#f5f5f8";
 
   const moduleHtml = moduleBlocks

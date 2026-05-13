@@ -228,10 +228,9 @@ Note: `p_cta_link` is the canonical href name, not `p_cta_href`. Earlier modules
 both work but `p_cta_link` is clearer. If you maintain modules with `p_link`, keep that name for
 consistency within that module family rather than mixing conventions.
 
-**Variable naming inconsistency caught in verification (2026-05-12):** Module 1639983 (Quote)
-uses `p_image_url` where convention says `p_image_link`. If you author or update that module,
-migrate the variable name to `p_image_link` and update any compose calls that reference
-`p_image_url`.
+**Variable naming inconsistency to watch for:** older modules sometimes use `p_image_url`
+where convention says `p_image_link`. If you author or update such a module, migrate the
+variable name to `p_image_link` and update any compose calls that reference `p_image_url`.
 
 For modules with more than one element of the same kind (two CTAs in a single module, two
 images side by side), suffix with `_secondary`, `_tertiary`, or a positional name that reads
@@ -364,7 +363,7 @@ an attribute. The variable appears in `can_accept_in_values`. The compose call a
 without error. But the variable's selector doesn't exist on any element in the module's HTML.
 Substitution silently no-ops — the compiled email contains the master-template default.
 
-**Worked example (module 1654785 — Text + body + CTA, max prominence):**
+**Worked example (text + body + CTA module):**
 `p_image` was registered with selector `.esd-gen-image` and attribute `src`. The inspector's
 `esd_gen_classes` list for that module contained only `esd-gen-cta`, `esd-gen-description`,
 `esd-gen-title` — no `esd-gen-image`. The `<img>` element in the module's HTML never had the
@@ -394,7 +393,7 @@ whose direct text node is empty. The visible content is in nested child elements
 class hierarchy. Stripo's renderer writes the substituted value as inner text on the wrapper
 element. The rich-content child elements remain untouched — visually the module looks unchanged.
 
-**Worked example (module 1639978 — Comparison table):**
+**Worked example (comparison-table module):**
 Variables `p_row_title_1`, `p_row_title_2`, `p_row_title_3` were registered against
 `.esd-gen-p-row_title_1/2/3` (attribute blank). These classes existed in `esd_gen_classes`.
 Sentinel probe values were passed for all three. The compiled HTML contained none of the
@@ -412,14 +411,15 @@ the visible text directly. Re-register the variable if the selector changes.
 
 ---
 
-### Pattern 3 — Smart Element wizard top-level link field (confirmed on module 1654775)
+### Pattern 3 — Smart Element wizard top-level link field
 
-Already documented in the Failure Modes section. The verification pass confirmed this on module
-1654775 (Text + body + CTA — standard): the module had `p_title` and `p_description` registered
-correctly, but the CTA button had no Smart Properties — it was bound via the wizard's top-level
-link field only. That field is silently ignored at compose time. Result: every compose call that
-passed `p_cta_text` / `p_cta_link` values found them accepted by the compose validator and then
-dropped — the button rendered the module's static default label and href.
+Already documented in the Failure Modes section. The verification pass confirmed this on a
+text + body + CTA (standard) style module: the module had `p_title` and `p_description`
+registered correctly, but the CTA button had no Smart Properties — it was bound via the
+wizard's top-level link field only. That field is silently ignored at compose time. Result:
+every compose call that passed `p_cta_text` / `p_cta_link` values found them accepted by the
+compose validator and then dropped — the button rendered the module's static default label
+and href.
 
 **Inspector now flags this:** `top_level_link_field: true` with no CTA variable in
 `registered_variables` produces the CTA dead-end note. Fix: register `p_cta_text` and

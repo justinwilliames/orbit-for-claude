@@ -166,7 +166,7 @@ Tone:               [Refer to tone map in copy-framework — e.g. "Warm, direct,
 
 Subject line:       [35–50 characters — earns the open; does not summarise the email]
 Preheader:          [Extends subject line — adds the next most persuasive detail; does not repeat it]
-From name:          [e.g. "Justin at Sophiie" — human sender outperforms brand name for lifecycle]
+From name:          [e.g. "Alex at Acme" — human sender outperforms brand name for lifecycle]
 
 Copy direction:
 - Hook:             [First sentence — must not start with "I" or brand name; starts with the user]
@@ -241,7 +241,7 @@ Compliance:         [ ] TCPA consent verified   [ ] GDPR consent verified   [ ] 
 Copy:               [Full message text — 160 characters max for single segment]
 
 [Write the full SMS body here — brand identifier in first words, one link max, opt-out at end]
-Example structure: "Sophiie: [message]. [link] Reply STOP to unsubscribe."
+Example structure: "Acme: [message]. [link] Reply STOP to unsubscribe."
 
 Character count:    [X / 160 — flag if multi-segment: each additional 153 chars = extra cost]
 Sender:             [ ] Short code   [ ] Long code   [ ] Toll-free number

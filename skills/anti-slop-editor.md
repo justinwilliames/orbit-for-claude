@@ -371,7 +371,7 @@ changes.
 When you run this skill, remember: the operator has been explicit that
 they do not want editorial approval loops. They are asking you to apply
 your judgment and ship a stronger version. The risk of over-editing a
-piece Sir liked is much smaller than the risk of shipping weak content
+piece the operator liked is much smaller than the risk of shipping weak content
 because you didn't want to choose. Choose.
 
 If the content is genuinely strong, say so briefly and return it
