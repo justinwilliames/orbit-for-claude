@@ -9,6 +9,53 @@
 import { brazeGet, brazePost, buildDashboardUrl, validateBrazeSetup } from "./braze-api.js";
 
 // ---------------------------------------------------------------------------
+// Braze standard user-profile attributes — always available on every user
+// record, NOT returned by the /custom_attributes endpoint. Validation and
+// inventory tools must surface these alongside custom attributes so callers
+// know fields like first_name, country, language, time_zone are usable in
+// Liquid without needing to create a custom attribute.
+// Source: Braze REST API user attributes object documentation
+// (https://www.braze.com/docs/api/objects_filters/user_attributes_object).
+// Verified May 2026.
+// ---------------------------------------------------------------------------
+export const BRAZE_STANDARD_ATTRIBUTES = [
+  // Identity
+  "external_id",
+  "braze_id",
+  "alias_name",
+  "alias_label",
+  // Profile basics
+  "first_name",
+  "last_name",
+  "email",
+  "phone",
+  "dob",
+  "gender",
+  "home_city",
+  // Localisation
+  "country",
+  "language",
+  "time_zone",
+  "current_location",
+  // Subscription / consent
+  "email_subscribe",
+  "push_subscribe",
+  "subscription_groups",
+  // Tracking flags
+  "email_open_tracking_disabled",
+  "email_click_tracking_disabled",
+  "marked_email_as_spam_at",
+  // Push
+  "push_tokens",
+  // Session
+  "date_of_first_session",
+  "date_of_last_session",
+  // Social
+  "facebook",
+  "twitter"
+];
+
+// ---------------------------------------------------------------------------
 // 1. Instance Audit
 // ---------------------------------------------------------------------------
 
@@ -125,7 +172,8 @@ export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
         content_blocks: { total: contentBlockItems.length },
         email_templates: { total: templateItems.length },
         custom_events: { total: eventItems.length },
-        custom_attributes: { total: attributeItems.length }
+        custom_attributes: { total: attributeItems.length },
+        standard_attributes: { total: BRAZE_STANDARD_ATTRIBUTES.length, names: BRAZE_STANDARD_ATTRIBUTES }
       },
       naming_issues: namingIssues.slice(0, 20),
       canvases: canvasItems.map((c) => ({
@@ -442,19 +490,31 @@ export async function validateBrazeData({ config, requiredAttributes = [], requi
   const eventItems = events.items;
   const attributeItems = attributes.items;
   const eventNames = new Set(eventItems.map((e) => e.name ?? e));
-  const attributeNames = new Set(attributeItems.map((a) => a.name ?? a));
+  const customAttributeNames = new Set(attributeItems.map((a) => a.name ?? a));
+  const standardAttributeNames = new Set(BRAZE_STANDARD_ATTRIBUTES);
 
   const missingEvents = requiredEvents.filter((e) => !eventNames.has(e));
-  const missingAttributes = requiredAttributes.filter((a) => !attributeNames.has(a));
+  const missingAttributes = requiredAttributes.filter(
+    (a) => !customAttributeNames.has(a) && !standardAttributeNames.has(a)
+  );
 
   const foundEvents = requiredEvents.filter((e) => eventNames.has(e));
-  const foundAttributes = requiredAttributes.filter((a) => attributeNames.has(a));
+  const foundAttributes = requiredAttributes
+    .filter((a) => customAttributeNames.has(a) || standardAttributeNames.has(a))
+    .map((a) => ({
+      name: a,
+      type: customAttributeNames.has(a) ? "custom" : "standard",
+      liquid: customAttributeNames.has(a)
+        ? `{{custom_attribute.\${${a}}}}`
+        : `{{\${${a}}}}`
+    }));
 
   return {
     status: missingEvents.length === 0 && missingAttributes.length === 0 ? "ok" : "warnings",
     available: {
       custom_events: eventItems.map((e) => e.name ?? e),
-      custom_attributes: attributeItems.map((a) => a.name ?? a)
+      custom_attributes: attributeItems.map((a) => a.name ?? a),
+      standard_attributes: BRAZE_STANDARD_ATTRIBUTES
     },
     validation: {
       required_events: requiredEvents,
@@ -465,8 +525,8 @@ export async function validateBrazeData({ config, requiredAttributes = [], requi
       missing_attributes: missingAttributes
     },
     message: missingEvents.length > 0 || missingAttributes.length > 0
-      ? `Missing: ${[...missingEvents.map((e) => `event "${e}"`), ...missingAttributes.map((a) => `attribute "${a}"`)].join(", ")}. Verify these exist in Braze before launch.`
-      : "All required events and attributes are present in Braze."
+      ? `Missing: ${[...missingEvents.map((e) => `event "${e}"`), ...missingAttributes.map((a) => `attribute "${a}"`)].join(", ")}. Verify these exist in Braze before launch. (Standard Braze profile fields like first_name, country, time_zone are now included in this check; if still listed missing, they're not standard either.)`
+      : "All required events and attributes are present in Braze (custom + standard checked)."
   };
 }
 
@@ -540,32 +600,68 @@ export async function validateTestUsers({ config, userIds = [], emails = [] }) {
     };
   }
 
-  const body = {};
-  if (userIds.length > 0) body.external_ids = userIds;
-  if (emails.length > 0) body.email_address = emails;
+  // Braze /users/export/ids accepts external_ids as an array, but
+  // email_address as a single string per request — so loop emails serially.
+  // Previously the code passed emails as an array, which Braze rejected with
+  // 400 "email_address must be a string". Fixed May 2026.
+  const allUsers = [];
 
-  const response = await brazePost({
-    config,
-    endpoint: "/users/export/ids",
-    body
-  });
+  if (userIds.length > 0) {
+    const response = await brazePost({
+      config,
+      endpoint: "/users/export/ids",
+      body: { external_ids: userIds }
+    });
+    if (response.users) allUsers.push(...response.users);
+  }
 
-  const users = response.users ?? [];
+  for (const email of emails) {
+    const response = await brazePost({
+      config,
+      endpoint: "/users/export/ids",
+      body: { email_address: email }
+    });
+    if (response.users) allUsers.push(...response.users);
+  }
 
-  const profiles = users.map((user) => {
+  const isPopulated = (value) => {
+    if (value == null) return false;
+    if (value === "") return false;
+    if (Array.isArray(value) && value.length === 0) return false;
+    if (typeof value === "object" && Object.keys(value).length === 0) return false;
+    return true;
+  };
+
+  const profiles = allUsers.map((user) => {
     const attributes = user.custom_attributes ?? {};
-    const populatedFields = Object.keys(attributes).filter((k) => attributes[k] != null && attributes[k] !== "");
+    const populatedCustomAttributes = Object.keys(attributes).filter((k) => isPopulated(attributes[k]));
+    const emptyCustomAttributes = Object.keys(attributes).filter((k) => !isPopulated(attributes[k]));
+
+    // Surface ALL Braze standard fields with their actual values so callers
+    // can see populated vs empty status across every standard field, not just
+    // a hand-picked subset of identity fields.
+    const standardFields = {};
+    for (const field of BRAZE_STANDARD_ATTRIBUTES) {
+      standardFields[field] = user[field] ?? null;
+    }
+    const populatedStandardFields = BRAZE_STANDARD_ATTRIBUTES.filter((f) => isPopulated(standardFields[f]));
+    const emptyStandardFields = BRAZE_STANDARD_ATTRIBUTES.filter((f) => !isPopulated(standardFields[f]));
 
     return {
       external_id: user.external_id,
       email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      push_subscribe: user.push_subscribe,
-      email_subscribe: user.email_subscribe,
-      push_tokens: (user.push_tokens ?? []).length,
-      custom_attribute_count: Object.keys(attributes).length,
-      populated_fields: populatedFields,
+      standard_fields: standardFields,
+      custom_attributes: attributes,
+      populated_standard_fields: populatedStandardFields,
+      empty_standard_fields: emptyStandardFields,
+      populated_custom_attributes: populatedCustomAttributes,
+      empty_custom_attributes: emptyCustomAttributes,
+      counts: {
+        standard_fields_total: BRAZE_STANDARD_ATTRIBUTES.length,
+        standard_fields_populated: populatedStandardFields.length,
+        custom_attributes_total: Object.keys(attributes).length,
+        custom_attributes_populated: populatedCustomAttributes.length
+      },
       missing_common_fields: findMissingCommonFields(user),
       subscription_groups: user.subscription_groups ?? []
     };
