@@ -1068,6 +1068,172 @@ describe("orbit_inspect_stripo_module_bindings", () => {
     });
   });
 
+  // ─── Half-pair CTA drift ──────────────────────────────────────────────────
+  // A button-shape variable (text or link half) registered without its
+  // companion means the unregistered half is hardcoded in the module HTML
+  // and silently survives every compose. Detector lives in
+  // detectMissingHalfPair; ACK suppression lives in isAcknowledgedHalfPair.
+
+  describe("fixture (xix) — half-pair drift fires on link-only CTA", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "half-pair-link-only");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("half-pair drift note fires for p_cta_link with missing p_cta_text", () => {
+      const note = result.notes.find(
+        (n) =>
+          n.includes("CTA half-pair drift") &&
+          n.includes("`p_cta_link`") &&
+          n.includes("`p_cta_text`"),
+      );
+      assert.ok(
+        note,
+        `half-pair drift note must fire for p_cta_link → p_cta_text. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+
+    test("note recommends the ACK marker as the suppression path", () => {
+      const note = result.notes.find((n) => n.includes("CTA half-pair drift"));
+      assert.ok(
+        note && note.includes("ACK: p_cta_link half-pair is intentional"),
+        "note should include the ACK marker template for authors who deliberately want to suppress it",
+      );
+    });
+  });
+
+  describe("fixture (xx) — half-pair drift fires twice on indexed link halves", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find(
+        (m) => m._case === "half-pair-indexed-both-missing-text",
+      );
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("emits exactly two half-pair notes — one per indexed link half", () => {
+      const driftNotes = result.notes.filter((n) =>
+        n.includes("CTA half-pair drift"),
+      );
+      assert.equal(
+        driftNotes.length,
+        2,
+        `expected 2 half-pair drift notes (one per p_cta_link_N), got ${driftNotes.length}: ${JSON.stringify(driftNotes)}`,
+      );
+    });
+
+    test("each note names the correct missing companion (p_cta_text_1 / p_cta_text_2)", () => {
+      const note1 = result.notes.find(
+        (n) => n.includes("`p_cta_link_1`") && n.includes("`p_cta_text_1`"),
+      );
+      const note2 = result.notes.find(
+        (n) => n.includes("`p_cta_link_2`") && n.includes("`p_cta_text_2`"),
+      );
+      assert.ok(note1, "note for p_cta_link_1 → p_cta_text_1 must fire");
+      assert.ok(note2, "note for p_cta_link_2 → p_cta_text_2 must fire");
+    });
+  });
+
+  describe("fixture (xxi) — full pair, no drift", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "half-pair-full-pair-clean");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("half-pair drift note does NOT fire when both halves are registered", () => {
+      const driftNote = result.notes.find((n) =>
+        n.includes("CTA half-pair drift"),
+      );
+      assert.equal(
+        driftNote,
+        undefined,
+        `half-pair drift note must not fire when both p_cta_text and p_cta_link are registered. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  describe("fixture (xxii) — image-as-link does NOT trigger half-pair drift (false-positive guard)", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find(
+        (m) => m._case === "half-pair-image-as-link-not-flagged",
+      );
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("p_image_link without p_image_text does NOT fire half-pair note", () => {
+      const driftNote = result.notes.find((n) =>
+        n.includes("CTA half-pair drift"),
+      );
+      assert.equal(
+        driftNote,
+        undefined,
+        `image-as-link bases (p_image, p_logo, p_icon) must not trigger half-pair detection. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
+  describe("fixture (xxiii) — ACK marker suppresses half-pair drift", () => {
+    let result;
+
+    before(async () => {
+      const f = fixtures.find((m) => m._case === "half-pair-ack-suppresses");
+      result = await inspectStripoModuleBindings({
+        config,
+        input: { stripo_module_id: f.id },
+      });
+    });
+
+    test("status is ok", () => {
+      assert.equal(result.status, "ok");
+    });
+
+    test("half-pair drift note is suppressed when ACK marker is present", () => {
+      const driftNote = result.notes.find((n) =>
+        n.includes("CTA half-pair drift"),
+      );
+      assert.equal(
+        driftNote,
+        undefined,
+        `half-pair drift note must be suppressed by <!-- ACK: p_cta_link half-pair is intentional -->. Got notes: ${JSON.stringify(result.notes)}`,
+      );
+    });
+  });
+
   // ─── Error / edge case paths ──────────────────────────────────────────────
 
   describe("error and edge case paths", () => {

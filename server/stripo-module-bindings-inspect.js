@@ -164,6 +164,10 @@ export async function inspectStripoModuleBindings({ config, input = {} }) {
     registeredVariables,
     moduleHtml,
   });
+  const halfPairDrifts = detectMissingHalfPair({
+    registeredVariables,
+    moduleHtml,
+  });
 
   // ─── 6. Derive can_accept_in_values ──────────────────────────────
   const canAcceptInValues = registeredVariables.map((v) => v.name);
@@ -176,6 +180,7 @@ export async function inspectStripoModuleBindings({ config, input = {} }) {
     likelySmartContainer,
     staticAssetVariables,
     nestingHazards,
+    halfPairDrifts,
     moduleHtml,
   });
 
@@ -410,6 +415,73 @@ export function detectStaticAssetPattern({ registeredVariables, moduleHtml }) {
 }
 
 /**
+ * Detect CTA half-pair drift: a button-shape variable (text or link half)
+ * is registered without its companion. For a CTA button to be substitutable
+ * per send, both halves are needed — `<base>_text` for the label and
+ * `<base>_link` for the destination href. When only one half is registered,
+ * the other is hardcoded in the module HTML and silently survives every
+ * compose. Authors usually notice the hardcoded half once the email is in
+ * production; the inspector should flag it earlier.
+ *
+ * Scope: only triggers when the base name ends in `cta`, `button`, or `btn`
+ * (case-insensitive). Image-as-link bindings (e.g. `p_image_link`,
+ * `p_logo_link`) are deliberately excluded — they pair an image with an
+ * href and don't need a text companion.
+ *
+ * Naming convention supported:
+ *   - bare:        `p_cta_text` ↔ `p_cta_link`
+ *   - indexed:     `p_cta_text_1` ↔ `p_cta_link_1`
+ *   - prefixed:    `p_secondary_cta_text` ↔ `p_secondary_cta_link`
+ *
+ * ACK suppression: a per-variable HTML comment marker silences the warning.
+ *   <!-- ACK: p_cta_link half-pair is intentional -->
+ *   <!-- ACK: p_cta_link_1 half-pair is intentional -->
+ *
+ * Returns: array of { present: varName, missing: expectedVarName,
+ *   half_present: "text"|"link" } per detected drift.
+ */
+export function detectMissingHalfPair({ registeredVariables, moduleHtml }) {
+  if (!registeredVariables || registeredVariables.length === 0) return [];
+
+  const names = new Set(registeredVariables.map((v) => v.name));
+  const drifts = [];
+  const seenPair = new Set(); // dedupe across both halves of a pair
+
+  // Match `<base>_link` or `<base>_text` with optional `_<digits>` suffix.
+  const SHAPE = /^(.+?)_(link|text)(_\d+)?$/;
+
+  for (const v of registeredVariables) {
+    const name = v.name;
+    const m = SHAPE.exec(name);
+    if (!m) continue;
+    const base = m[1];
+    const half = m[2];
+    const idx = m[3] ?? "";
+
+    // Only flag CTA/button shapes. Image-as-link patterns (p_image_link,
+    // p_logo_link, p_icon_link, etc.) are intentional and don't need a
+    // text companion.
+    if (!/(?:^|_)(cta|button|btn)$/i.test(base)) continue;
+
+    const otherHalf = half === "link" ? "text" : "link";
+    const expected = `${base}_${otherHalf}${idx}`;
+
+    if (names.has(expected)) continue;
+
+    if (isAcknowledgedHalfPair(moduleHtml, name)) continue;
+
+    // Dedupe: if both halves register and are missing each other's pair,
+    // we'd emit twice. Use a sorted pair key.
+    const pairKey = [name, expected].sort().join("|");
+    if (seenPair.has(pairKey)) continue;
+    seenPair.add(pairKey);
+
+    drifts.push({ present: name, missing: expected, half_present: half });
+  }
+  return drifts;
+}
+
+/**
  * Detect nesting hazards: a registered variable's selector targets an
  * element that contains another registered variable's target as a
  * descendant. When Stripo writes the outer binding, the inner element's
@@ -612,6 +684,32 @@ function isAcknowledgedSelectorWithoutTarget(html, variableName, attribute) {
   return false;
 }
 
+/**
+ * Parse module HTML for per-variable ACK markers for half-pair drift:
+ *
+ *   <!-- ACK: p_cta_link half-pair is intentional -->
+ *   <!-- ACK: p_cta_link_1 half-pair is intentional -->
+ *
+ * Variable name is the *registered* (present) half — the ACK acknowledges
+ * "yes, I deliberately registered this half without its companion." Use
+ * this on visual-only CTAs (chat-bubble decorative buttons, etc.) where
+ * the per-send variation is the link destination only and the label is
+ * intentionally fixed in the design.
+ *
+ * @param {string} html
+ * @param {string} variableName  — e.g. "p_cta_link_1"
+ * @returns {boolean}
+ */
+function isAcknowledgedHalfPair(html, variableName) {
+  if (!html) return false;
+  const ackRe = /<!--\s*ACK:\s*(\w+)\s+half-pair\s+is\s+intentional\s*-->/g;
+  let m;
+  while ((m = ackRe.exec(html)) !== null) {
+    if (m[1] === variableName) return true;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Notes builder
 // ---------------------------------------------------------------------------
@@ -626,6 +724,7 @@ function buildNotes({
   likelySmartContainer,
   staticAssetVariables = [],
   nestingHazards = [],
+  halfPairDrifts = [],
   moduleHtml = "",
 }) {
   const notes = [];
@@ -708,6 +807,18 @@ function buildNotes({
   for (const h of nestingHazards) {
     notes.push(
       `Nesting hazard: variable \`${h.outer}\` (selector \`${h.outer_selector}\`) is an ancestor of variable \`${h.inner}\` (selector \`${h.inner_selector}\`). When Stripo substitutes the outer binding, it replaces the inner element wholesale — the inner variable's value will be clobbered at compose time. Fix at the HTML layer: tighten the outer selector to target only the text node (e.g., add a dedicated inner \`<span>\` for the outer content), or unregister one of the two bindings.`,
+    );
+  }
+
+  // CTA half-pair drift: a button-shape variable is registered without its
+  // companion (text or link). The unregistered half is hardcoded in the
+  // module HTML and silently survives every compose. Per-variable note so
+  // the author knows exactly which pair is incomplete and what to register.
+  for (const d of halfPairDrifts) {
+    const missingKind = d.half_present === "link" ? "label text" : "destination href";
+    const attrHint = d.half_present === "link" ? '"" (empty — text content)' : '"href"';
+    notes.push(
+      `CTA half-pair drift: variable \`${d.present}\` is registered, but its companion \`${d.missing}\` is not. The button's ${missingKind} is hardcoded in the module HTML and cannot be overridden via slot_values per send. Open the module in Stripo's Data tab and register \`${d.missing}\` against the same button element with attribute ${attrHint}. If this is intentional (e.g. visual-only CTA where the label is fixed by design), add an HTML comment to suppress: \`<!-- ACK: ${d.present} half-pair is intentional -->\`.`,
     );
   }
 

@@ -149,7 +149,17 @@ describe("Braze read suite — audit, canvas/campaign/segment reads", () => {
     assert.equal(parsed.status, "warnings");
     assert.deepEqual(parsed.validation.found_events, ["trial_signup_completed"]);
     assert.deepEqual(parsed.validation.missing_events, ["event_that_doesnt_exist"]);
-    assert.deepEqual(parsed.validation.found_attributes, ["first_name"]);
+    // 0.19.11+ enriches found_attributes with {name, type, liquid} so
+    // callers know whether each attribute is standard or custom and get
+    // the exact Liquid syntax. missing_attributes stays as bare names —
+    // no metadata to attach to something that doesn't exist.
+    assert.deepEqual(parsed.validation.found_attributes, [
+      {
+        name: "first_name",
+        type: "custom",
+        liquid: "{{custom_attribute.${first_name}}}",
+      },
+    ]);
     assert.deepEqual(parsed.validation.missing_attributes, ["attribute_that_doesnt_exist"]);
   });
 

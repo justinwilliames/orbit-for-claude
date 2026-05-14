@@ -1,131 +1,195 @@
 {
-  "_comment": "Three synthetic Stripo module shapes used by 15-stripo-module-bindings.test.mjs. Each mirrors the output of saveStripoModuleToLibrary in stripo-modules.js — i.e. what ends up as a library entry after sync. The module HTML is embedded inline in the fixture for use by tests that bypass the filesystem.",
-
+  "_comment": "Three synthetic Stripo module shapes used by 15-stripo-module-bindings.test.mjs. Each mirrors the output of saveStripoModuleToLibrary in stripo-modules.js \u2014 i.e. what ends up as a library entry after sync. The module HTML is embedded inline in the fixture for use by tests that bypass the filesystem.",
   "modules": [
     {
       "_case": "standard-smart-element",
       "_desc": "Module WITH registered_variables (p_title + p_description bindings) and matching esd-gen-* classes. This is the canonical Smart Element module shape.",
       "id": 1653410,
       "uid": "abc-uid-1653410",
-      "name": "Hero Banner — Smart Element",
+      "name": "Hero Banner \u2014 Smart Element",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-title&quot;,&quot;attribute&quot;:&quot;innerText&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description copy.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-description&quot;,&quot;attribute&quot;:&quot;innerText&quot;}]}]}\"><h1 class=\"esd-gen-p-title\" style=\"font-size:24px\">Default Title</h1><p class=\"esd-gen-p-description\" style=\"font-size:14px\">Default description copy.</p></div></td></tr></table>",
       "css": ".esd-gen-p-title { font-weight: bold; } .esd-gen-p-description { color: #333; }",
-
       "_expected": {
         "registered_variables": [
           {
             "name": "p_title",
-            "blockMapping": [{ "selector": ".esd-gen-p-title", "attribute": "innerText" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-p-title",
+                "attribute": "innerText"
+              }
+            ]
           },
           {
             "name": "p_description",
-            "blockMapping": [{ "selector": ".esd-gen-p-description", "attribute": "innerText" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-p-description",
+                "attribute": "innerText"
+              }
+            ]
           }
         ],
         "top_level_link_field": false,
-        "esd_gen_classes": ["esd-gen-p-description", "esd-gen-p-title"],
+        "esd_gen_classes": [
+          "esd-gen-p-description",
+          "esd-gen-p-title"
+        ],
         "likely_smart_container": false,
-        "can_accept_in_values": ["p_title", "p_description"],
+        "can_accept_in_values": [
+          "p_title",
+          "p_description"
+        ],
         "notes_should_not_contain": "No Smart Properties bindings detected"
       }
     },
-
     {
       "_case": "link-field-dead-end",
-      "_desc": "Module with a top-level `link` field in esd-dynamic-block AND no proper CTA variable bindings in the variables array. This is the OG-preview dead-end case the probe documented — the wizard emits a top-level link when it crawls an anchor target, but the API silently ignores it at compose time. The anchor carries es-button so P2's button-presence gate fires correctly.",
+      "_desc": "Module with a top-level `link` field in esd-dynamic-block AND no proper CTA variable bindings in the variables array. This is the OG-preview dead-end case the probe documented \u2014 the wizard emits a top-level link when it crawls an anchor target, but the API silently ignores it at compose time. The anchor carries es-button so P2's button-presence gate fires correctly.",
       "id": 1799900,
       "uid": "def-uid-1799900",
-      "name": "Promo Card — CTA Dead-End",
+      "name": "Promo Card \u2014 CTA Dead-End",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;promo_title&quot;,&quot;defaultValue&quot;:&quot;Promo Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-promo-title&quot;,&quot;attribute&quot;:&quot;innerText&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h2 class=\"esd-gen-promo-title\">Promo Title</h2><a class=\"es-button\" href=\"https://example.com/promo\" style=\"background:#000;color:#fff;padding:10px 20px\">Shop Now</a></div></td></tr></table>",
       "css": ".esd-gen-promo-title { font-size: 20px; }",
-
       "_expected": {
         "registered_variables": [
           {
             "name": "promo_title",
-            "blockMapping": [{ "selector": ".esd-gen-promo-title", "attribute": "innerText" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-promo-title",
+                "attribute": "innerText"
+              }
+            ]
           }
         ],
         "top_level_link_field": true,
-        "esd_gen_classes": ["esd-gen-promo-title"],
+        "esd_gen_classes": [
+          "esd-gen-promo-title"
+        ],
         "likely_smart_container": false,
-        "can_accept_in_values": ["promo_title"],
+        "can_accept_in_values": [
+          "promo_title"
+        ],
         "notes_should_contain": "Button CTA may be bound via the Smart Element wizard's top-level link field"
       }
     },
-
     {
       "_case": "naming-mismatch-with-orphans",
-      "_desc": "Mirrors the live module 1653410 from production: Smart Properties registered with names that do NOT match their bound class basename (p_title bound to .esd-gen-title, not .esd-gen-p-title), AND a top-level link field, AND additional orphan esd-gen-* classes on the button that have no matching registered variable. The anchor carries es-button so P2's button-presence gate fires and the CTA dead-end note fires correctly. This is the canary case for the 0.19.4 fix — under the old inferred-name cross-reference, ALL esd-gen classes (including the two properly bound ones) were flagged as unmapped. With the selector-based cross-reference, only the three orphan classes should be flagged.",
+      "_desc": "Mirrors the live module 1653410 from production: Smart Properties registered with names that do NOT match their bound class basename (p_title bound to .esd-gen-title, not .esd-gen-p-title), AND a top-level link field, AND additional orphan esd-gen-* classes on the button that have no matching registered variable. The anchor carries es-button so P2's button-presence gate fires and the CTA dead-end note fires correctly. This is the canary case for the 0.19.4 fix \u2014 under the old inferred-name cross-reference, ALL esd-gen classes (including the two properly bound ones) were flagged as unmapped. With the selector-based cross-reference, only the three orphan classes should be flagged.",
       "id": 1653411,
       "uid": "jkl-uid-1653411",
       "name": "Text + body + CTA",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a.esd-gen-Link&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h1 class=\"esd-gen-title\">Default Title</h1><p class=\"esd-gen-description\">Default description.</p><a class=\"es-button esd-gen-Link esd-gen-p-link\" href=\"https://example.com\"><span class=\"esd-gen-p-cta-text\">Click</span></a></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "registered_variables": [
           {
             "name": "p_title",
-            "blockMapping": [{ "selector": ".esd-gen-title", "attribute": "" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-title",
+                "attribute": ""
+              }
+            ]
           },
           {
             "name": "p_description",
-            "blockMapping": [{ "selector": ".esd-gen-description", "attribute": "" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-description",
+                "attribute": ""
+              }
+            ]
           }
         ],
         "top_level_link_field": true,
-        "esd_gen_classes": ["esd-gen-Link", "esd-gen-description", "esd-gen-p-cta-text", "esd-gen-p-link", "esd-gen-title"],
+        "esd_gen_classes": [
+          "esd-gen-Link",
+          "esd-gen-description",
+          "esd-gen-p-cta-text",
+          "esd-gen-p-link",
+          "esd-gen-title"
+        ],
         "likely_smart_container": false,
-        "can_accept_in_values": ["p_title", "p_description"],
+        "can_accept_in_values": [
+          "p_title",
+          "p_description"
+        ],
         "notes_should_contain": "Button CTA may be bound via the Smart Element wizard's top-level link field",
-        "unmapped_classes_expected": ["esd-gen-Link", "esd-gen-p-cta-text", "esd-gen-p-link"],
-        "unmapped_classes_must_not_include": ["esd-gen-title", "esd-gen-description"]
+        "unmapped_classes_expected": [
+          "esd-gen-Link",
+          "esd-gen-p-cta-text",
+          "esd-gen-p-link"
+        ],
+        "unmapped_classes_must_not_include": [
+          "esd-gen-title",
+          "esd-gen-description"
+        ]
       }
     },
-
     {
       "_case": "selector-without-target",
       "_desc": "Module where a registered variable's selector (.esd-gen-image) does not exist on any element in the HTML. The esd_gen_classes list only contains esd-gen-cta, esd-gen-description, esd-gen-title. p_image should trigger a selector_without_target note. Mirrors the silent-no-op pattern in text+body+CTA style modules where the class hook was never added to the <img> element.",
       "id": 9001,
       "uid": "mno-uid-9001",
-      "name": "Text + body + CTA — selector-without-target example",
+      "name": "Text + body + CTA \u2014 selector-without-target example",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Default Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/default.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><h1 class=\"esd-gen-title\">Default Title</h1><p class=\"esd-gen-description\">Default description.</p><a class=\"esd-gen-cta\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "registered_variables": [
           {
             "name": "p_title",
-            "blockMapping": [{ "selector": ".esd-gen-title", "attribute": "" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-title",
+                "attribute": ""
+              }
+            ]
           },
           {
             "name": "p_description",
-            "blockMapping": [{ "selector": ".esd-gen-description", "attribute": "" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-description",
+                "attribute": ""
+              }
+            ]
           },
           {
             "name": "p_image",
-            "blockMapping": [{ "selector": ".esd-gen-image", "attribute": "src" }]
+            "blockMapping": [
+              {
+                "selector": ".esd-gen-image",
+                "attribute": "src"
+              }
+            ]
           }
         ],
         "top_level_link_field": false,
-        "esd_gen_classes": ["esd-gen-cta", "esd-gen-description", "esd-gen-title"],
+        "esd_gen_classes": [
+          "esd-gen-cta",
+          "esd-gen-description",
+          "esd-gen-title"
+        ],
         "likely_smart_container": false,
-        "can_accept_in_values": ["p_title", "p_description", "p_image"],
+        "can_accept_in_values": [
+          "p_title",
+          "p_description",
+          "p_image"
+        ],
         "selector_without_target_variable": "p_image",
         "selector_without_target_selector": ".esd-gen-image"
       }
     },
-
     {
       "_case": "smart-container",
-      "_desc": "Smart Container module — empty esd-structure TDs with no inner content, no registered variables, no esd-gen-* classes. Requires the slot_values[] path at compose time.",
+      "_desc": "Smart Container module \u2014 empty esd-structure TDs with no inner content, no registered variables, no esd-gen-* classes. Requires the slot_values[] path at compose time.",
       "id": 2001001,
       "uid": "ghi-uid-2001001",
       "name": "2-Column Smart Container",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"width:50%;padding:10px\">   </td><td class=\"esd-structure\" style=\"width:50%;padding:10px\">   </td></tr></table>",
       "css": "",
-
       "_expected": {
         "registered_variables": [],
         "top_level_link_field": false,
@@ -138,86 +202,87 @@
         ]
       }
     },
-
     {
       "_case": "three-unique-dynamic-images",
-      "_desc": "Module with 3 p_image* variables — each with a UNIQUE defaultValue URL, suggesting legitimately dynamic product images. After the Item-1 tightening, the static-asset pattern note must NOT fire even though the count threshold (≥3 image-bound vars) is met. Mirrors a product-grid or recommendation module where the images are real product photography rather than canonical tick/cross markers.",
+      "_desc": "Module with 3 p_image* variables \u2014 each with a UNIQUE defaultValue URL, suggesting legitimately dynamic product images. After the Item-1 tightening, the static-asset pattern note must NOT fire even though the count threshold (\u22653 image-bound vars) is met. Mirrors a product-grid or recommendation module where the images are real product photography rather than canonical tick/cross markers.",
       "id": 9003,
       "uid": "stu-uid-9003",
-      "name": "Product grid — three unique dynamic images",
+      "name": "Product grid \u2014 three unique dynamic images",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/product-a.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/product-b.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image3&quot;,&quot;defaultValue&quot;:&quot;https://example.com/product-c.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image3&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/product-a.jpg\" /><img class=\"esd-gen-image2\" src=\"https://example.com/product-b.jpg\" /><img class=\"esd-gen-image3\" src=\"https://example.com/product-c.jpg\" /></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
-        "image_variable_names": ["p_image", "p_image2", "p_image3"],
+        "image_variable_names": [
+          "p_image",
+          "p_image2",
+          "p_image3"
+        ],
         "static_asset_note_should_not_fire": true
       }
     },
-
     {
       "_case": "two-image-vars-below-threshold",
-      "_desc": "Module with only 2 image-bound variables. Below the ≥3 threshold, the static-asset note must NOT fire regardless of defaultValue uniqueness.",
+      "_desc": "Module with only 2 image-bound variables. Below the \u22653 threshold, the static-asset note must NOT fire regardless of defaultValue uniqueness.",
       "id": 9004,
       "uid": "vwx-uid-9004",
-      "name": "Hero + secondary — two image vars",
+      "name": "Hero + secondary \u2014 two image vars",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" /><img class=\"esd-gen-image2\" src=\"https://example.com/tick.png\" /></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
-        "image_variable_names": ["p_image", "p_image2"],
+        "image_variable_names": [
+          "p_image",
+          "p_image2"
+        ],
         "static_asset_note_should_not_fire": true
       }
     },
-
     {
       "_case": "href-outer-wrapping-text-inner",
-      "_desc": "Module where an outer <a class=\"esd-gen-link\"> binds via attribute=href (NOT text-replacing) wrapping an inner <span class=\"esd-gen-cta-text\"> bound via empty attribute (text-replacing). After Item-2's attribute-kind filter, this must NOT fire the nesting-hazard note — href writes don't clobber inner children. This mirrors the standard Stripo button pattern where the link URL is one binding and the button label text is another.",
+      "_desc": "Module where an outer <a class=\"esd-gen-link\"> binds via attribute=href (NOT text-replacing) wrapping an inner <span class=\"esd-gen-cta-text\"> bound via empty attribute (text-replacing). After Item-2's attribute-kind filter, this must NOT fire the nesting-hazard note \u2014 href writes don't clobber inner children. This mirrors the standard Stripo button pattern where the link URL is one binding and the button label text is another.",
       "id": 9005,
       "uid": "yza-uid-9005",
-      "name": "Button — href wrapping text (safe pattern)",
+      "name": "Button \u2014 href wrapping text (safe pattern)",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_cta_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com/cta&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-link&quot;,&quot;attribute&quot;:&quot;href&quot;}]},{&quot;variable&quot;:&quot;p_cta_text&quot;,&quot;defaultValue&quot;:&quot;Click here&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-cta-text&quot;,&quot;attribute&quot;:&quot;&quot;}]}]}\"><a class=\"esd-gen-link\" href=\"https://example.com/cta\"><span class=\"esd-gen-cta-text\">Click here</span></a></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
         "nesting_hazard_should_not_fire": true
       }
     },
-
     {
       "_case": "deeply-nested-only-one-registered",
-      "_desc": "Module with deeply nested DOM where the outer text-bound element contains an inner <span class=\"esd-gen-other\"> that is NOT registered as a binding. With only one binding actually registered, there is no ancestor/descendant pair to evaluate — no nesting-hazard note should fire.",
+      "_desc": "Module with deeply nested DOM where the outer text-bound element contains an inner <span class=\"esd-gen-other\"> that is NOT registered as a binding. With only one binding actually registered, there is no ancestor/descendant pair to evaluate \u2014 no nesting-hazard note should fire.",
       "id": 9006,
       "uid": "bcd-uid-9006",
       "name": "Single text binding with unbound inner span",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_outer&quot;,&quot;defaultValue&quot;:&quot;Default outer text&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-outer&quot;,&quot;attribute&quot;:&quot;&quot;}]}]}\"><div class=\"esd-gen-outer\">Default outer text <span class=\"esd-gen-other\">unbound inner</span></div></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
         "nesting_hazard_should_not_fire": true
       }
     },
-
     {
       "_case": "static-asset-and-nesting",
       "_desc": "Comparison-table style module with 3 p_image* variables bound to src on .esd-gen-image* classes (static tick markers that should NOT be LLM-populated), plus a nesting hazard where p_description's outer <p>.esd-gen-description wraps an inner <strong>.esd-gen-p-row_title_1 binding. Inspector should flag both patterns + suggest the HTML-comment contract.",
       "id": 9002,
       "uid": "pqr-uid-9002",
-      "name": "Comparison table — static asset + nesting hazard example",
+      "name": "Comparison table \u2014 static asset + nesting hazard example",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/cross.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image3&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image3&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_description&quot;,&quot;defaultValue&quot;:&quot;Default description.&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-description&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_row_title_1&quot;,&quot;defaultValue&quot;:&quot;Row 1&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-row_title_1&quot;,&quot;attribute&quot;:&quot;&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" /><img class=\"esd-gen-image2\" src=\"https://example.com/cross.png\" /><img class=\"esd-gen-image3\" src=\"https://example.com/tick.png\" /><p class=\"esd-gen-description\">Intro text <strong class=\"esd-gen-p-row_title_1\">Row 1</strong> trailing text.</p></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
-        "static_asset_variables": ["p_image", "p_image2", "p_image3"],
+        "static_asset_variables": [
+          "p_image",
+          "p_image2",
+          "p_image3"
+        ],
         "nesting_hazard_outer": "p_description",
         "nesting_hazard_inner": "p_row_title_1",
         "notes_should_contain_all": [
@@ -227,96 +292,84 @@
         ]
       }
     },
-
     {
       "_case": "static-asset-alt-title-padding",
-      "_desc": "P1 regression: 1 variable with src as its PRIMARY binding (p_image) and 3 variables whose PRIMARY binding is innerText but carry secondary alt/title mappings on the same image selector. Under the old multi-condition predicate, p_title/p_caption/p_label would each be counted as image-bound (via p_image* name prefix or alt/title attribute), pushing the count to 4 and falsely firing the static-asset note. With the isImageSrcPrimary predicate, only p_image qualifies — count is 1, below threshold, no note.",
+      "_desc": "P1 regression: 1 variable with src as its PRIMARY binding (p_image) and 3 variables whose PRIMARY binding is innerText but carry secondary alt/title mappings on the same image selector. Under the old multi-condition predicate, p_title/p_caption/p_label would each be counted as image-bound (via p_image* name prefix or alt/title attribute), pushing the count to 4 and falsely firing the static-asset note. With the isImageSrcPrimary predicate, only p_image qualifies \u2014 count is 1, below threshold, no note.",
       "id": 9010,
       "uid": "aaa-uid-9010",
-      "name": "Hero — alt/title padding false positive check",
+      "name": "Hero \u2014 alt/title padding false positive check",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;},{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;alt&quot;}]},{&quot;variable&quot;:&quot;p_caption&quot;,&quot;defaultValue&quot;:&quot;Caption&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-caption&quot;,&quot;attribute&quot;:&quot;&quot;},{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;title&quot;}]},{&quot;variable&quot;:&quot;p_label&quot;,&quot;defaultValue&quot;:&quot;Label&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-label&quot;,&quot;attribute&quot;:&quot;&quot;},{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;alt&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" alt=\"Title\" /><h1 class=\"esd-gen-title\">Title</h1><p class=\"esd-gen-caption\">Caption</p><span class=\"esd-gen-label\">Label</span></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
         "static_asset_note_should_not_fire": true
       }
     },
-
     {
       "_case": "wizard-button-no-binding",
       "_desc": "P2: top_level_link_field is true, the module contains a real es-button anchor, and no registered variable has an href binding. The wizard dead-end note should fire.",
       "id": 9011,
       "uid": "bbb-uid-9011",
-      "name": "CTA module — button present, no href binding",
+      "name": "CTA module \u2014 button present, no href binding",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h1 class=\"esd-gen-title\">Title</h1><a class=\"es-button\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": true,
         "likely_smart_container": false,
         "cta_dead_end_note_should_fire": true
       }
     },
-
     {
       "_case": "wizard-button-binding-present",
-      "_desc": "P2: top_level_link_field is true, the module contains a real es-button anchor, but a registered variable already has an href binding covering it. The wizard dead-end note should be suppressed — the binding is doing the work.",
+      "_desc": "P2: top_level_link_field is true, the module contains a real es-button anchor, but a registered variable already has an href binding covering it. The wizard dead-end note should be suppressed \u2014 the binding is doing the work.",
       "id": 9012,
       "uid": "ccc-uid-9012",
-      "name": "CTA module — button present, href binding covers it",
+      "name": "CTA module \u2014 button present, href binding covers it",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_cta_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-cta&quot;,&quot;attribute&quot;:&quot;href&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h1 class=\"esd-gen-title\">Title</h1><a class=\"es-button esd-gen-cta\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": true,
         "likely_smart_container": false,
         "cta_dead_end_note_should_not_fire": true
       }
     },
-
     {
       "_case": "wizard-no-button-top-level-link",
-      "_desc": "P2: top_level_link_field is true, but the module HTML contains NO button-shaped element (only plain text + a non-button link). The wizard dead-end note should be suppressed entirely — there is no button for the link field to have captured.",
+      "_desc": "P2: top_level_link_field is true, but the module HTML contains NO button-shaped element (only plain text + a non-button link). The wizard dead-end note should be suppressed entirely \u2014 there is no button for the link field to have captured.",
       "id": 9013,
       "uid": "ddd-uid-9013",
-      "name": "Text module — top-level link field but no button element",
+      "name": "Text module \u2014 top-level link field but no button element",
       "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h1 class=\"esd-gen-title\">Title</h1><p>Visit <a href=\"https://example.com\">our website</a> for more info.</p></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": true,
         "likely_smart_container": false,
         "cta_dead_end_note_should_not_fire": true
       }
     },
-
     {
       "_case": "static-asset-with-marker",
       "_desc": "P3: module has 3 src-bound image variables (would normally fire static-asset note) but the HTML contains the canonical Static asset markers comment. The note must be suppressed entirely.",
       "id": 9020,
       "uid": "eee-uid-9020",
-      "name": "Comparison table — static-asset intent marker present",
-      "markup": "<!-- Static asset markers — DO NOT bind via Smart Properties at compose time. YES_ASSET_URL=https://example.com/tick.png NO_ASSET_URL=https://example.com/cross.png --><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/cross.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image3&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image3&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" /><img class=\"esd-gen-image2\" src=\"https://example.com/cross.png\" /><img class=\"esd-gen-image3\" src=\"https://example.com/tick.png\" /></div></td></tr></table>",
+      "name": "Comparison table \u2014 static-asset intent marker present",
+      "markup": "<!-- Static asset markers \u2014 DO NOT bind via Smart Properties at compose time. YES_ASSET_URL=https://example.com/tick.png NO_ASSET_URL=https://example.com/cross.png --><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/cross.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image2&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image3&quot;,&quot;defaultValue&quot;:&quot;https://example.com/tick.png&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image3&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><img class=\"esd-gen-image\" src=\"https://example.com/tick.png\" /><img class=\"esd-gen-image2\" src=\"https://example.com/cross.png\" /><img class=\"esd-gen-image3\" src=\"https://example.com/tick.png\" /></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
         "static_asset_note_should_not_fire": true
       }
     },
-
     {
       "_case": "selector-without-target-ack-attr",
-      "_desc": "P3: p_title has selector .esd-gen-title (present in HTML) and a second blockMapping for .esd-gen-missing-title (absent). p_image has .esd-gen-image absent. An ACK marker for p_image.src suppresses only the p_image note. p_title's selector-without-target note should still fire (no ACK for it) — wait, actually p_title's first selector .esd-gen-title IS present so only the second mapping fires. But note: the current selector-without-target check only fires for .esd-gen-* selectors, and only once per missing selector. In this fixture we test that the ACK suppresses the specific (p_image, src) pair.",
+      "_desc": "P3: p_title has selector .esd-gen-title (present in HTML) and a second blockMapping for .esd-gen-missing-title (absent). p_image has .esd-gen-image absent. An ACK marker for p_image.src suppresses only the p_image note. p_title's selector-without-target note should still fire (no ACK for it) \u2014 wait, actually p_title's first selector .esd-gen-title IS present so only the second mapping fires. But note: the current selector-without-target check only fires for .esd-gen-* selectors, and only once per missing selector. In this fixture we test that the ACK suppresses the specific (p_image, src) pair.",
       "id": 9021,
       "uid": "fff-uid-9021",
-      "name": "Selector-without-target — ACK per attribute",
+      "name": "Selector-without-target \u2014 ACK per attribute",
       "markup": "<!-- ACK: p_image.src selector-without-target is intentional --><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/img.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><h1 class=\"esd-gen-title\">Title</h1></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
@@ -324,16 +377,14 @@
         "selector_without_target_p_title_not_affected": true
       }
     },
-
     {
       "_case": "selector-without-target-ack-bare",
       "_desc": "P3: p_image and p_image_alt are both missing their selectors. A bare ACK for p_image (no attribute qualifier) suppresses ALL selector-without-target notes for p_image regardless of attribute. p_image_alt has no ACK so its note still fires.",
       "id": 9022,
       "uid": "ggg-uid-9022",
-      "name": "Selector-without-target — bare variable ACK",
+      "name": "Selector-without-target \u2014 bare variable ACK",
       "markup": "<!-- ACK: p_image selector-without-target is intentional --><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/img.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;},{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;alt&quot;}]},{&quot;variable&quot;:&quot;p_image_alt&quot;,&quot;defaultValue&quot;:&quot;Alt text&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image-alt&quot;,&quot;attribute&quot;:&quot;alt&quot;}]}]}\"><h1 class=\"esd-gen-title\">Title</h1></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
@@ -341,20 +392,83 @@
         "selector_without_target_p_image_alt_still_fires": true
       }
     },
-
     {
       "_case": "selector-without-target-ack-mistyped",
-      "_desc": "P3: marker is present but contains a typo ('selector-without-targets' instead of 'selector-without-target') — must NOT suppress the note. Over-suppression via mistyped markers should never happen.",
+      "_desc": "P3: marker is present but contains a typo ('selector-without-targets' instead of 'selector-without-target') \u2014 must NOT suppress the note. Over-suppression via mistyped markers should never happen.",
       "id": 9023,
       "uid": "hhh-uid-9023",
-      "name": "Selector-without-target — mistyped ACK marker",
+      "name": "Selector-without-target \u2014 mistyped ACK marker",
       "markup": "<!-- ACK: p_image.src selector-without-targets is intentional --><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/img.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]}]}\"><h1 class=\"esd-gen-title\">Title</h1></div></td></tr></table>",
       "css": "",
-
       "_expected": {
         "top_level_link_field": false,
         "likely_smart_container": false,
         "selector_without_target_note_should_fire_for_p_image": true
+      }
+    },
+    {
+      "_case": "half-pair-link-only",
+      "_desc": "Half-pair drift: p_cta_link is registered but p_cta_text is not. The button label 'Click here' is hardcoded. Inspector should emit a half-pair drift note.",
+      "id": 9030,
+      "uid": "abc-uid-9030",
+      "name": "CTA module \u2014 link half only (text hardcoded)",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_title&quot;,&quot;defaultValue&quot;:&quot;Title&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-title&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_cta_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-cta&quot;,&quot;attribute&quot;:&quot;href&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><h1 class=\"esd-gen-title\">Title</h1><a class=\"es-button esd-gen-cta\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
+      "css": "",
+      "_expected": {
+        "half_pair_drift_should_fire_for": "p_cta_link",
+        "missing_companion": "p_cta_text"
+      }
+    },
+    {
+      "_case": "half-pair-indexed-both-missing-text",
+      "_desc": "Indexed half-pair drift (Stackable grid 1654776 shape): p_cta_link_1 and p_cta_link_2 registered, both 'Link here' button labels hardcoded. Inspector should emit TWO half-pair drift notes.",
+      "id": 9031,
+      "uid": "abc-uid-9031",
+      "name": "CTA module \u2014 two indexed link halves, no text halves",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_cta_link_1&quot;,&quot;defaultValue&quot;:&quot;https://example.com/1&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-cta_link_1&quot;,&quot;attribute&quot;:&quot;href&quot;}]},{&quot;variable&quot;:&quot;p_cta_link_2&quot;,&quot;defaultValue&quot;:&quot;https://example.com/2&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-cta_link_2&quot;,&quot;attribute&quot;:&quot;href&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><a href=\"https://example.com/1\" class=\"esd-gen-p-cta_link_1\">Link here</a><a href=\"https://example.com/2\" class=\"esd-gen-p-cta_link_2\">Link here</a></div></td></tr></table>",
+      "css": "",
+      "_expected": {
+        "half_pair_drift_count": 2,
+        "missing_companions": [
+          "p_cta_text_1",
+          "p_cta_text_2"
+        ]
+      }
+    },
+    {
+      "_case": "half-pair-full-pair-clean",
+      "_desc": "Full CTA pair: both p_cta_text and p_cta_link are registered. Inspector should NOT emit a half-pair drift note.",
+      "id": 9032,
+      "uid": "abc-uid-9032",
+      "name": "CTA module \u2014 full pair (text + link)",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_cta_text&quot;,&quot;defaultValue&quot;:&quot;Click here&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-cta_text&quot;,&quot;attribute&quot;:&quot;&quot;}]},{&quot;variable&quot;:&quot;p_cta_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-cta_text&quot;,&quot;attribute&quot;:&quot;href&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><a href=\"https://example.com\" class=\"es-button esd-gen-p-cta_text\">Click here</a></div></td></tr></table>",
+      "css": "",
+      "_expected": {
+        "half_pair_drift_should_not_fire": true
+      }
+    },
+    {
+      "_case": "half-pair-image-as-link-not-flagged",
+      "_desc": "Image-as-link pattern (Hero image / Quote / Border radius header shape): p_image_link is registered without a p_image_text companion, BUT this is intentional \u2014 the image IS the visible element being linked. Inspector should NOT flag this base shape (only cta/button/btn bases qualify for half-pair detection).",
+      "id": 9033,
+      "uid": "abc-uid-9033",
+      "name": "Hero \u2014 image + image-link (no text expected)",
+      "markup": "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_image&quot;,&quot;defaultValue&quot;:&quot;https://example.com/img.jpg&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-image&quot;,&quot;attribute&quot;:&quot;src&quot;}]},{&quot;variable&quot;:&quot;p_image_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com/destination&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-p-image_link&quot;,&quot;attribute&quot;:&quot;href&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><a href=\"https://example.com/destination\" class=\"esd-gen-p-image_link\"><img src=\"https://example.com/img.jpg\" class=\"esd-gen-image\" alt=\"\"></a></div></td></tr></table>",
+      "css": "",
+      "_expected": {
+        "half_pair_drift_should_not_fire": true
+      }
+    },
+    {
+      "_case": "half-pair-ack-suppresses",
+      "_desc": "ACK marker present: <!-- ACK: p_cta_link half-pair is intentional --> at the top of the module HTML. Inspector should NOT emit a half-pair drift note for p_cta_link.",
+      "id": 9034,
+      "uid": "abc-uid-9034",
+      "name": "CTA module \u2014 link half only with ACK marker",
+      "markup": "<!-- ACK: p_cta_link half-pair is intentional --><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td class=\"esd-structure\" style=\"padding:20px\"><div esd-dynamic-block=\"{&quot;variables&quot;:[{&quot;variable&quot;:&quot;p_cta_link&quot;,&quot;defaultValue&quot;:&quot;https://example.com&quot;,&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;.esd-gen-cta&quot;,&quot;attribute&quot;:&quot;href&quot;}]}],&quot;link&quot;:{&quot;blockMapping&quot;:[{&quot;selector&quot;:&quot;a&quot;,&quot;attribute&quot;:&quot;href&quot;}]}}\"><a class=\"es-button esd-gen-cta\" href=\"https://example.com\">Click here</a></div></td></tr></table>",
+      "css": "",
+      "_expected": {
+        "half_pair_drift_should_not_fire": true
       }
     }
   ]
