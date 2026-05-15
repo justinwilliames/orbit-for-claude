@@ -91,7 +91,9 @@ import {
   validateBrazeData,
   checkDeliverability,
   validateTestUsers,
-  checkTemplateCollision
+  checkTemplateCollision,
+  exportUserById,
+  readBrazeSegment
 } from "./braze-read.js";
 import {
   fetchBrazeTemplate,
@@ -3153,6 +3155,59 @@ function registerTools() {
     },
     async ({ campaign_id: campaignId }) => {
       const result = await readBrazeCampaign({ config: runtimeConfig, campaignId });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_read_braze_segment",
+    {
+      title: "Read Braze Segment",
+      description:
+        "Read the full definition of an existing Braze Segment — name, description, " +
+        "filter logic, tags, timestamps, and analytics-tracking status. Use this to " +
+        "audit segment targeting logic against canonical attribute names and expected " +
+        "values, or to import segment definitions into Orbit's program model.",
+      inputSchema: {
+        segment_id: z.string().min(1).max(MAX_SHORT_STRING).describe("Braze Segment ID to read")
+      }
+    },
+    async ({ segment_id: segmentId }) => {
+      const result = await readBrazeSegment({ config: runtimeConfig, segmentId });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_export_braze_user_by_id",
+    {
+      title: "Export Braze User Profiles by external_id",
+      description:
+        "Read raw Braze user profiles by external_id — returns custom_attributes, " +
+        "custom_events, campaigns_received, canvas_steps_received, and identity " +
+        "fields exactly as Braze stores them. Use for audit and drift-detection " +
+        "workflows (e.g. checking that billingLifecycleState / planType / " +
+        "hasActiveSubscription match the warehouse source of truth). Up to 50 " +
+        "external_ids per call. For QA-style 'are test users populated' checks, " +
+        "use orbit_validate_test_users instead.",
+      inputSchema: {
+        external_ids: z
+          .array(z.string().min(1).max(MAX_SHORT_STRING))
+          .min(1)
+          .max(50)
+          .describe("Braze external_ids to look up (max 50 per call)."),
+        fields_to_export: z
+          .array(z.string().min(1).max(MAX_SHORT_STRING))
+          .optional()
+          .describe("Optional list of profile fields to return. Defaults to all fields if omitted.")
+      }
+    },
+    async ({ external_ids: externalIds, fields_to_export: fieldsToExport }) => {
+      const result = await exportUserById({
+        config: runtimeConfig,
+        externalIds,
+        fieldsToExport: fieldsToExport ?? null
+      });
       return makeJsonToolResponse(result);
     }
   );

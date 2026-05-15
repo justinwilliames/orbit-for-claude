@@ -171,8 +171,14 @@ export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
         segments: { total: segmentItems.length },
         content_blocks: { total: contentBlockItems.length },
         email_templates: { total: templateItems.length },
-        custom_events: { total: eventItems.length },
-        custom_attributes: { total: attributeItems.length },
+        custom_events: {
+          total: eventItems.length,
+          names: eventItems.map((e) => e.name).filter(Boolean)
+        },
+        custom_attributes: {
+          total: attributeItems.length,
+          names: attributeItems.map((a) => a.name).filter(Boolean)
+        },
         standard_attributes: { total: BRAZE_STANDARD_ATTRIBUTES.length, names: BRAZE_STANDARD_ATTRIBUTES }
       },
       naming_issues: namingIssues.slice(0, 20),
@@ -935,5 +941,109 @@ function reverseMapCanvasToOrbit(canvasDetails) {
     messages,
     _source: "braze_canvas_import",
     _canvas_id: canvasDetails.id
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 9. User Profile Export (audit / drift detection)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read raw Braze profiles by external_id for audit / drift-detection use
+ * cases. Pass-through wrapper around POST /users/export/ids — returns the
+ * profile payloads as Braze stores them, with no QA-style filtering layered
+ * on top (for QA-flavoured "are test users populated" checks, use
+ * validateTestUsers instead).
+ *
+ * Braze accepts up to 50 external_ids per call; callers must batch larger
+ * sets themselves.
+ */
+export async function exportUserById({ config, externalIds = [], fieldsToExport = null }) {
+  const setupError = validateBrazeSetup(config);
+  if (setupError) return setupError;
+
+  if (!Array.isArray(externalIds) || externalIds.length === 0) {
+    return {
+      status: "needs_inputs",
+      missing: ["external_ids"],
+      message: "Provide at least one external_id."
+    };
+  }
+  if (externalIds.length > 50) {
+    return {
+      status: "needs_inputs",
+      missing: ["external_ids"],
+      message: `Braze accepts a maximum of 50 external_ids per call. Got ${externalIds.length}. Batch the request.`
+    };
+  }
+
+  const body = { external_ids: externalIds };
+  if (Array.isArray(fieldsToExport) && fieldsToExport.length > 0) {
+    body.fields_to_export = fieldsToExport;
+  }
+
+  const response = await brazePost({
+    config,
+    endpoint: "/users/export/ids",
+    body
+  });
+
+  const users = response.users ?? [];
+  const foundIds = new Set(users.map((u) => u.external_id));
+  const notFound = externalIds.filter((id) => !foundIds.has(id));
+
+  return {
+    status: "ok",
+    requested: externalIds.length,
+    found: users.length,
+    not_found: notFound,
+    users
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 10. Segment Filter Read (audit segment targeting logic)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a single Braze segment's full definition — name, description,
+ * filter logic, tags, timestamps, and analytics-tracking status. Used
+ * for segment-filter audits where you need to confirm a segment's
+ * targeting logic against canonical attribute names and expected values,
+ * or for importing an existing segment definition into Orbit's program
+ * model.
+ */
+export async function readBrazeSegment({ config, segmentId }) {
+  const setupError = validateBrazeSetup(config);
+  if (setupError) return setupError;
+
+  if (!segmentId) {
+    return {
+      status: "needs_inputs",
+      missing: ["segment_id"],
+      message: "Provide a Segment ID."
+    };
+  }
+
+  const details = await brazeGet({
+    config,
+    endpoint: "/segments/details",
+    params: { segment_id: segmentId }
+  });
+
+  return {
+    status: "ok",
+    segment: {
+      id: segmentId,
+      name: details.name,
+      description: details.description,
+      text_description: details.text_description,
+      tags: details.tags ?? [],
+      created_at: details.created_at,
+      updated_at: details.updated_at,
+      analytics_tracking_enabled: details.analytics_tracking_enabled,
+      filter: details.filter ?? null,
+      dashboard_url: buildDashboardUrl(config.brazeRestEndpoint, "segments", segmentId)
+    }
   };
 }
