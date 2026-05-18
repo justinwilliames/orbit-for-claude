@@ -126,9 +126,9 @@ Every email lives inside a Notion `<details>` toggle so the doc collapses cleanl
 #### Module 3 · Chat bubbles — [blue gradient | white] background
 <table header-row="true">
 <tr><td>Variable</td><td>Value</td></tr>
-<tr><td>`p_name`</td><td>[Customer's initial enquiry — long, naturalistic, 1–3 sentences]</td></tr>
-<tr><td>`p_name1`</td><td>[Agent's response — confident, 1–2 sentences]</td></tr>
-<tr><td>`p_name2`</td><td>[Customer's short follow-up — 1–6 words]</td></tr>
+<tr><td>`p_name`</td><td>[Operator's message to the AI agent — direct, busy-tradie register, 1–2 sentences]</td></tr>
+<tr><td>`p_name1`</td><td>[Agent's response to the operator — confident, helpful, 1–2 sentences]</td></tr>
+<tr><td>`p_name2`</td><td>[Operator's short reply — 1–6 words, e.g. "On it.", "Doing it now."]</td></tr>
 </table>
 
 #### Module 4 · Footer — logo
@@ -152,9 +152,11 @@ Every email lives inside a Notion `<details>` toggle so the doc collapses cleanl
 
 1. **`Module 2 · Text + body + CTA` MUST appear before `Module 3 · Chat bubbles`.** A logo-only Module 1 (Border radius header) does NOT satisfy this — it's brand framing, not content. The Text+Body+CTA module carries the email's ask; chat bubbles add personality after the ask has landed. See companion voice-writer skill (`sophiie-voice-writer` §9) for the underlying rationale.
 
-2. **Chat bubbles are a 3-step conversation, not a 3-line monologue.** `p_name` is the customer's voice (their enquiry). `p_name1` is the agent's response (handling the enquiry). `p_name2` is the customer's short follow-up (1–6 words, closing the loop). `p_name2` is NEVER marketer voice, instructional copy, or agent voice — it's a real customer reply like "Sweet, lock it in.", "Yeah cheers.", "Yes please.", "Cheers, no rush."
+2. **Chat bubbles are a 3-step internal conversation between the operator and the agent, not a 3-line monologue and not a customer-facing conversation.** The operator (the project's primary user — e.g. the tradie who signed up for Sophiie) is the right-aligned speaker. The agent is the left-aligned speaker. `p_name` is the operator messaging the agent — a question, instruction, complaint, or status check. `p_name1` is the agent's response back to the operator — explaining what she needs, what she's done, or what's blocking her. `p_name2` is the operator's short reply (1–6 words). `p_name2` is NEVER marketer voice, instructional copy, or agent voice — it's the operator acknowledging: "On it.", "Doing it now.", "Setting it up now.", "Sweet.", "Cheers."
 
-The three bubbles must hang together as a coherent micro-conversation, scene-matched to the module's topic. M2 Phone Divert → customer asking about taking calls. M4 Email → customer chasing an email reply. M1 Services → customer asking for a price.
+**Never voice the operator's customer (e.g. the tradie's customer ringing in) in chat bubbles.** That's a different relationship — operator-to-end-customer — which lives in agent SMS or agent-to-customer email surfaces, not in lifecycle email chat bubbles.
+
+The three bubbles must hang together as a coherent micro-conversation between operator and agent, scene-matched to the email's topic. M2 Phone Divert → operator asking when the agent's going to start picking up. M4 Email → operator asking if the agent handled an email enquiry. M1 Services → operator asking why the agent's not quoting yet. In every case, the operator's bubble surfaces a friction the email is trying to remove; the agent's bubble explains the fix that the email's CTA enables.
 
 ### 6. Pre-build verification checklist
 
@@ -315,16 +317,17 @@ The most-used module shapes in service-business email programs. Names follow the
 - **CTA target:** the `p_image_link` URL with UTM (no button text)
 
 ### Chat bubbles — blue gradient background / white background
-- **Use:** persona content with a customer-conversation feel. Blue gradient feels warm/welcoming; white feels neutral/informational.
+- **Use:** persona content emulating the operator's internal conversation with the agent inside the app. Blue gradient feels warm/welcoming; white feels neutral/informational.
 - **Slots:** `p_name`, `p_name1`, `p_name2` — three speech-bubble lines
-- **Structure: 3-step conversation, never a 3-line monologue.**
-  - `p_name` (right-aligned, customer side) — customer's initial enquiry. Long, naturalistic, 1–3 sentences. Reads like a real tradie's customer typing.
-  - `p_name1` (left-aligned, agent face icon) — agent's response. Confident, action-led, 1–2 sentences.
-  - `p_name2` (right-aligned, customer side) — customer's short follow-up. **1–6 words.** "Sweet, lock it in." / "Yeah cheers." / "Yes please." / "Sorted, thanks."
+- **Structure: 3-step internal conversation between operator and agent, never a 3-line monologue.**
+  - `p_name` (right-aligned, operator side) — the operator's message to the agent. Direct, busy-tradie register, 1–2 sentences. "Why aren't you answering with prices yet?" / "When are you going to start picking up?" / "Got an email today, did you handle it?"
+  - `p_name1` (left-aligned, agent face icon) — agent's response back to the operator. Confident, plain-spoken, 1–2 sentences. Explains what's blocking her or what she's done.
+  - `p_name2` (right-aligned, operator side) — operator's short reply. **1–6 words.** "On it." / "Doing it now." / "Setting it up now." / "Sweet." / "Cheers Sophiie." / "Good as gold."
 - **Hard ordering rule:** never the first content module. A `Text + body + CTA` module must appear earlier in the email.
 - **CTA column:** empty. Chat bubbles never carry the email's CTA.
-- **Scene-match:** the conversation topic models the value the operator gets from completing the email's module. M2 Phone Divert → customer asking about taking calls. M4 Email → customer chasing an email reply. M1 Services → customer asking for a price.
-- See `sophiie-voice-writer` §9 for full conventions.
+- **Speaker rule:** the operator is the right-aligned speaker, the agent is the left-aligned speaker. **Never voice the operator's end-customer in chat bubbles** — that's a different relationship.
+- **Scene-match:** the conversation models a friction the email is trying to remove. M2 Phone Divert → operator asking when the agent's going to start picking up calls. M4 Email → operator asking if the agent handled an email enquiry. M1 Services → operator asking why the agent's not quoting yet. The agent's bubble explains the fix the email's CTA enables.
+- See the project voice-writer skill (`sophiie-voice-writer` §9) for full conventions.
 
 ### Stackable grid
 - **Use:** roadmap / step-list content. Each instance has 2 cells (image + name + description × 2). Stackable up to 3 instances (= 6 cells) for a 6-step roadmap.
@@ -451,9 +454,9 @@ Welcome email for a new Paid signup, scoped down (no program-shape or email-inde
 #### Module 3 · Chat bubbles — blue gradient background
 <table header-row="true">
 <tr><td>Variable</td><td>Value</td></tr>
-<tr><td>`p_name`</td><td>G'day Sophiie, you guys able to come out Thursday? Hot water unit's gone at our Wynnum rental and the tenant's been without since yesterday. Need to know costs and whether you do electric or gas.</td></tr>
-<tr><td>`p_name1`</td><td>Hi Mark, I've got a slot for you Thursday 8am. I'll send the call-out fee and standard rate through so you've got it before I confirm. And yep, we do both electric and gas.</td></tr>
-<tr><td>`p_name2`</td><td>Sweet, lock it in.</td></tr>
+<tr><td>`p_name`</td><td>Mate, just got the welcome email. Ready to get cracking — what's the first move?</td></tr>
+<tr><td>`p_name1`</td><td>Welcome aboard. Let's get your services in first so I can quote properly when calls come in. Two minutes — I'll walk you through it.</td></tr>
+<tr><td>`p_name2`</td><td>Good as gold.</td></tr>
 </table>
 
 #### Module 4 · Footer — logo
