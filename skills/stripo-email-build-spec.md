@@ -370,6 +370,20 @@ The most-used module shapes in service-business email programs. Names follow the
 
 ---
 
+### Tier-specific framing for locked-feature slots
+
+When a module's feature is locked behind a paid tier (e.g. Sophiie's M2 Phone Divert and M7 Transfers are paid-only because Free has no phone divert number), the Free variant of that module's email is an **explicit upgrade-pitch email**, not a different value moment:
+- Subject names the upgrade: "Upgrade to [Tier] to [unlock feature]"
+- Body sells the upgrade with concrete value framing (cap numbers if specified, monthly price, tangible outcome)
+- CTA: `Upgrade to [Tier]` → billing settings Universal URL with tier-specific UTM
+- Chat bubbles: operator asking the agent why the feature isn't working yet, agent explaining it sits behind the upgrade
+
+This preserves the journey's structural parity (same module slot, same cadence) while honouring the tier reality. Mid-journey upgrades map cleanly to the equivalent slot on the higher tier.
+
+Verify tier-cap claims against the project's canonical P&P PRD before writing any cap number into customer copy. Never invent a cap value.
+
+---
+
 ## Scaling the format
 
 The full template above is sized for **multi-email programs** (activation, onboarding, winback, dormant, trial-conversion, retention). For other scopes, scale down by dropping program-level sections — never structural rules.
