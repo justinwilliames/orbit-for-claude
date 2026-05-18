@@ -2,57 +2,202 @@
 name: stripo-email-build-spec
 description: >
   Use this skill whenever the user wants to write, draft, build, scope, or design any
-  email that will ship through Stripo to Braze. Trigger on "write me an email",
-  "build an email", "draft an email", "email build spec", "Stripo email",
-  "Braze campaign email", "lifecycle email", "Canvas email", "onboarding email",
-  "winback email", "nurture email", "activation email", "re-engagement email",
-  or any request to produce email copy destined for a Braze Canvas or campaign.
-  The output is ALWAYS a three-column Module / Copy / CTA table per email, with modules
-  drawn from the live Stripo library (synced first) and CTAs drawn from the project's
-  Universal URL inventory. Never output flat markdown email body copy. Never invent
-  Stripo module names or CTA URLs. Always read each module's inline HTML comment
-  before drafting copy for it.
+  email program destined for a Braze Canvas or campaign — single email or a multi-email
+  activation, onboarding, winback, dormant, trial-conversion, or lifecycle program. The
+  output is a Notion-ready Program Build Spec with a version-numbered provenance
+  callout, program shape section, email index, per-email <details> toggles (each
+  holding a metadata table plus a per-Stripo-module copy table — Module 1 logo header,
+  Module 2 Text + body + CTA, Module 3 Chat bubbles, Module 4 Footer), a pre-build
+  verification checklist, six pre-launch operational gates, and architectural notes.
+  Every email's modules are drawn from the live Stripo library (synced first) and CTAs
+  come from the project's Universal URL inventory. The chat bubbles module follows a
+  strict 3-step customer ↔ agent ↔ customer conversation pattern, never marketer voice.
+  Always cross-load the project's voice skill (e.g. sophiie-voice-writer) for tone,
+  spelling, and persona rules before writing copy. Trigger on "write me an email",
+  "build an email", "draft an email", "email build spec", "Stripo email", "Braze
+  campaign email", "lifecycle email", "Canvas email", "onboarding email", "winback
+  email", "nurture email", "activation email", "re-engagement email", "build spec for
+  the X program", or any request to produce email copy destined for a Braze Canvas or
+  campaign.
 ---
 
 # Stripo Email Build Spec
 
-Produces a build-ready copy deck for any email destined for a Stripo-built Braze campaign or Canvas. The output is structured by Stripo module so the build phase wires it up with zero translation. Every email follows the same shape: header metadata + a three-column **Module / Copy / CTA** table.
+The canonical Notion-ready Build Spec format for any email program shipped through Stripo to Braze — single email or a multi-email Canvas. Every email's modules come from the live Stripo library (synced first) and every CTA from the project's Universal URL inventory. The Build Spec is a build-ready handoff: engineers wire it into Braze with zero translation.
 
-This skill is **mandatory** for every email destined for Stripo. Flat markdown body output forces a translation step in the build phase and routinely produces drift between intent and ship.
+This skill produces the **rich Program Build Spec format**. The format scales: multi-email programs use the full template; one-off emails drop the program-level sections (program shape, email index, operational gates) and keep the per-email toggle only. Structural rules (chat bubbles after Text+Body+CTA, voice skill compliance, Universal URLs with UTM, Stripo sync first) never scale away.
 
 ---
 
-## The output format — non-negotiable
+## Companion skills — load these first
+
+| Skill | Role |
+|---|---|
+| `<project>-voice-writer` (e.g. `sophiie-voice-writer`) | Voice, tone, spelling, register, persona, banned vocabulary, chat-bubbles convention. **Load before writing any copy.** Project copy passes through this skill or it isn't on-brand. |
+| `stripo-integration` | Stripo API connectivity, module sync, compose-via-API. |
+| `stripo-module-bindings` | Registering Smart Properties so module text / link / image is substitutable per send. |
+
+If a `<project>-voice-writer` skill exists for the project, treat it as the source of truth for tone-level decisions. This skill governs *structure*; the voice skill governs *words*.
+
+---
+
+## The output format — Program Build Spec
+
+A Notion page (or markdown block) with these sections, in this order:
+
+### 1. Provenance callout
+
+Always opens the doc. A blockquote with version, date, data inputs, and a changelog:
 
 ```markdown
-### N. [Email title / variant]
-
-- **When:** [trigger / timing / gate condition]
-- **Audience:** [filter — plan tier, country, custom attrs]
-- **Subject:** [...]
-- **Preheader:** [...]
-
-**Layout:**
-
-<table header-row="true">
-<tr><td>Module</td><td>Copy</td><td>CTA</td></tr>
-<tr><td>1. [Stripo module name]</td><td>[per-slot copy]</td><td>[CTA text → URL with utm_content, or empty]</td></tr>
-<tr><td>2. [...]</td><td>[...]</td><td>[...]</td></tr>
-</table>
+> **v6.2 — May 2026**
+> Aligned to [Activation PRD v6.2](URL). Data inputs: PRD module-gate map, Stripo module library sync of [date], Universal URL inventory.
+> Changelog: v6.2 — restructured to match v6.2 PRD. Tier-swapped module order replaced with single hybrid track. Pro/Free variants collapsed to Free/Paid where copy genuinely differs. Chat bubbles rewritten to 3-step customer-Sophiie-customer pattern. AU English applied throughout.
 ```
 
-Three columns, every email:
+Version-bump on every meaningful change. Changelog summarises what moved between versions in 1–3 sentences. The version on the Build Spec should match the version of the upstream PRD it implements.
 
-| Column | Content |
-|---|---|
-| **Module** | Ordinal-prefixed exact Stripo module name (e.g. `1. Border radius header`, `2. Stackable grid (1 of 3)`). Pull names from the synced library — never invent. Include parentheticals like `(1 of 3)` when modules repeat. |
-| **Copy** | Per-slot Stripo content. For Stripo's named slots (`p_name`, `p_description`, `p_image`, `p_title`, etc.), use the format `p_name: "..." / p_name1: "..." / p_description: "..."`. For headers/footers use `[standard]` or a brief description. |
-| **CTA** | If the module has a CTA button or clickable image, populate with `Button text → URL?utm_content=<utm>`. If no CTA, leave empty. Hero images get the URL alone (image is the CTA, no button text). |
+### 2. Program shape
 
-Optional callouts above or below the table (use Notion's `> **...:**` blockquote syntax):
+A `## Program shape` section with three subsections:
 
-- `> **Design note:** ...` — for non-obvious choices (single send vs two-send, audience exclusions)
-- `> **Directive applied:** ...` — when explicit user instruction shaped a choice (e.g. dropping personalisation from a subject)
+**`### Module flow`** — a single-track table listing every module/email in send order:
+
+| Module | Email cadence | Variants | CTA target |
+
+**Single-track only.** No tier-swapped paths (no "Pro path / Free path" columns). If tier variants exist, they're handled inside each module via Audience Path branching documented per-email, not by splitting the module flow.
+
+**`### In-Canvas holdout`** — the 5% random split at Canvas entry. Intra-Canvas, not cross-Canvas. 95% receive the program; 5% receive nothing for 30-day lift measurement against the program's headline metric.
+
+**`### Global frequency cap & quiet hours`** — workspace-level Braze settings that apply: maximum sends per user per week, quiet hours window per region.
+
+### 3. Email index
+
+A `## Email index` section. Numbered list of every email in the program. Each entry: number, title, audience, one-line purpose. Example:
+
+```
+1. Welcome — Paid · all paid tiers · sets the expectation Sophiie's answering calls by next week
+2. Welcome — Free · Free audience · introduces the 10-free-calls plan
+3. M1 Services — Email A · all tiers · prompt to add services
+...
+```
+
+The index is the doc's table of contents. The per-email toggles below it match this numbering.
+
+### 4. Personalisation & gating notes
+
+A `## Personalisation & gating notes` section covering rules that apply to multiple emails uniformly:
+- Liquid tokens used across the program (e.g. `{{${first_name} &#124; default: 'mate'}}`, `{{${orgName}}}`)
+- Plan-type branching rules (e.g. `planType IN (starter, pro, max)` filters)
+- Country filters (e.g. M9 ServiceM8: country IN (AU, GB, NZ, US))
+- Subscription preference and unsubscribe handling
+
+### 5. Per-email entries — the workhorse
+
+Every email lives inside a Notion `<details>` toggle so the doc collapses cleanly. Each toggle holds a metadata table followed by four module subsections, then a CTA target callout, then an optional image prompt toggle:
+
+```markdown
+<details>
+<summary>N · [Email title]</summary>
+
+<table header-row="true">
+<tr><td>Field</td><td>Value</td></tr>
+<tr><td>When</td><td>[trigger / timing / gate condition]</td></tr>
+<tr><td>Audience</td><td>[plan tier, country, custom attrs]</td></tr>
+<tr><td>Subject</td><td>[subject line]</td></tr>
+<tr><td>Preheader</td><td>[preheader]</td></tr>
+</table>
+
+#### Module 1 · Border radius header
+<table header-row="true">
+<tr><td>Variable</td><td>Value</td></tr>
+<tr><td>(logo)</td><td>Project logo, links to app root</td></tr>
+</table>
+
+#### Module 2 · Text + body + CTA
+<table header-row="true">
+<tr><td>Variable</td><td>Value</td></tr>
+<tr><td>`p_title`</td><td>[hook title]</td></tr>
+<tr><td>`p_description`</td><td>[body copy — short paragraph]</td></tr>
+<tr><td>`p_cta_text`</td><td>[imperative-verb CTA]</td></tr>
+<tr><td>`p_cta_link`</td><td>`[Universal URL with utm_content]`</td></tr>
+</table>
+
+#### Module 3 · Chat bubbles — [blue gradient | white] background
+<table header-row="true">
+<tr><td>Variable</td><td>Value</td></tr>
+<tr><td>`p_name`</td><td>[Customer's initial enquiry — long, naturalistic, 1–3 sentences]</td></tr>
+<tr><td>`p_name1`</td><td>[Agent's response — confident, 1–2 sentences]</td></tr>
+<tr><td>`p_name2`</td><td>[Customer's short follow-up — 1–6 words]</td></tr>
+</table>
+
+#### Module 4 · Footer — logo
+*(standard)*
+
+> **CTA target:** `[full URL with utm_content]`
+
+<details>
+<summary>**Image prompt — [email name] hero**</summary>
+
+[Hero image generation prompt — used to produce the email's lead visual]
+
+</details>
+
+</details>
+
+---
+```
+
+**Two hard rules for the per-email structure:**
+
+1. **`Module 2 · Text + body + CTA` MUST appear before `Module 3 · Chat bubbles`.** A logo-only Module 1 (Border radius header) does NOT satisfy this — it's brand framing, not content. The Text+Body+CTA module carries the email's ask; chat bubbles add personality after the ask has landed. See companion voice-writer skill (`sophiie-voice-writer` §9) for the underlying rationale.
+
+2. **Chat bubbles are a 3-step conversation, not a 3-line monologue.** `p_name` is the customer's voice (their enquiry). `p_name1` is the agent's response (handling the enquiry). `p_name2` is the customer's short follow-up (1–6 words, closing the loop). `p_name2` is NEVER marketer voice, instructional copy, or agent voice — it's a real customer reply like "Sweet, lock it in.", "Yeah cheers.", "Yes please.", "Cheers, no rush."
+
+The three bubbles must hang together as a coherent micro-conversation, scene-matched to the module's topic. M2 Phone Divert → customer asking about taking calls. M4 Email → customer chasing an email reply. M1 Services → customer asking for a price.
+
+### 6. Pre-build verification checklist
+
+A `# Pre-build verification checklist` section with Markdown checkboxes:
+
+- [ ] Stripo modules synced and named correctly in the Build Spec
+- [ ] All `p_*` Smart Properties registered as bindings (see `stripo-module-bindings`)
+- [ ] All CTAs use Universal URLs (no chat-trigger URLs where a Universal exists)
+- [ ] UTM `utm_content` populated on every CTA URL
+- [ ] Personalisation Liquid fallbacks tested (e.g. `{{${first_name} &#124; default: 'mate'}}`)
+- [ ] Country filters applied where relevant
+- [ ] Plan-tier filters applied where relevant
+- [ ] Hero image generated and uploaded to Braze hosting (or content block)
+- [ ] In-Canvas holdout group configured (5% random split at Canvas entry)
+- [ ] Subscription preference flow tested (one-email-per-week alternative if applicable)
+
+### 7. Pre-launch operational gates
+
+A `# Pre-launch operational gates` section. Six numbered gates. Each gate is a hard block — failing items don't ship, they're fixed.
+
+**Gate 1 — Audience verification:** every send has a defined audience filter; no "everyone" defaults; country and tier filters applied where applicable; legacy / migrated cohorts excluded if relevant.
+
+**Gate 2 — Content validation:** worst-case test contact send (empty first_name, sparse profile); fallback renders cleanly mid-sentence and at greeting position; unsubscribe link present in footer of every send; physical address present.
+
+**Gate 3 — Deliverability readiness:** sender domain warmed; SPF/DKIM/DMARC aligned; quiet hours configured per region; frequency cap honoured at workspace level.
+
+**Gate 4 — Compliance:** unsubscribe single-click compliant (Gmail Feb 2024+ rules, List-Unsubscribe-Post header); CAN-SPAM / Australian Spam Act footer present; tracking domains routed correctly; ARC sealed if cross-domain.
+
+**Gate 5 — Logic and trigger review:** entry event canonical; idempotency confirmed (no Canvas re-entry); gate evaluation timing correct; module advancement logic verified; tier branching tested across all variants.
+
+**Gate 6 — Rollback:** Canvas can be paused without losing in-flight user state; legacy/draft state recoverable; communication plan in place for in-flight users if the Canvas is pulled mid-flight.
+
+### 8. Architectural notes
+
+A `# Architectural notes` section covering:
+
+**Apple MPP and open-rate hygiene:** Apple Mail Privacy Protection pre-fetches pixels for roughly 25–40% of recipients. Open rates inflated; click rates remain the truth signal. Subject line A/B tests still valid but interpret cautiously. (Cross-reference: `apple-mpp-response` skill.)
+
+**Conflict rules with other programs:** if other Braze programs may target the same user (promotional sends, product launches, transactional sequences), document the conflict resolution (e.g. "Paused while user is in active Activation Canvas"). Frequency caps coordinate across.
+
+**Holdout measurement:** restate the in-Canvas 5% random split. After 30 days, measure the program's headline metric (activation, conversion, retention) for holdout vs treated. Lift reported in the program's retro. Without this, future iterations are flying blind.
+
+**Stuck-user cohort lifecycle:** users who reach the end of the Canvas without hitting the headline metric hand off to downstream re-engagement or dormant programs. Out of scope for this Build Spec — name the downstream owner.
 
 ---
 
@@ -67,41 +212,35 @@ orbit_sync_stripo_modules
 orbit_list_stripo_modules
 ```
 
-These pull the **live** module inventory. Module names change. Stale names break the build. Sync every time — no caching, no memory shortcuts.
+Module names change. Stale names break the build. Sync every session — no caching, no memory shortcuts.
 
 ### 2. Read the HTML comment for every module you'll use — MANDATORY
 
-Every Stripo module carries an inline HTML comment at the top documenting its design intent — slot purposes, character constraints, stack behaviour, image dimensions, do/don't rules. **Read this comment before drafting copy for the module.** Skipping it produces output that contradicts the module's contract (wrong tone for the visual treatment, copy that overflows, slots used for the wrong purpose, missed CTAs).
+Every Stripo module carries an inline HTML comment at the top documenting design intent — slot purposes, character constraints, stack behaviour, image dimensions, do/don't rules. **Read it before drafting copy.** Skipping is the #1 cause of spec drift.
 
-For each module you plan to use:
-
-```
-orbit_probe_stripo_inline_html
-```
-
-Fall back to `orbit_inspect_stripo_module_bindings` if the inline-html probe doesn't surface comments for a given module.
+For each module: `orbit_probe_stripo_inline_html`. Fall back to `orbit_inspect_stripo_module_bindings` if the inline-html probe doesn't surface comments.
 
 If a module has no HTML comment, fall back to the module name, slot names, and the module patterns section below.
 
 ### 3. Pick modules that match the email's intent
 
-Don't default to the simplest layout. Match visual weight to email purpose.
+Don't default to the simplest layout. Match visual weight to email purpose:
 
 | Email purpose | Module palette |
 |---|---|
-| Welcome / activation (Email A) | Hero image, Stackable grid (×3 if listing a roadmap), Comparison table, Two column image + text, App stores |
-| Follow-up nudge / reminder (Email B) | Border radius header, Chat bubbles (white or blue gradient), Text + body + CTA |
-| Upgrade prompt / monetisation | Hero image, Comparison table, Text + body + CTA, Quote |
-| Re-engagement / winback | Border radius header, Chat bubbles (blue gradient — feels personal), Stackable grid (showing what they're missing) |
+| Welcome / activation (Email A) | Border radius header, Hero image, Text + body + CTA, Chat bubbles (blue gradient), App stores, Footer |
+| Follow-up nudge / reminder (Email B) | Border radius header, Text + body + CTA, Chat bubbles (white), Footer |
+| Upgrade prompt / monetisation | Hero image, Comparison table, Text + body + CTA, Footer |
+| Re-engagement / winback | Border radius header, Text + body + CTA, Stackable grid (showing what they're missing), Chat bubbles (blue gradient), Footer |
 | Transactional / confirmation | Border radius header, Text + body + CTA, Footer |
 
-Every email opens with **Border radius header** (tight nudges) or **Hero image** (visual anchor for A-variants). Every email closes with **Footer - logo**.
+Every email opens with **Border radius header** (logo-only) or **Hero image** (visual anchor). Every email closes with **Footer - logo**. A **Text + body + CTA** module always appears before any **Chat bubbles** module.
 
 ### 4. Look up CTA URLs from the project's Universal URL inventory
 
-Universal URLs are the routes that deep-link cleanly into the native app and the mobile web. **All CTAs must use Universal URLs** when an equivalent exists. Never use chat-trigger URLs (e.g. `?agent_msg=...`) when a Universal URL covers the same destination — chat-trigger URLs only work in the web app and break native deep-linking.
+Universal URLs deep-link cleanly into the native app and mobile web. **All CTAs use Universal URLs** when an equivalent exists. Chat-trigger URLs (`?agent_msg=...`) only work in the web app and break native deep-linking — use only where no Universal URL covers the destination.
 
-Common destination → route mappings for service-business AI projects:
+Common Universal URL patterns for service-business AI projects:
 
 | CTA intent | Universal URL pattern |
 |---|---|
@@ -113,82 +252,89 @@ Common destination → route mappings for service-business AI projects:
 | "Connect your email" | `/settings/apps/email` |
 | "Connect your calendar" | `/settings/apps/calendar` |
 | "Set up phone divert" | `/settings/phone-diversions` |
-| "Upgrade to Pro" | `/settings/billing` |
-| "Connect [integration]" | `/settings/integrations/<integration>` or `/settings/integrations` |
+| "Upgrade plan" | `/settings/billing` |
+| "Connect [integration]" | `/settings/integrations/<integration>` |
 | "Talk to the agent" | `/agent` |
 | "View your inbox" | `/inbox` |
 | "See your jobs" | `/jobs` |
 | "Review invoices" | `/invoices` |
 
-The project's canonical Universal URL list should live in a single Notion page or repo doc — ask the user to confirm the canonical source if not visible. **Append `?utm_content=<email-utm>`** to every CTA URL. UTM convention: lowercase, hyphen-separated, descriptive (e.g. `welcome-pro`, `m1-services-a`).
+The project's canonical Universal URL list should live in a single Notion page or repo doc — ask the user to confirm the canonical source if not visible. **Append `?utm_content=<email-utm>`** to every CTA URL. UTM convention: lowercase, hyphen-separated, descriptive (e.g. `welcome-paid`, `m1-services-a`, `m2-phone-divert-b-free`).
 
 Click-tracking domains (e.g. `clicks.to.<domain>` / `clicks.from.<domain>`) handle Braze rewriting automatically — don't pre-wrap URLs through these in your output.
 
-### 5. Apply project voice rules
+### 5. Apply voice rules — defer to the project's voice-writer skill
 
-Voice rules are project-specific. Common defaults for service-business / tradie audiences:
+Load `<project>-voice-writer` before writing any copy. For Sophiie projects, that's `sophiie-voice-writer`, which covers:
 
-- Use the brand name consistently with correct spelling (verify spelling — most brands have specific casing rules).
-- The product/agent is the actor ("she answers", "she books"), not "the AI" or "the assistant".
-- Plain-spoken register matched to the audience (tradies, SMBs, etc.).
-- First-name fallback: use "there" (e.g. `Hi {{${first_name} | default: 'there'}},`), never "mate", "friend", or generic placeholders that the user has rejected.
-- Body greeting opener pattern: `Hi {{${first_name} | default: 'there'}},` at the start of any line that uses first_name. Renders "Hi [name]," or "Hi there,".
-- For subject lines, drop first_name if the fallback (`there, X`) reads awkwardly — tighten the subject instead.
-- No em dashes (—) in body copy. Use commas, full stops, or hyphens.
-- AU/UK spelling unless the project explicitly uses US.
+- Spelling (Sophiie always two i's, AU English throughout)
+- Pronouns (she/her for the agent)
+- Register (AU tradie, plain-spoken, no hype)
+- "mate" fallback for first_name (AU register)
+- Banned vocabulary (game-changing, seamless, frictionless, empower, supercharged, etc.)
+- Banned openers ("In today's world", "Imagine if", "Let's dive into", etc.)
+- Banned punctuation in body copy (em dashes; allowed in spec framing, banned in email-body fields)
+- Single CTA per email, imperative verb first, no arrows, no exclamation marks
+- Chat bubbles 3-step convention (covered in §9 of `sophiie-voice-writer`)
 
-If a `<project>-voice-writer` skill exists for the project, defer to it for tone-level decisions.
+The voice skill is the source of truth for tone. This skill (`stripo-email-build-spec`) is the source of truth for structure. They compose.
 
-### 6. Output to Notion or markdown
+### 6. Output to Notion
 
-**If an email build spec page exists in Notion** (most common pattern), update it via `notion-update-page` with `command: "replace_content"`. Preserve any header callouts, version, audience scoping, and email index above the per-email sections.
+Update the program's Build Spec Notion page via `notion-update-page`. Use `command="replace_content"` for full rebuilds; `command="update_content"` with targeted old_str/new_str for incremental edits.
 
-**If no Notion page exists yet**, output the full spec as a markdown block. Recommend creating a sub-page under the parent PRD for it.
+Wrap each email in `<details>`/`<summary>` toggles so the page collapses cleanly in the Notion UI. Numbered emails (e.g. `1 · Welcome — Paid`, `2 · Welcome — Free`) match the email index.
 
 ### 7. Report cleanly when done
 
-Report:
+Report under 300 words:
 
 1. **Modules used** — count of distinct Stripo modules + names
 2. **Notion page updated** (with link) or markdown delivered
 3. **Universal URLs applied** — number of CTAs populated, any swaps from chat-trigger URLs to Universal
-4. **Judgement calls** — choices the user might want to override (module variety trade-offs, subject-line phrasing)
-5. **Pending directives** — anything the user asked for that you couldn't fully apply, with reasons
+4. **Voice-skill compliance** — note any flagged voice issues, especially em dashes in body copy and chat-bubbles structure
+5. **Judgement calls** — choices the user might want to override (module variety trade-offs, subject-line phrasing, conversation scene choices)
+6. **Pending directives** — anything the user asked for that you couldn't fully apply, with reasons
 
-Keep the report under 300 words. The diff in Notion is the deliverable — the report is the receipt.
+The diff in Notion is the deliverable. The report is the receipt.
 
 ---
 
 ## Common Stripo module patterns
 
-These are the most-used module shapes in service-business email programs. Names follow the conventions Sophiie / similar SMB brands use — verify against your synced library.
+The most-used module shapes in service-business email programs. Names follow the conventions Sophiie / similar SMB brands use — verify against the synced library.
 
 ### Border radius header
-- **Use:** opens any tight nudge email (Email B, follow-up reminders)
+- **Use:** opens any tight nudge email (Email B, follow-up reminders, transactional)
 - **Slots:** logo, optional nav links
 - **CTA column:** empty (logo may link to root but isn't a primary CTA)
 
 ### Hero image
 - **Use:** opens any visual-led email (Email A, activation moments, upgrade prompts)
 - **Slots:** `p_image_link` — image URL + click destination
-- **CTA column:** the `p_image_link` URL with UTM (no button text)
+- **CTA target:** the `p_image_link` URL with UTM (no button text)
 
-### Chat bubbles - blue gradient background / Chat bubbles - white background
-- **Use:** personal-feeling opener content (after header, before body). Blue gradient feels warm/welcoming; white feels neutral/informational.
+### Chat bubbles — blue gradient background / white background
+- **Use:** persona content with a customer-conversation feel. Blue gradient feels warm/welcoming; white feels neutral/informational.
 - **Slots:** `p_name`, `p_name1`, `p_name2` — three speech-bubble lines
-- **CTA column:** empty
-- **Voice rule:** the first `p_name` is where the "Hi {{${first_name} | default: 'there'}}," opener lives.
+- **Structure: 3-step conversation, never a 3-line monologue.**
+  - `p_name` (right-aligned, customer side) — customer's initial enquiry. Long, naturalistic, 1–3 sentences. Reads like a real tradie's customer typing.
+  - `p_name1` (left-aligned, agent face icon) — agent's response. Confident, action-led, 1–2 sentences.
+  - `p_name2` (right-aligned, customer side) — customer's short follow-up. **1–6 words.** "Sweet, lock it in." / "Yeah cheers." / "Yes please." / "Sorted, thanks."
+- **Hard ordering rule:** never the first content module. A `Text + body + CTA` module must appear earlier in the email.
+- **CTA column:** empty. Chat bubbles never carry the email's CTA.
+- **Scene-match:** the conversation topic models the value the operator gets from completing the email's module. M2 Phone Divert → customer asking about taking calls. M4 Email → customer chasing an email reply. M1 Services → customer asking for a price.
+- See `sophiie-voice-writer` §9 for full conventions.
 
 ### Stackable grid
-- **Use:** roadmap / step-list content. Each instance has 2 cells (image + name + description × 2). Stackable up to 3 instances (= 6 cells total) for a 6-step roadmap.
+- **Use:** roadmap / step-list content. Each instance has 2 cells (image + name + description × 2). Stackable up to 3 instances (= 6 cells) for a 6-step roadmap.
 - **Slots:** `p_image`, `p_name`, `p_description`, `p_image1`, `p_name1`, `p_description1`, plus optional `p_cta_link_1` and `p_cta_link_2` (usually empty)
-- **CTA column:** empty (cells are descriptive, not actionable)
-- **Naming:** when stacking, label `(1 of 3)`, `(2 of 3)`, `(3 of 3)` in the Module column.
+- **Naming:** when stacking, label `(1 of 3)`, `(2 of 3)`, `(3 of 3)` in the module column.
 
 ### Two column image + text
 - **Use:** mid-funnel explainer content with a clear visual + copy split + CTA button
 - **Slots:** `p_image`, `p_title`, `p_description`, `p_cta_text`, `p_cta_link`
-- **CTA column:** `p_cta_text → p_cta_link` populated
+- **CTA target:** `p_cta_text → p_cta_link` populated
 
 ### Comparison table
 - **Use:** before/after, with/without, plan-comparison content. Strong for upgrade nudges and integration value props.
@@ -198,12 +344,12 @@ These are the most-used module shapes in service-business email programs. Names 
 ### Quote
 - **Use:** punchy single-line value statement, occasionally a real customer quote
 - **Slots:** `p_image` (logo), `p_title` (quote line), `p_description` (supporting copy), `p_image_link`
-- **CTA column:** the `p_image_link` URL with UTM, or empty if no link
+- **CTA target:** the `p_image_link` URL with UTM, or empty if no link
 
 ### Text + body + CTA
-- **Use:** the workhorse — every email has one. Carries the closing CTA button.
+- **Use:** the workhorse — every email has one. Carries the email's primary CTA. **Must appear before any Chat bubbles module.**
 - **Slots:** `p_title`, `p_description`, `p_cta_text`, `p_cta_link`
-- **CTA column:** `p_cta_text → p_cta_link` populated
+- **CTA target:** `p_cta_text → p_cta_link` populated
 
 ### Emoji bullets
 - **Use:** 3-item bulleted list with icons. Caps at 3 pairs. **Avoid for >3 items** — use Stackable grid instead.
@@ -215,42 +361,125 @@ These are the most-used module shapes in service-business email programs. Names 
 - **Slots:** standard App Store + Google Play badges
 - **CTA column:** empty (badges are their own clickable elements)
 
-### Footer - logo
+### Footer — logo
 - **Use:** closes every email. Standard logo + legal + unsub. No custom copy.
 - **CTA column:** empty
 
 ---
 
-## Anti-patterns
+## Scaling the format
 
-- **Drafting copy for a module without reading its HTML comment.** The comment encodes design intent — character limits, slot purposes, stack behaviour, image dimensions, do/don't rules. Skipping it produces output that ignores the module's actual contract. Mandatory step.
-- **Flat markdown email body output.** If you find yourself writing "Body: ..." with raw paragraphs, stop and restructure into a Module/Copy/CTA table.
-- **Inventing module names.** Stripo modules have exact names from the synced library. Don't paraphrase "Stackable grid" as "Stack grid" or "Two column image + text" as "Image-text block".
-- **Skipping the sync step.** The library changes. Always sync.
-- **Chat-trigger URLs over Universal URLs.** Default to Universal. Only use chat-trigger URLs (`?agent_msg=...`) when there is no Universal equivalent for the destination.
-- **Missing UTM params.** Every CTA URL gets `?utm_content=<utm>`. No exceptions.
-- **Two-column Module/Copy tables.** Format is three columns: Module / Copy / CTA. Even if every CTA cell is empty for a given email, the column stays.
+The full template above is sized for **multi-email programs** (activation, onboarding, winback, dormant, trial-conversion, retention). For other scopes, scale down by dropping program-level sections — never structural rules.
+
+| Use case | Sections to include |
+|---|---|
+| Multi-email program (Canvas) | All 8 sections: provenance, program shape, email index, personalisation notes, per-email toggles, verification checklist, operational gates, architectural notes |
+| Single-email campaign | Skip §2 Program shape, §3 Email index. Keep provenance, §4 personalisation notes, the one email's toggle, §6 verification, §7 gates, §8 architectural notes |
+| Quick-turn campaign (5-min build) | Provenance (v0.1 + data line is enough), the one email's toggle with full Module 1–4 sub-structure, mini-verification (Universal URLs + UTM + voice-skill compliance) |
+
+Rules that **never** scale away:
+- Stripo modules synced first
+- HTML comment read before drafting
+- Chat bubbles after Text+Body+CTA (logo-only header doesn't count)
+- `p_name2` is customer short follow-up
+- Universal URLs with `utm_content`
+- Project voice-writer skill governs words
+- Output is module-table-structured, never flat markdown body
 
 ---
 
-## Worked example — minimal output shape
+## Anti-patterns
+
+- **Drafting copy without reading the module's HTML comment.** The comment encodes design intent — character limits, slot purposes, stack behaviour, image dimensions, do/don't rules. Mandatory step.
+- **Flat markdown body output.** If you find yourself writing "Body: ..." with raw paragraphs, stop and restructure into Module subsection tables.
+- **Inventing Stripo module names.** Sync the live library; use exact names. Don't paraphrase "Stackable grid" as "Stack grid" or "Two column image + text" as "Image-text block".
+- **Skipping the Stripo sync step.** The library changes between sessions. Always sync.
+- **Chat-trigger URLs over Universal URLs.** Default to Universal. Chat-trigger URLs only work in the web app — they break native deep-linking.
+- **Missing UTM params.** Every CTA URL gets `?utm_content=<utm>`. No exceptions.
+- **Top-level Module / Copy / CTA table.** This is the OLD format. The new format uses Module subsections within each email toggle, each with their own Variable / Value table.
+- **Chat bubbles as the first content module.** Logo doesn't count as content. Text+Body+CTA must precede chat bubbles in the email's vertical order.
+- **`p_name2` as marketer copy.** Always a short customer follow-up (1–6 words).
+- **`p_name1` as a marketing statement.** Always the agent's voice handling the customer's enquiry — not a value-prop pitch.
+- **Tier-swapped module order in the Module flow table.** Single hybrid track for everyone. Use Audience Path branching to vary copy by tier, not by reordering modules.
+- **Mixed US/UK/AU spelling.** Use AU throughout for Sophiie. Hard rule: `program` not `programme`. (See `sophiie-voice-writer` §6.)
+- **Em dashes in email body copy.** Em dashes are OK in spec framing prose (section headers, narrative, structural labels), but NEVER inside `p_title`, `p_description`, `p_name`, `p_name1`, `p_name2`, subject, preheader, or any other email-body field. Use commas, full stops, or restructure.
+- **First-call celebration / unrelated event-triggered sends in this Canvas.** Event-triggered sends belong in their own programs.
+- **Cross-Canvas elements (other than holdout) in this Build Spec.** The holdout is an *in-Canvas* mechanism (5% random split at entry). Anything genuinely cross-Canvas (other programs, downstream re-engagement, dormant winback) belongs in its own Build Spec.
+
+---
+
+## Worked example — minimal single-email scope
+
+Welcome email for a new Paid signup, scoped down (no program-shape or email-index sections):
 
 ```markdown
-### 3. M1 Services — Email A (nudge)
+> **v0.1 — May 2026**
+> Data inputs: Activation PRD v6.2, Stripo module library sync 2026-05-18, Universal URL inventory.
+> Changelog: v0.1 — first draft.
 
-- **When:** T+24h after Canvas entry, gate `hasAddedServices = false`
-- **Audience:** Pro / Free (plan branching within template)
-- **Subject:** One thing that changes every call she takes
-- **Preheader:** Add your services and she stops answering blind.
+## Personalisation & gating notes
 
-**Layout:**
+- Liquid: `{{${first_name} &#124; default: 'mate'}}` for greeting fallback.
+- Audience Path: planType IN (starter, pro, max).
+
+<details>
+<summary>1 · Welcome — Paid variant</summary>
 
 <table header-row="true">
-<tr><td>Module</td><td>Copy</td><td>CTA</td></tr>
-<tr><td>1. Hero image</td><td>Agent answering a call / services training screen</td><td>https://app.example.com/train/services?utm_content=m1-services-a</td></tr>
-<tr><td>2. Text + body + CTA</td><td>p_title: "One thing that changes every call she takes" / p_description: "[body copy]" / p_cta_text: "Add your services" / p_cta_link: https://app.example.com/train/services?utm_content=m1-services-a</td><td>Add your services → https://app.example.com/train/services?utm_content=m1-services-a</td></tr>
-<tr><td>3. Footer - logo</td><td>[standard]</td><td></td></tr>
+<tr><td>Field</td><td>Value</td></tr>
+<tr><td>When</td><td>T+0, triggered on Canvas entry, Paid audience</td></tr>
+<tr><td>Audience</td><td>planType IN (starter, pro, max)</td></tr>
+<tr><td>Subject</td><td>Sophiie's answering your calls by next week. First step's two minutes.</td></tr>
+<tr><td>Preheader</td><td>Show her your services and she sounds like your business from call one.</td></tr>
 </table>
+
+#### Module 1 · Border radius header
+<table header-row="true">
+<tr><td>Variable</td><td>Value</td></tr>
+<tr><td>(logo)</td><td>Sophiie logo, links to `https://app.sophiie.ai`</td></tr>
+</table>
+
+#### Module 2 · Text + body + CTA
+<table header-row="true">
+<tr><td>Variable</td><td>Value</td></tr>
+<tr><td>`p_title`</td><td>Show Sophiie your services</td></tr>
+<tr><td>`p_description`</td><td>Two minutes to add the first one. Name, description, price. From that moment on, every enquiry Sophiie handles gets your actual price, your trade language, your booking flow. We'll get her on your phone next.</td></tr>
+<tr><td>`p_cta_text`</td><td>Show Sophiie your services</td></tr>
+<tr><td>`p_cta_link`</td><td>`https://app.sophiie.ai/train/services?utm_content=welcome-paid`</td></tr>
+</table>
+
+#### Module 3 · Chat bubbles — blue gradient background
+<table header-row="true">
+<tr><td>Variable</td><td>Value</td></tr>
+<tr><td>`p_name`</td><td>G'day Sophiie, you guys able to come out Thursday? Hot water unit's gone at our Wynnum rental and the tenant's been without since yesterday. Need to know costs and whether you do electric or gas.</td></tr>
+<tr><td>`p_name1`</td><td>Hi Mark, I've got a slot for you Thursday 8am. I'll send the call-out fee and standard rate through so you've got it before I confirm. And yep, we do both electric and gas.</td></tr>
+<tr><td>`p_name2`</td><td>Sweet, lock it in.</td></tr>
+</table>
+
+#### Module 4 · Footer — logo
+*(standard)*
+
+> **CTA target:** `https://app.sophiie.ai/train/services?utm_content=welcome-paid`
+
+</details>
+
+# Pre-build verification checklist
+
+- [ ] Stripo modules synced and named correctly
+- [ ] `p_title`, `p_description`, `p_cta_text`, `p_cta_link`, `p_name`, `p_name1`, `p_name2` registered as bindings
+- [ ] CTA uses Universal URL (`/train/services`)
+- [ ] `utm_content=welcome-paid` appended
+- [ ] `{{${first_name} &#124; default: 'mate'}}` fallback tested
+- [ ] Hero image generated and uploaded
+- [ ] In-Canvas holdout configured
+
+# Pre-launch operational gates
+
+[Gate 1–6 as in the full template]
+
+# Architectural notes
+
+[Apple MPP, conflict rules, holdout measurement, stuck-user lifecycle]
 ```
 
-That's the contract. Module name + per-slot copy + CTA when present. Anything else is a deviation — don't deviate.
+That's the minimal contract: provenance + personalisation + one email toggle with all four module subsections in the right order + verification + gates + notes. Scale up by adding §2 Program shape and §3 Email index when there are multiple emails. The structural rules don't change.
