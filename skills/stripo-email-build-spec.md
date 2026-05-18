@@ -354,6 +354,8 @@ The most-used module shapes in service-business email programs. Names follow the
 - **Slots:** `p_title`, `p_description`, `p_cta_text`, `p_cta_link`
 - **CTA target:** `p_cta_text → p_cta_link` populated
 
+> **Hard rule: every Text + body + CTA module is fully populated.** `p_title`, `p_description`, `p_cta_text`, `p_cta_link` — all four slots are required, every email, every variant. No CTA-only modules. The chat bubbles module is personality texture (it can absorb a longer narrative beat), but the Text + body + CTA card must stand on its own as a self-contained hook + anchor + ask. If you find yourself tempted to leave `p_title` or `p_description` empty because "the chat bubbles below handle that," fill them anyway — the reader's eye lands on the CTA card first, and an empty title in that module reads as a missing-content defect.
+
 ### Emoji bullets
 - **Use:** 3-item bulleted list with icons. Caps at 3 pairs. **Avoid for >3 items** — use Stackable grid instead.
 - **Slots:** `p_title`, `p_image`, `p_name`, `p_image1`, `p_name1`, `p_image2`, `p_name2`
