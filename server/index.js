@@ -4197,7 +4197,7 @@ function registerTools() {
     {
       title: "Compose Stripo Email From Synced Modules",
       description:
-        "Compose an email from a sequence of synced Stripo modules. Validates the one-header / one-footer constraint, stitches the modules into a full HTML email document with CSS deduped and esd-custom-block-id attributes preserved (so the result round-trips into Stripo). Returns the assembled HTML with an explicit directive for Claude to render it as an HTML artifact immediately. Re-call with push:true to send to Stripo (requires a master template configured first).",
+        "Compose an email from a sequence of synced Stripo modules. Validates the one-header / one-footer constraint, stitches the modules into a full HTML email document with CSS deduped and esd-custom-block-id attributes preserved (so the result round-trips into Stripo). Returns the assembled HTML with an explicit directive for Claude to render it as an HTML artifact immediately. Re-call with push:true to send to Stripo (requires a master template configured first). Pass `email_name` to set a program-variant name (e.g. \"Welcome - Paid\") instead of the auto-generated `Orbit · subject · timestamp`. Push responses include `convention_warnings` flagging em dashes in copy and hero H1s over 4 words (rules sourced from brand-kit/brand-guidelines.md and conventions/email-design-conventions.md; non-blocking).",
       inputSchema: {
         subject: z.string().min(1).max(MAX_SHORT_STRING).describe("The email subject line."),
         preheader: z
@@ -4256,6 +4256,14 @@ function registerTools() {
           .describe(
             "Post-render HTML overrides applied to the Stripo-generated email via Cheerio before Braze sync. Bypasses Stripo's write-API dead ends (PUT/PATCH return 405; inline-html dataSources are silently regenerated). Stripo is used as source-of-structure only — the patched HTML is returned for Braze and never pushed back to Stripo. Requires push:true."
           ),
+        email_name: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            "Optional override for the email's display name in Stripo's workspace. Use a program-variant name like \"Welcome - Paid\" or \"M2 Phone Divert A - Starter\" so emails are identifiable in the Stripo email list without opening each one. Stripo rejects square brackets in email names so any [ or ] characters are stripped defensively. When omitted, falls back to the auto-generated `Orbit · <subject_first_60_chars> · <timestamp>` format. Requires push:true."
+          ),
         push: z
           .boolean()
           .optional()
@@ -4264,7 +4272,7 @@ function registerTools() {
           )
       }
     },
-    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, slot_values, html_overrides, push }) => {
+    async ({ subject, preheader, module_sequence, copy_overrides, image_overrides, slot_values, html_overrides, email_name, push }) => {
       const result = await composeStripoEmail({
         config: runtimeConfig,
         subject,
@@ -4274,6 +4282,7 @@ function registerTools() {
         image_overrides,
         slot_values,
         html_overrides,
+        email_name,
         push
       });
       // When the tool returns an artifact_directive, surface that as
