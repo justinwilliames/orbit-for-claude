@@ -45,6 +45,7 @@ export async function composeStripoEmail({
   image_overrides: imageOverrides = {},
   slot_values: slotValues = {},
   html_overrides: htmlOverrides = null,
+  email_name: emailNameOverride = null,
   push = false,
 }) {
   if (!Array.isArray(moduleSequence) || moduleSequence.length === 0) {
@@ -288,6 +289,7 @@ export async function composeStripoEmail({
       subject,
       preheader,
       slotValues,
+      emailNameOverride,
     });
 
     let pushResponse;
@@ -336,6 +338,14 @@ export async function composeStripoEmail({
       });
     }
 
+    const conventionWarnings = validateConventions({
+      subject,
+      preheader,
+      slotValues,
+      resolved,
+      emailNameOverride,
+    });
+
     return {
       status: "pushed",
       stripo: {
@@ -347,6 +357,7 @@ export async function composeStripoEmail({
       },
       html_overrides_result: htmlOverridesResult,
       composition_plan: compositionPlan,
+      convention_warnings: conventionWarnings,
       message:
         `Created a new email in your Stripo workspace using master template ${templateIdNumber}. ` +
         "The master template was NOT modified. Open Stripo to find the new email in the email folder." +
@@ -821,6 +832,7 @@ function buildCanonicalPayload({
   subject,
   preheader,
   slotValues = {},
+  emailNameOverride = null,
 }) {
   // ─── Stripo's dataSources[].value[].id is the module UID, NOT the
   // numeric module ID. Discovered the hard way: posting numeric IDs
@@ -868,9 +880,14 @@ function buildCanonicalPayload({
   // common ASCII characters (parens, slashes, ampersands, Unicode
   // arrows, the middot itself) all save fine — the brackets are the
   // outlier.
+  //
+  // emailNameOverride wins when supplied — the caller takes responsibility
+  // for picking a sensible name (e.g. "Welcome - Paid"). We strip brackets
+  // defensively because the Stripo API rejects them regardless of source.
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const baseName = subject ? subject.slice(0, 60) : "Orbit-composed";
-  const emailName = `Orbit · ${baseName} · ${timestamp}`;
+  const emailName = emailNameOverride
+    ? String(emailNameOverride).replace(/[\[\]]/g, "").slice(0, 200)
+    : `Orbit · ${subject ? subject.slice(0, 60) : "Orbit-composed"} · ${timestamp}`;
 
   const payload = {
     dataSources: [
@@ -903,4 +920,102 @@ function buildCanonicalModuleRef(item, values = null) {
     ref.values = values;
   }
   return ref;
+}
+
+// ─── Convention warnings ──────────────────────────────────────────────────
+//
+// Soft, non-blocking checks that surface common content-quality violations
+// at push time. Rules are documented in:
+//   - <workspace>/brand-kit/brand-guidelines.md (brand-specific voice rules)
+//   - <workspace>/conventions/email-design-conventions.md (generic rules)
+//
+// v1 checks:
+//   1. Em-dash detection in subject, preheader, and every slot_values text
+//      value. Per Sophiie brand voice (memo'd 2026-05-21), em dashes are
+//      banned across all customer-facing copy.
+//   2. Hero H1 length cap: first body module's p_title (or any *title*
+//      / *headline* slot) is checked for max 4 words and max 1 sentence.
+//
+// Warnings are returned alongside push success — never block. Callers can
+// fix and re-push, or ignore for brands that don't share these rules.
+//
+// `convention_warnings` shape:
+//   [{ rule, location, value, fix }]
+function validateConventions({
+  subject,
+  preheader,
+  slotValues = {},
+  resolved = [],
+  emailNameOverride = null,
+}) {
+  const warnings = [];
+
+  const flagEmDash = (location, value) => {
+    if (typeof value !== "string" || !value.includes("—")) return;
+    warnings.push({
+      rule: "no-em-dash",
+      location,
+      value,
+      fix: "Replace em dash (—) with a comma, full stop, or restructure the sentence. See brand-kit/brand-guidelines.md Hard Copy Rules.",
+    });
+  };
+
+  flagEmDash("subject", subject);
+  flagEmDash("preheader", preheader);
+  if (emailNameOverride) flagEmDash("email_name", emailNameOverride);
+
+  // Identify the hero module — position 1 in the resolved array (position
+  // 0 is header, last is footer). If the sequence is shorter than 3 modules
+  // there's no hero to validate.
+  const heroIndex = 1;
+  const heroModule =
+    resolved.length >= 3 && resolved[heroIndex]
+      ? resolved[heroIndex]
+      : null;
+  const heroStripoId = heroModule ? String(heroModule.metadata?.stripo_id ?? "") : null;
+
+  // Walk every slot_values entry, recursing into nested content[] children.
+  const walkSlotValues = (moduleId, entry, pathPrefix) => {
+    if (!entry || typeof entry !== "object") return;
+
+    const values = isStructuredSlotEntry(entry) ? extractSlotValueMap(entry) : entry;
+    for (const [varName, raw] of Object.entries(values ?? {})) {
+      if (typeof raw !== "string") continue;
+      const location = `slot_values["${moduleId}"]["${varName}"]${pathPrefix}`;
+      flagEmDash(location, raw);
+
+      // Hero H1 length cap. We treat any slot whose varName looks like a
+      // title or headline as the hero H1 candidate (most common shape:
+      // `p_title`). Body / description / CTA copy is exempt — long is fine.
+      const isHeroTitleSlot =
+        moduleId === heroStripoId &&
+        /^(p_)?(title|headline|heading)\d*$/i.test(varName) &&
+        pathPrefix === "";
+      if (isHeroTitleSlot) {
+        const trimmed = raw.trim();
+        const sentences = trimmed.split(/[.!?]+\s*/).filter((s) => s.length > 0);
+        const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
+        if (words.length > 4 || sentences.length > 1) {
+          warnings.push({
+            rule: "hero-h1-cap",
+            location,
+            value: raw,
+            fix: `Hero H1 must be 1 sentence, max 4 words (currently ${sentences.length} sentence${sentences.length === 1 ? "" : "s"}, ${words.length} word${words.length === 1 ? "" : "s"}). Examples: "Let's get me earning." / "Put me to work." See brand-kit/brand-guidelines.md Hard Copy Rules.`,
+          });
+        }
+      }
+    }
+
+    if (isStructuredSlotEntry(entry) && Array.isArray(entry.content)) {
+      for (const [childIndex, childEntry] of entry.content.entries()) {
+        walkSlotValues(moduleId, extractContentValueMap(childEntry), `.content[${childIndex}]`);
+      }
+    }
+  };
+
+  for (const [moduleId, entry] of Object.entries(slotValues ?? {})) {
+    walkSlotValues(String(moduleId), entry, "");
+  }
+
+  return warnings;
 }
