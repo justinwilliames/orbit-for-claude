@@ -140,7 +140,7 @@ test("flat slot_values still emit values{} on the parent module ref", () => {
     transformers: [],
     composers: [],
     templateId: 12345678,
-    emailName: "Orbit · API doc canonical · 2026-05-11T00-00-00-000Z",
+    emailName: "Orbit · API doc canonical · 2026-05-11",
     title: "API doc canonical",
     preheader: "Fresh picks this week",
   });
@@ -246,7 +246,7 @@ test("nested slot_values emit canonical content[] plus values{} exactly", () => 
     transformers: [],
     composers: [],
     templateId: 12345678,
-    emailName: "Orbit · API doc canonical · 2026-05-11T00-00-00-000Z",
+    emailName: "Orbit · API doc canonical · 2026-05-11",
     title: "API doc canonical",
   });
 });

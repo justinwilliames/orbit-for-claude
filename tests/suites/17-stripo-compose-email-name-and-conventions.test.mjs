@@ -3,7 +3,7 @@
  *
  * Covers two features added together:
  *   1. email_name param — caller can override the auto-generated
- *      "Orbit · subject · timestamp" name with a program-variant name
+ *      "Orbit · subject · YYYY-MM-DD" name with a program-variant name
  *      like "Welcome - Paid".
  *   2. convention_warnings — non-blocking warnings flagging em dashes
  *      in copy and hero H1s over 4 words / over 1 sentence. Rules
@@ -115,7 +115,7 @@ test("email_name override strips square brackets defensively (Stripo rejects the
   assert.equal(payload.emailName, "Welcome Paid");
 });
 
-test("when email_name is omitted, falls back to the auto-generated Orbit · subject · timestamp format", () => {
+test("when email_name is omitted, falls back to the auto-generated Orbit · subject · YYYY-MM-DD format", () => {
   const { buildCanonicalPayload, buildModuleLookup } = loadComposeSubject();
   const payload = buildCanonicalPayload({
     modules: pickModules([1001, 2002, 4004]),
@@ -124,7 +124,7 @@ test("when email_name is omitted, falls back to the auto-generated Orbit · subj
     subject: "API doc canonical",
   });
 
-  assert.equal(payload.emailName, "Orbit · API doc canonical · 2026-05-11T00-00-00-000Z");
+  assert.equal(payload.emailName, "Orbit · API doc canonical · 2026-05-11");
 });
 
 // ─── convention_warnings: em dashes ───────────────────────────────────────

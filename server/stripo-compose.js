@@ -822,8 +822,8 @@ void loadLibraryItem;
  * Each module entry can also carry `values` for slot overrides and
  * `content` for nested-container module data.
  *
- * The emailName carries a timestamp so repeat composes don't collide
- * in the user's workspace folder.
+ * The emailName carries a date stamp (YYYY-MM-DD) so repeat composes
+ * across days are distinguishable in the user's workspace folder.
  */
 function buildCanonicalPayload({
   modules,
@@ -875,7 +875,7 @@ function buildCanonicalPayload({
   // Stripo's API rejects emailNames containing square brackets with a
   // generic "Can not save generated email" 400 — discovered the hard
   // way by probing a master template and isolating one variable at a
-  // time. Stick to a middot-separated `Orbit · subject · timestamp`
+  // time. Stick to a middot-separated `Orbit · subject · YYYY-MM-DD`
   // format. Other
   // common ASCII characters (parens, slashes, ampersands, Unicode
   // arrows, the middot itself) all save fine — the brackets are the
@@ -884,10 +884,10 @@ function buildCanonicalPayload({
   // emailNameOverride wins when supplied — the caller takes responsibility
   // for picking a sensible name (e.g. "Welcome - Paid"). We strip brackets
   // defensively because the Stripo API rejects them regardless of source.
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dateSlug = new Date().toISOString().slice(0, 10);
   const emailName = emailNameOverride
     ? String(emailNameOverride).replace(/[\[\]]/g, "").slice(0, 200)
-    : `Orbit · ${subject ? subject.slice(0, 60) : "Orbit-composed"} · ${timestamp}`;
+    : `Orbit · ${subject ? subject.slice(0, 60) : "Orbit-composed"} · ${dateSlug}`;
 
   const payload = {
     dataSources: [
