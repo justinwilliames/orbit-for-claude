@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { brazeGet, brazePost, validateBrazeSetup } from "./braze-api.js";
 import { ensureDir, resolveOutputDir } from "./config.js";
-import { maybeReadTextFile, parseJsonInput, slugify, writeJson, writeText } from "./utils.js";
+import { inferMimeType, maybeReadTextFile, parseJsonInput, slugify, writeJson, writeText } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // 1. Fetch Existing Template from Braze
@@ -381,7 +381,15 @@ export async function uploadTemplateImages({
         requestBody = { asset_url: image.url, name: image.name };
       } else if (image.file_path && fs.existsSync(image.file_path)) {
         const fileData = fs.readFileSync(image.file_path);
-        requestBody = { asset_file: fileData.toString("base64"), name: image.name };
+        // Braze's /media_library/create rejects a base64 asset_file with a
+        // misleading 400 ("Either asset_url or asset_file must be provided")
+        // unless file_name accompanies it; content_type is inferred from ext.
+        requestBody = {
+          asset_file: fileData.toString("base64"),
+          name: image.name,
+          file_name: path.basename(image.file_path),
+          content_type: inferMimeType(image.file_path)
+        };
       } else {
         errors.push({ name: image.name, error: "No url or valid file_path provided" });
         continue;

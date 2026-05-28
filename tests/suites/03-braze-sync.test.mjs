@@ -77,6 +77,28 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     assert.equal(brazeCalls.length, 0);
   });
 
+  test("upload_image_to_braze sends file_name + content_type for base64 uploads (Braze 400 regression)", async () => {
+    mock.clearRequests();
+    // 1x1 transparent PNG, base64-encoded.
+    const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+    const res = await client.callToolLenient("orbit_upload_image_to_braze", {
+      name: "welcome-hero",
+      image_data_base64: onePixelPng
+    });
+    assertNotHandlerCrash(res, "upload_image_to_braze");
+
+    const calls = mock.getRequests().filter(
+      (r) => r.method === "POST" && r.path === "/media_library/create"
+    );
+    assert.equal(calls.length, 1, "Expected exactly one media_library/create call");
+    const body = calls[0].body;
+    assert.equal(body.asset_file, onePixelPng, "asset_file should carry the base64 payload");
+    assert.ok(body.file_name, "file_name must be present — Braze rejects base64 uploads without it (400)");
+    assert.match(body.file_name, /\.png$/i, "file_name should carry an image extension");
+    assert.equal(body.content_type, "image/png", "content_type should be inferred for the asset");
+    assert.equal(body.name, "welcome-hero", "display name should be preserved");
+  });
+
   test("braze namer dimensions returns the full dimension list", async () => {
     const { parsed } = await client.callToolJson("orbit_braze_namer_dimensions", {});
     assert.equal(parsed.status, "ok");

@@ -7,10 +7,12 @@ import {
   updateLibraryItem
 } from "./template-library.js";
 import {
+  inferMimeType,
   maybeReadTextFile,
   parseJsonInput,
   slugify
 } from "./utils.js";
+import { basename } from "node:path";
 
 // Thin adapter that preserves the historical callBrazeApi(...) signature
 // used throughout this file, delegating to the shared brazePost client
@@ -340,7 +342,8 @@ export async function uploadImagesToBraze({
         const fileData = fs.readFileSync(image.local_path);
         requestBody = {
           asset_file: fileData.toString("base64"),
-          name: image.braze_name
+          name: image.braze_name,
+          ...deriveBase64UploadFields({ name: image.braze_name, filePath: image.local_path })
         };
       } else {
         errors.push({
@@ -396,6 +399,29 @@ export async function uploadImagesToBraze({
 // Single-image upload helper
 // ---------------------------------------------------------------------------
 
+// Braze's /media_library/create requires `file_name` (and accepts
+// `content_type`) whenever the asset is supplied as base64 via `asset_file`.
+// Omitting file_name makes Braze return a misleading HTTP 400 claiming
+// "Either asset_url or asset_file must be provided". Derive both from the
+// source path when we have one, otherwise from the display name.
+function deriveBase64UploadFields({ name, filePath }) {
+  const source = filePath || name || "image.png";
+  let contentType = inferMimeType(source);
+  if (!contentType.startsWith("image/")) contentType = "image/png";
+
+  let fileName;
+  if (filePath) {
+    fileName = basename(filePath);
+  } else {
+    const ext = contentType === "image/jpeg"
+      ? "jpg"
+      : contentType.replace("image/", "").replace("svg+xml", "svg");
+    fileName = /\.[a-z0-9]+$/i.test(name || "") ? name : `${name || "image"}.${ext}`;
+  }
+
+  return { file_name: fileName, content_type: contentType };
+}
+
 /**
  * Upload a single image to the Braze media library.
  *
@@ -435,9 +461,17 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
       };
     }
     const fileData = fs.readFileSync(file_path);
-    requestBody = { asset_file: fileData.toString("base64"), name };
+    requestBody = {
+      asset_file: fileData.toString("base64"),
+      name,
+      ...deriveBase64UploadFields({ name, filePath: file_path })
+    };
   } else if (image_data_base64) {
-    requestBody = { asset_file: image_data_base64, name };
+    requestBody = {
+      asset_file: image_data_base64,
+      name,
+      ...deriveBase64UploadFields({ name })
+    };
   } else {
     return {
       status: "invalid_input",
