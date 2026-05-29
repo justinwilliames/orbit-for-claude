@@ -8,7 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { brazeGet, brazePost, validateBrazeSetup } from "./braze-api.js";
+import { brazeGet, brazePost, brazeUploadAsset, validateBrazeSetup } from "./braze-api.js";
 import { ensureDir, resolveOutputDir } from "./config.js";
 import { inferMimeType, maybeReadTextFile, parseJsonInput, slugify, writeJson, writeText } from "./utils.js";
 
@@ -376,30 +376,30 @@ export async function uploadTemplateImages({
 
   for (const image of images) {
     try {
-      let requestBody;
+      let response;
       if (image.url) {
-        requestBody = { asset_url: image.url, name: image.name };
+        // Remote URL: Braze fetches it server-side via a JSON body.
+        response = await brazePost({
+          config,
+          endpoint: "/media_library/create",
+          body: { asset_url: image.url, name: image.name }
+        });
       } else if (image.file_path && fs.existsSync(image.file_path)) {
+        // Local file: Braze requires a multipart/form-data binary upload, not
+        // base64 in a JSON body (that 400s with "must provide asset_url or
+        // asset_file"). The part carries the filename and content_type.
         const fileData = fs.readFileSync(image.file_path);
-        // Braze's /media_library/create rejects a base64 asset_file with a
-        // misleading 400 ("Either asset_url or asset_file must be provided")
-        // unless file_name accompanies it; content_type is inferred from ext.
-        requestBody = {
-          asset_file: fileData.toString("base64"),
-          name: image.name,
-          file_name: path.basename(image.file_path),
-          content_type: inferMimeType(image.file_path)
-        };
+        response = await brazeUploadAsset({
+          config,
+          fileBuffer: fileData,
+          fileName: path.basename(image.file_path),
+          contentType: inferMimeType(image.file_path),
+          name: image.name
+        });
       } else {
         errors.push({ name: image.name, error: "No url or valid file_path provided" });
         continue;
       }
-
-      const response = await brazePost({
-        config,
-        endpoint: "/media_library/create",
-        body: requestBody
-      });
 
       const asset = response.new_assets?.[0] ?? null;
       uploaded.push({

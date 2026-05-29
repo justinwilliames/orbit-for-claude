@@ -128,6 +128,50 @@ export async function brazePost({ config, endpoint, body = {} }) {
 }
 
 /**
+ * Upload a binary asset to the Braze media library.
+ *
+ * Braze's POST /media_library/create requires the file as a
+ * multipart/form-data binary part named `asset_file` (with the filename and
+ * Content-Type carried by the part itself) plus a `name` form field — NOT a
+ * base64 string in a JSON body. Posting base64 in JSON (under any field name,
+ * `asset_file` or `asset_file_base64`) is rejected with a misleading
+ * "Either asset_url or asset_file must be provided" 400. Verified live against
+ * rest.iad-07 (2026-05-29): JSON base64 → 400; multipart binary → 201 + CDN url.
+ *
+ * The remote-fetch path (asset_url) stays JSON via brazePost; only local
+ * file / base64 uploads need this multipart helper.
+ */
+export async function brazeUploadAsset({ config, fileBuffer, fileName, contentType, name }) {
+  await rateLimit();
+  const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}/media_library/create`;
+
+  const form = new FormData();
+  if (name) form.append("name", name);
+  const blob = new Blob([fileBuffer], { type: contentType || "application/octet-stream" });
+  form.append("asset_file", blob, fileName || "image.png");
+
+  const response = await fetchWithRetry(
+    url,
+    {
+      method: "POST",
+      // No Content-Type header: fetch derives multipart/form-data + boundary
+      // from the FormData body. Setting it manually would break the boundary.
+      headers: { Authorization: `Bearer ${config.brazeApiKey}` },
+      body: form
+    },
+    { timeoutMs: BRAZE_API_TIMEOUT_MS, breaker: BRAZE_BREAKER }
+  );
+
+  const text = await response.text();
+  const parsed = safeParseJson(text, { message: text });
+  if (!response.ok) {
+    const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
+    throw new Error(`Braze API ${response.status} on POST /media_library/create: ${brazeMsg}`);
+  }
+  return parsed;
+}
+
+/**
  * Paginate through a Braze list endpoint. Handles both page-based and
  * cursor-based endpoints: if the response includes `next_page` we pass
  * it as `?page=`; if `next_cursor` we pass it as `?cursor=`.

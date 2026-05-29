@@ -1424,5 +1424,12 @@ async function readRequestBody(req) {
     chunks.push(chunk);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  if (!raw) return {};
+  // Media uploads arrive as multipart/form-data (binary), not JSON. Don't
+  // throw on those — callers only read JSON fields, which multipart lacks.
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { _raw: raw };
+  }
 }

@@ -77,7 +77,7 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     assert.equal(brazeCalls.length, 0);
   });
 
-  test("upload_image_to_braze sends file_name + content_type for base64 uploads (Braze 400 regression)", async () => {
+  test("upload_image_to_braze sends a multipart binary upload, not JSON base64 (Braze 400 regression)", async () => {
     mock.clearRequests();
     // 1x1 transparent PNG, base64-encoded.
     const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
@@ -91,12 +91,26 @@ describe("Braze sync suite — write operations produce correct API calls", () =
       (r) => r.method === "POST" && r.path === "/media_library/create"
     );
     assert.equal(calls.length, 1, "Expected exactly one media_library/create call");
-    const body = calls[0].body;
-    assert.equal(body.asset_file, onePixelPng, "asset_file should carry the base64 payload");
-    assert.ok(body.file_name, "file_name must be present — Braze rejects base64 uploads without it (400)");
-    assert.match(body.file_name, /\.png$/i, "file_name should carry an image extension");
-    assert.equal(body.content_type, "image/png", "content_type should be inferred for the asset");
-    assert.equal(body.name, "welcome-hero", "display name should be preserved");
+    const call = calls[0];
+    // Braze rejects base64 in a JSON body ("must provide asset_url or
+    // asset_file"). The file must go as multipart/form-data binary.
+    assert.match(
+      call.headers["content-type"] ?? "",
+      /multipart\/form-data/i,
+      "media uploads must be multipart/form-data, not application/json"
+    );
+    const raw = typeof call.body === "string" ? call.body : JSON.stringify(call.body);
+    assert.match(
+      raw,
+      /name="asset_file";\s*filename="[^"]+\.png"/i,
+      "asset_file must be a binary file part carrying a .png filename"
+    );
+    assert.match(raw, /Content-Type:\s*image\/png/i, "the asset_file part should declare image/png");
+    assert.ok(raw.includes("welcome-hero"), "display name should be sent as a form field");
+    assert.ok(
+      !/"asset_file"\s*:/.test(raw) && !/"asset_file_base64"\s*:/.test(raw),
+      "base64 must NOT be sent as a JSON field — that is the bug this guards against"
+    );
   });
 
   test("braze namer dimensions returns the full dimension list", async () => {

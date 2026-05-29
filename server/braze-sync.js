@@ -1,7 +1,7 @@
 import {
   BRAZE_SYNC_RECORD_SCHEMA
 } from "./production-specs.js";
-import { brazePost, validateBrazeSetup } from "./braze-api.js";
+import { brazePost, brazeUploadAsset, validateBrazeSetup } from "./braze-api.js";
 import {
   loadLibraryItem,
   updateLibraryItem
@@ -317,12 +317,15 @@ export async function uploadImagesToBraze({
     try {
       // Prefer exported_url (publicly accessible Figma CDN URL) for asset_url approach.
       // Fall back to local file as base64 if no remote URL.
-      let requestBody;
+      let response;
       if (image.exported_url) {
-        requestBody = {
-          asset_url: image.exported_url,
-          name: image.braze_name
-        };
+        // Remote URL: Braze fetches it server-side via a JSON body.
+        response = await callBrazeApi({
+          config,
+          endpoint: "/media_library/create",
+          method: "POST",
+          body: { asset_url: image.exported_url, name: image.braze_name }
+        });
       } else if (image.local_path) {
         if (!fs.existsSync(image.local_path)) {
           errors.push({
@@ -335,16 +338,23 @@ export async function uploadImagesToBraze({
         if (stat.size > MAX_LOCAL_IMAGE_BYTES) {
           errors.push({
             image_id: image.id,
-            error: `Local file too large: ${Math.round(stat.size / 1024)}KB exceeds Braze base64 upload cap of ${MAX_LOCAL_IMAGE_BYTES / 1024}KB. Compress or convert to JPEG, or host the image on a CDN and pass it via exported_url.`
+            error: `Local file too large: ${Math.round(stat.size / 1024)}KB exceeds Braze upload cap of ${MAX_LOCAL_IMAGE_BYTES / 1024}KB. Compress or convert to JPEG, or host the image on a CDN and pass it via exported_url.`
           });
           continue;
         }
+        // Local file: Braze requires a multipart/form-data binary upload.
         const fileData = fs.readFileSync(image.local_path);
-        requestBody = {
-          asset_file: fileData.toString("base64"),
+        const { file_name, content_type } = deriveUploadFileFields({
           name: image.braze_name,
-          ...deriveBase64UploadFields({ name: image.braze_name, filePath: image.local_path })
-        };
+          filePath: image.local_path
+        });
+        response = await brazeUploadAsset({
+          config,
+          fileBuffer: fileData,
+          fileName: file_name,
+          contentType: content_type,
+          name: image.braze_name
+        });
       } else {
         errors.push({
           image_id: image.id,
@@ -352,13 +362,6 @@ export async function uploadImagesToBraze({
         });
         continue;
       }
-
-      const response = await callBrazeApi({
-        config,
-        endpoint: "/media_library/create",
-        method: "POST",
-        body: requestBody
-      });
 
       const asset = response.new_assets?.[0] ?? null;
       if (asset?.url) {
@@ -399,12 +402,12 @@ export async function uploadImagesToBraze({
 // Single-image upload helper
 // ---------------------------------------------------------------------------
 
-// Braze's /media_library/create requires `file_name` (and accepts
-// `content_type`) whenever the asset is supplied as base64 via `asset_file`.
-// Omitting file_name makes Braze return a misleading HTTP 400 claiming
-// "Either asset_url or asset_file must be provided". Derive both from the
-// source path when we have one, otherwise from the display name.
-function deriveBase64UploadFields({ name, filePath }) {
+// Derive the filename and MIME type for a multipart media upload. Braze's
+// /media_library/create takes the binary as a multipart/form-data part whose
+// filename and Content-Type are carried by the part itself, so we need both.
+// Use the source path's basename when we have one, otherwise synthesise a
+// filename from the display name and inferred extension.
+function deriveUploadFileFields({ name, filePath }) {
   const source = filePath || name || "image.png";
   let contentType = inferMimeType(source);
   if (!contentType.startsWith("image/")) contentType = "image/png";
@@ -427,11 +430,11 @@ function deriveBase64UploadFields({ name, filePath }) {
  *
  * Accepts one of:
  *   asset_url       — publicly accessible remote URL; Braze fetches it
- *                     server-side (no size limit applied here).
- *   file_path       — absolute local path; read and base64-encoded.
- *                     Capped at 4 MB pre-encoding (inflates ~33%).
- *   image_data_base64 — raw base64 string the caller has already encoded.
- *                       Passed directly; Braze's ~5 MB cap applies.
+ *                     server-side via a JSON body (no size limit here).
+ *   file_path       — absolute local path; read and uploaded as
+ *                     multipart/form-data binary. Capped at 4 MB.
+ *   image_data_base64 — raw base64 string; decoded to a binary buffer and
+ *                       uploaded as multipart/form-data.
  *
  * Returns { status, url, name, size } on success or { status, error } on failure.
  */
@@ -444,10 +447,19 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
   }
 
   const MAX_LOCAL_IMAGE_BYTES = 4 * 1024 * 1024;
-  let requestBody;
+
+  // Resolve into either a JSON remote-fetch (asset_url) or a multipart binary
+  // upload (file_path / image_data_base64). Braze's /media_library/create
+  // rejects base64 in a JSON body; binary files must go as multipart/form-data.
+  let uploadKind;
+  let jsonBody;
+  let fileBuffer;
+  let fileName;
+  let contentType;
 
   if (asset_url) {
-    requestBody = { asset_url, name };
+    uploadKind = "url";
+    jsonBody = { asset_url, name };
   } else if (file_path) {
     const fs = await import("node:fs");
     if (!fs.existsSync(file_path)) {
@@ -457,21 +469,16 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
     if (stat.size > MAX_LOCAL_IMAGE_BYTES) {
       return {
         status: "file_too_large",
-        error: `File is ${Math.round(stat.size / 1024)} KB; Braze base64 upload cap is ${MAX_LOCAL_IMAGE_BYTES / 1024} KB. Compress or host the image on a CDN and pass it via asset_url.`,
+        error: `File is ${Math.round(stat.size / 1024)} KB; Braze upload cap is ${MAX_LOCAL_IMAGE_BYTES / 1024} KB. Compress or host the image on a CDN and pass it via asset_url.`,
       };
     }
-    const fileData = fs.readFileSync(file_path);
-    requestBody = {
-      asset_file: fileData.toString("base64"),
-      name,
-      ...deriveBase64UploadFields({ name, filePath: file_path })
-    };
+    uploadKind = "binary";
+    fileBuffer = fs.readFileSync(file_path);
+    ({ file_name: fileName, content_type: contentType } = deriveUploadFileFields({ name, filePath: file_path }));
   } else if (image_data_base64) {
-    requestBody = {
-      asset_file: image_data_base64,
-      name,
-      ...deriveBase64UploadFields({ name })
-    };
+    uploadKind = "binary";
+    fileBuffer = Buffer.from(image_data_base64, "base64");
+    ({ file_name: fileName, content_type: contentType } = deriveUploadFileFields({ name }));
   } else {
     return {
       status: "invalid_input",
@@ -480,7 +487,9 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
   }
 
   try {
-    const response = await callBrazeApi({ config, endpoint: "/media_library/create", method: "POST", body: requestBody });
+    const response = uploadKind === "url"
+      ? await callBrazeApi({ config, endpoint: "/media_library/create", method: "POST", body: jsonBody })
+      : await brazeUploadAsset({ config, fileBuffer, fileName, contentType, name });
     const asset = response.new_assets?.[0] ?? null;
     if (asset?.url) {
       return {
