@@ -43,7 +43,8 @@ const ZERO_ARG_TOOLS = new Set([
   "orbit_start_program_discovery",
   "orbit_audit_braze_instance",
   "orbit_audit_content_blocks",
-  "orbit_braze_namer_dimensions"
+  "orbit_braze_namer_dimensions",
+  "orbit_check_stripo_auth"
 ]);
 
 // Tools whose handler legitimately returns "needs_inputs" when called
@@ -92,6 +93,8 @@ const NEEDS_INPUT_TOOLS = new Set([
   "orbit_assemble_template_variation",
   "orbit_upload_template_images",
   "orbit_braze_namer",
+  "orbit_get_stripo_email",
+  "orbit_delete_stripo_email",
   "orbit_export_notion_bundle",
   "orbit_library"
 ]);

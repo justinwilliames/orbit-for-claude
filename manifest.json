@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -505,6 +505,18 @@
     {
       "name": "orbit_parse_test_readout",
       "description": "Turn A/B test counts into a written read-out with significance, 95% CI on rate difference, verdict (winner/loser/inconclusive), and ship-or-not recommendation."
+    },
+    {
+      "name": "orbit_get_stripo_email",
+      "description": "Fetch a single generated email from your Stripo workspace by numeric ID (GET /emails/<id>). Recovers the rendered copy/structure of an email pushed earlier — useful because slot_values are baked in server-side at push time and don't appear in local compose previews. Read-only."
+    },
+    {
+      "name": "orbit_delete_stripo_email",
+      "description": "Delete one or more generated emails from your Stripo workspace by numeric ID (DELETE /emails/<id> each). Accepts a single ID or an array; only the explicit IDs given are deleted (no delete-all). Returns a per-ID deleted/failed breakdown. Master templates are protected by the write-guard and cannot be touched."
+    },
+    {
+      "name": "orbit_check_stripo_auth",
+      "description": "Live-probe Stripo credentials before relying on them. Reports whether the REST token and Plugin credentials are configured and actively validates the REST token with a read-only GET, so an expired or revoked token (the 401 that blocks pushes) is caught proactively instead of mid-push."
     }
   ],
   "keywords": [
