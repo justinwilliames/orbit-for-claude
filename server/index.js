@@ -112,6 +112,7 @@ import { setupStripo } from "./stripo-onboarding.js";
 import { syncStripoModules, listStripoSyncedModules } from "./stripo-modules.js";
 import { documentStripoDesignSystem } from "./stripo-design-system.js";
 import { composeStripoEmail } from "./stripo-compose.js";
+import { getStripoEmail, deleteStripoEmails, checkStripoAuth } from "./stripo-emails.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
 import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
@@ -4298,6 +4299,56 @@ function registerTools() {
           }
         };
       }
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_get_stripo_email",
+    {
+      title: "Get Stripo Email By ID",
+      description:
+        "Fetch a single generated email from your Stripo workspace by its numeric email ID (GET /emails/<id>). Returns the API's JSON for that email — useful for recovering the rendered copy or structure of an email pushed earlier, since slot_values are baked in server-side at push time and don't appear in local compose previews. Read-only.",
+      inputSchema: {
+        email_id: z
+          .union([z.number(), z.string()])
+          .describe("The numeric Stripo email ID (e.g. 11907219).")
+      }
+    },
+    async ({ email_id }) => {
+      const result = await getStripoEmail({ config: runtimeConfig, emailId: email_id });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_delete_stripo_email",
+    {
+      title: "Delete Stripo Emails By ID",
+      description:
+        "Delete one or more generated emails from your Stripo workspace by numeric email ID (DELETE /emails/<id> each). Pass a single ID or an array of IDs — only the explicit IDs given are deleted; there is no delete-all affordance. Returns a per-ID breakdown (deleted / failed) so partial failures are visible. Operates on generated emails only — master templates are protected by Orbit's write-guard and cannot be touched. Destructive: deletion is permanent in Stripo.",
+      inputSchema: {
+        email_ids: z
+          .union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))])
+          .describe("A single numeric Stripo email ID, or an array of them, to delete. Max 200 per call.")
+      }
+    },
+    async ({ email_ids }) => {
+      const result = await deleteStripoEmails({ config: runtimeConfig, emailIds: email_ids });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_check_stripo_auth",
+    {
+      title: "Check Stripo Authentication",
+      description:
+        "Live-probe Stripo credentials before relying on them. Reports whether the REST API token and Plugin credentials are configured, and actively validates the REST token with a read-only GET against the configured master template — so an expired or revoked token (the failure that blocks pushes with a 401) is caught proactively instead of mid-push. Run this before a large compose/push batch.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await checkStripoAuth({ config: runtimeConfig });
       return makeJsonToolResponse(result);
     }
   );

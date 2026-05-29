@@ -97,6 +97,27 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       key: "braze_rest_endpoint",
       passed: Boolean(config.brazeRestEndpoint),
       detail: config.brazeRestEndpoint ?? null
+    },
+    // Stripo credentials — presence only. These are appended LAST so the
+    // index-based featureReadiness references above (checks[5..7]) stay
+    // valid. Live token validity is checked by orbit_check_stripo_auth,
+    // not here, to keep this healthcheck local and fast.
+    {
+      key: "stripo_rest_api_token",
+      passed: Boolean(config.stripoRestApiToken),
+      detail: config.stripoRestApiToken
+        ? "configured (run orbit_check_stripo_auth to validate it live)"
+        : null
+    },
+    {
+      key: "stripo_plugin_credentials",
+      passed: Boolean(config.stripoPluginId && config.stripoSecretKey),
+      detail: config.stripoPluginId && config.stripoSecretKey ? "configured" : null
+    },
+    {
+      key: "stripo_master_template_id",
+      passed: Boolean(config.stripoMasterTemplateId),
+      detail: config.stripoMasterTemplateId ?? null
     }
   ];
 
@@ -247,7 +268,11 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       google_ai_api_key: config.googleAiApiKey ? "configured" : "missing",
       figma_api_token: config.figmaApiToken ? "configured" : "missing",
       braze_api_key: config.brazeApiKey ? "configured" : "missing",
-      braze_rest_endpoint: config.brazeRestEndpoint ?? null
+      braze_rest_endpoint: config.brazeRestEndpoint ?? null,
+      stripo_rest_api_token: config.stripoRestApiToken ? "configured" : "missing",
+      stripo_plugin_credentials:
+        config.stripoPluginId && config.stripoSecretKey ? "configured" : "missing",
+      stripo_master_template_id: config.stripoMasterTemplateId ?? null
     },
     home_workspace: config.homeWorkspace,
     local_storage_notice: buildLocalStorageNotice(config),
