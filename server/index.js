@@ -113,6 +113,7 @@ import { syncStripoModules, listStripoSyncedModules } from "./stripo-modules.js"
 import { documentStripoDesignSystem } from "./stripo-design-system.js";
 import { composeStripoEmail } from "./stripo-compose.js";
 import { getStripoEmail, deleteStripoEmails, checkStripoAuth } from "./stripo-emails.js";
+import { exportStripoEmailsToBraze } from "./stripo-export-braze.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
 import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
@@ -4349,6 +4350,61 @@ function registerTools() {
     },
     async () => {
       const result = await checkStripoAuth({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_export_stripo_email_to_braze",
+    {
+      title: "Export Stripo Email(s) to Braze as Email Templates",
+      description:
+        "Turn one or more finished Stripo emails into Braze email templates so a Braze Canvas can reference them — fully programmatic, no GUI exports. " +
+        "Stripo has NO native export-to-ESP API endpoint (verified: OPTIONS /emails/<id> allows only DELETE/GET/HEAD/OPTIONS, and every /export, /esp, /integrations route 404s); the GUI 'Export to ESP/Braze' is UI-only. " +
+        "This tool reproduces that export under the hood: it reads each email's rendered production HTML, subject, and preheader via GET /emails/<id> on Stripo, then creates a Braze email template via POST /templates/email/create (or /update for an existing template). " +
+        "Pass a single numeric Stripo email ID or an array (e.g. all 42). By default each email becomes a NEW Braze template; to re-export idempotently onto existing templates, pass braze_template_map (stripo_email_id → braze_email_template_id) — the response returns this map after a create so you can persist it and update-in-place next time instead of duplicating. " +
+        "Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). Liquid in the email is carried through as literal {{...}} — correct, since Braze resolves it at send time (a liquid_tag_count per email is reported). Returns IDs, names, Braze template IDs, dashboard URLs, and HTML byte counts only — never raw HTML, to stay inside the tool-result size cap.",
+      inputSchema: {
+        email_ids: z
+          .union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))])
+          .describe("A single numeric Stripo email ID, or an array of them, to export to Braze. Max 100 per call."),
+        braze_template_map: z
+          .union([
+            z.record(z.string(), z.string()),
+            z.array(
+              z.object({
+                stripo_email_id: z.union([z.number(), z.string()]),
+                braze_email_template_id: z.string()
+              })
+            )
+          ])
+          .optional()
+          .describe(
+            "Optional mapping of Stripo email ID → existing Braze email_template_id. Matched entries UPDATE that Braze template instead of creating a new one (idempotent re-export). Either an object {\"11949287\":\"abc-guid\"} or an array of {stripo_email_id, braze_email_template_id}."
+          ),
+        name_prefix: z
+          .string()
+          .optional()
+          .describe("Optional prefix prepended to each Braze template name (the Stripo email's own name is used as the base)."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Optional Braze tags applied to every created/updated template."),
+        dry_run: z
+          .boolean()
+          .optional()
+          .describe("If true, fetch each Stripo email and report the planned Braze write (name/subject/byte count) WITHOUT writing anything to Braze.")
+      }
+    },
+    async ({ email_ids, braze_template_map, name_prefix, tags, dry_run }) => {
+      const result = await exportStripoEmailsToBraze({
+        config: runtimeConfig,
+        emailIds: email_ids,
+        brazeTemplateMap: braze_template_map,
+        namePrefix: name_prefix ?? null,
+        tags: tags ?? [],
+        dryRun: dry_run ?? false
+      });
       return makeJsonToolResponse(result);
     }
   );

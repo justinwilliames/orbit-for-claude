@@ -135,6 +135,7 @@ function auditOneModule({ item }) {
   findings.push(...checkFooterCompliance({ item, html }));
   findings.push(...checkStaticAssetPattern({ item, html }));
   findings.push(...checkNestingHazards({ item, html }));
+  findings.push(...checkPaddingClassFlattenRisk({ item, html }));
   return findings;
 }
 
@@ -165,6 +166,54 @@ function checkOrphanedFloat({ item, html }) {
       fix_description:
         `Strip the orphaned ${direction} class + align attribute + float:right inline style, ` +
         "and centre the inner table so the content sits balanced inside the email canvas.",
+    },
+  ];
+}
+
+function checkPaddingClassFlattenRisk({ item, html }) {
+  // ── Stripo es-p* padding classes silently flatten on ESP export ──────────
+  //
+  // Stripo's es-p<N><side> utility classes (es-p40l, es-p226r, es-p24t…) and the
+  // bare all-sides es-p<N> hold padding ONLY as CSS classes, not as native block
+  // spacing. They render correctly in the Stripo editor and in Orbit-composed
+  // emails (the gen-area master template ships helper CSS that backs them). BUT
+  // when the email is exported to an ESP via Stripo's OWN export — e.g. Stripo's
+  // "Export to Braze" integration — Stripo bakes each block's spacing from its
+  // NATIVE padding model, which is 0 for class-only padding, and discards the
+  // es-p* classes. The exported email then ships with padding:0 and the desktop
+  // layout collapses (worst on chat-bubble, comparison, and other asymmetric
+  // blocks; full-bleed images survive because they have no padding to lose).
+  //
+  // This is a Stripo-side export behaviour, not an Orbit bug — Orbit isn't in the
+  // Stripo→ESP hop. The only durable fix is module-side: re-express the padding as
+  // native inline padding and enable "Keep Module Styles" so Stripo preserves it.
+  // Confirmed against Braze, May–Jun 2026.
+  const padClasses = [...new Set((html.match(/\bes-p\d+[trbl]?\b/g) ?? []))]
+    .filter((c) => !c.startsWith("es-m-"))
+    .sort();
+  if (padClasses.length === 0) return [];
+
+  return [
+    {
+      severity: "warning",
+      code: "padding_classes_flatten_on_export",
+      stripo_id: item.metadata?.stripo_id,
+      module_name: item.title,
+      message:
+        `Module holds its padding in ${padClasses.length} Stripo es-p* utility class(es) ` +
+        `(${padClasses.join(", ")}). These look correct in the Stripo editor and in Orbit-composed ` +
+        "emails, but Stripo's own ESP export (e.g. Export to Braze) bakes spacing from each block's " +
+        "native padding model — which is 0 for class-only padding — and drops the classes. The exported " +
+        "email then ships with padding:0 and the desktop layout collapses. This is Stripo-side export " +
+        "behaviour, not an Orbit bug.",
+      auto_fixable: false,
+      fix_description:
+        "Module-side fix (the only durable one): in Stripo, convert each affected block's padding from " +
+        'es-p* classes to NATIVE inline padding — set the four sides in the block\'s Spacing panel, or ' +
+        'hand-write style="padding: <top> <right> <bottom> <left>" — then turn ON "Keep Module Styles" for ' +
+        "the module so Stripo preserves the inline padding instead of normalising it back to a class. Native " +
+        "inline padding survives the ESP export; es-p* classes do not. Keep the mobile es-m-p* classes as-is " +
+        "(they are unaffected). Re-sync after editing.",
     },
   ];
 }
