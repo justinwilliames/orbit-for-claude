@@ -212,7 +212,7 @@ function coerceTemplateMap(input) {
  * @returns {{ byName: Map<string,string>, dupNames: Set<string> }}
  */
 async function fetchBrazeTemplateNameMap({ config }) {
-  const items = await brazePaginateList({
+  const { items } = await brazePaginateList({
     config,
     endpoint: "/templates/email/list",
     params: {},
