@@ -32,6 +32,14 @@
  *   footer_no_unsub      — footer-classified module without an
  *                          unsubscribe link or Liquid var. CAN-SPAM /
  *                          GDPR risk. WARNING. Not auto-fixable.
+ *   table_background_image — a <table> carries a background image
+ *                          (background="…" or background-image:url(…)).
+ *                          Gmail / Outlook / Braze strip table background
+ *                          images, so the panel/gradient renders in the
+ *                          Stripo editor but collapses to no fill on send.
+ *                          The same image on a <td> survives. WARNING.
+ *                          Not auto-fixable (move bg to a wrapping <td>
+ *                          + keep a bgcolor fallback).
  *   image_url_unreachable — <img src> returns 4xx/5xx on HEAD.
  *                          Will render broken in production. ERROR.
  *                          Not auto-fixable. (Async — only included
@@ -136,6 +144,7 @@ function auditOneModule({ item }) {
   findings.push(...checkStaticAssetPattern({ item, html }));
   findings.push(...checkNestingHazards({ item, html }));
   findings.push(...checkPaddingClassFlattenRisk({ item, html }));
+  findings.push(...checkTableBackgroundImage({ item, html }));
   return findings;
 }
 
@@ -267,6 +276,48 @@ function checkSubSixHundredWidth({ item, html }) {
       });
       // Only flag once per module — repeated narrow widths are usually structural, one fix covers them.
       return findings;
+    }
+  }
+  return findings;
+}
+
+/**
+ * Flag <table> elements that carry a background image (background="…" attribute
+ * or background-image:url(…) in style). Gmail, Outlook (Word engine), and
+ * several ESP renderers — including Braze's — strip background images on
+ * <table> elements, so a panel/gradient that looks fine in the Stripo editor
+ * collapses to no fill once exported and sent. The same image on a <td>
+ * survives. This is the load-bearing gotcha of the Stripo → Braze handshake
+ * for modular chat/panel backgrounds: build the fill on a <td>, not a <table>,
+ * and keep a solid bgcolor on that <td> as the belt-and-braces fallback.
+ */
+function checkTableBackgroundImage({ item, html }) {
+  const findings = [];
+  const tableRe = /<table\b[^>]*>/gi;
+  for (const m of html.matchAll(tableRe)) {
+    const tag = m[0];
+    const hasBgAttr = /\sbackground\s*=\s*["'][^"']+["']/i.test(tag);
+    const hasBgImg = /background-image\s*:\s*url\(/i.test(tag);
+    if (hasBgAttr || hasBgImg) {
+      findings.push({
+        severity: "warning",
+        code: "table_background_image",
+        stripo_id: item.metadata?.stripo_id,
+        module_name: item.title,
+        message:
+          "A <table> in this module carries a background image (background=\"…\" attribute or " +
+          "background-image:url(…) in its style). Gmail, Outlook, and several ESP renderers — including " +
+          "Braze's — strip background images on <table> elements, so the panel/gradient collapses to no fill " +
+          "on send even though it renders correctly in the Stripo editor. The identical image on a <td> survives.",
+        auto_fixable: false,
+        fix_description:
+          "Move the background off the <table> and onto a wrapping <td class=\"esd-structure\"> that holds the " +
+          "module's content (background=\"…\" + background-image:url(…) on the <td>), and keep a solid bgcolor on " +
+          "that same <td> as the fallback for clients that also drop <td> background images " +
+          "(e.g. bgcolor=\"#c1e9ff\"). This mirrors how Stripo's hero/structure modules apply gradients so they " +
+          "survive the Stripo → Braze handshake.",
+      });
+      return findings; // one finding per module — the fix is structural, one note covers it
     }
   }
   return findings;
