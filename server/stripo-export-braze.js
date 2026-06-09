@@ -58,6 +58,93 @@ import { brazePost, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js
 
 const MAX_EXPORT_BATCH = 100;
 
+// Sentinel comment wrapping the injected stylesheet. Used both to fence
+// the Stripo `css` field inside the html AND to make the injection
+// idempotent — a second export (or a re-export onto an existing Braze
+// template whose body we somehow re-feed) won't stack a second copy.
+const STRIPO_CSS_OPEN = "/* orbit:stripo-css-fold start */";
+const STRIPO_CSS_CLOSE = "/* orbit:stripo-css-fold end */";
+
+/**
+ * Fold Stripo's separate `css` field into the html document's <head> as a
+ * <style> block, so the exported Braze template renders like Stripo's own
+ * hosted preview.
+ *
+ * ── Why this is necessary (the bug this fixes) ──────────────────────────
+ *
+ * GET /emails/<id> returns TWO style carriers, not one:
+ *   • `html` — the document. Its <head> <style> blocks contain only STUBS
+ *     of the class rules (e.g. `.es-button { mso-style-priority:100;
+ *     text-decoration:none }` — no background, padding, or border-radius)
+ *     plus a scattering of inline style= attrs.
+ *   • `css`  — a SEPARATE ~16 KB stylesheet holding the real class-based
+ *     styling: the full `.es-button` look (background / border-radius /
+ *     padding / display:inline-block), `.es-p-*` padding, `.es-spacer`,
+ *     and the `@media` mobile overrides.
+ *
+ * Stripo's hosted preview combines html + css. The old export POSTed only
+ * `body: html` to Braze and dropped `css` entirely — so CTAs rendered as
+ * plain underlined links and class-based padding collapsed. Verified live
+ * on email 11948594: 28 of 49 css selectors (incl. `.es-button` visual
+ * rules and `.es-p-default`) appeared NOWHERE in the html.
+ *
+ * The fix is the minimum viable one stated in the brief: inject the css
+ * field into <head> as a <style> block. Braze preserves <style> blocks,
+ * and class-based <style> rules + @media are well-supported across major
+ * email clients. (Full CSS inlining via juice would be belt-and-braces for
+ * the few clients that strip <head>, but juice is only a TRANSITIVE dep of
+ * mjml here — promoting it to a direct dependency is a deliberate follow-up,
+ * not something to smuggle in on this fix.)
+ *
+ * Idempotency / no double-inject:
+ *   • If `css` is empty/whitespace, returns the html untouched.
+ *   • If the html already contains our fold sentinel, returns it untouched
+ *     (a previous fold is present — never stack a second copy).
+ *   • Insertion point: immediately before </head>. If there is no </head>,
+ *     a minimal <head>…</head> is created right after <html …> (or, failing
+ *     that, prepended) so the <style> always lands inside a head.
+ *
+ * @param {string} html  the Stripo `html` field (full document)
+ * @param {string} css   the Stripo `css` field (separate stylesheet)
+ * @returns {{ html: string, injected: boolean, reason?: string }}
+ */
+function foldStripoCssIntoHtml(html, css) {
+  if (typeof html !== "string" || !html) {
+    return { html: typeof html === "string" ? html : "", injected: false, reason: "no_html" };
+  }
+  if (typeof css !== "string" || !css.trim()) {
+    return { html, injected: false, reason: "no_css" };
+  }
+  // Already folded once — do not stack a second copy.
+  if (html.includes(STRIPO_CSS_OPEN)) {
+    return { html, injected: false, reason: "already_folded" };
+  }
+
+  const styleBlock =
+    `<style type="text/css">\n${STRIPO_CSS_OPEN}\n${css}\n${STRIPO_CSS_CLOSE}\n</style>`;
+
+  // Preferred: insert just before the closing </head>.
+  const headCloseRe = /<\/head>/i;
+  if (headCloseRe.test(html)) {
+    return { html: html.replace(headCloseRe, `${styleBlock}\n</head>`), injected: true };
+  }
+
+  // No </head>: open one right after <html ...> and close it before <body>
+  // (or immediately, if no body). Keeps the <style> inside a real head so
+  // clients that only honour head-level <style> still pick it up.
+  const htmlOpenRe = /<html\b[^>]*>/i;
+  if (htmlOpenRe.test(html)) {
+    return {
+      html: html.replace(htmlOpenRe, (m) => `${m}\n<head>\n${styleBlock}\n</head>`),
+      injected: true,
+    };
+  }
+
+  // No <html> wrapper at all — prepend a head + style. Last-resort path;
+  // Stripo always returns a full document, so this is defensive only.
+  return { html: `<head>\n${styleBlock}\n</head>\n${html}`, injected: true };
+}
+
 /**
  * Normalise the email-id input (single value or array) into a clean,
  * de-duplicated array of numeric-string Stripo email IDs. Mirrors the
@@ -132,8 +219,8 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
     };
   }
 
-  const html = typeof email?.html === "string" ? email.html : null;
-  if (!html || !html.trim()) {
+  const rawHtml = typeof email?.html === "string" ? email.html : null;
+  if (!rawHtml || !rawHtml.trim()) {
     return {
       stripo_email_id: stripoEmailId,
       status: "error",
@@ -145,6 +232,14 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
     };
   }
 
+  // Fold Stripo's separate `css` field into the html <head>. Without this,
+  // the class-based CTA styling (.es-button) and padding (.es-p-*) live only
+  // in `css` and never reach Braze, so buttons render as plain links. See
+  // foldStripoCssIntoHtml() for the full rationale.
+  const cssField = typeof email?.css === "string" ? email.css : "";
+  const fold = foldStripoCssIntoHtml(rawHtml, cssField);
+  const html = fold.html;
+
   // Stripo's `title` field is the subject line; `name` is the workspace
   // label. Prefer an explicit subject if Stripo carries one, fall back to
   // the email name so Braze never gets a blank subject.
@@ -153,8 +248,11 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
   const stripoName = (email.name ?? `Stripo email ${stripoEmailId}`).toString();
   const templateName = namePrefix ? `${namePrefix}${stripoName}` : stripoName;
 
+  // Liquid + byte counts describe what is actually SENT to Braze (the folded
+  // body), so the caller's sanity-check reflects the real payload.
   const liquidTagCount = (html.match(/\{\{/g) || []).length;
   const htmlBytes = Buffer.byteLength(html, "utf8");
+  const cssBytesFolded = fold.injected ? Buffer.byteLength(cssField, "utf8") : 0;
 
   const willUpdate = Boolean(brazeTemplateId);
   const endpoint = willUpdate ? "/templates/email/update" : "/templates/email/create";
@@ -176,6 +274,12 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
     preheader,
     operation: willUpdate ? "update" : "create",
     html_byte_count: htmlBytes,
+    // True when Stripo's `css` field carried real styling that we folded into
+    // the Braze body. False means either no css field, or it was already
+    // folded (idempotent re-fetch). Surfaced so the caller can confirm the
+    // CTA/padding CSS actually made the trip.
+    css_folded: fold.injected,
+    css_byte_count: cssBytesFolded,
     liquid_tag_count: liquidTagCount,
     stripo_editor_url: email.editorUrl ?? null,
     stripo_preview_url: email.previewUrl ?? null,

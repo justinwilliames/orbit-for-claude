@@ -61,8 +61,18 @@ function loadModule({
 
 const CONFIG = { stripoRestApiToken: "tok", brazeApiKey: "k", brazeRestEndpoint: "https://rest.iad-07.braze.com" };
 
+// Mirrors the real GET /emails/<id> shape: the `html` field's <head> carries
+// only a STUB .es-button rule, while the real button/padding styling lives in
+// the SEPARATE `css` field (verified live on email 11948594). The export must
+// fold `css` into the html <head> so Braze gets the full styling.
 const FULL_EMAIL = {
-  html: "<!doctype html><html><body style=\"x\">Hi {{ profile.first_name }}</body></html>",
+  html:
+    "<!doctype html><html><head><style>.es-button{mso-style-priority:100}</style></head>" +
+    "<body style=\"x\"><a class=\"es-button\" href=\"#\">Connect Xero</a> Hi {{ profile.first_name }}</body></html>",
+  css:
+    ".es-button { padding: 15px 40px; display: inline-block; background: #140934; border-radius: 50px; color: #ffffff; }\n" +
+    ".es-p-default { padding-top: 24px; padding-right: 24px; padding-bottom: 24px; padding-left: 24px; }\n" +
+    "@media only screen and (max-width:600px){ .es-button{ display:block !important; } }",
   title: "Invoices still piling up",
   preheader: "Connect Xero",
   name: "M10 Xero B - Free",
@@ -89,13 +99,75 @@ test("reads GET /emails/<id> then CREATEs a Braze email template", async () => {
   assert.match(body.body, /first_name/); // HTML passed through verbatim
   assert.ok(!("email_template_id" in body)); // create, not update
 
+  // The Stripo `css` field must be folded into the Braze body — otherwise the
+  // class-based button/padding styling never reaches Braze (the bug).
+  assert.match(body.body, /\.es-button \{ padding: 15px 40px/); // full button rule, not the stub
+  assert.match(body.body, /\.es-p-default \{ padding-top: 24px/); // padding rule present
+  assert.match(body.body, /@media only screen and \(max-width:600px\)/); // mobile @media folded in
+  // It must land inside the <head>, before </head>.
+  assert.ok(body.body.indexOf(".es-p-default") < body.body.indexOf("</head>"), "folded css must sit before </head>");
+  // And it must not have stomped the existing stub rule.
+  assert.match(body.body, /mso-style-priority:100/);
+
   const r0 = res.results[0];
   assert.equal(r0.operation, "create");
   assert.equal(r0.braze_email_template_id, "braze-new");
   assert.equal(r0.liquid_tag_count, 1);
   assert.ok(r0.html_byte_count > 0);
+  assert.equal(r0.css_folded, true); // the fold actually happened
+  assert.ok(r0.css_byte_count > 0); // and it carried bytes
   assert.equal(r0.braze_dashboard_url, "https://dash/templates/braze-new");
   assert.equal(r0.stripo_preview_url, FULL_EMAIL.previewUrl);
+});
+
+// ─── css fold: edge cases ────────────────────────────────────────────────────
+
+test("does NOT double-inject the css when the html already carries the fold sentinel", async () => {
+  // Simulate an email whose html already contains a previously-folded block.
+  const PRE_FOLDED = {
+    ...FULL_EMAIL,
+    html:
+      "<!doctype html><html><head><style>.es-button{mso-style-priority:100}</style>" +
+      "<style type=\"text/css\">\n/* orbit:stripo-css-fold start */\n.es-button { background: #140934; }\n/* orbit:stripo-css-fold end */\n</style>" +
+      "</head><body><a class=\"es-button\" href=\"#\">Go</a></body></html>",
+  };
+  const { mod, calls } = loadModule({ stripoGet: () => PRE_FOLDED });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+  assert.equal(res.status, "ok");
+
+  const body = calls.brazePost[0].body;
+  // Exactly one fold sentinel — the css field was not stacked a second time.
+  const opens = (body.body.match(/orbit:stripo-css-fold start/g) || []).length;
+  assert.equal(opens, 1, "fold sentinel must appear exactly once (no double-inject)");
+  assert.equal(res.results[0].css_folded, false); // reported as not-injected
+});
+
+test("passes html through unchanged when Stripo returns no css field", async () => {
+  const NO_CSS = { ...FULL_EMAIL, css: undefined };
+  const { mod, calls } = loadModule({ stripoGet: () => NO_CSS });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+  assert.equal(res.status, "ok");
+
+  const body = calls.brazePost[0].body;
+  assert.ok(!body.body.includes("orbit:stripo-css-fold"), "no fold block when there is no css");
+  assert.equal(body.body, NO_CSS.html); // body is the raw html verbatim
+  assert.equal(res.results[0].css_folded, false);
+  assert.equal(res.results[0].css_byte_count, 0);
+});
+
+test("creates a <head> to host the fold when the html has none", async () => {
+  const NO_HEAD = {
+    ...FULL_EMAIL,
+    html: "<html><body><a class=\"es-button\" href=\"#\">Go</a></body></html>",
+  };
+  const { mod, calls } = loadModule({ stripoGet: () => NO_HEAD });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+  assert.equal(res.status, "ok");
+
+  const body = calls.brazePost[0].body;
+  assert.match(body.body, /<head>[\s\S]*orbit:stripo-css-fold[\s\S]*<\/head>/);
+  assert.ok(body.body.indexOf("<head>") < body.body.indexOf("<body>"), "head precedes body");
+  assert.equal(res.results[0].css_folded, true);
 });
 
 // ─── never leak raw HTML ─────────────────────────────────────────────────────
