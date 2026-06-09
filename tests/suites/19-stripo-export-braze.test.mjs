@@ -25,6 +25,7 @@ const SOURCE_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-export-bra
 function loadModule({
   stripoGet,
   brazePost,
+  brazeList,
   stripoSetup = () => null,
   brazeSetup = () => null,
 } = {}) {
@@ -33,7 +34,7 @@ function loadModule({
     .replace(/^import .*;\n/gm, "")
     .replace(/^export /gm, "");
 
-  const calls = { stripoGet: [], brazePost: [] };
+  const calls = { stripoGet: [], brazePost: [], brazeList: [] };
   const context = {
     Buffer,
     stripoRestGet: async ({ endpoint }) => {
@@ -44,6 +45,13 @@ function loadModule({
     brazePost: async ({ endpoint, body }) => {
       calls.brazePost.push({ endpoint, body });
       return (brazePost ?? (() => ({ email_template_id: "braze-new" })))({ endpoint, body });
+    },
+    // Dedupe-by-name lists existing Braze templates; default to an empty list
+    // so create-path tests behave as before. A test can return templates here
+    // to exercise the overwrite-by-name path.
+    brazePaginateList: async ({ endpoint, params }) => {
+      calls.brazeList.push({ endpoint, params });
+      return (brazeList ?? (() => []))({ endpoint, params });
     },
     validateBrazeSetup: brazeSetup,
     buildDashboardUrl: (_endpoint, type, id) => `https://dash/${type}/${id}`,
@@ -317,4 +325,104 @@ test("refuses a batch over the export cap", async () => {
   const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: ids });
   assert.equal(res.status, "needs_inputs");
   assert.equal(calls.stripoGet.length, 0);
+});
+
+// ─── dedupe-by-name: overwrite previous templates, never duplicate ───────────
+
+test("dedupe-by-name UPDATEs an existing same-named template in place", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [
+      { template_name: "Some Other Template", email_template_id: "other-1" },
+      { template_name: "M10 Xero B - Free", email_template_id: "existing-123" },
+    ],
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+
+  assert.equal(res.status, "ok");
+  assert.equal(calls.brazeList.length, 1, "lists existing templates exactly once for the batch");
+  assert.equal(calls.brazeList[0].endpoint, "/templates/email/list");
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/update", "overwrites rather than creating");
+  assert.equal(calls.brazePost[0].body.email_template_id, "existing-123");
+  assert.equal(res.results[0].operation, "update");
+  assert.equal(res.results[0].matched_by, "name");
+});
+
+test("dedupe-by-name CREATEs when no same-named template exists", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [{ template_name: "Unrelated", email_template_id: "u-1" }],
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/create");
+  assert.equal(res.results[0].operation, "create");
+  assert.equal(res.results[0].matched_by, null);
+});
+
+test("explicit braze_template_map wins over a name match", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [{ template_name: "M10 Xero B - Free", email_template_id: "name-match" }],
+  });
+  const res = await mod.exportStripoEmailsToBraze({
+    config: CONFIG,
+    emailIds: 11949287,
+    brazeTemplateMap: { 11949287: "explicit-id" },
+  });
+
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/update");
+  assert.equal(calls.brazePost[0].body.email_template_id, "explicit-id");
+  assert.equal(res.results[0].matched_by, "id");
+});
+
+test("force_create bypasses the name lookup and CREATEs a fresh template", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [{ template_name: "M10 Xero B - Free", email_template_id: "existing-123" }],
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287, forceCreate: true });
+
+  assert.equal(calls.brazeList.length, 0, "force_create skips listing existing templates");
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/create");
+  assert.equal(res.results[0].operation, "create");
+});
+
+test("dedupeByName=false skips the lookup and CREATEs", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [{ template_name: "M10 Xero B - Free", email_template_id: "existing-123" }],
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287, dedupeByName: false });
+
+  assert.equal(calls.brazeList.length, 0);
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/create");
+});
+
+test("duplicate same-named Braze templates surface a warning and update the first", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [
+      { template_name: "M10 Xero B - Free", email_template_id: "dup-a" },
+      { template_name: "M10 Xero B - Free", email_template_id: "dup-b" },
+    ],
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+
+  assert.equal(calls.brazePost[0].body.email_template_id, "dup-a", "updates the first of the duplicates");
+  assert.ok(res.results[0].duplicate_name_warning, "warns that duplicates exist");
+});
+
+test("a dedupe listing failure does not sink the export (falls back to create)", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => {
+      throw new Error("Braze 500 on /templates/email/list");
+    },
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+
+  assert.equal(res.status, "ok");
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/create");
+  assert.match(res.dedupe_warning, /Could not list existing Braze templates/);
 });

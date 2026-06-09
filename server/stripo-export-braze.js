@@ -54,7 +54,7 @@
  */
 
 import { stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
-import { brazePost, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
+import { brazePost, brazePaginateList, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
 
 const MAX_EXPORT_BATCH = 100;
 
@@ -198,13 +198,47 @@ function coerceTemplateMap(input) {
 }
 
 /**
+ * List every existing Braze email template once and index it by name, so the
+ * exporter can UPDATE a same-named template in place instead of creating a
+ * duplicate on every re-run. This is what makes the default behaviour
+ * "overwrite the previous template", not "pile up copies".
+ *
+ * Braze's /templates/email/list paginates (100 per page); brazePaginateList
+ * walks it. Names are matched EXACTLY (Braze allows duplicate names, so when
+ * two templates share a name we keep the first id and flag the name as a
+ * duplicate — the tool can warn rather than silently picking one and leaving
+ * an orphan).
+ *
+ * @returns {{ byName: Map<string,string>, dupNames: Set<string> }}
+ */
+async function fetchBrazeTemplateNameMap({ config }) {
+  const items = await brazePaginateList({
+    config,
+    endpoint: "/templates/email/list",
+    params: {},
+    itemsKey: "templates",
+    maxPages: 50,
+  });
+  const byName = new Map();
+  const dupNames = new Set();
+  for (const t of items || []) {
+    const name = (t?.template_name ?? "").toString();
+    const id = t?.email_template_id;
+    if (!name || !id) continue;
+    if (byName.has(name)) dupNames.add(name);
+    else byName.set(name, id);
+  }
+  return { byName, dupNames };
+}
+
+/**
  * Fetch one Stripo email and create (or update) the corresponding Braze
  * email template. Returns a structured per-email result — never throws;
  * failures are captured so a batch can report partial success.
  *
  * @returns {object} per-email result with status "ok" | "error"
  */
-async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePrefix, tags, dryRun }) {
+async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap, dupNames, namePrefix, tags, dryRun }) {
   // ── 1. Read the rendered email from Stripo (GET only). ────────────────
   let email;
   try {
@@ -254,10 +288,20 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
   const htmlBytes = Buffer.byteLength(html, "utf8");
   const cssBytesFolded = fold.injected ? Buffer.byteLength(cssField, "utf8") : 0;
 
-  const willUpdate = Boolean(brazeTemplateId);
+  // Resolve the target Braze template. An explicit id (braze_template_map)
+  // always wins; otherwise dedupe-by-name finds an existing template with the
+  // SAME name and updates it in place, so a re-export overwrites rather than
+  // duplicates. Only when neither hits do we create a brand-new template.
+  let resolvedTemplateId = brazeTemplateId || null;
+  let matchedBy = resolvedTemplateId ? "id" : null;
+  if (!resolvedTemplateId && nameMap && nameMap.has(templateName)) {
+    resolvedTemplateId = nameMap.get(templateName);
+    matchedBy = "name";
+  }
+  const willUpdate = Boolean(resolvedTemplateId);
   const endpoint = willUpdate ? "/templates/email/update" : "/templates/email/create";
   const requestBody = {
-    ...(willUpdate ? { email_template_id: brazeTemplateId } : {}),
+    ...(willUpdate ? { email_template_id: resolvedTemplateId } : {}),
     template_name: templateName,
     subject,
     preheader,
@@ -273,6 +317,16 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
     subject,
     preheader,
     operation: willUpdate ? "update" : "create",
+    // How the existing template was resolved: "id" (explicit map), "name"
+    // (dedupe-by-name overwrite), or null (no match — a fresh create).
+    matched_by: matchedBy,
+    ...(dupNames && dupNames.has(templateName)
+      ? {
+          duplicate_name_warning:
+            `Braze holds more than one template named "${templateName}"; updated the first. ` +
+            "Delete the extras so one canonical template remains.",
+        }
+      : {}),
     html_byte_count: htmlBytes,
     // True when Stripo's `css` field carried real styling that we folded into
     // the Braze body. False means either no css field, or it was already
@@ -306,7 +360,7 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, namePref
     };
   }
 
-  const resolvedBrazeId = response?.email_template_id ?? brazeTemplateId ?? null;
+  const resolvedBrazeId = response?.email_template_id ?? resolvedTemplateId ?? null;
   return {
     ...baseResult,
     status: "ok",
@@ -338,6 +392,8 @@ export async function exportStripoEmailsToBraze({
   config,
   emailIds,
   brazeTemplateMap,
+  dedupeByName = true,
+  forceCreate = false,
   namePrefix = null,
   tags = [],
   dryRun = false,
@@ -365,6 +421,26 @@ export async function exportStripoEmailsToBraze({
 
   const normalisedTags = Array.isArray(tags) ? tags.filter((t) => typeof t === "string" && t.trim()) : [];
 
+  // Dedupe-by-name (default ON): list the existing Braze email templates ONCE
+  // and update any whose name matches, so re-exporting the same program
+  // OVERWRITES the previous templates instead of stacking duplicates. An
+  // explicit braze_template_map still takes precedence per id. force_create
+  // bypasses the lookup when the caller genuinely wants brand-new templates.
+  let nameMap = null;
+  let dupNames = null;
+  let dedupeWarning;
+  if (dedupeByName && !forceCreate) {
+    try {
+      const fetched = await fetchBrazeTemplateNameMap({ config });
+      nameMap = fetched.byName;
+      dupNames = fetched.dupNames;
+    } catch (err) {
+      dedupeWarning =
+        `Could not list existing Braze templates for name-dedupe (${err.message}); ` +
+        "proceeded creating any unmapped emails as new templates.";
+    }
+  }
+
   // Sequential on purpose: brazePost + stripoRestGet are each rate-limited
   // via their own promise-chains, and a 42-wide parallel fan-out would just
   // queue behind those limiters anyway while making failures harder to
@@ -375,6 +451,8 @@ export async function exportStripoEmailsToBraze({
       config,
       stripoEmailId: id,
       brazeTemplateId: templateMap.get(id) ?? null,
+      nameMap,
+      dupNames,
       namePrefix,
       tags: normalisedTags,
       dryRun,
@@ -409,6 +487,9 @@ export async function exportStripoEmailsToBraze({
     // Persist this and pass it back as braze_template_map on a re-run to
     // update-in-place rather than create duplicate Braze templates.
     braze_template_map: Object.keys(exportedTemplateMap).length ? exportedTemplateMap : undefined,
+    // Surfaced only if the dedupe lookup itself failed; per-email `operation`
+    // (update vs create) and `matched_by` already report what each row did.
+    dedupe_warning: dedupeWarning,
     results,
     message:
       `Stripo has no native export-to-ESP API; Orbit bridged it (GET /emails/<id> → Braze /templates/email/${"{create,update}"}). ` +

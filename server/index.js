@@ -4362,7 +4362,7 @@ function registerTools() {
         "Turn one or more finished Stripo emails into Braze email templates so a Braze Canvas can reference them — fully programmatic, no GUI exports. " +
         "Stripo has NO native export-to-ESP API endpoint (verified: OPTIONS /emails/<id> allows only DELETE/GET/HEAD/OPTIONS, and every /export, /esp, /integrations route 404s); the GUI 'Export to ESP/Braze' is UI-only. " +
         "This tool reproduces that export under the hood: it reads each email's rendered production HTML, subject, and preheader via GET /emails/<id> on Stripo, then creates a Braze email template via POST /templates/email/create (or /update for an existing template). " +
-        "Pass a single numeric Stripo email ID or an array (e.g. all 42). By default each email becomes a NEW Braze template; to re-export idempotently onto existing templates, pass braze_template_map (stripo_email_id → braze_email_template_id) — the response returns this map after a create so you can persist it and update-in-place next time instead of duplicating. " +
+        "Pass a single numeric Stripo email ID or an array (e.g. all 42). By DEFAULT it overwrites rather than duplicates: before creating, it lists existing Braze templates and UPDATES any whose name matches the Stripo email's name in place, so re-exporting the same program never piles up copies (set force_create:true for brand-new templates, or dedupe_by_name:false to skip the lookup). An explicit braze_template_map (stripo_email_id → braze_email_template_id) still takes precedence per id; the response returns the resulting map so you can persist it. Each row reports operation (create|update) and matched_by (id|name|null). " +
         "Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). Liquid in the email is carried through as literal {{...}} — correct, since Braze resolves it at send time (a liquid_tag_count per email is reported). Returns IDs, names, Braze template IDs, dashboard URLs, and HTML byte counts only — never raw HTML, to stay inside the tool-result size cap.",
       inputSchema: {
         email_ids: z
@@ -4382,6 +4382,14 @@ function registerTools() {
           .describe(
             "Optional mapping of Stripo email ID → existing Braze email_template_id. Matched entries UPDATE that Braze template instead of creating a new one (idempotent re-export). Either an object {\"11949287\":\"abc-guid\"} or an array of {stripo_email_id, braze_email_template_id}."
           ),
+        dedupe_by_name: z
+          .boolean()
+          .optional()
+          .describe("Default true. Before creating, look up an existing Braze template with the SAME name and UPDATE it in place (overwrite) instead of creating a duplicate. Set false to skip the lookup and always create."),
+        force_create: z
+          .boolean()
+          .optional()
+          .describe("Default false. When true, bypass name-dedupe entirely and create a brand-new Braze template for every email, even if a same-named one already exists."),
         name_prefix: z
           .string()
           .optional()
@@ -4396,11 +4404,13 @@ function registerTools() {
           .describe("If true, fetch each Stripo email and report the planned Braze write (name/subject/byte count) WITHOUT writing anything to Braze.")
       }
     },
-    async ({ email_ids, braze_template_map, name_prefix, tags, dry_run }) => {
+    async ({ email_ids, braze_template_map, dedupe_by_name, force_create, name_prefix, tags, dry_run }) => {
       const result = await exportStripoEmailsToBraze({
         config: runtimeConfig,
         emailIds: email_ids,
         brazeTemplateMap: braze_template_map,
+        dedupeByName: dedupe_by_name ?? true,
+        forceCreate: force_create ?? false,
         namePrefix: name_prefix ?? null,
         tags: tags ?? [],
         dryRun: dry_run ?? false
