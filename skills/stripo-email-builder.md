@@ -1,5 +1,5 @@
 ---
-name: stripo-email-build-spec
+name: stripo-email-builder
 description: >
   Use this skill whenever the user wants to write, draft, build, scope, or design any
   email program destined for a Braze Canvas or campaign — single email or a multi-email
@@ -18,10 +18,15 @@ description: >
   campaign email", "lifecycle email", "Canvas email", "onboarding email", "winback
   email", "nurture email", "activation email", "re-engagement email", "build spec for
   the X program", or any request to produce email copy destined for a Braze Canvas or
-  campaign.
+  campaign. ALSO covers the END-TO-END build lifecycle, not just the spec: building/
+  pushing emails into Stripo, exporting to Braze templates, fixing placeholder/render
+  bugs, and cleaning up the Stripo workspace (see "Building & shipping in Stripo
+  (operational)"). Trigger additionally on "build the templates", "push to Stripo",
+  "export to Braze", "regenerate the emails", "the emails are rendering with
+  placeholders", "clean up Stripo", "delete the old templates".
 ---
 
-# Stripo Email Build Spec
+# Stripo Email Builder
 
 The canonical Notion-ready Build Spec format for any email program shipped through Stripo to Braze — single email or a multi-email Canvas. Every email's modules come from the live Stripo library (synced first) and every CTA from the project's Universal URL inventory. The Build Spec is a build-ready handoff: engineers wire it into Braze with zero translation.
 
@@ -502,3 +507,25 @@ Welcome email for a new Paid signup, scoped down (no program-shape or email-inde
 ```
 
 That's the minimal contract: provenance + personalisation + one email toggle with all four module subsections in the right order + verification + gates + notes. Scale up by adding §2 Program shape and §3 Email index when there are multiple emails. The structural rules don't change.
+
+# Building & shipping in Stripo (operational)
+
+> The sections above produce the **spec**. This is how you actually **build, push, verify, export, and manage** the emails. Every rule here was learned the hard way during the 2026-06-15 Activation rebuild (42 emails). Ignore at your peril.
+
+## The build pipeline: compose → push → VERIFY → export
+1. **Compose + push:** `orbit_compose_stripo_email` with `push:true`, `module_sequence` (module-ID strings; **pos 0 = header, last = footer**), `slot_values` (`{ "<moduleId>": { "<varName>": "<value>" } }`), `subject`, `preheader`, `email_name`. Returns the new Stripo `email_id`. Needs the master template configured — check with `orbit_check_stripo_auth` first.
+2. **slot_values ONLY inject on `push:true`.** A `push:false` preview renders MODULE DEFAULTS — never trust it to verify content.
+3. **VERIFY via `orbit_get_stripo_email`** (grep the overflow file). Confirm real copy/images in the rendered `html`, not defaults. The email JSON stores only baked `html`+`css` — **no dataSources/values store.**
+4. **Export to Braze:** `orbit_export_stripo_email_to_braze`, `dedupe_by_name:true` — UPDATES the existing Braze template with the matching NAME in place (no dupes). `dry_run:true` first to confirm `operation:"update"`. **Times out at ~42 — chunk by ~8.** Idempotent.
+
+## ☠️ The bug that will bite you: partial-slot_values re-push
+**Re-pushing to change ONE module with PARTIAL slot_values silently DROPS the other modules → they render default placeholder copy** (`Intriguing heading` / `Lorem ipsum…` / `Do the thing` / `Link here` / blank image box). Broke 13/42 in the rebuild. ALWAYS re-push the COMPLETE payload for every module, never a delta. Placeholder strings in a sent email = a population miss on that module. **Native Stripo→Braze export will NOT fix it** — values aren't stored, so there's nothing to re-generate; only a correct re-push fixes dropped content.
+
+## Hero/image binding trap
+`p_image_link` lives in an `esd-dynamic-block` attribute Stripo's code-view copy STRIPS. Paste library-synced HTML, not code-view. Re-saving mints a NEW module ID — **module IDs churn; always sync (`orbit_sync_stripo_modules` + `orbit_list_stripo_modules`) and reference by name.**
+
+## Workspace management (delete + move) — UI + API hybrid
+No Orbit/API tool LISTs emails or MOVEs to folders (only get/delete/compose). To get IDs: open the Stripo emails page in Claude-in-Chrome and read the DOM — each row is `acc-grid-entity-block[id="entity-<emailId>"]`; the list is virtualised, scroll `.ca-navigator-content-body--scrollable` to load all. **DELETE** via `orbit_delete_stripo_email` (by id, max 200; permanent — confirm first; never the master template). **MOVE to folder** is UI-only: tick checkboxes → the **Move** button at the top → pick the folder.
+
+## Subagents + clip
+`general-purpose` subagents CAN call Orbit MCP (push/export/delete — creds live in the Desktop MCP server, not the subagent env, so an "ORBIT_STRIPO_* empty" self-report is a false alarm). The `stripo-operator` agent CANNOT (no MCP tools). Clip: export's `html_byte_count` already includes the folded CSS = delivered size; Gmail clips ~102KB; 8-module emails (two grids) hit ~100KB (tight). Trim modules/copy if over — never click-tracking/UTMs.

@@ -48,10 +48,13 @@ function loadModule({
     },
     // Dedupe-by-name lists existing Braze templates; default to an empty list
     // so create-path tests behave as before. A test can return templates here
-    // to exercise the overwrite-by-name path.
+    // to exercise the overwrite-by-name path. The real brazePaginateList
+    // returns { items, truncated, pages_fetched } (post-0.23.3 dedupe reads
+    // .items), so wrap the fixture's bare array in that envelope here.
     brazePaginateList: async ({ endpoint, params }) => {
       calls.brazeList.push({ endpoint, params });
-      return (brazeList ?? (() => []))({ endpoint, params });
+      const items = (brazeList ?? (() => []))({ endpoint, params });
+      return { items, truncated: false, pages_fetched: 1 };
     },
     validateBrazeSetup: brazeSetup,
     buildDashboardUrl: (_endpoint, type, id) => `https://dash/${type}/${id}`,

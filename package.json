@@ -1,6 +1,6 @@
 {
   "name": "orbit-claude-extension",
-  "version": "0.23.4",
+  "version": "0.23.5",
   "private": true,
   "type": "module",
   "description": "Orbit - Lifecycle Marketing System for Claude, packaged as a local Claude-first MCP extension.",

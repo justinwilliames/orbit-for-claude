@@ -252,6 +252,24 @@ const server = new McpServer({
   version: ORBIT_VERSION,
   description:
     "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
+}, {
+  instructions: [
+    "Orbit is a lifecycle-marketing operating system carrying 60+ battle-tested SKILLS (protocols) plus 80+ tools. The skills encode hard-won, production-tested knowledge that generic reasoning does NOT have — Stripo build/push/export mechanics and their silent-failure traps, Braze canvas QA checklists and dashboard-driving quirks, module/Liquid/Smart-Element behaviour, naming conventions, deliverability rules, segmentation maths, and brand voice. Relying on generic email/Braze/Stripo knowledge when Orbit has a skill for the task produces wrong, drift-prone output.",
+    "",
+    "DEFAULT BEHAVIOUR — consult Orbit's skills FIRST. Before doing ANY email, Stripo, Braze, lifecycle, campaign, canvas, segmentation, deliverability, or naming work with Orbit connected:",
+    "  1. Call `orbit_route_task` with the user's request (or `orbit_list_skills` to browse) to identify the right skill.",
+    "  2. Call `orbit_load_skill` to load that skill's protocol, and FOLLOW it — do not improvise from general knowledge when a skill exists.",
+    "  3. For multi-step programs, `orbit_compose_sequence` chains the right skills.",
+    "Treat a matching Orbit skill as authoritative over generic reasoning. When unsure whether a skill covers the task, check (`orbit_route_task`/`orbit_list_skills`) rather than guessing — the cost of checking is tiny; the cost of generic output is rework.",
+    "",
+    "High-value skills to reach for:",
+    "  • `stripo-email-builder` — the END-TO-END email lifecycle: spec the copy deck, BUILD/push into Stripo, export to Braze, fix placeholder/render bugs, manage the Stripo workspace. Load it before composing, pushing, or exporting ANY email.",
+    "  • `braze-canvas-qa` — structured pre-launch QA of a Braze Canvas/campaign (entry rules, segments, tier-split logic, template bindings, conversion events, delays). Load before calling a canvas 'ready'.",
+    "  • `braze-claude-in-chrome-build` — the how-to manual for driving the Braze dashboard via Claude in Chrome (canvas flow edits, audience-path groups, save semantics, the API-vs-dashboard data split).",
+    "  • Plus calculators (sample size, LTV, RFM, retention), validators (Liquid, brand kit, deliverability, email size), and the Braze namer. Don't hand-roll what a tool does precisely.",
+    "",
+    "Always run setup/sync first where relevant: `orbit_check_setup`, `orbit_check_stripo_auth`, and `orbit_sync_stripo_modules` (module names/IDs churn — never hardcode). The skills exist to prevent silent failures; use them."
+  ].join("\n")
 });
 
 // ─── Process lifecycle ─────────────────────────────────────────────────
