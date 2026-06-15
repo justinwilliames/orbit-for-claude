@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { parseMaybeJson } from "../../server/utils.js";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-emails.js");
@@ -33,6 +34,7 @@ function loadModule({ get, del, restSetup = () => null } = {}) {
       return (del ?? (() => ({})))({ endpoint });
     },
     validateStripoRestSetup: restSetup,
+    parseMaybeJson,
     module: { exports: {} },
     exports: {},
   };
@@ -79,6 +81,17 @@ test("deleteStripoEmails deletes each ID and dedupes", async () => {
   assert.equal(res.status, "ok");
   assert.equal(res.deleted_count, 2);
   assert.deepEqual(calls.del, ["/emails/101", "/emails/102"]);
+});
+
+test("deleteStripoEmails accepts a JSON-stringified array (MCP-bridge batch path)", async () => {
+  // The MCP client can serialise an array argument as a JSON string when the
+  // param's union schema advertises a string branch. The batch path must still
+  // delete every ID, not choke on the literal "[...]" string.
+  const { mod, calls } = loadModule();
+  const res = await mod.deleteStripoEmails({ config: CONFIG, emailIds: "[101, 102, 103]" });
+  assert.equal(res.status, "ok");
+  assert.equal(res.deleted_count, 3);
+  assert.deepEqual(calls.del, ["/emails/101", "/emails/102", "/emails/103"]);
 });
 
 test("deleteStripoEmails accepts a single scalar ID", async () => {

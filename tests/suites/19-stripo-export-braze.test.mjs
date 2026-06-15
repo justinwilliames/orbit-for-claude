@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { parseMaybeJson } from "../../server/utils.js";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-export-braze.js");
@@ -58,6 +59,7 @@ function loadModule({
     },
     validateBrazeSetup: brazeSetup,
     buildDashboardUrl: (_endpoint, type, id) => `https://dash/${type}/${id}`,
+    parseMaybeJson,
     module: { exports: {} },
     exports: {},
   };
@@ -245,6 +247,37 @@ test("exports a batch, dedupes IDs, applies name_prefix, returns a re-export map
   assert.equal(res.braze_template_map["101"], "bt-Welcome / name-101");
   assert.equal(res.braze_template_map["102"], "bt-Welcome / name-102");
   assert.equal(Object.keys(res.braze_template_map).length, 2);
+});
+
+// ─── MCP-bridge JSON-stringified batch path ──────────────────────────────────
+
+test("exports a JSON-stringified email_ids array (MCP-bridge batch path)", async () => {
+  // The union's string branch lets a client serialise the array as "[101,102]";
+  // the bridge must still fetch and export both, not reject the literal string.
+  const { mod, calls } = loadModule({
+    stripoGet: ({ endpoint }) => ({ ...FULL_EMAIL, name: `name-${endpoint.split("/").pop()}` }),
+    brazePost: ({ body }) => ({ email_template_id: `bt-${body.template_name}` }),
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: "[101, 102]" });
+  assert.equal(res.status, "ok");
+  assert.equal(res.exported_count, 2);
+  assert.deepEqual(calls.stripoGet, ["/emails/101", "/emails/102"]);
+});
+
+test("braze_template_map accepts a JSON-stringified object (MCP-bridge path)", async () => {
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazePost: ({ body }) => ({ email_template_id: body.email_template_id }),
+  });
+  const res = await mod.exportStripoEmailsToBraze({
+    config: CONFIG,
+    emailIds: 11949287,
+    brazeTemplateMap: '{"11949287":"existing-guid"}',
+  });
+  assert.equal(res.status, "ok");
+  assert.equal(calls.brazePost[0].endpoint, "/templates/email/update");
+  assert.equal(calls.brazePost[0].body.email_template_id, "existing-guid");
+  assert.equal(res.results[0].operation, "update");
 });
 
 // ─── dry run writes nothing ──────────────────────────────────────────────────

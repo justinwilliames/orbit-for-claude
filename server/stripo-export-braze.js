@@ -55,6 +55,7 @@
 
 import { stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
 import { brazePost, brazePaginateList, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
+import { parseMaybeJson } from "./utils.js";
 
 const MAX_EXPORT_BATCH = 100;
 
@@ -152,7 +153,10 @@ function foldStripoCssIntoHtml(html, css) {
  * identically for the same kinds of input.
  */
 function coerceEmailIds(input) {
-  const raw = Array.isArray(input) ? input : [input];
+  // A batch array can arrive JSON-stringified ("[1,2,3]") when the MCP client
+  // serialises it through the union's string branch — unwrap before splitting.
+  const unwrapped = parseMaybeJson(input);
+  const raw = Array.isArray(unwrapped) ? unwrapped : [unwrapped];
   const seen = new Set();
   const ids = [];
   for (const v of raw) {
@@ -179,6 +183,9 @@ function coerceEmailIds(input) {
  */
 function coerceTemplateMap(input) {
   const map = new Map();
+  // The map can arrive JSON-stringified when serialised through the union's
+  // string-shaped branches — unwrap before inspecting its shape.
+  input = parseMaybeJson(input);
   if (!input) return { map };
   if (Array.isArray(input)) {
     for (const entry of input) {

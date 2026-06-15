@@ -19,11 +19,15 @@
  */
 
 import { stripoRestGet, stripoRestDelete, validateStripoRestSetup } from "./stripo-api.js";
+import { parseMaybeJson } from "./utils.js";
 
 const MAX_DELETE_BATCH = 200;
 
 function coerceEmailIds(input) {
-  const raw = Array.isArray(input) ? input : [input];
+  // A batch array can arrive JSON-stringified ("[1,2,3]") when the MCP client
+  // serialises it through the union's string branch — unwrap before splitting.
+  const unwrapped = parseMaybeJson(input);
+  const raw = Array.isArray(unwrapped) ? unwrapped : [unwrapped];
   const seen = new Set();
   const ids = [];
   for (const v of raw) {

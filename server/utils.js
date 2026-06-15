@@ -112,6 +112,33 @@ export function safeParseJson(text, fallback = null) {
   }
 }
 
+/**
+ * Unwrap an argument that *may* have been JSON-stringified in transit.
+ *
+ * Why this exists: tool params typed as a Zod union that includes a string
+ * branch (e.g. `z.union([z.string(), z.array(...)])`) advertise "string" as a
+ * legal type in the JSON Schema sent to the MCP client. Some clients take that
+ * as licence to serialise an array/object argument as a JSON string —
+ * `[1,2,3]` arrives as the literal `"[1,2,3]"`. The string branch accepts it,
+ * and the downstream coercer then chokes on a value it expected to be an array.
+ *
+ * If `value` is a string whose trimmed form looks like a JSON array or object,
+ * parse it and return the parsed value; otherwise return `value` untouched.
+ * Pure-array Zod params (no string branch) never hit this path — clients send
+ * them as real arrays — so this is a no-op for them.
+ */
+export function parseMaybeJson(value) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  const looksJson = (first === "[" && last === "]") || (first === "{" && last === "}");
+  if (!looksJson) return value;
+  const parsed = safeParseJson(trimmed, undefined);
+  return parsed === undefined ? value : parsed;
+}
+
 export function fileExists(filePath) {
   try {
     fs.accessSync(filePath, fs.constants.R_OK);

@@ -57,6 +57,8 @@ CI (`.github/workflows/build-mcpb.yml`):
 4. Add a fixture under `tests/fixtures/` and an assertion in the matching `tests/suites/` file.
 5. If user-visible, add a `lib/changelog.ts` entry on `get-orbit` in the same session.
 
+**Array/batch params — the stringified-array trap.** A param typed as a Zod union that includes a scalar string/object branch (e.g. `z.union([z.string(), z.array(...)])`) advertises "string" in the JSON Schema the MCP client sees, which licenses some clients to send an array/object argument JSON-*stringified* (`[1,2]` arrives as `"[1,2]"`). The string branch then accepts it and the downstream coercer chokes. Pure `z.array(...)` params don't have this problem — they're never stringified. So any coercer behind a string-shaped union must unwrap with `parseMaybeJson` (`server/utils.js`) before inspecting shape. See `coerceEmailIds` / `coerceTemplateMap`.
+
 ## Adding a new skill
 
 1. Create `skills/<slug>.md` with frontmatter (`name`, `description`).
