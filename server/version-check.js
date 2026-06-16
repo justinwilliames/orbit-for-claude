@@ -14,7 +14,7 @@ import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
 
 const WEBSITE_BREAKER = getBreaker("orbit-website");
 const LATEST_MANIFEST_URL =
-  "https://get.yourorbit.team/api/orbit/latest-version";
+  "https://yourorbit.team/api/orbit/latest-version";
 
 function compareVersions(a, b) {
   const [am, an, ap] = String(a).split(".").map((x) => Number.parseInt(x, 10) || 0);
@@ -54,7 +54,7 @@ export async function checkOrbitVersion({ installedVersion }) {
       installed_version: installedVersion,
       suggested_next_steps: [
         "Check your internet connection.",
-        "Visit https://get.yourorbit.team/account/downloads to see the latest release."
+        "Visit https://yourorbit.team/account/downloads to see the latest release."
       ]
     };
   }
@@ -79,10 +79,10 @@ export async function checkOrbitVersion({ installedVersion }) {
     latest_version: latest,
     source: sourceUsed,
     message,
-    download_url: "https://get.yourorbit.team/download",
+    download_url: "https://yourorbit.team/download",
     suggested_next_steps: comparison < 0
       ? [
-          "Open https://get.yourorbit.team/download in your browser.",
+          "Open https://yourorbit.team/download in your browser.",
           "Download the latest .mcpb and double-click it. Claude Desktop replaces the old version in place — no uninstall required.",
           "Restart Claude Desktop after install to load the updated skills and tools."
         ]

@@ -2515,7 +2515,7 @@ function renderDiagramInteractiveHtml({ spec, performance = null, logoDataUri = 
   </div>
   <footer class="orbit-foot">
     ${logoDataUri ? `<img src="${logoDataUri}" alt="" />` : '<span class="mark-fallback" aria-hidden="true"></span>'}
-    <span>Built with <a href="https://get.yourorbit.team" target="_blank" rel="noopener">Orbit</a> · Lifecycle Diagram</span>
+    <span>Built with <a href="https://yourorbit.team" target="_blank" rel="noopener">Orbit</a> · Lifecycle Diagram</span>
   </footer>
 </div>
 <script>

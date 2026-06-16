@@ -1,6 +1,6 @@
 /**
  * Pure-function calculators for the Orbit web-app family, ported to
- * MCPB for feature parity with get.yourorbit.team/apps/*.
+ * MCPB for feature parity with yourorbit.team/apps/*.
  *
  * Each function mirrors the corresponding lib/apps/*-logic.ts in
  * /tmp/get-orbit so the same rules fire in both surfaces. Keep in

@@ -59,6 +59,12 @@ import {
 import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
+import {
+  startActivationCheck,
+  getActivationState,
+  isToolGated,
+  activationRequiredResponse,
+} from "./activation.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -345,6 +351,11 @@ registerTools();
 // never blocks transport connect. Result is cached for 24h on disk
 // so repeat sessions don't re-hit GitHub.
 startVersionNag({ installedVersion: ORBIT_VERSION });
+// Kick off the free account-activation check. Fire-and-forget; validates
+// the user's Activation Key against get-orbit and caches the result. The
+// tool dispatcher (withToolErrorHandling) reads getActivationState() to
+// gate capabilities. No key configured → gated tools prompt to activate.
+startActivationCheck({ activationKey: runtimeConfig.activationKey });
 // Fire a session_start telemetry event if opted in (no-op otherwise).
 trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
 
@@ -895,7 +906,7 @@ function registerResources() {
   // Long-form guide library — 80+ markdown guides exposed as
   // orbit://guides/{slug}, plus an index and per-category lists.
   // Loaded from data/guides-export.json which is refreshed at mcpb
-  // build time from get.yourorbit.team/api/guides/export. No-ops
+  // build time from yourorbit.team/api/guides/export. No-ops
   // cleanly if the export isn't present.
   const guidesStatus = registerGuideResources(server, { ResourceTemplate });
   if (guidesStatus.registered) {
@@ -909,7 +920,7 @@ function registerResources() {
   // Lets Claude recommend the right course URL when a user asks for
   // training on a topic, rather than only answering the question
   // directly. Loaded from data/courses-export.json, refreshed at
-  // build time from get.yourorbit.team/api/courses/export.
+  // build time from yourorbit.team/api/courses/export.
   const coursesStatus = registerCourseResources(server);
   if (coursesStatus.registered) {
     process.stderr.write(
@@ -3811,7 +3822,7 @@ function registerTools() {
 
   // ─────────────────────────────────────────────────────────────
   // PURE-FUNCTION CALCULATORS — mirror the web apps at
-  // get.yourorbit.team/apps so the same logic is available in-chat.
+  // yourorbit.team/apps so the same logic is available in-chat.
   // All seven are synchronous, deterministic, no external calls.
   // ─────────────────────────────────────────────────────────────
 
@@ -5306,6 +5317,15 @@ function withToolErrorHandling(toolName, handler) {
     // it hasn't already fired (idempotent in the module).
     trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
     trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
+
+    // Activation gate (free, account-gated). Block gated tools when the
+    // user isn't activated — no Activation Key, or a key get-orbit
+    // rejected. Fail-open: a key-bearing user whose check is pending or
+    // who's offline still passes. Ungated diagnostics (check_setup /
+    // check_version / list_skills) always run so they can self-serve.
+    if (isToolGated(toolName) && !getActivationState().activated) {
+      return makeJsonToolResponse(activationRequiredResponse(toolName));
+    }
 
     try {
       // Deadline-wrapped handler. Promise.race lets us return a shaped

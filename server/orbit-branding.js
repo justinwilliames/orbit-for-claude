@@ -6,10 +6,10 @@ const BRANDING_DIRNAME = "_orbit-branding";
 const FONT_DIRNAME = "fonts";
 const ORBIT_ATTRIBUTION = "Built in Orbit";
 const ORBIT_TAGLINE = "Lifecycle Marketing Operating System for Claude";
-const ORBIT_URL = "https://get.yourorbit.team";
-const ORBIT_LOGO_URL = "https://get.yourorbit.team/images/orbit-icon.png";
-const ORBIT_LOGO_DARK_URL = "https://get.yourorbit.team/images/orbit-icon-dark.png";
-const ORBIT_LOGO_WHITE_URL = "https://get.yourorbit.team/images/orbit-icon-white.png";
+const ORBIT_URL = "https://yourorbit.team";
+const ORBIT_LOGO_URL = "https://yourorbit.team/images/orbit-icon.png";
+const ORBIT_LOGO_DARK_URL = "https://yourorbit.team/images/orbit-icon-dark.png";
+const ORBIT_LOGO_WHITE_URL = "https://yourorbit.team/images/orbit-icon-white.png";
 const ORBIT_ACCENT = "#6366F1";
 
 // Orbit theme colours (Black, White, Indigo)

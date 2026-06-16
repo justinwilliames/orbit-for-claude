@@ -152,7 +152,7 @@ export async function auditUnsubscribe({ url }) {
     const res = await fetch(parsed.href, {
       method: "GET",
       redirect: "follow",
-      headers: { "User-Agent": "Orbit-UnsubAudit/1.0 (+https://get.yourorbit.team)" },
+      headers: { "User-Agent": "Orbit-UnsubAudit/1.0 (+https://yourorbit.team)" },
       signal: controller.signal,
     });
     clearTimeout(timer);

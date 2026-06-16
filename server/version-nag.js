@@ -102,8 +102,8 @@ export function getVersionNag() {
     update_available: true,
     installed_version: cached.installed_version,
     latest_version: cached.latest_version,
-    download_url: cached.download_url ?? "https://get.yourorbit.team/download",
-    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}). Download the latest .mcpb from https://get.yourorbit.team/download and double-click it — Claude replaces the old version in place, no uninstall needed.`,
+    download_url: cached.download_url ?? "https://yourorbit.team/download",
+    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}). Download the latest .mcpb from https://yourorbit.team/download and double-click it — Claude replaces the old version in place, no uninstall needed.`,
   };
 }
 

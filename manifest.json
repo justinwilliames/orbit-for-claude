@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.23.8",
+  "version": "0.24.0",
   "icon": "icon.png",
   "icons": [
     {
@@ -16,13 +16,13 @@
       "theme": "dark"
     }
   ],
-  "description": "Lifecycle marketing, CRM, email, SMS, push, retention, deliverability, segmentation, experimentation, and martech operating system for Claude \u2014 Orbit Intelligence. Walks users through getting the right inputs, cites practitioner guides, and closes every answer with a concrete next action. Native Braze, Iterable, HubSpot, PostHog integration.",
-  "long_description": "Orbit gives Claude a local lifecycle marketing operating system \u2014 Orbit Intelligence \u2014 that behaves like a senior lifecycle operator working as an extension of the user's team. It routes requests to the right Orbit protocol, walks the user through any missing data before tools fire (Guided Discovery), cites the specific practitioner guides that informed each answer as Further reading, and returns diagnoses / recommendations with the concrete next action the user needs. Exposes the full skill library as resources, bundles 80+ long-form practitioner guides on lifecycle marketing, deliverability, Braze, email craft, and experimentation as MCP resources for inline citation, loads a canonical skill manifest for routing and validation, creates and maintains a local ~/Orbit workspace automatically on first run without requiring folder setup, runs a step-by-step brand-guidelines intake before drafting brand kits with brand-profile.json plus brand-guidelines.md, runs a discovery-first workflow for journeys, programs, and campaigns so Orbit grounds the work in objectives, KPIs, audience context, connected data sources, and execution constraints before building flows, validates local setup and brand kits, imports Figma email designs and PDF references, infers reusable email components with a controlled taxonomy plus reusable props-and-slots contracts, generates component-first MJML lifecycle emails with HTML previews and QA, saves reusable templates, components, and programs into a local library, syncs Braze Content Blocks and HTML email templates via API, packages Braze-ready implementation bundles, and exports Notion-friendly documentation.",
+  "description": "Lifecycle marketing, CRM, email, SMS, push, retention, deliverability, segmentation, experimentation, and martech operating system for Claude — Orbit Intelligence. Walks users through getting the right inputs, cites practitioner guides, and closes every answer with a concrete next action. Native Braze, Iterable, HubSpot, PostHog integration.",
+  "long_description": "Orbit gives Claude a local lifecycle marketing operating system — Orbit Intelligence — that behaves like a senior lifecycle operator working as an extension of the user's team. It routes requests to the right Orbit protocol, walks the user through any missing data before tools fire (Guided Discovery), cites the specific practitioner guides that informed each answer as Further reading, and returns diagnoses / recommendations with the concrete next action the user needs. Exposes the full skill library as resources, bundles 80+ long-form practitioner guides on lifecycle marketing, deliverability, Braze, email craft, and experimentation as MCP resources for inline citation, loads a canonical skill manifest for routing and validation, creates and maintains a local ~/Orbit workspace automatically on first run without requiring folder setup, runs a step-by-step brand-guidelines intake before drafting brand kits with brand-profile.json plus brand-guidelines.md, runs a discovery-first workflow for journeys, programs, and campaigns so Orbit grounds the work in objectives, KPIs, audience context, connected data sources, and execution constraints before building flows, validates local setup and brand kits, imports Figma email designs and PDF references, infers reusable email components with a controlled taxonomy plus reusable props-and-slots contracts, generates component-first MJML lifecycle emails with HTML previews and QA, saves reusable templates, components, and programs into a local library, syncs Braze Content Blocks and HTML email templates via API, packages Braze-ready implementation bundles, and exports Notion-friendly documentation.",
   "author": {
     "name": "Justin Williames",
     "url": "https://www.linkedin.com/in/justinwilliames"
   },
-  "homepage": "https://get.yourorbit.team",
+  "homepage": "https://yourorbit.team",
   "server": {
     "type": "node",
     "entry_point": "server/index.js",
@@ -32,6 +32,7 @@
         "${__dirname}/server/index.js"
       ],
       "env": {
+        "ORBIT_ACTIVATION_KEY": "${user_config.activation_key}",
         "ORBIT_COMPANY_NAME": "${user_config.company_name}",
         "ORBIT_DEFAULT_PLATFORM": "${user_config.default_platform}",
         "ORBIT_DEFAULT_GEOGRAPHY": "${user_config.default_geography}",
@@ -50,6 +51,13 @@
     }
   },
   "user_config": {
+    "activation_key": {
+      "type": "string",
+      "title": "Activation Key",
+      "description": "Required. Orbit is free — create an account at https://yourorbit.team, copy your Activation Key, and paste it here to activate. Without it, Orbit's tools stay locked.",
+      "sensitive": true,
+      "default": ""
+    },
     "company_name": {
       "type": "string",
       "title": "Company Name",
@@ -98,7 +106,7 @@
     "stripo_plugin_id": {
       "type": "string",
       "title": "Stripo Plugin ID",
-      "description": "Stripo Plugin ID used to mint editor JWTs. Find it in Stripo under Account \u2192 Plugin. Required to use any Stripo tool.",
+      "description": "Stripo Plugin ID used to mint editor JWTs. Find it in Stripo under Account → Plugin. Required to use any Stripo tool.",
       "sensitive": true,
       "default": ""
     },
@@ -112,7 +120,7 @@
     "stripo_rest_api_token": {
       "type": "string",
       "title": "Stripo REST API Token",
-      "description": "Per-project REST API token from Stripo (Settings \u2192 Workspace \u2192 Projects \u2192 REST API). Required to sync saved modules and create emails. Distinct from the Plugin ID and Secret Key.",
+      "description": "Per-project REST API token from Stripo (Settings → Workspace → Projects → REST API). Required to sync saved modules and create emails. Distinct from the Plugin ID and Secret Key.",
       "sensitive": true,
       "default": ""
     },
@@ -284,11 +292,11 @@
     },
     {
       "name": "orbit_read_braze_canvas",
-      "description": "Read the full structure of an existing Braze Canvas \u2014 steps, channels, delays, entry audience, and schedule. Also reverse-maps it to an Orbit message plan so you can import existing Canvases into Orbit's program model."
+      "description": "Read the full structure of an existing Braze Canvas — steps, channels, delays, entry audience, and schedule. Also reverse-maps it to an Orbit message plan so you can import existing Canvases into Orbit's program model."
     },
     {
       "name": "orbit_read_braze_campaign",
-      "description": "Read the full structure of an existing Braze Campaign \u2014 channels, messages, schedule, conversion behaviours, and tags."
+      "description": "Read the full structure of an existing Braze Campaign — channels, messages, schedule, conversion behaviours, and tags."
     },
     {
       "name": "orbit_analyse_segments",
@@ -404,7 +412,7 @@
     },
     {
       "name": "orbit_document_stripo_design_system",
-      "description": "Generate a markdown design-system brief from synced Stripo modules: inventory, detected brand tokens, inferred composition rules, risks. Saves to <workspace>/outputs/stripo-design-system/. Run after sync and before composing \u2014 this is the canonical reference for on-brand decisions."
+      "description": "Generate a markdown design-system brief from synced Stripo modules: inventory, detected brand tokens, inferred composition rules, risks. Saves to <workspace>/outputs/stripo-design-system/. Run after sync and before composing — this is the canonical reference for on-brand decisions."
     },
     {
       "name": "orbit_compose_stripo_email",
@@ -412,7 +420,7 @@
     },
     {
       "name": "orbit_audit_stripo_modules",
-      "description": "Audit synced Stripo modules for structural issues \u2014 orphaned floats (the lopsided-block bug), STRIPE-with-columns anti-pattern, sub-600 widths, missing alt text, footer compliance gaps, optionally broken image URLs. Generates a markdown audit doc at ~/Orbit/outputs/stripo-audit/. Run after sync. Auto-fixable findings can be patched via orbit_fix_stripo_module."
+      "description": "Audit synced Stripo modules for structural issues — orphaned floats (the lopsided-block bug), STRIPE-with-columns anti-pattern, sub-600 widths, missing alt text, footer compliance gaps, optionally broken image URLs. Generates a markdown audit doc at ~/Orbit/outputs/stripo-audit/. Run after sync. Auto-fixable findings can be patched via orbit_fix_stripo_module."
     },
     {
       "name": "orbit_fix_stripo_module",
@@ -436,7 +444,7 @@
     },
     {
       "name": "orbit_check_bimi",
-      "description": "Validate a domain's BIMI record \u2014 SVG logo URL, VMC certificate, and DMARC-policy prerequisite check."
+      "description": "Validate a domain's BIMI record — SVG logo URL, VMC certificate, and DMARC-policy prerequisite check."
     },
     {
       "name": "orbit_dark_mode_check",
@@ -444,11 +452,11 @@
     },
     {
       "name": "orbit_accessibility_lint",
-      "description": "WCAG AA lint on email HTML \u2014 alt-text coverage, contrast ratios, semantic heading order, link-text quality, html lang, layout-table role=presentation."
+      "description": "WCAG AA lint on email HTML — alt-text coverage, contrast ratios, semantic heading order, link-text quality, html lang, layout-table role=presentation."
     },
     {
       "name": "orbit_rfm_score",
-      "description": "Score a customer list on RFM quintiles and classify each user into a named segment (Champions, Loyal, At Risk, Hibernating, \u2026) with per-segment revenue share and recommended actions."
+      "description": "Score a customer list on RFM quintiles and classify each user into a named segment (Champions, Loyal, At Risk, Hibernating, …) with per-segment revenue share and recommended actions."
     },
     {
       "name": "orbit_cohort_retention",
@@ -464,11 +472,11 @@
     },
     {
       "name": "orbit_validate_liquid",
-      "description": "Syntax + fallback check on Braze Liquid \u2014 tag balance, default-filter coverage, unknown-attribute detection against a supplied inventory."
+      "description": "Syntax + fallback check on Braze Liquid — tag balance, default-filter coverage, unknown-attribute detection against a supplied inventory."
     },
     {
       "name": "orbit_compose_sms",
-      "description": "SMS composer \u2014 detect GSM-7 vs UCS-2 encoding, count segments, inject regional compliance footer (US CTIA, AU, UK/EU GDPR, CA CASL)."
+      "description": "SMS composer — detect GSM-7 vs UCS-2 encoding, count segments, inject regional compliance footer (US CTIA, AU, UK/EU GDPR, CA CASL)."
     },
     {
       "name": "orbit_free_shipping_threshold",
@@ -484,7 +492,7 @@
     },
     {
       "name": "orbit_qa_email",
-      "description": "One-shot pre-send email QA gate \u2014 runs accessibility, dark-mode, and Gmail-clipping checks in a single call and returns a combined pass/warn/fail verdict."
+      "description": "One-shot pre-send email QA gate — runs accessibility, dark-mode, and Gmail-clipping checks in a single call and returns a combined pass/warn/fail verdict."
     },
     {
       "name": "orbit_render_email_preview",
@@ -500,7 +508,7 @@
     },
     {
       "name": "orbit_gdpr_consent_audit",
-      "description": "Scan signup-page / email-footer / preference-centre HTML for GDPR consent signals \u2014 pre-ticked checkboxes, sender identifiability, purpose specificity, right to withdraw, privacy link."
+      "description": "Scan signup-page / email-footer / preference-centre HTML for GDPR consent signals — pre-ticked checkboxes, sender identifiability, purpose specificity, right to withdraw, privacy link."
     },
     {
       "name": "orbit_parse_test_readout",
@@ -508,7 +516,7 @@
     },
     {
       "name": "orbit_get_stripo_email",
-      "description": "Fetch a single generated email from your Stripo workspace by numeric ID (GET /emails/<id>). Recovers the rendered copy/structure of an email pushed earlier \u2014 useful because slot_values are baked in server-side at push time and don't appear in local compose previews. Read-only."
+      "description": "Fetch a single generated email from your Stripo workspace by numeric ID (GET /emails/<id>). Recovers the rendered copy/structure of an email pushed earlier — useful because slot_values are baked in server-side at push time and don't appear in local compose previews. Read-only."
     },
     {
       "name": "orbit_delete_stripo_email",

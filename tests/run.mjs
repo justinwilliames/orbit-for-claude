@@ -50,6 +50,9 @@ async function main() {
   // Share the run directory with suites via env so every artifact lands
   // next to the HTML report, not in its own drifted timestamp folder.
   process.env.ORBIT_TEST_RUN_DIR = runDir;
+  // Tests spawn the server with no activation key; bypass the account gate
+  // so server-spawn suites exercise the real tool surface. (See server/activation.js.)
+  process.env.ORBIT_ACTIVATION_BYPASS = "1";
 
   process.stdout.write(`\n→ Orbit test run ${runId}\n`);
   process.stdout.write(`  ${files.length} suite file(s) discovered\n\n`);

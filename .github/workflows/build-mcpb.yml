@@ -15,6 +15,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # contents:write so we can publish a tagged GitHub Release carrying the
+    # .mcpb — the stable, versioned artifact the Claude extension directory
+    # tracks for auto-update, and a clean public download in its own right.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +84,27 @@ jobs:
             "s3://$S3_BUCKET/manifest.json" \
             --content-type application/json
           echo "Uploaded orbit-v$VERSION.mcpb, latest.mcpb, and manifest.json"
+
+      # Publish a tagged GitHub Release with the .mcpb attached. This is the
+      # versioned, stable-URL artifact the Claude extension directory tracks
+      # for auto-update, and a public download path in its own right. Skips
+      # cleanly if a release for this version already exists (re-run safety).
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists — updating asset."
+            gh release upload "v$VERSION" \
+              orbit-lifecycle-marketing-system-for-claude.mcpb --clobber
+          else
+            gh release create "v$VERSION" \
+              orbit-lifecycle-marketing-system-for-claude.mcpb \
+              --title "Orbit v$VERSION" \
+              --latest \
+              --notes "Orbit MCPB v$VERSION. Free — needs a free account: get your Activation Key at https://yourorbit.team. Install: download the .mcpb and double-click it (Claude Desktop replaces any older version in place), then paste your Activation Key in Settings → Extensions → Orbit."
+          fi
 
       # Website version-sync runs on a 5-minute cron in get-orbit
       # (.github/workflows/sync-mcpb-version.yml). No dispatch needed
