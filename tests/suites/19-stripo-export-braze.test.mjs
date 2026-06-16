@@ -17,8 +17,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { parseMaybeJson } from "../../server/utils.js";
+
+// The export bridge inlines Stripo CSS with juice (juice/client, the
+// browser-safe entry with no web-resource-inliner). The vm sandbox strips the
+// real import, so hand the same module into the sandbox context here.
+const require = createRequire(import.meta.url);
+const juice = require("juice/client");
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-export-braze.js");
@@ -38,6 +45,7 @@ function loadModule({
   const calls = { stripoGet: [], brazePost: [], brazeList: [] };
   const context = {
     Buffer,
+    juice,
     stripoRestGet: async ({ endpoint }) => {
       calls.stripoGet.push(endpoint);
       return (stripoGet ?? (() => ({ html: "<html></html>", title: "S", preheader: "P", name: "N" })))({ endpoint });
@@ -112,14 +120,17 @@ test("reads GET /emails/<id> then CREATEs a Braze email template", async () => {
   assert.match(body.body, /first_name/); // HTML passed through verbatim
   assert.ok(!("email_template_id" in body)); // create, not update
 
-  // The Stripo `css` field must be folded into the Braze body — otherwise the
-  // class-based button/padding styling never reaches Braze (the bug).
-  assert.match(body.body, /\.es-button \{ padding: 15px 40px/); // full button rule, not the stub
-  assert.match(body.body, /\.es-p-default \{ padding-top: 24px/); // padding rule present
-  assert.match(body.body, /@media only screen and \(max-width:600px\)/); // mobile @media folded in
-  // It must land inside the <head>, before </head>.
-  assert.ok(body.body.indexOf(".es-p-default") < body.body.indexOf("</head>"), "folded css must sit before </head>");
-  // And it must not have stomped the existing stub rule.
+  // The Stripo `css` field must be INLINED onto the elements — matching Stripo's
+  // native export — otherwise the class-based button styling never survives in
+  // clients that strip <head> styles (the bug). The .es-button visual rule must
+  // land on the <a> element's style="" attribute, not just in a <head> block.
+  assert.match(body.body, /<a class="es-button"[^>]*style="[^"]*padding: 15px 40px/); // inlined onto the button
+  assert.match(body.body, /<a class="es-button"[^>]*style="[^"]*background: #140934/); // background inlined too
+  // The un-inlinable @media rule is preserved in <head> as the mobile fallback.
+  assert.match(body.body, /@media only screen and \(max-width:600px\)/);
+  assert.ok(body.body.indexOf("@media") < body.body.indexOf("</head>"), "preserved @media must sit in <head>");
+  // Inlining must NOT touch the html's own <head> styles (Outlook resets etc.):
+  // the existing stub rule survives untouched.
   assert.match(body.body, /mso-style-priority:100/);
 
   const r0 = res.results[0];
@@ -127,8 +138,10 @@ test("reads GET /emails/<id> then CREATEs a Braze email template", async () => {
   assert.equal(r0.braze_email_template_id, "braze-new");
   assert.equal(r0.liquid_tag_count, 1);
   assert.ok(r0.html_byte_count > 0);
-  assert.equal(r0.css_folded, true); // the fold actually happened
-  assert.ok(r0.css_byte_count > 0); // and it carried bytes
+  assert.equal(r0.css_folded, true); // styling made it into the body
+  assert.equal(r0.css_inlined, true); // via per-element inlining (not the fallback)
+  assert.equal(r0.css_method, "inline");
+  assert.ok(r0.css_byte_count > 0); // the preserved @media fallback carried bytes
   assert.equal(r0.braze_dashboard_url, "https://dash/templates/braze-new");
   assert.equal(r0.stripo_preview_url, FULL_EMAIL.previewUrl);
 });
@@ -149,10 +162,12 @@ test("does NOT double-inject the css when the html already carries the fold sent
   assert.equal(res.status, "ok");
 
   const body = calls.brazePost[0].body;
-  // Exactly one fold sentinel — the css field was not stacked a second time.
+  // Exactly one fold sentinel — the css was not re-inlined or re-folded.
   const opens = (body.body.match(/orbit:stripo-css-fold start/g) || []).length;
   assert.equal(opens, 1, "fold sentinel must appear exactly once (no double-inject)");
   assert.equal(res.results[0].css_folded, false); // reported as not-injected
+  assert.equal(res.results[0].css_inlined, false);
+  assert.equal(res.results[0].css_method, "none");
 });
 
 test("passes html through unchanged when Stripo returns no css field", async () => {
@@ -163,8 +178,10 @@ test("passes html through unchanged when Stripo returns no css field", async () 
 
   const body = calls.brazePost[0].body;
   assert.ok(!body.body.includes("orbit:stripo-css-fold"), "no fold block when there is no css");
-  assert.equal(body.body, NO_CSS.html); // body is the raw html verbatim
+  assert.equal(body.body, NO_CSS.html); // body is the raw html verbatim (no inlining)
   assert.equal(res.results[0].css_folded, false);
+  assert.equal(res.results[0].css_inlined, false);
+  assert.equal(res.results[0].css_method, "none");
   assert.equal(res.results[0].css_byte_count, 0);
 });
 
@@ -178,9 +195,63 @@ test("creates a <head> to host the fold when the html has none", async () => {
   assert.equal(res.status, "ok");
 
   const body = calls.brazePost[0].body;
+  // The button rule still inlines onto the element even with no <head> present.
+  assert.match(body.body, /<a class="es-button"[^>]*style="[^"]*padding: 15px 40px/);
+  // And a <head> is created to host the un-inlinable @media fallback.
   assert.match(body.body, /<head>[\s\S]*orbit:stripo-css-fold[\s\S]*<\/head>/);
   assert.ok(body.body.indexOf("<head>") < body.body.indexOf("<body>"), "head precedes body");
   assert.equal(res.results[0].css_folded, true);
+  assert.equal(res.results[0].css_inlined, true);
+  assert.equal(res.results[0].css_method, "inline");
+});
+
+// ─── css inlining: realistic fixture (Stripo-native parity) ──────────────────
+
+test("inlines the css field onto elements like Stripo native, keeping only @media/pseudo in <head>", async () => {
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(TEST_DIR, "..", "fixtures", "stripo-export-inline.json"), "utf8"),
+  );
+  const { mod, calls } = loadModule({ stripoGet: () => fixture });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+  assert.equal(res.status, "ok");
+
+  const out = calls.brazePost[0].body.body;
+
+  // 1. The visual class rules are INLINED onto the matching elements — the whole
+  //    point of the fix (survives clients that strip <head> styles).
+  assert.match(out, /<a class="es-button"[^>]*style="[^"]*background: #140934/, "button background inlined");
+  assert.match(out, /<a class="es-button"[^>]*style="[^"]*border-radius: 50px/, "button radius inlined");
+  assert.match(out, /<td class="es-p-default"[^>]*style="[^"]*padding-top: 24px/, "cell padding inlined");
+
+  // 2. Un-inlinable rules are preserved in <head> as the fallback…
+  assert.match(out, /@media only screen and \(max-width:600px\)/, "@media preserved");
+  assert.match(out, /a:hover/, ":hover preserved");
+  assert.match(out, /@font-face/, "@font-face preserved");
+  assert.ok(out.indexOf("@media") < out.indexOf("</head>"), "preserved rules sit in <head>");
+
+  // 3. …and NOTHING else. The fold block must NOT re-dump the inlinable button
+  //    rule into <head> — that would re-bloat the body (the known size issue)
+  //    and diverge from Stripo native. Assert our fold block is @media/pseudo
+  //    only: it carries the @media but not the inlined-away background.
+  const fold = out.slice(out.indexOf("orbit:stripo-css-fold start"), out.indexOf("orbit:stripo-css-fold end"));
+  assert.match(fold, /@media/, "fold block carries the preserved @media");
+  assert.ok(!fold.includes("#140934"), "fold block must not duplicate the inlined button rule");
+
+  // 4. Inlining must not disturb Stripo's own <head> CSS or Outlook conditionals.
+  assert.match(out, /\[if mso\]/, "Outlook conditional comment intact");
+  assert.match(out, /mso-line-height-rule:exactly/, "Outlook-only style intact");
+  assert.match(out, /mso-style-priority:100/, "existing head stub intact");
+  assert.match(out, /body\{margin:0;padding:0;\}/, "existing head reset intact");
+
+  // 5. Liquid survives the round-trip verbatim (Braze resolves it at send time).
+  assert.match(out, /\{\{ profile\.first_name \| default: 'there' \}\}/, "Liquid preserved");
+
+  // 6. The per-email result reports the inline path.
+  const r0 = res.results[0];
+  assert.equal(r0.css_inlined, true);
+  assert.equal(r0.css_folded, true);
+  assert.equal(r0.css_method, "inline");
+  assert.ok(r0.css_byte_count > 0, "preserved-css fallback carried bytes");
 });
 
 // ─── never leak raw HTML ─────────────────────────────────────────────────────

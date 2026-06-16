@@ -1,0 +1,10 @@
+{
+  "_comment": "Realistic GET /emails/<id> shape for the Stripo→Braze export bridge's CSS-inlining path. The visual class rules (.es-button, .es-p-default) live ONLY in the separate `css` field, as Stripo really returns them; the `html` carries Stripo's own <head> resets + an Outlook conditional block that must survive inlining untouched. The bridge must inline the css onto the elements (Stripo-native match) and keep only the un-inlinable @media/pseudo/@font-face in <head>.",
+  "html": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<!--[if mso]><style type=\"text/css\">.es-outlook-button{mso-line-height-rule:exactly;}</style><![endif]-->\n<style type=\"text/css\">\nbody{margin:0;padding:0;}\n.es-button{mso-style-priority:100;text-decoration:none;}\n</style>\n</head>\n<body>\n<table role=\"presentation\"><tr><td class=\"es-p-default\">\n<a class=\"es-button\" href=\"https://app.example.com/connect\">Connect Xero</a>\n<p>Hi {{ profile.first_name | default: 'there' }}, your invoices are waiting.</p>\n</td></tr></table>\n</body>\n</html>",
+  "css": ".es-button{background:#140934;border-radius:50px;padding:15px 40px;display:inline-block;color:#ffffff;}\n.es-p-default{padding-top:24px;padding-bottom:24px;}\na:hover{color:#ff0000 !important;}\n@media only screen and (max-width:600px){.es-button{display:block !important;width:100% !important;}}\n@font-face{font-family:'SophiieSans';src:url('https://cdn.example.com/s.woff2') format('woff2');}",
+  "title": "Invoices still piling up",
+  "preheader": "Connect Xero in 60 seconds",
+  "name": "M10 Xero B - Free",
+  "editorUrl": "https://my.stripo.email/editor/v5/1797837/email/11949287",
+  "previewUrl": "https://viewstripo.email/inline-fixture"
+}

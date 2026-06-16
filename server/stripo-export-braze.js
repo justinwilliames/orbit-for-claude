@@ -53,6 +53,8 @@
  *     counts. (Orbit's DEFAULT_RESPONSE_MAX_BYTES is 100 KB.)
  */
 
+import juice from "juice/client";
+
 import { stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
 import { brazePost, brazePaginateList, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
 import { parseMaybeJson } from "./utils.js";
@@ -67,11 +69,15 @@ const STRIPO_CSS_OPEN = "/* orbit:stripo-css-fold start */";
 const STRIPO_CSS_CLOSE = "/* orbit:stripo-css-fold end */";
 
 /**
- * Fold Stripo's separate `css` field into the html document's <head> as a
- * <style> block, so the exported Braze template renders like Stripo's own
- * hosted preview.
+ * Fold a stylesheet into the html document's <head> as a <style> block.
  *
- * ── Why this is necessary (the bug this fixes) ──────────────────────────
+ * This is the FALLBACK / head-block primitive used by inlineStripoCss(): the
+ * primary path inlines Stripo's `css` field onto each element (see below), and
+ * this helper places the un-inlinable remainder (@media / pseudo) into <head>.
+ * It is ALSO the safety net if juice throws on a real-world document — in that
+ * case we fold the whole `css` field into <head> rather than drop it.
+ *
+ * ── Background: why css has to be merged at all ──────────────────────────
  *
  * GET /emails/<id> returns TWO style carriers, not one:
  *   • `html` — the document. Its <head> <style> blocks contain only STUBS
@@ -83,19 +89,17 @@ const STRIPO_CSS_CLOSE = "/* orbit:stripo-css-fold end */";
  *     padding / display:inline-block), `.es-p-*` padding, `.es-spacer`,
  *     and the `@media` mobile overrides.
  *
- * Stripo's hosted preview combines html + css. The old export POSTed only
+ * Stripo's hosted preview combines html + css. The first export POSTed only
  * `body: html` to Braze and dropped `css` entirely — so CTAs rendered as
  * plain underlined links and class-based padding collapsed. Verified live
  * on email 11948594: 28 of 49 css selectors (incl. `.es-button` visual
  * rules and `.es-p-default`) appeared NOWHERE in the html.
  *
- * The fix is the minimum viable one stated in the brief: inject the css
- * field into <head> as a <style> block. Braze preserves <style> blocks,
- * and class-based <style> rules + @media are well-supported across major
- * email clients. (Full CSS inlining via juice would be belt-and-braces for
- * the few clients that strip <head>, but juice is only a TRANSITIVE dep of
- * mjml here — promoting it to a direct dependency is a deliberate follow-up,
- * not something to smuggle in on this fix.)
+ * Folding css into a <head> <style> fixed that for clients that honour head
+ * styles — but Outlook and several webmail clients STRIP <head> styles, so a
+ * head-only fold still rendered broken there. inlineStripoCss() now inlines
+ * onto the elements as well (matching Stripo's native export); this helper
+ * remains for the head fallback and the juice-failure path.
  *
  * Idempotency / no double-inject:
  *   • If `css` is empty/whitespace, returns the html untouched.
@@ -144,6 +148,129 @@ function foldStripoCssIntoHtml(html, css) {
   // No <html> wrapper at all — prepend a head + style. Last-resort path;
   // Stripo always returns a full document, so this is defensive only.
   return { html: `<head>\n${styleBlock}\n</head>\n${html}`, injected: true };
+}
+
+/**
+ * Pull the un-inlinable rules (@media / @font-face / @keyframes / pseudo-class /
+ * pseudo-element selectors) out of a stylesheet, using juice's OWN definition of
+ * "cannot be inlined" instead of re-implementing CSS-selector parsing.
+ *
+ * Trick: run juice over a synthetic document whose body is EMPTY and whose only
+ * stylesheet is `css`. With no elements to match, every inlinable rule is
+ * dropped; juice preserves exactly the @media / @font-face / @keyframes / pseudo
+ * rules into the leftover <style>, which we read back out. Those are precisely
+ * the rules that must stay in <head> (per-element inlining can't carry them) so
+ * mobile (@media) and :hover styling keep working in clients that honour head
+ * styles. Returns "" when nothing needs preserving (or on any juice error).
+ *
+ * @param {string} css
+ * @returns {string} the un-inlinable rules, or "" if none
+ */
+function extractPreservedCss(css) {
+  if (typeof css !== "string" || !css.trim()) return "";
+  try {
+    const probe = `<html><head><style>${css}</style></head><body></body></html>`;
+    const out = juice(probe, {
+      applyStyleTags: true,
+      removeStyleTags: true,
+      preserveMediaQueries: true,
+      preservePseudos: true,
+      preserveFontFaces: true,
+      preserveKeyFrames: true,
+    });
+    const m = out.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    return m ? m[1].trim() : "";
+  } catch {
+    // If the probe itself trips juice, signal "nothing extracted" — the caller
+    // still folds the full css into <head>, so no styling is lost.
+    return "";
+  }
+}
+
+/**
+ * Inline Stripo's separate `css` field onto the html's elements — matching what
+ * Stripo's own native "Export to Braze" produces — so the exported template
+ * renders correctly even in clients (Outlook, some webmail) that strip <head>
+ * <style> blocks.
+ *
+ * ── Why inlining, not just a <head> fold (the bug this fixes) ───────────────
+ *
+ * The class-based visual rules (.es-button background / padding / border-radius,
+ * .es-p-* padding) live ONLY in the separate `css` field, not the html. Folding
+ * that css into a <head> <style> renders fine in clients that honour head styles
+ * — but Outlook and several webmail clients STRIP <head> styles, so a head-only
+ * bridge export rendered with plain unstyled CTAs while the SAME email exported
+ * via Stripo's native button rendered correctly. Confirmed by a real Braze test
+ * send: bridge = broken, native = fine. The difference is that native INLINES the
+ * css onto each element's style="" attribute.
+ *
+ * This reproduces that, in two parts:
+ *   1. Inline the css field's element-matching rules onto the elements (juice
+ *      inlineContent with applyStyleTags:false / removeStyleTags:false, so
+ *      Stripo's OWN <head> CSS — Outlook resets and conditional <!--[if mso]>
+ *      blocks — is left completely untouched).
+ *   2. Fold ONLY the un-inlinable rules (@media / @font-face / @keyframes /
+ *      pseudo) into a <head> <style> as the responsive/hover fallback. Keeping
+ *      just those — not a second copy of the whole stylesheet — matches Stripo
+ *      native output and avoids re-bloating the body with every class rule.
+ *
+ * Safety: if juice throws on a real-world document, we never lose the export —
+ * we fall back to the original full-css <head> fold (foldStripoCssIntoHtml).
+ *
+ * @param {string} html  the Stripo `html` field (full document)
+ * @param {string} css   the Stripo `css` field (separate stylesheet)
+ * @returns {{ html: string, injected: boolean, inlined: boolean,
+ *            method: "inline"|"fold_fallback"|"none", preservedBytes: number,
+ *            reason?: string }}
+ */
+function inlineStripoCss(html, css) {
+  if (typeof html !== "string" || !html) {
+    return { html: typeof html === "string" ? html : "", injected: false, inlined: false, method: "none", preservedBytes: 0, reason: "no_html" };
+  }
+  if (typeof css !== "string" || !css.trim()) {
+    return { html, injected: false, inlined: false, method: "none", preservedBytes: 0, reason: "no_css" };
+  }
+  // Already processed once (our sentinel is present) — don't re-inline/re-fold.
+  if (html.includes(STRIPO_CSS_OPEN)) {
+    return { html, injected: false, inlined: false, method: "none", preservedBytes: 0, reason: "already_processed" };
+  }
+
+  try {
+    // 1. Inline matched rules onto the elements. applyStyleTags:false keeps the
+    //    html's own <head> styles (and conditional Outlook CSS) untouched — we
+    //    only inline the SEPARATE css field, exactly as Stripo native does.
+    const inlinedHtml = juice.inlineContent(html, css, {
+      applyStyleTags: false,
+      removeStyleTags: false,
+    });
+
+    // 2. Fold the un-inlinable remainder (@media / pseudo) into <head> as the
+    //    responsive/hover fallback. Skip if there's nothing left to preserve.
+    const preserved = extractPreservedCss(css);
+    if (!preserved) {
+      return { html: inlinedHtml, injected: true, inlined: true, method: "inline", preservedBytes: 0 };
+    }
+    const fold = foldStripoCssIntoHtml(inlinedHtml, preserved);
+    return {
+      html: fold.html,
+      injected: true,
+      inlined: true,
+      method: "inline",
+      preservedBytes: Buffer.byteLength(preserved, "utf8"),
+    };
+  } catch (err) {
+    // juice failed on this document — never lose the styling. Fall back to the
+    // original behaviour: fold the full css field into <head>.
+    const fold = foldStripoCssIntoHtml(html, css);
+    return {
+      html: fold.html,
+      injected: fold.injected,
+      inlined: false,
+      method: "fold_fallback",
+      preservedBytes: fold.injected ? Buffer.byteLength(css, "utf8") : 0,
+      reason: `inline_failed: ${err.message}`,
+    };
+  }
 }
 
 /**
@@ -273,12 +400,13 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
     };
   }
 
-  // Fold Stripo's separate `css` field into the html <head>. Without this,
-  // the class-based CTA styling (.es-button) and padding (.es-p-*) live only
-  // in `css` and never reach Braze, so buttons render as plain links. See
-  // foldStripoCssIntoHtml() for the full rationale.
+  // Inline Stripo's separate `css` field onto the elements (matching Stripo's
+  // native export) so the class-based CTA styling (.es-button) and padding
+  // (.es-p-*) survive even in clients that strip <head> styles; un-inlinable
+  // @media/pseudo rules are folded into <head> as a fallback. Without this the
+  // styling lives only in `css` and renders broken. See inlineStripoCss().
   const cssField = typeof email?.css === "string" ? email.css : "";
-  const fold = foldStripoCssIntoHtml(rawHtml, cssField);
+  const fold = inlineStripoCss(rawHtml, cssField);
   const html = fold.html;
 
   // Stripo's `title` field is the subject line; `name` is the workspace
@@ -293,7 +421,6 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
   // body), so the caller's sanity-check reflects the real payload.
   const liquidTagCount = (html.match(/\{\{/g) || []).length;
   const htmlBytes = Buffer.byteLength(html, "utf8");
-  const cssBytesFolded = fold.injected ? Buffer.byteLength(cssField, "utf8") : 0;
 
   // Resolve the target Braze template. An explicit id (braze_template_map)
   // always wins; otherwise dedupe-by-name finds an existing template with the
@@ -335,12 +462,21 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
         }
       : {}),
     html_byte_count: htmlBytes,
-    // True when Stripo's `css` field carried real styling that we folded into
-    // the Braze body. False means either no css field, or it was already
-    // folded (idempotent re-fetch). Surfaced so the caller can confirm the
-    // CTA/padding CSS actually made the trip.
+    // True when Stripo's `css` field's styling was merged into the Braze body
+    // (whether via per-element inlining or the head fold). False means no css
+    // field, or already processed (idempotent re-fetch). Surfaced so the caller
+    // can confirm the CTA/padding CSS actually made the trip.
     css_folded: fold.injected,
-    css_byte_count: cssBytesFolded,
+    // True when the css was INLINED onto the elements (the Stripo-native match,
+    // which survives clients that strip <head> styles). False on the fold-only
+    // fallback (juice failed) or when nothing was injected.
+    css_inlined: fold.inlined,
+    // "inline" (primary path), "fold_fallback" (juice errored — full-css head
+    // fold), or "none" (nothing to inject). Lets the caller spot fallbacks.
+    css_method: fold.method,
+    // Bytes of the un-inlinable rules kept in the <head> fallback (@media /
+    // pseudo). On the fold_fallback path this is the full css field's size.
+    css_byte_count: fold.preservedBytes,
     liquid_tag_count: liquidTagCount,
     stripo_editor_url: email.editorUrl ?? null,
     stripo_preview_url: email.previewUrl ?? null,
