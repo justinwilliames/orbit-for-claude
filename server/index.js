@@ -61,8 +61,6 @@ import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import {
   startActivationCheck,
-  getActivationState,
-  isToolGated,
   activationRequiredResponse,
 } from "./activation.js";
 import { registerGuideResources } from "./guides.js";
@@ -5318,15 +5316,13 @@ function withToolErrorHandling(toolName, handler) {
     trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
     trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
 
-    // Activation gate (free, account-gated). Block gated tools when the
-    // user isn't activated — no Activation Key, or a key get-orbit
-    // rejected. Fail-open: a key-bearing user whose check is pending or
-    // who's offline still passes. Ungated diagnostics (check_setup /
-    // check_version / list_skills) always run so they can self-serve.
-    if (isToolGated(toolName) && !getActivationState().activated) {
-      return makeJsonToolResponse(activationRequiredResponse(toolName));
-    }
-
+    // Activation gate (free, account-gated). NOT enforced here per-tool —
+    // only EXTERNAL API integrations are gated, at their network choke
+    // points via assertActivatedForIntegration() (server/activation.js).
+    // That guard throws ActivationRequiredError (code "not_activated"),
+    // which the catch below converts into the friendly activation
+    // response. Every local tool and skill — and the local preview/compose
+    // paths of integration tools — runs without a key.
     try {
       // Deadline-wrapped handler. Promise.race lets us return a shaped
       // timeout response without leaving the handler hanging in the
@@ -5398,6 +5394,13 @@ function withToolErrorHandling(toolName, handler) {
       });
       return result;
     } catch (err) {
+      // Activation gate: an external integration call (Braze/Stripo/Figma/
+      // Gemini) was attempted without activation. Convert the thrown guard
+      // into the friendly "activate at yourorbit.team" response. Local
+      // tools never throw this, so they're unaffected.
+      if (err?.code === "not_activated" || err?.name === "ActivationRequiredError") {
+        return makeJsonToolResponse(activationRequiredResponse(toolName));
+      }
       const message = err?.message ?? String(err);
       const errName = err?.name ?? "Error";
       let code = "error";

@@ -16,6 +16,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 // The runner sets ORBIT_ACTIVATION_BYPASS=1 globally so server-spawn suites
 // skip the gate. THIS suite tests the real state machine, so clear it here
@@ -25,11 +28,28 @@ delete process.env.ORBIT_ACTIVATION_BYPASS;
 import {
   startActivationCheck,
   getActivationState,
-  isToolGated,
+  assertActivatedForIntegration,
+  ActivationRequiredError,
   activationRequiredResponse,
   _resetActivationForTest,
   _setActivationStateForTest,
 } from "../../server/activation.js";
+import { checkSetup } from "../../server/setup-validator.js";
+
+// Minimal on-disk config so checkSetup can scaffold its library dir without a
+// real Orbit install. Each call gets a fresh temp workspace.
+function tmpConfig({ activationKey }) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-setup-"));
+  return {
+    rootDir: root,
+    libraryDir: path.join(root, "library"),
+    defaultOutputDir: path.join(root, "outputs"),
+    brandKitDir: null,
+    homeWorkspace: { root },
+    host: { homeDir: root },
+    activationKey,
+  };
+}
 
 // ─── hard-require: no key blocks ──────────────────────────────────────────────
 
@@ -68,17 +88,30 @@ test("FAIL-OPEN: a key-bearing user whose check is pending/offline is allowed", 
   assert.equal(getActivationState().activated, true, "must not brick a key-bearing user on a network blip");
 });
 
-// ─── which tools are gated ────────────────────────────────────────────────────
+// ─── integration guard: only external API calls are gated ─────────────────────
 
-test("diagnostics are ungated; real capabilities are gated", () => {
-  // Always-available so a key-less user can self-serve activation.
-  for (const t of ["orbit_check_setup", "orbit_check_version", "orbit_list_skills"]) {
-    assert.equal(isToolGated(t), false, `${t} must run without activation`);
-  }
-  // Representative real capabilities — must be gated.
-  for (const t of ["orbit_export_stripo_email_to_braze", "orbit_load_skill", "orbit_create_braze_canvas", "orbit_build_email_from_template"]) {
-    assert.equal(isToolGated(t), true, `${t} must require activation`);
-  }
+test("assertActivatedForIntegration THROWS when there is no key", () => {
+  _setActivationStateForTest({ status: "no_key" });
+  assert.throws(
+    () => assertActivatedForIntegration("braze"),
+    (e) => e instanceof ActivationRequiredError && e.code === "not_activated",
+    "a no-key user must not reach an external integration"
+  );
+});
+
+test("assertActivatedForIntegration THROWS on a server-rejected key", () => {
+  _setActivationStateForTest({ status: "invalid" });
+  assert.throws(() => assertActivatedForIntegration("stripo"), (e) => e.code === "not_activated");
+});
+
+test("assertActivatedForIntegration PASSES for an activated user", () => {
+  _setActivationStateForTest({ status: "valid" });
+  assert.doesNotThrow(() => assertActivatedForIntegration("figma"));
+});
+
+test("FAIL-OPEN: integration calls pass while a key-bearing user's check is pending/offline", () => {
+  _setActivationStateForTest({ status: "unverified" });
+  assert.doesNotThrow(() => assertActivatedForIntegration("gemini"));
 });
 
 // ─── the activation-required response ─────────────────────────────────────────
@@ -101,4 +134,44 @@ test("rejected-key response explains the key wasn't recognised", () => {
   const r = activationRequiredResponse("orbit_load_skill");
   assert.match(r.message, /wasn't recognised|mistyped|removed/i);
   assert.equal(r.activation_status, "invalid");
+});
+
+test("activation guidance tells the user to FULLY QUIT (Cmd+Q), not just open a new chat", () => {
+  _setActivationStateForTest({ status: "no_key" });
+  const r = activationRequiredResponse("orbit_create_braze_canvas");
+  const restartStep = r.how_to_activate.find((s) => /quit|relaunch|restart/i.test(s));
+  assert.ok(restartStep, "a restart step must be present");
+  assert.match(restartStep, /Cmd\+Q|fully quit/i, "must instruct a full quit, not a window close");
+  assert.match(restartStep, /new chat is NOT enough|NOT enough/i, "must debunk the 'new chat' shortcut");
+  assert.match(r.assistant_instruction, /fully quit|Cmd\+Q/i);
+});
+
+// ─── check_setup surfaces activation state (the one ungated diagnostic) ────────
+
+test("check_setup reports a MISSING activation key in config_snapshot and checks[]", () => {
+  _setActivationStateForTest({ status: "no_key" });
+  const result = checkSetup({ config: tmpConfig({ activationKey: null }) });
+
+  assert.equal(result.config_snapshot.activation_key, "missing");
+  assert.equal(result.config_snapshot.activation_status, "no_key");
+
+  const check = result.checks.find((c) => c.key === "activation_key");
+  assert.ok(check, "checks[] must include an activation_key entry");
+  assert.equal(check.passed, false);
+  assert.match(check.detail, /Cmd\+Q|quit|relaunch/i, "detail must point the user at the fix");
+  assert.ok(result.missing.includes("activation_key"), "a missing key must surface in missing[]");
+});
+
+test("check_setup reports a CONFIGURED activation key and its live status", () => {
+  _setActivationStateForTest({ status: "valid" });
+  const result = checkSetup({ config: tmpConfig({ activationKey: "oa_test_key" }) });
+
+  assert.equal(result.config_snapshot.activation_key, "configured");
+  assert.equal(result.config_snapshot.activation_status, "valid");
+
+  const check = result.checks.find((c) => c.key === "activation_key");
+  assert.ok(check);
+  assert.equal(check.passed, true);
+  assert.match(check.detail, /activation status: valid/);
+  assert.ok(!result.missing.includes("activation_key"), "a configured key must not be flagged missing");
 });

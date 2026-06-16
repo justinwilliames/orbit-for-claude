@@ -15,8 +15,16 @@
  *   - One network call per session; result cached in memory AND on disk
  *     (~/.orbit/activation-cache.json, 24h TTL) so subsequent sessions
  *     don't re-call get-orbit.
- *   - HARD-REQUIRE: with NO key configured, gated tools are blocked and
- *     return a friendly "activate at yourorbit.team" message.
+ *   - SCOPE: only EXTERNAL API INTEGRATIONS are gated — the calls that
+ *     reach Braze, Stripo, Figma, or AI image generation. Every local
+ *     tool and skill (calculators, validators, MJML/email builders,
+ *     diagram rendering, copy scoring, skill routing, library ops, and
+ *     the local preview/compose paths of otherwise-integration tools)
+ *     runs WITHOUT activation. The gate is enforced at the four network
+ *     choke points via assertActivatedForIntegration(), not per-tool, so
+ *     it can't drift as tools are added and never over-blocks local work.
+ *   - HARD-REQUIRE: with NO key configured, an integration call is blocked
+ *     and returns a friendly "activate at yourorbit.team" message.
  *   - FAIL-OPEN: a user who HAS pasted a key is given the benefit of the
  *     doubt. We only block when (a) there is no key at all, or (b)
  *     get-orbit definitively rejected the key. A network blip, a pending
@@ -36,15 +44,6 @@ const WEBSITE_BREAKER = getBreaker("orbit-website");
 
 const CACHE_FILE = join(homedir(), ".orbit", "activation-cache.json");
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-// Tools that must work WITHOUT activation, so an unactivated user can
-// diagnose their setup and learn how to activate. Everything else is
-// gated. Keep this list tight — it's the only surface a key-less user sees.
-const UNGATED_TOOLS = new Set([
-  "orbit_check_setup",
-  "orbit_check_version",
-  "orbit_list_skills", // browsing the catalogue is fine; loading/using a skill is gated
-]);
 
 // In-memory state. `status` is one of:
 //   "no_key"      — no activation key configured (BLOCK gated tools)
@@ -181,20 +180,49 @@ export function getActivationState() {
   return { activated, status: state.status, email: state.email, tier: state.tier, checkedAt: state.checkedAt };
 }
 
-/** Whether a given tool requires activation to run. */
-export function isToolGated(toolName) {
-  return !UNGATED_TOOLS.has(toolName);
+/**
+ * Thrown by assertActivatedForIntegration when an external API call is
+ * attempted without activation. The tool dispatcher (withToolErrorHandling)
+ * catches it by `code` and converts it into the friendly activation response,
+ * so the user sees the same "activate at yourorbit.team" guidance regardless
+ * of which integration they hit.
+ */
+export class ActivationRequiredError extends Error {
+  constructor(integration) {
+    super(`Orbit needs a free account before it can use external integrations.`);
+    this.name = "ActivationRequiredError";
+    this.code = "not_activated";
+    this.integration = integration ?? null;
+  }
 }
 
 /**
- * The response a gated tool returns when the user isn't activated.
+ * Choke-point guard for external API integrations (Braze, Stripo, Figma,
+ * Gemini image generation). Call this at the network entry point — NOT in
+ * local tools. Throws ActivationRequiredError unless the session is
+ * activated (valid key, or fail-open while a key-bearing user's check is
+ * pending/offline). Local tools never call this, so they always run; only
+ * the calls that leave the machine are gated.
+ *
+ * @param {string} integration  short label for the service ("braze" | "stripo" | "figma" | "gemini")
+ */
+export function assertActivatedForIntegration(integration) {
+  if (!getActivationState().activated) {
+    throw new ActivationRequiredError(integration);
+  }
+}
+
+/**
+ * The response an integration call returns when the user isn't activated.
  * Friendly and actionable — it's free, so the ask is "make an account."
+ * Note the scope: Orbit's local tools run without a key; only external
+ * integrations (Braze, Stripo, Figma, AI image generation) need activation.
  */
 export function activationRequiredResponse(toolName) {
   const reason =
     state.status === "invalid"
       ? `The Activation Key configured for Orbit wasn't recognised. It may be mistyped, or the account it belongs to was removed.`
-      : `Orbit needs to be activated before it can run "${toolName}".`;
+      : `"${toolName}" connects to an external service, and Orbit needs a free account before it can do that. Orbit's other tools work without one.`;
   return {
     status: "needs_activation",
     code: "not_activated",
@@ -205,12 +233,12 @@ export function activationRequiredResponse(toolName) {
       `1. Go to ${SIGNUP_URL} and create a free account (or sign in).`,
       `2. Copy your Activation Key from your account page.`,
       `3. In Claude Desktop: Settings → Extensions → Orbit → paste it into the "Activation Key" field.`,
-      `4. Restart Claude Desktop (or start a new chat) so Orbit re-checks the key.`,
+      `4. Fully quit Claude Desktop (Cmd+Q — not just closing the window) and relaunch it. Orbit runs as a background server that only re-reads the key when it restarts. Starting a new chat is NOT enough — it reuses the same server process and will keep reporting "not activated".`,
     ],
     signup_url: SIGNUP_URL,
     // Surfaced so the assistant tells the user plainly rather than retrying.
     assistant_instruction:
-      `Tell the user Orbit needs a free activation key: create an account at ${SIGNUP_URL}, copy the Activation Key, and paste it into Settings → Extensions → Orbit in Claude Desktop. Do not retry this tool until they've activated.`,
+      `Tell the user Orbit needs a free activation key: create an account at ${SIGNUP_URL}, copy the Activation Key, and paste it into Settings → Extensions → Orbit in Claude Desktop. Then they MUST fully quit Claude Desktop (Cmd+Q) and relaunch — Orbit's background server only re-reads the key on a full restart, and opening a new chat reuses the same stale process. Do not retry this tool until they've done that.`,
   };
 }
 
