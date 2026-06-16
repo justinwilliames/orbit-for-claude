@@ -25,7 +25,7 @@ import { parseMaybeJson } from "../../server/utils.js";
 // browser-safe entry with no web-resource-inliner). The vm sandbox strips the
 // real import, so hand the same module into the sandbox context here.
 const require = createRequire(import.meta.url);
-const juice = require("juice/client");
+const juice = require("juice/client.js");
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-export-braze.js");

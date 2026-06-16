@@ -53,7 +53,7 @@
  *     counts. (Orbit's DEFAULT_RESPONSE_MAX_BYTES is 100 KB.)
  */
 
-import juice from "juice/client";
+import juice from "juice/client.js";
 
 import { stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
 import { brazePost, brazePaginateList, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
