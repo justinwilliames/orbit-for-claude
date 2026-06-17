@@ -4396,18 +4396,34 @@ function registerTools() {
           .union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))])
           .describe("A single numeric Stripo email ID, or an array of them, to export to Braze. Max 100 per call."),
         braze_template_map: z
-          .union([
-            z.record(z.string(), z.string()),
-            z.array(
-              z.object({
-                stripo_email_id: z.union([z.number(), z.string()]),
-                braze_email_template_id: z.string()
-              })
-            )
-          ])
+          .preprocess(
+            // Some MCP client/harness layers serialise object/array params to a JSON
+            // string before they reach the server (confirmed 2026-06-17: an array map
+            // arrived as a string and Zod rejected it). Accept that case by parsing a
+            // string input back to its object/array form before validation.
+            (v) => {
+              if (typeof v === "string") {
+                try {
+                  return JSON.parse(v);
+                } catch {
+                  return v;
+                }
+              }
+              return v;
+            },
+            z.union([
+              z.record(z.string(), z.string()),
+              z.array(
+                z.object({
+                  stripo_email_id: z.union([z.number(), z.string()]),
+                  braze_email_template_id: z.string()
+                })
+              )
+            ])
+          )
           .optional()
           .describe(
-            "Optional mapping of Stripo email ID → existing Braze email_template_id. Matched entries UPDATE that Braze template instead of creating a new one (idempotent re-export). Either an object {\"11949287\":\"abc-guid\"} or an array of {stripo_email_id, braze_email_template_id}."
+            "Optional mapping of Stripo email ID → existing Braze email_template_id. Matched entries UPDATE that Braze template instead of creating a new one (idempotent re-export). Either an object {\"11949287\":\"abc-guid\"} or an array of {stripo_email_id, braze_email_template_id}. Also accepts a JSON string of either form (parsed server-side) for MCP clients that stringify structured params."
           ),
         dedupe_by_name: z
           .boolean()
