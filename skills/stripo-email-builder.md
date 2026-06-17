@@ -524,8 +524,29 @@ That's the minimal contract: provenance + personalisation + one email toggle wit
 ## Hero/image binding trap
 `p_image_link` lives in an `esd-dynamic-block` attribute Stripo's code-view copy STRIPS. Paste library-synced HTML, not code-view. Re-saving mints a NEW module ID — **module IDs churn; always sync (`orbit_sync_stripo_modules` + `orbit_list_stripo_modules`) and reference by name.**
 
+## Detecting LIVE modules + remapping a stale plan (gen12 rebuild, 2026-06-17)
+**The `archived` flag from `orbit_list_stripo_modules` is unreliable** — it returned every module as `archived:false` (69/69) even though only 21 were live. The trustworthy "live" signal is **`artifact_path`/`html_path` being non-null in an `include_html:true` listing** (only the truly-live modules get a local file path). The on-disk modules dir keeps archived modules too, so dir-presence is NOT a live signal either; and the on-disk `module.json` `archived` field is also empty. Use `include_html` + `artifact_path`.
+
+**Regenerating from an old build plan (e.g. `genN-plan.json`):** the plan's module IDs go stale as modules are re-saved. Build an old→live **remap by module NAME** (`purpose_summary`) against the live set, then rewrite every `module_sequence` entry AND re-key `slot_values`. Watch for **renamed/restructured** modules where name-match fails — e.g. "Hero: Rounded Image" + "Hero: Rounded Image **Gradient**" became "Hero: Rounded Image **White**" + "Hero: Rounded Image **Blue**"; disambiguate by HTML (white = `bgcolor #ffffff` no `background-image`; gradient/blue = has a `background-image` url). **Assert ZERO dead module IDs remain before pushing.** A plan can also be content-stale (copy edited directly in Stripo, e.g. a QuickBooks M10 edit not in the plan) — reconcile current copy from the live email/Braze template, don't blindly regenerate from the plan and overwrite it.
+
+**`orbit_inspect_stripo_module_bindings` CTA half-pair false positive:** if a module's href var is named `p_cta_url` (not the conventional `p_cta_link`), inspect warns *"p_cta_text registered but companion p_cta_link not … href is hardcoded"* — but the href IS bound, via `p_cta_url` with `attribute:"href"`. Bind links using the var name the inspect output actually shows, not the convention.
+
+**Reading a pushed email's real copy:** `viewstripo.email` previews render the body in a **cross-origin iframe** — `get_page_text` only returns the title + preheader, never the body. Use `orbit_get_stripo_email` by numeric id (slot_values baked in) or the exported Braze template to read full copy.
+
 ## Workspace management (delete + move) — UI + API hybrid
-No Orbit/API tool LISTs emails or MOVEs to folders (only get/delete/compose). To get IDs: open the Stripo emails page in Claude-in-Chrome and read the DOM — each row is `acc-grid-entity-block[id="entity-<emailId>"]`; the list is virtualised, scroll `.ca-navigator-content-body--scrollable` to load all. **DELETE** via `orbit_delete_stripo_email` (by id, max 200; permanent — confirm first; never the master template). **MOVE to folder** is UI-only: tick checkboxes → the **Move** button at the top → pick the folder.
+No Orbit/API tool LISTs emails or MOVEs to folders (only get/delete/compose).
+
+**Enumerate / get IDs (read-only).** Open the emails page in Claude-in-Chrome, read the DOM: rows are `[id^="entity-<emailId>"]`, first line of `innerText` = name. The grid is **virtualised + card-based** — only ~30 cards ever render and `scrollTop +=` plateaus there, so one scrape caps at ~30 even with more present. To read a FOLDER's contents, open it (card `…` menu → **Open**, or navigate to `/account/<acct>/<proj>/emails/<folderId>`).
+
+**DELETE** via `orbit_delete_stripo_email` (by id, max 200; permanent — confirm first; never the master template). Returns per-id deleted/failed; a "failed" id just no longer exists (harmless).
+
+**MOVE to folder is UI-only — battle-tested 2026-06-17 (and the way it goes WRONG first):**
+1. **HOVER the card** (action `hover`) to reveal its checkbox, then click the checkbox at the **top-left corner**. Clicking the card BODY opens a preview, it does NOT select — that was the mistake that cost a long detour. One tick brings up the bulk toolbar: **"Selected: N"** + a green **select-all dropdown** (Select All / Deselect All) + a **Move-to icon** (folder-with-arrow).
+2. **"Select All" only selects CURRENTLY-RENDERED items, AND it ticks the FOLDER cards too.** In a 42-email view it grabs ~30 emails + the 3 folders = "Selected: 33", never the full set. **Deselect the folder cards** (click their checkboxes) before moving or you nest folders.
+3. Since select-all can't reach un-rendered cards, **move in batches**: select the rendered emails (folders deselected) → Move → the moved ones leave the view → Select All again grabs the remainder → Move. (42 went as 30 + 12.)
+4. **Move-to dialog:** click the destination folder (gets a ✓), then **UNCHECK "Move with modules used in the template"** (default ON — it also relocates the shared modules; for just filing emails, uncheck) → **Move** → wait for "Items moved successfully".
+
+**⚠️ Folder/total count badges are DENORMALISED and LIE after API deletes and UI moves.** After deleting 42 emails the folder badge still read "42" (real content: 0); after moving 42 in it read "84" (real: 42); the top "Emails N" total stayed stale too. **Never trust the badge — verify by OPENING the folder and reading `[id^="entity-"]`** (or confirm the source view is empty). Badges reconcile on a later refresh / fresh session.
 
 ## Subagents + clip
 `general-purpose` subagents CAN call Orbit MCP (push/export/delete — creds live in the Desktop MCP server, not the subagent env, so an "ORBIT_STRIPO_* empty" self-report is a false alarm). The `stripo-operator` agent CANNOT (no MCP tools). Clip: export's `html_byte_count` already includes the folded CSS = delivered size; Gmail clips ~102KB; 8-module emails (two grids) hit ~100KB (tight). Trim modules/copy if over — never click-tracking/UTMs.
