@@ -267,14 +267,19 @@ copy. The fix is **dashboard-only** and it is a **re-add of the template, NOT an
 touch the Monaco HTML editor (it's find-only, no replace, and won't reliably take keystrokes; the rule:
 *you should not need to edit any HTML — regenerate to Stripo, resync the template, and re-add it*). The
 precise re-add, per message step:
-1. **Double-click the step CARD/header** (not the message body — double-clicking the body opens the
-   HTML editor) → **Set up Messages** opens.
-2. Click the **Email** channel chip → its **✕** appears → click ✕ → confirm **Remove** (this clears the
-   stale email; the step and its flow wiring survive).
-3. Re-add: click the channel slot → **Email** → **Create new email → Templates** → tick the template
-   by name → **Select template**. This copies the *current* template content (fixes and all);
-   From / subject / preheader carry over from the template, so sending info survives.
-4. **Done** (editor) → **Done** (Set up Messages) → **Save**.
+**The simple path (prefer this — you do NOT need to double-click or remove anything):**
+1. **Single-click the message step** in the flow — one click, NOT a double-click (double-clicking opens
+   the HTML editor, which you never want).
+2. In the step's panel, click **"Choose new template"** → pick the corrected template by name.
+3. **Save** (draft) — **never Update Canvas** on a live/active canvas (Update Canvas publishes the draft
+   live; Save banks it as a post-launch draft for review).
+This swaps the step's stale snapshot to the chosen template's *current* content in place — From / subject
+/ preheader carry over from the template. No remove-and-re-add, no HTML editing.
+
+**Legacy fallback (only if "Choose new template" isn't offered):** double-click the step CARD/header
+(not the body) → **Set up Messages** → click the **Email** chip → **✕** → confirm **Remove** → re-add via
+channel slot → **Email** → **Create new email → Templates** → tick by name → **Select template** →
+**Done** → **Done** → **Save**.
 Then **re-verify the canvas itself** (`orbit_read_braze_canvas`, grep for the changed string), not just
 the template — the template passing is necessary but NOT sufficient.
 
