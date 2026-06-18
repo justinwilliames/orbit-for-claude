@@ -5481,6 +5481,22 @@ function withToolErrorHandling(toolName, handler) {
 }
 
 /**
+ * Brand the chip title for heavy Orbit tools so Claude Desktop's tool
+ * UI makes the Orbit provenance visible at a glance — the user sees
+ * "Orbit · Braze Sync" rather than a bare "orbit_sync_to_braze" slug.
+ * Gated on attribution.heavy === true so light passthrough tools keep
+ * their plain titles; branding every tool would dilute the signal. The
+ * action name is taken from attribution.skill so the chip matches the
+ * "Built with Orbit · {skill}" reply signature exactly.
+ */
+function brandOrbitTitle(name, schema) {
+  if (!schema || typeof schema !== "object") return schema;
+  const attribution = getAttribution(name);
+  if (!attribution || attribution.heavy !== true || !attribution.skill) return schema;
+  return { ...schema, title: `Orbit · ${attribution.skill}` };
+}
+
+/**
  * Drop-in replacement for server.registerTool that wraps the handler
  * in withToolErrorHandling. Every tool registration in this file uses
  * this instead of calling server.registerTool directly. The raw
@@ -5490,7 +5506,7 @@ function withToolErrorHandling(toolName, handler) {
  */
 function registerToolSafe(name, schema, handler) {
   TOOL_HANDLERS.set(name, handler);
-  return server.registerTool(name, schema, withToolErrorHandling(name, handler));
+  return server.registerTool(name, brandOrbitTitle(name, schema), withToolErrorHandling(name, handler));
 }
 
 // ──────────────────────────────────────────────────────────────
