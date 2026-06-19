@@ -21,6 +21,7 @@ import {
 import { getAttribution } from "./orbit-attribution.js";
 import { traceToolCall, hashArgs } from "./orbit-trace.js";
 import { truncateLargePayload } from "./orbit-resilience.js";
+import { resolveSafe } from "./path-safety.js";
 import { checkOrbitVersion } from "./version-check.js";
 import {
   saveCheckpoint as _saveCheckpoint,
@@ -1561,8 +1562,8 @@ function registerTools() {
     async ({ source_path: sourcePath, role, brand_kit_dir: brandKitDir }) => {
       try {
         ensureBootstrappedOnFirstRun();
-        const targetDir = brandKitDir ?? runtimeConfig.brandKitDir;
-        if (!targetDir) {
+        const rawTargetDir = brandKitDir ?? runtimeConfig.brandKitDir;
+        if (!rawTargetDir) {
           return makeJsonToolResponse({
             status: "error",
             code: "missing_brand_kit",
@@ -1571,6 +1572,22 @@ function registerTools() {
             suggested_next_steps: [
               "Run orbit_bootstrap_home_workspace to create the default workspace at ~/Orbit/brand-kit.",
               "Or pass brand_kit_dir explicitly to this tool with the absolute path to an existing brand kit directory.",
+            ],
+          });
+        }
+        // ofc-sec-05: validate the (possibly caller-supplied) brand kit dir
+        // before any mkdir/copyFile. resolveSafe rejects null bytes and
+        // canonicalises the path; it permits absolute paths (no root given).
+        let targetDir;
+        try {
+          targetDir = resolveSafe(rawTargetDir);
+        } catch {
+          return makeJsonToolResponse({
+            status: "error",
+            code: "invalid_path",
+            message: "Invalid brand_kit_dir path.",
+            suggested_next_steps: [
+              "Pass a valid absolute path to the brand kit directory (no null bytes or control characters).",
             ],
           });
         }
