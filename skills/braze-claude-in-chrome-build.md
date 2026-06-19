@@ -82,7 +82,26 @@ Far faster than scrolling blind through a 40-step canvas.
    and coordinates drift.
 - The small **"+" connector** directly beneath a node is a DIFFERENT affordance: clicking it enters
   **connection** mode (draw an edge to an existing node), not add-step — purple drop-zones + a
-  "Cancel Connection" bar. Press Esc and use the palette-click flow above instead.
+  "Cancel Connection" bar. Press Esc and use the palette-click flow above instead. **But connection
+  mode IS the tool for the next pattern —**
+
+**Re-converge, don't duplicate — when many paths send the SAME email:**
+When several branches (audience-path groups, or per-cohort delays) all send the *same* message, wire
+them ALL into ONE shared Message step rather than giving each path its own copy. Build a single Message
+step, then for every other path use **connection mode** (that branch/delay's "+" connector → click the
+shared Message node) to draw an edge into it. A step accepts **multiple inbound edges** — re-convergence
+is supported and valid. Each user travels exactly one path (e.g. non-overlapping random-bucket groups),
+so the shared step still fires once per user, at that path's own time (the delay sits BEFORE the merge).
+Why it matters: a template update does NOT auto-propagate to a canvas step (§10), so duplicated copies
+mean re-binding the template N times on every edit — converged, it's **once**. Plus one source of truth
+and a cleaner graph. Only keep separate Message steps when the branches genuinely send DIFFERENT emails.
+
+**Quiet hours — set them intentionally (a common operator default).** Many operators enable quiet hours
+on every Message step's **Delivery settings** (and in the wizard's Send Settings) as standard. Whatever
+you choose, verify it against scheduled sends: quiet hours run in the **user's local time** and
+**reschedule** a send that lands inside the window to when it ends — so a send pinned to a fixed
+workspace-time-zone hour (via entry schedule OR a delay) can shift for users in other time zones.
+Confirm the quiet window doesn't clash with the intended local send hour for the bulk of the base.
 
 **Editing an audience-path step:**
 1. Click the path row in the flow → side panel opens: left rail = numbered group list + **Done**
@@ -173,6 +192,18 @@ existing one — so a half-built canvas keeps reopening in the wizard until crea
 - **Target Audience** = "Target Users By Segment" (segment search) + **"Additional Filters"** (put
   the test guard `email address = <your-test-email>` HERE, not as a segment — a same-named "segment"
   may exist but is NOT the test mechanism) + Exit Criteria (custom-event exits live here too).
+- **Custom-attribute filter is a TWO-STEP dropdown — don't type the attribute into the first box.**
+  The Filter group's "Search filter…" box lists filter **TYPES**, not attributes. Typing an attribute
+  name there (e.g. the raw attribute name) returns **"No options"** — the dead end that wastes time.
+  Instead: type **"Custom Attribute"** → pick **"Custom Attributes"**. That adds a condition row with
+  its OWN **"Custom Attributes" `Select…`** dropdown — type the attribute name THERE. Then set
+  Comparison + Attribute value.
+- **Boolean attribute "false OR not set" is ONE built-in value, not two OR'd conditions.** For a
+  boolean custom attribute the Comparison options are only `is` / `is blank` / `is not blank` (NO
+  "is not"), and the Attribute-value dropdown offers `true` / `false` / `true or not set` /
+  **`false or not set`**. Pick `is` + **`false or not set`** to match explicitly-false AND unset in a
+  single condition. Don't hand-build two OR'd groups, and don't rely on a "does not equal true"
+  (Braze "not equal" excludes null users — and there's no "is not" comparator for booleans anyway).
 
 ## 8. When screenshots wedge: drive via `javascript_tool` (the unlock)
 
