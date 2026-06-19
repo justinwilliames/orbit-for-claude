@@ -929,7 +929,11 @@ function registerResources() {
 
 function registerPrompts() {
   server.registerPrompt(
-    "orbit_route_task",
+    // Distinct slug from the orbit_route_task TOOL (registered below): the
+    // prompt is the conversational workflow wrapper, the tool is the ranking
+    // call. Same name across the two registries read confusingly even though
+    // there's no runtime collision.
+    "orbit_route_task_prompt",
     {
       title: "Route an Orbit Task",
       description:
@@ -1328,7 +1332,11 @@ function registerTools() {
       description: "Load an Orbit skill in summary or full mode.",
       inputSchema: {
         skill: z.string().min(1).max(MAX_SHORT_STRING),
-        mode: z.enum(["summary", "full"]).default("summary")
+        mode: z.enum(["summary", "full"]).default("summary").describe(
+          "'summary' (default): a compact overview — use to decide whether a skill fits or to recall its shape cheaply. " +
+          "'full': the complete protocol with every step and rule — load this before actually EXECUTING the skill, so you follow it exactly rather than improvising. " +
+          "Prefer summary while routing/scoping; switch to full once you're acting on the skill."
+        )
       }
     },
     async ({ skill, mode }) => {
@@ -2620,9 +2628,8 @@ function registerTools() {
       title: "Preview an Email Template",
       description:
         "Create desktop, mobile, and dark-mode preview HTML for an Orbit email and surface them as Claude artifacts. " +
-        "The response includes previews.desktop, previews.mobile, and previews.dark as full HTML strings — " +
-        "render each as a separate artifact so the user can click between them. " +
-        "Also saves preview files to disk and returns file paths in the files field.",
+        "Returns the three previews as MCP resource blocks (orbit://preview/email/*) so clients render them inline as clickable artifacts; also saves the files to disk and returns paths in the files field. " +
+        "Use orbit_render_email_preview instead when you want the preview HTML returned as a plain JSON payload (e.g. for programmatic use) rather than as inline resource artifacts.",
       inputSchema: {
         spec_json: z.string().max(MAX_LONG_STRING).optional(),
         html: z.string().max(MAX_LONG_STRING).optional(),
@@ -2691,7 +2698,8 @@ function registerTools() {
     {
       title: "Validate an Email Template",
       description:
-        "Run Orbit email QA for structure, personalization fallbacks, links, legal blocks, contrast, and Braze-safe markup.",
+        "Braze-markup / Liquid + structural gate: checks personalization fallbacks, link integrity, legal blocks, and Braze-safe markup against the spec. " +
+        "This is NOT the full pre-send readiness gate — for accessibility, dark-mode, and Gmail-clipping checks use orbit_qa_email.",
       inputSchema: {
         spec_json: z.string().max(MAX_LONG_STRING).optional(),
         html: z.string().min(1).max(MAX_LONG_STRING)
@@ -2805,7 +2813,8 @@ function registerTools() {
         "Publish Orbit assets to Braze. " +
         "target='content_blocks': sync reusable email components as Braze Content Blocks and store IDs back into local metadata (requires: component_refs). " +
         "target='email_template': publish a compiled HTML template to Braze and store the template ID back into local metadata. " +
-        "target='all': sync Content Blocks first, then publish the email template — the full publish pipeline (requires: template_ref).",
+        "target='all': sync Content Blocks first, then publish the email template — the full publish pipeline (requires: template_ref). " +
+        "Use this for emails compiled LOCALLY by Orbit (spec/MJML → HTML). For emails built in STRIPO, use orbit_export_stripo_email_to_braze instead.",
       inputSchema: {
         target: z.enum(["content_blocks", "email_template", "all"]),
         component_refs: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional(),
@@ -3602,7 +3611,7 @@ function registerTools() {
       description:
         "Generate a consistent naming convention string for a Braze asset. " +
         "Pass selections for dimensions like asset_type, channel, program, audience, country, language, version, step, variant, and deployment_date. " +
-        "Returns the formatted name and recommended Braze tags.",
+        "Returns the formatted name, recommended Braze tags, and every dimension with its available values — so calling this with NO selections returns the full dimension catalogue (no separate lookup tool needed).",
       inputSchema: {
         asset_type: z.string().optional().describe("Canvas, Campaign, Segment, Template, or Content Block"),
         channel: z.string().optional().describe("Email, Push, SMS, In-App, Banner, Content Card, or WhatsApp"),
@@ -3824,6 +3833,17 @@ function registerTools() {
   // All seven are synchronous, deterministic, no external calls.
   // ─────────────────────────────────────────────────────────────
 
+  // Shared confidence-level param across the A/B tools: a float 0.5-0.9999.
+  // z.preprocess coerces a numeric string ("0.95") to a number so a
+  // type-mismatch doesn't silently fall through to the schema default.
+  const confidenceLevelSchema = z.preprocess(
+    (v) => (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v)) ? Number(v) : v),
+    z.number().min(0.5).max(0.9999)
+  );
+  // Maps the float levels the sizing tables support back to the percent-key
+  // strings calculateSampleSize expects. Keyed by .toFixed(2) of the float.
+  const CONFIDENCE_LEVEL_TO_PCT = { "0.90": "90", "0.95": "95", "0.99": "99" };
+
   registerToolSafe(
     "orbit_score_subject_line",
     {
@@ -3850,16 +3870,25 @@ function registerTools() {
       inputSchema: {
         baseline_rate_pct: z.number().min(0.01).max(99.99).describe("Current conversion rate as a percentage (e.g., 3.2 for 3.2%)"),
         mde_relative_pct: z.number().min(0.1).max(500).describe("Minimum detectable effect as relative lift percentage (e.g., 10 means you want to detect a 10% lift on the baseline)"),
-        confidence_pct: z.enum(["90", "95", "99"]).optional().describe("Statistical confidence level. Default: 95"),
+        // Unified with orbit_test_significance on a float 0-1 (z.preprocess
+        // coerces numeric strings so a "0.95" doesn't silently fall back to
+        // the default). Only 0.90 / 0.95 / 0.99 are supported by the sizing
+        // tables — anything else is rejected rather than snapped silently.
+        confidence_level: confidenceLevelSchema.optional().describe("Statistical confidence as a float 0-1 (supported: 0.90, 0.95, 0.99). Default: 0.95"),
         power_pct: z.enum(["80", "90", "95"]).optional().describe("Statistical power. Default: 80"),
         daily_volume: z.number().int().min(0).optional().describe("Average daily visitors per arm — used to compute expected test duration")
       }
     },
-    async ({ baseline_rate_pct, mde_relative_pct, confidence_pct, power_pct, daily_volume }) => {
+    async ({ baseline_rate_pct, mde_relative_pct, confidence_level, power_pct, daily_volume }) => {
+      const level = confidence_level ?? 0.95;
+      const confidencePct = CONFIDENCE_LEVEL_TO_PCT[level.toFixed(2)];
+      if (!confidencePct) {
+        return makeJsonToolResponse({ error: "Unsupported confidence_level. Supported values: 0.90, 0.95, 0.99." });
+      }
       const result = calculateSampleSize(
         baseline_rate_pct,
         mde_relative_pct,
-        confidence_pct ?? "95",
+        confidencePct,
         power_pct ?? "80"
       );
       if (!result) {
@@ -3872,7 +3901,7 @@ function registerTools() {
         baseline_rate: result.p1,
         expected_rate: result.p2,
         expected_duration_days: duration,
-        confidence_pct: confidence_pct ?? "95",
+        confidence_level: level,
         power_pct: power_pct ?? "80"
       });
     }
@@ -3889,7 +3918,7 @@ function registerTools() {
         control_conversions: z.number().int().min(0).describe("Control variant: conversions"),
         variant_visitors: z.number().int().min(1).describe("Test variant: total visitors"),
         variant_conversions: z.number().int().min(0).describe("Test variant: conversions"),
-        confidence_level: z.number().min(0.5).max(0.9999).optional().describe("Confidence threshold (default: 0.95)")
+        confidence_level: confidenceLevelSchema.optional().describe("Confidence threshold as a float 0-1 (default: 0.95)")
       }
     },
     async ({ control_visitors, control_conversions, variant_visitors, variant_conversions, confidence_level }) => {
@@ -3966,7 +3995,8 @@ function registerTools() {
     {
       title: "Check Email Size (Gmail Clipping)",
       description:
-        "Check whether an email will be clipped by Gmail's 102 KB threshold. Pass either the raw HTML string or a byte count. Returns the size, the % of the limit used, a tier (plenty-of-room / comfortable / at-risk / clips), and a recommendation.",
+        "Single-check tool: check whether an email will be clipped by Gmail's 102 KB threshold. Pass either the raw HTML string or a byte count. Returns the size, the % of the limit used, a tier (plenty-of-room / comfortable / at-risk / clips), and a recommendation. " +
+        "For a full pre-send verdict use orbit_qa_email, which runs this check alongside accessibility and dark-mode checks in one pass.",
       inputSchema: {
         html: z.string().min(1).max(500_000).optional().describe("The raw email HTML string. Mutually exclusive with bytes."),
         bytes: z.number().int().min(0).optional().describe("Pre-measured size in bytes. Mutually exclusive with html.")
@@ -4385,12 +4415,28 @@ function registerTools() {
     "orbit_export_stripo_email_to_braze",
     {
       title: "Export Stripo Email(s) to Braze as Email Templates",
+      // Implementation notes (kept out of the model-facing description to
+      // keep it short):
+      //   • Stripo has NO native export-to-ESP API endpoint (verified:
+      //     OPTIONS /emails/<id> allows only DELETE/GET/HEAD/OPTIONS, and
+      //     every /export, /esp, /integrations route 404s); the GUI
+      //     'Export to ESP/Braze' is UI-only. This tool reproduces it: it
+      //     reads each email's rendered production HTML, subject, and
+      //     preheader via GET /emails/<id> on Stripo, then creates a Braze
+      //     email template via POST /templates/email/create (or /update).
+      //   • Dedupe: by default it lists existing Braze templates and UPDATES
+      //     any whose name matches the Stripo email's name (force_create:true
+      //     for brand-new; dedupe_by_name:false to skip the lookup). An
+      //     explicit braze_template_map takes precedence per id.
+      //   • Liquid is carried through as literal {{...}} — Braze resolves it
+      //     at send time (liquid_tag_count reported per email).
+      //   • Returns IDs/names/Braze template IDs/dashboard URLs/byte counts
+      //     only — never raw HTML, to stay inside the tool-result size cap.
       description:
-        "Turn one or more finished Stripo emails into Braze email templates so a Braze Canvas can reference them — fully programmatic, no GUI exports. " +
-        "Stripo has NO native export-to-ESP API endpoint (verified: OPTIONS /emails/<id> allows only DELETE/GET/HEAD/OPTIONS, and every /export, /esp, /integrations route 404s); the GUI 'Export to ESP/Braze' is UI-only. " +
-        "This tool reproduces that export under the hood: it reads each email's rendered production HTML, subject, and preheader via GET /emails/<id> on Stripo, then creates a Braze email template via POST /templates/email/create (or /update for an existing template). " +
-        "Pass a single numeric Stripo email ID or an array (e.g. all 42). By DEFAULT it overwrites rather than duplicates: before creating, it lists existing Braze templates and UPDATES any whose name matches the Stripo email's name in place, so re-exporting the same program never piles up copies (set force_create:true for brand-new templates, or dedupe_by_name:false to skip the lookup). An explicit braze_template_map (stripo_email_id → braze_email_template_id) still takes precedence per id; the response returns the resulting map so you can persist it. Each row reports operation (create|update) and matched_by (id|name|null). " +
-        "Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). Liquid in the email is carried through as literal {{...}} — correct, since Braze resolves it at send time (a liquid_tag_count per email is reported). Returns IDs, names, Braze template IDs, dashboard URLs, and HTML byte counts only — never raw HTML, to stay inside the tool-result size cap.",
+        "Turn one or more finished STRIPO emails into Braze email templates so a Braze Canvas can reference them — fully programmatic, no GUI exports. " +
+        "By default it overwrites rather than duplicates: it UPDATES any Braze template whose name matches the Stripo email's name in place (each row reports operation + matched_by). " +
+        "Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). " +
+        "For emails compiled LOCALLY by Orbit (not built in Stripo), use orbit_sync_to_braze instead.",
       inputSchema: {
         email_ids: z
           .union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))])
@@ -4757,7 +4803,8 @@ function registerTools() {
     {
       title: "Dark Mode Rendering Check",
       description:
-        "Parse an HTML email and flag invisible-text risk when Apple Mail / Outlook mobile invert colours in dark mode. Reports per-element colour pairs, checks for a prefers-color-scheme: dark media query, and recommends specific overrides.",
+        "Single-check tool: parse an HTML email and flag invisible-text risk when Apple Mail / Outlook mobile invert colours in dark mode. Reports per-element colour pairs, checks for a prefers-color-scheme: dark media query, and recommends specific overrides. " +
+        "For a full pre-send verdict use orbit_qa_email, which runs this check alongside accessibility and size checks in one pass.",
       inputSchema: {
         html: z.string().min(1).describe("The email HTML to analyse.")
       }
@@ -4773,7 +4820,8 @@ function registerTools() {
     {
       title: "Email Accessibility Lint (WCAG AA)",
       description:
-        "Run WCAG AA checks on email HTML: alt-text coverage, WCAG 4.5:1 contrast, semantic heading order, link-text quality, html lang attribute, layout-table role=presentation. Returns fail/warn/pass per rule with specific remediation.",
+        "Single-check tool: run WCAG AA checks on email HTML — alt-text coverage, WCAG 4.5:1 contrast, semantic heading order, link-text quality, html lang attribute, layout-table role=presentation. Returns fail/warn/pass per rule with specific remediation. " +
+        "For a full pre-send verdict use orbit_qa_email, which runs this check alongside dark-mode and size checks in one pass.",
       inputSchema: {
         html: z.string().min(1).describe("The email HTML to lint.")
       }
@@ -5072,7 +5120,7 @@ function registerTools() {
     {
       title: "Render Email Preview (desktop / mobile / dark)",
       description:
-        "Produce desktop, mobile, and dark-mode preview HTML for arbitrary email HTML. Each preview wraps the source in a viewport-matched frame so Claude Desktop can display it as an inline artifact. Not a rasteriser — no PNG generation, no headless browser dependency. Use this when the user hands you raw HTML and wants to see how it renders across common clients.",
+        "Produce desktop, mobile, and dark-mode preview HTML for arbitrary email HTML. Each preview wraps the source in a viewport-matched frame. Returns the previews in a plain JSON payload (HTML strings + optional file paths) — NOT as inline MCP resource artifacts. Not a rasteriser — no PNG generation, no headless browser dependency. Use this when the user hands you raw HTML and wants to see how it renders across common clients; use orbit_preview_email_template instead when you want the previews surfaced as clickable inline artifacts.",
       inputSchema: {
         html: z.string().min(1).describe("The email HTML to preview."),
         label: z.string().optional().describe("Short label used in the preview header + output filenames."),
@@ -5287,6 +5335,33 @@ function makeJsonToolResponse(payload) {
 // enough for the conversation to break.
 const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
 const DEFAULT_RESPONSE_MAX_BYTES = 100_000;
+
+// Cap on upstream error text returned to the model. Long bodies waste
+// context and the only useful signal is in the first line or two.
+const MAX_UPSTREAM_ERROR_CHARS = 600;
+
+/**
+ * Scrub and cap an upstream error string before it reaches the model.
+ * Redacts the obvious credential shapes (bearer tokens, api-key headers,
+ * basic-auth embedded in URLs, long opaque keys) and truncates to a sane
+ * length. The raw text is still logged to stderr (server-side only).
+ */
+function scrubUpstreamErrorText(text) {
+  if (typeof text !== "string" || !text) return text;
+  let out = text
+    // Authorization: Bearer <token> / Basic <token>
+    .replace(/(authorization\s*[:=]\s*)(bearer|basic)\s+[\w.\-+/=]+/gi, "$1$2 [redacted]")
+    .replace(/\b(bearer)\s+[\w.\-+/=]{8,}/gi, "$1 [redacted]")
+    // api-key / x-api-key / token style key=value pairs
+    .replace(/((?:x-)?api[_-]?key|token|secret|password)(\s*[:=]\s*)["']?[\w.\-+/=]{8,}["']?/gi, "$1$2[redacted]")
+    // Basic-auth embedded in a URL: scheme://user:pass@host
+    .replace(/(\b[a-z][a-z0-9+.\-]*:\/\/)[^/@\s:]+:[^/@\s]+@/gi, "$1[redacted]@");
+  if (out.length > MAX_UPSTREAM_ERROR_CHARS) {
+    out = `${out.slice(0, MAX_UPSTREAM_ERROR_CHARS)}… [truncated]`;
+  }
+  return out;
+}
+
 // Per-tool overrides ONLY for tools that legitimately need longer
 // — e.g. generative image work or multi-endpoint Braze audits.
 // Everything else uses the 45s default. Cap max at 90s so we stay
@@ -5374,17 +5449,30 @@ function withToolErrorHandling(toolName, handler) {
       }
 
       // Parse, inject attribution, cap size, re-serialise.
-      const textBlock = result.content.find((c) => c.type === "text");
+      //
+      // The byte cap must fire on EVERY text block, not just a first block
+      // that parses to a plain JSON object. Raw markdown (a ~43KB skill
+      // load), plaintext lists, compose directives, and JSON arrays all need
+      // capping too — otherwise an oversized non-object payload sails past
+      // the cap and blows the context window. Strategy: for plain JSON
+      // objects, run the structured array-aware reducer (and inject
+      // attribution); for everything else (arrays, scalars, raw text), hard-
+      // trim the string as a fallback.
       let outcome = "ok";
-      let finalBytes = textBlock?.text?.length ?? 0;
-      let originalBytes = finalBytes;
+      let finalBytes = 0;
+      let originalBytes = 0;
       let truncated = false;
+      const attribution = getAttribution(toolName);
 
-      if (textBlock) {
+      for (const block of result.content) {
+        if (block?.type !== "text" || typeof block.text !== "string") continue;
+        const blockOriginal = block.text.length;
+        originalBytes += blockOriginal;
+
         let parsed = null;
-        try { parsed = JSON.parse(textBlock.text); } catch { /* non-JSON — pass through */ }
+        try { parsed = JSON.parse(block.text); } catch { /* non-JSON — handled below */ }
+
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          const attribution = getAttribution(toolName);
           if (attribution && !parsed.orbit_attribution) {
             parsed.orbit_attribution = {
               skill: attribution.skill,
@@ -5395,13 +5483,22 @@ function withToolErrorHandling(toolName, handler) {
             };
           }
           const capped = truncateLargePayload(parsed, DEFAULT_RESPONSE_MAX_BYTES);
-          truncated = capped.truncated;
-          originalBytes = capped.original_bytes;
-          finalBytes = capped.final_bytes;
-          if (truncated) outcome = "ok_truncated";
-          textBlock.text = JSON.stringify(capped.payload, null, 2);
+          if (capped.truncated) truncated = true;
+          block.text = JSON.stringify(capped.payload, null, 2);
+        } else if (block.text.length > DEFAULT_RESPONSE_MAX_BYTES) {
+          // Arrays, scalars, raw markdown/plaintext: no structured reducer,
+          // so hard-trim the string and append a visible marker so the model
+          // (and user) know there's more.
+          truncated = true;
+          const marker =
+            `\n\n[orbit: output trimmed to ${DEFAULT_RESPONSE_MAX_BYTES} chars to stay inside the context limit — ` +
+            `re-run with a narrower request to see the rest.]`;
+          block.text = block.text.slice(0, Math.max(0, DEFAULT_RESPONSE_MAX_BYTES - marker.length)) + marker;
         }
+
+        finalBytes += block.text.length;
       }
+      if (truncated) outcome = "ok_truncated";
 
       // Heavy Orbit tools: prepend a visible branded line to the result
       // content so Orbit provenance renders even in clients that ignore the
@@ -5430,9 +5527,20 @@ function withToolErrorHandling(toolName, handler) {
       }
       const message = err?.message ?? String(err);
       const errName = err?.name ?? "Error";
+      // Prefer the structured HTTP status when the upstream client attached
+      // one (Stripo sets err.status; other clients may too). Falling back to
+      // substring-matching the full message body is lossy — a 500 whose body
+      // happens to contain "404" or "not found" would otherwise be
+      // mislabelled. Only regex the message when no status is present.
+      const status = typeof err?.status === "number" ? err.status : null;
       let code = "error";
       if (err?.code === "deadline_exceeded" || errName === "AbortError" || /timeout/i.test(message)) code = "timeout";
       else if (err?.code === "circuit_open") code = "upstream_unavailable";
+      else if (status !== null) {
+        if (status === 401 || status === 403) code = "auth_failed";
+        else if (status === 404) code = "not_found";
+        else if (status === 429) code = "rate_limited";
+      }
       else if (/\b(401|403)\b/.test(message) || /unauthori[sz]ed|forbidden/i.test(message)) code = "auth_failed";
       else if (/\b404\b/.test(message) || /not found/i.test(message)) code = "not_found";
       else if (/\b429\b/.test(message) || /rate limit/i.test(message)) code = "rate_limited";
@@ -5442,6 +5550,15 @@ function withToolErrorHandling(toolName, handler) {
           `[Orbit] Tool "${toolName}" failed (${code}): ${message}\n`
         );
       } catch { /* best-effort */ }
+
+      // Scrub and cap the upstream error text before it reaches the model.
+      // Raw upstream bodies can carry credentials (bearer tokens, api-keys,
+      // basic-auth in URLs) and can be arbitrarily long (a full Braze error
+      // body). The raw `message` is logged to stderr above (server-side only);
+      // only the scrubbed/capped form is returned to the model. Note: we do
+      // NOT surface err.upstream — it's intentionally dropped, as it can hold
+      // the unredacted upstream payload.
+      const safeMessage = scrubUpstreamErrorText(message);
 
       const attribution = getAttribution(toolName);
       // On timeout specifically, mark the response as resumable so
@@ -5469,7 +5586,7 @@ function withToolErrorHandling(toolName, handler) {
         status: code === "error" ? "error" : code,
         code,
         tool: toolName,
-        message,
+        message: safeMessage,
         suggested_next_steps: suggestedNextStepsForCode(code),
         ...continueHint,
         ...(attribution ? {
