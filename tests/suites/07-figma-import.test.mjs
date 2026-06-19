@@ -27,7 +27,9 @@ describe("Figma import suite — happy path + error classification", () => {
     fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
     mock = await startMockApiServer();
     client = await spawnMcpClient({
-      env: { ...mock.env, ORBIT_HOME_ROOT: makeTempWorkspace() }
+      // ORBIT_ALLOW_PRIVATE_HOSTS lets the SSRF guard reach the localhost mock
+      // Figma/image server; production never sets it.
+      env: { ...mock.env, ORBIT_HOME_ROOT: makeTempWorkspace(), ORBIT_ALLOW_PRIVATE_HOSTS: "1" }
     });
   });
 
