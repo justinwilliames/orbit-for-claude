@@ -503,6 +503,18 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
     };
   }
 
+  // Braze can return HTTP 200 with message !== "success" (e.g. invalid API key,
+  // partial failure). Assert the message field before treating the write as ok.
+  if (response?.message && response.message !== "success") {
+    return {
+      ...baseResult,
+      status: "error",
+      stage: "braze_write",
+      error_message: `Braze returned message: "${response.message}"`,
+      braze_errors: response.errors ?? [],
+    };
+  }
+
   const resolvedBrazeId = response?.email_template_id ?? resolvedTemplateId ?? null;
   return {
     ...baseResult,

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveHomeWorkspacePaths } from "./home-workspace.js";
+import { resolveSafe } from "./path-safety.js";
 
 const DEFAULT_PLATFORM_OPTIONS = ["braze", "iterable", "hubspot"];
 
@@ -263,9 +264,18 @@ export function scanBrandKitFolder(brandKitDir, subfolder) {
 }
 
 export function resolveBrandProfile(context, overrides = {}) {
+  // When an override brandKitDir is supplied, load its profile at runtime.
+  // Use tryLoadBrandProfile (which mirrors the startup path) so a malformed
+  // or unreadable brand-profile.json throws instead of crashing the caller.
+  let overrideProfile = null;
+  if (overrides.brandKitDir && !overrides.brandProfile) {
+    const { profile: loaded } = tryLoadBrandProfile(overrides.brandKitDir);
+    overrideProfile = loaded;
+  }
+
   const profile =
     overrides.brandProfile ??
-    (overrides.brandKitDir ? loadBrandProfile(overrides.brandKitDir) : null) ??
+    overrideProfile ??
     context.brandProfile;
 
   if (!profile) {
@@ -347,23 +357,16 @@ export function resolveUserOutputDir(context, userPath) {
     // No user path supplied — fall back to the default.
     return context.defaultOutputDir;
   }
-  // Absolute paths are trusted (operator explicitly chose them).
+  // Run basic safety checks (type, empty, null bytes) via resolveSafe
+  // before we apply our own traversal logic. Absolute paths are trusted
+  // (operator explicitly chose them); relative paths must stay inside
+  // the workspace root.
   if (path.isAbsolute(userPath)) {
-    return path.resolve(userPath);
+    return resolveSafe(userPath);
   }
-  // Relative paths must stay inside the workspace root. Resolve the
-  // user path against the root and check it doesn't escape.
+  // Relative paths must stay inside the workspace root.
   const root = path.resolve(context.defaultOutputDir);
-  const resolved = path.resolve(root, userPath);
-  const rel = path.relative(root, resolved);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    const err = new Error(
-      `Output path "${userPath}" escapes the Orbit workspace root (${root}). Use an absolute path or a relative path that stays inside the workspace.`
-    );
-    err.code = "invalid_path";
-    throw err;
-  }
-  return resolved;
+  return resolveSafe(userPath, { root });
 }
 
 export function ensureDir(dirPath) {

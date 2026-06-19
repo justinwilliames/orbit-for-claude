@@ -55,6 +55,8 @@ import {
   detectStaticAssetPattern,
   detectNestingHazards,
 } from "./stripo-module-bindings-inspect.js";
+import { fetchWithRetry } from "./orbit-resilience.js";
+import { fetchGuarded } from "./url-guard.js";
 
 const TAG_SYNCED = "stripo_synced";
 const TAG_ARCHIVED = "stripo_archived";
@@ -452,7 +454,12 @@ async function auditImageUrls({ modules }) {
       if (!img.src || seen.has(img.src)) continue;
       seen.add(img.src);
       try {
-        const r = await fetch(img.src, { method: "HEAD" });
+        // SSRF guard + timeout-bounded retry on an externally-supplied URL.
+        const r = await fetchGuarded(img.src, {
+          method: "HEAD",
+          fetchImpl: fetchWithRetry,
+          fetchOptions: { timeoutMs: 10_000 },
+        });
         if (!r.ok) {
           findings.push({
             severity: "error",

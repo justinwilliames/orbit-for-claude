@@ -31,7 +31,13 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
     mock = await startMockApiServer();
     client = await spawnMcpClient({
-      env: { ...mock.env, ORBIT_HOME_ROOT: makeTempWorkspace() }
+      env: {
+        ...mock.env,
+        ORBIT_HOME_ROOT: makeTempWorkspace(),
+        // Mock image uploads target a localhost server; allow private hosts
+        // so the production SSRF guard does not reject the test URLs.
+        ORBIT_ALLOW_PRIVATE_HOSTS: "1"
+      }
     });
   });
 

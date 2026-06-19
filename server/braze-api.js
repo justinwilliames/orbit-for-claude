@@ -97,6 +97,12 @@ export async function brazeGet({ config, endpoint, params = {} }) {
     const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
     throw new Error(`Braze API ${response.status} on GET ${endpoint}: ${brazeMsg}`);
   }
+  // Defensive: Braze occasionally returns 2xx with a non-empty errors array
+  // (e.g. partial success, invalid field values). Surface these so callers
+  // are not silently holding a failed result.
+  if (Array.isArray(parsed?.errors) && parsed.errors.length > 0) {
+    throw new Error(`Braze API 2xx but errors on GET ${endpoint}: ${parsed.errors.join("; ")}`);
+  }
   return parsed;
 }
 
@@ -126,6 +132,10 @@ export async function brazePost({ config, endpoint, body = {} }) {
   if (!response.ok) {
     const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
     throw new Error(`Braze API ${response.status} on POST ${endpoint}: ${brazeMsg}`);
+  }
+  // Defensive: Braze occasionally returns 2xx with a non-empty errors array.
+  if (Array.isArray(parsed?.errors) && parsed.errors.length > 0) {
+    throw new Error(`Braze API 2xx but errors on POST ${endpoint}: ${parsed.errors.join("; ")}`);
   }
   return parsed;
 }
@@ -171,6 +181,10 @@ export async function brazeUploadAsset({ config, fileBuffer, fileName, contentTy
   if (!response.ok) {
     const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
     throw new Error(`Braze API ${response.status} on POST /media_library/create: ${brazeMsg}`);
+  }
+  // Defensive: Braze occasionally returns 2xx with a non-empty errors array.
+  if (Array.isArray(parsed?.errors) && parsed.errors.length > 0) {
+    throw new Error(`Braze API 2xx but errors on POST /media_library/create: ${parsed.errors.join("; ")}`);
   }
   return parsed;
 }
