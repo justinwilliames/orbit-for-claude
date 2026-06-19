@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { titleCase } from "./utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -460,7 +461,7 @@ const entries = skillFiles.map((fileName) => {
   const raw = fs.readFileSync(filePath, "utf8");
   const { frontmatter, body } = splitFrontmatter(raw);
   const name = normalizeSkillName(frontmatter.name || path.basename(fileName, ".md"));
-  const title = extractTitle(body) ?? name;
+  const title = extractTitle(body) ?? titleCase(name);
   const description = cleanString(frontmatter.description) ?? "";
   const triggerPhrases = extractQuotedPhrases(description);
   const artifactTypes = ARTIFACT_TYPES[name] ?? ["deliverable"];

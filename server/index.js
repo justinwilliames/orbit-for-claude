@@ -1292,7 +1292,7 @@ function registerTools() {
         "",
         ...skills.map(
           (skill) =>
-            `- \`${skill.name}\` (${skill.category}): ${skill.description}`
+            `- **${skill.title}** \`${skill.name}\` _(${skill.category})_ — ${skill.description}`
         )
       ];
       return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -5403,6 +5403,17 @@ function withToolErrorHandling(toolName, handler) {
         }
       }
 
+      // Heavy Orbit tools: prepend a visible branded line to the result
+      // content so Orbit provenance renders even in clients that ignore the
+      // MCP tool title (Claude shows the slug, not the title). Light
+      // passthrough tools stay plain to avoid signature noise. This is the
+      // server half of the visibility work; the orbit.md reply directive is
+      // the model half (a value-forward outcome line).
+      const headerAttribution = getAttribution(toolName);
+      if (headerAttribution?.heavy && headerAttribution.skill) {
+        result.content.unshift({ type: "text", text: `✦ Orbit · ${headerAttribution.skill}` });
+      }
+
       traceToolCall({
         tool: toolName, args_hash: hashArgs(args), outcome,
         duration_ms: Date.now() - startedAt,
@@ -5481,19 +5492,28 @@ function withToolErrorHandling(toolName, handler) {
 }
 
 /**
- * Brand the chip title for heavy Orbit tools so Claude Desktop's tool
- * UI makes the Orbit provenance visible at a glance — the user sees
- * "Orbit · Braze Sync" rather than a bare "orbit_sync_to_braze" slug.
- * Gated on attribution.heavy === true so light passthrough tools keep
- * their plain titles; branding every tool would dilute the signal. The
- * action name is taken from attribution.skill so the chip matches the
- * "Built with Orbit · {skill}" reply signature exactly.
+ * Ensure every registered tool exposes a friendly Title Case `title`
+ * (never a bare slug), so any host that renders tool titles — and Orbit's
+ * own listings/manifest — show "Sync To Braze", not "orbit_sync_to_braze".
+ * Curated config titles are kept verbatim; only a missing or bare-slug
+ * title is replaced, derived from attribution.skill (the curated friendly
+ * name) or Title-Cased from the tool name.
+ *
+ * NOTE: Claude Desktop/Code do NOT currently render the MCP `title` field
+ * (they display the namespaced tool slug), so this is provenance for other
+ * MCP hosts + future Claude. The user-visible Orbit branding on Claude
+ * comes from the heavy-tool content line (see the result wrapper below)
+ * and the orbit.md reply directive — not the chip title.
  */
-function brandOrbitTitle(name, schema) {
+function isBareSlug(title) {
+  return !title || !title.trim() || (!/\s/.test(title) && /[_-]/.test(title));
+}
+function ensureFriendlyTitle(name, schema) {
   if (!schema || typeof schema !== "object") return schema;
+  if (typeof schema.title === "string" && !isBareSlug(schema.title)) return schema;
   const attribution = getAttribution(name);
-  if (!attribution || attribution.heavy !== true || !attribution.skill) return schema;
-  return { ...schema, title: `Orbit · ${attribution.skill}` };
+  const friendly = attribution?.skill || titleCase(name.replace(/^orbit_/, ""));
+  return { ...schema, title: friendly };
 }
 
 /**
@@ -5506,7 +5526,7 @@ function brandOrbitTitle(name, schema) {
  */
 function registerToolSafe(name, schema, handler) {
   TOOL_HANDLERS.set(name, handler);
-  return server.registerTool(name, brandOrbitTitle(name, schema), withToolErrorHandling(name, handler));
+  return server.registerTool(name, ensureFriendlyTitle(name, schema), withToolErrorHandling(name, handler));
 }
 
 // ──────────────────────────────────────────────────────────────

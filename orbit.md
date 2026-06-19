@@ -453,16 +453,20 @@ capability just fired. Rules:
    Still include the signature line so the user sees it in the conversation
    feed without opening the artifact.
 
-6. **Lead with the value, not just close with the signature.** When a heavy
-   tool fired, OPEN your reply with a single concrete outcome line that names
+6. **MANDATORY for heavy tools — lead with the value, not just close with the
+   signature.** When a heavy tool fired, its result now carries a visible
+   `✦ Orbit · {skill}` header line (emitted server-side — necessary because
+   Claude renders the namespaced tool slug, NOT the tool title, so the chip
+   itself can't show Orbit). You MUST mirror that line: OPEN your reply with a
+   single concrete outcome line, prefixed `✦ Orbit · {skill} —`, that names
    what Orbit actually did — drawn from `orbit_attribution.summary` but
    sharpened with the real result numbers from the tool response (counts,
-   IDs, endpoints hit, segments pulled). The summary is the template; the
-   live result makes it concrete.
+   IDs, endpoints hit, segments pulled). This is not optional polish; on
+   Claude it is the primary surface where the user sees Orbit's value.
 
    - Generic (summary only): "Published Orbit assets to your Braze workspace."
-   - Value-forward (summary + live result): "Published 6 modules to your live
-     Braze workspace via 7 REST calls."
+   - Value-forward (summary + live result): "✦ Orbit · Braze Sync — published 6
+     modules to your live Braze workspace via 7 REST calls."
 
    One line, factual, business-readable — then the body of your answer, then
    the closing signature. This is the difference between the user seeing a
