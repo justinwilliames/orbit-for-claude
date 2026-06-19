@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { titleCase } from "./utils.js";
 
 const STANDARD_SECTIONS = new Set([
   "Execution Standard",
@@ -159,7 +160,7 @@ function buildDocumentRecord(filePath) {
     raw,
     body,
     data,
-    title: extractTitle(body) ?? path.basename(filePath, ".md"),
+    title: extractTitle(body) ?? titleCase(path.basename(filePath, ".md")),
     sections,
     coreSections: sections.filter((section) => !STANDARD_SECTIONS.has(section))
   };
