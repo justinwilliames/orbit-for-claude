@@ -319,6 +319,7 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `design-to-email-componentization` | Break a design into reusable, contract-based email components |
 | `email-template-learning` | Learn an existing HTML email template (Stripo-aware) — remember its modules + brand tokens and build/modify on-brand emails from it on request |
 | `stripo-integration` | Connect a Stripo account via API to sync saved modules, document the design system, and compose emails directly into the user's Stripo workspace |
+| `stripo-library-cleanup` | Tidy a Stripo workspace — dedupe to the latest of each template, delete stale copies, file loose emails into the right folders (cleanup, NOT building) |
 | `braze-template-sync` | Publish reusable components and final HTML templates into Braze |
 | `reputation-recovery` | Emergency playbook when a sender is already in deliverability trouble (bounces/complaints/blacklist/placement drop) |
 | `apple-mpp-response` | Reframe engagement metrics and program decisions for audiences dominated by Apple Mail Privacy Protection |
