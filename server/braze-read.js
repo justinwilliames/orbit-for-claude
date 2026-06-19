@@ -6,7 +6,7 @@
  * and test user profile lookup.
  */
 
-import { brazeGet, brazePost, buildDashboardUrl, validateBrazeSetup } from "./braze-api.js";
+import { brazeGet, brazePost, brazePaginateList, buildDashboardUrl, validateBrazeSetup } from "./braze-api.js";
 
 // ---------------------------------------------------------------------------
 // Braze standard user-profile attributes — always available on every user
@@ -761,13 +761,18 @@ async function safeList(config, endpoint, itemsKey) {
 }
 
 async function safeListAttributes(config) {
+  // /custom_attributes is cursor-paginated: each page returns up to 50 items
+  // plus a `next_cursor` field when more pages exist. A single brazeGet call
+  // only retrieves the first page (50 attrs), silently dropping the rest.
+  // brazePaginateList follows next_cursor until exhausted (or maxPages).
   try {
-    const response = await brazeGet({ config, endpoint: "/custom_attributes", params: { page: 1 } });
-    return {
-      items: response.attributes ?? response.custom_attributes ?? response.data ?? [],
-      error: null,
-      authFailed: false
-    };
+    const { items, truncated } = await brazePaginateList({
+      config,
+      endpoint: "/custom_attributes",
+      itemsKey: "attributes",
+      maxPages: 20  // 20 × 50 = 1,000 attrs — well beyond any real workspace
+    });
+    return { items, truncated, error: null, authFailed: false };
   } catch (err) {
     return classifyBrazeError(err, "/custom_attributes");
   }
