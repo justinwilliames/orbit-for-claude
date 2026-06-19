@@ -133,15 +133,28 @@ export async function spawnMcpClient({
     if (!res || !Array.isArray(res.content) || res.content.length === 0) {
       throw new Error(`Tool ${name} returned invalid MCP response shape: ${JSON.stringify(res)}`);
     }
-    const textBlock = res.content.find((c) => c.type === "text");
-    if (!textBlock) {
+    const textBlocks = res.content.filter((c) => c.type === "text");
+    if (textBlocks.length === 0) {
       throw new Error(`Tool ${name} returned no text content block`);
     }
-    try {
-      return { raw: res, parsed: JSON.parse(textBlock.text) };
-    } catch (err) {
-      throw new Error(`Tool ${name} text content was not valid JSON: ${err.message}`);
+    // Tools may prepend a non-JSON attribution banner ("✦ Orbit · …") as the
+    // first text block; locate the block that actually parses as JSON.
+    let parsed;
+    let found = false;
+    let lastErr;
+    for (const b of textBlocks) {
+      try {
+        parsed = JSON.parse(b.text);
+        found = true;
+        break;
+      } catch (err) {
+        lastErr = err;
+      }
     }
+    if (!found) {
+      throw new Error(`Tool ${name} text content was not valid JSON: ${lastErr?.message}`);
+    }
+    return { raw: res, parsed };
   }
 
   /**
@@ -160,15 +173,17 @@ export async function spawnMcpClient({
       if (res?.isError) {
         return { kind: "rpc_error", error: res };
       }
-      const textBlock = (res?.content ?? []).find((c) => c.type === "text");
-      if (!textBlock) {
+      const textBlocks = (res?.content ?? []).filter((c) => c.type === "text");
+      if (textBlocks.length === 0) {
         return { kind: "transport_error", error: new Error("no text content"), raw: res };
       }
-      try {
-        return { kind: "response", raw: res, parsed: JSON.parse(textBlock.text) };
-      } catch {
-        return { kind: "parse_error", raw: res, text: textBlock.text };
+      // Skip a leading attribution banner; return the first JSON-parseable block.
+      for (const b of textBlocks) {
+        try {
+          return { kind: "response", raw: res, parsed: JSON.parse(b.text) };
+        } catch { /* try next block */ }
       }
+      return { kind: "parse_error", raw: res, text: textBlocks[textBlocks.length - 1].text };
     } catch (err) {
       return { kind: "rpc_error", error: err };
     }
