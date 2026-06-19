@@ -13,6 +13,7 @@ import {
   writeText
 } from "./utils.js";
 import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
+import { fetchGuarded } from "./url-guard.js";
 import { assertActivatedForIntegration } from "./activation.js";
 
 const FIGMA_BREAKER = getBreaker("figma");
@@ -453,7 +454,11 @@ async function fetchFigmaJson({ config, resourcePath, headers }) {
 }
 
 async function fetchTextAsset(url) {
-  const response = await fetch(url);
+  // SSRF guard + timeout-bounded retry on an externally-supplied URL.
+  const response = await fetchGuarded(url, {
+    fetchImpl: fetchWithRetry,
+    fetchOptions: { timeoutMs: 15_000 },
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch asset from ${url}`);
   }
@@ -926,7 +931,10 @@ async function exportFigmaImageNodes({ config, fileKey, nodeIds, headers, import
   const imagesDir = path.join(importDir, "images");
   for (const [nodeId, url] of Object.entries(result)) {
     try {
-      const response = await fetch(url);
+      const response = await fetchGuarded(url, {
+        fetchImpl: fetchWithRetry,
+        fetchOptions: { timeoutMs: 15_000 },
+      });
       if (response.ok) {
         const buffer = Buffer.from(await response.arrayBuffer());
         const safeName = nodeId.replace(/[^a-z0-9]/gi, "-");

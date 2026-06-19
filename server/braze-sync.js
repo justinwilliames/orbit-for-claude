@@ -13,6 +13,7 @@ import {
   slugify
 } from "./utils.js";
 import { basename } from "node:path";
+import { assertPublicHttpUrl } from "./url-guard.js";
 
 // Thin adapter that preserves the historical callBrazeApi(...) signature
 // used throughout this file, delegating to the shared brazePost client
@@ -458,6 +459,16 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
   let contentType;
 
   if (asset_url) {
+    // Braze fetches asset_url server-side, so an unvalidated URL is an
+    // SSRF vector. Require https + a public host before forwarding.
+    try {
+      const parsedAsset = await assertPublicHttpUrl(asset_url);
+      if (parsedAsset.protocol !== "https:") {
+        return { status: "invalid_input", error: "`asset_url` must be an https URL." };
+      }
+    } catch (err) {
+      return { status: "invalid_input", error: `Rejected asset_url: ${err.message}` };
+    }
     uploadKind = "url";
     jsonBody = { asset_url, name };
   } else if (file_path) {

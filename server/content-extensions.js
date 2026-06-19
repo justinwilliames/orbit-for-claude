@@ -13,6 +13,8 @@
 //                         segment count, compliance footer
 //                         injection per region.
 
+import { fetchGuarded } from "./url-guard.js";
+
 // ---------------------------------------------------------------------------
 // Public: scorePreheader
 // ---------------------------------------------------------------------------
@@ -149,9 +151,11 @@ export async function auditUnsubscribe({ url }) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(parsed.href, {
+    // SSRF guard: assertPublicHttpUrl (inside fetchGuarded) rejects
+    // loopback/link-local/RFC1918/cloud-metadata hosts, and redirect is
+    // pinned to "manual" so a public URL cannot 30x-bounce internal.
+    const res = await fetchGuarded(parsed.href, {
       method: "GET",
-      redirect: "follow",
       headers: { "User-Agent": "Orbit-UnsubAudit/1.0 (+https://yourorbit.team)" },
       signal: controller.signal,
     });
