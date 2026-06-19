@@ -46,6 +46,18 @@ if (process.env.ORBIT_SKIP_TESTS === "1") {
   console.log("Running test suite (set ORBIT_SKIP_TESTS=1 to bypass)...");
   execSync("node tests/run.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
 }
+
+// Audit gate — fail the build if any HIGH or CRITICAL advisory is present in
+// production dependencies.  devDependencies are excluded because they never
+// ship in the .mcpb bundle.  Set ORBIT_SKIP_AUDIT=1 only when triaging the
+// audit tooling itself; never skip in a release build.
+if (process.env.ORBIT_SKIP_AUDIT === "1") {
+  console.log("ORBIT_SKIP_AUDIT=1 — skipping npm audit gate (use only for tooling debugging).");
+} else {
+  console.log("Running npm audit gate (set ORBIT_SKIP_AUDIT=1 to bypass)...");
+  execSync("npm audit --audit-level=high --omit=dev", { cwd: ROOT_DIR, stdio: "inherit" });
+}
+
 const COPY_PATHS = [
   "manifest.json",
   "icon.png",
@@ -126,11 +138,18 @@ fs.writeFileSync(
   path.join(BUILD_DIR, "package.json"),
   JSON.stringify(extPkgJson, null, 2)
 );
-execSync("npm install --production --ignore-scripts", {
+// Copy the root lockfile so npm ci can resolve exact versions rather than
+// floating to the latest matching range.  This makes the bundled renderer
+// byte-for-byte reproducible with whatever was tested in CI.
+fs.copyFileSync(
+  path.join(ROOT_DIR, "package-lock.json"),
+  path.join(BUILD_DIR, "package-lock.json")
+);
+execSync("npm ci --omit=dev --ignore-scripts", {
   cwd: BUILD_DIR,
   stdio: "inherit"
 });
-// Remove the helper package.json — the extension uses manifest.json.
+// Remove the helper package.json and lockfile — the extension uses manifest.json.
 fs.unlinkSync(path.join(BUILD_DIR, "package.json"));
 fs.rmSync(path.join(BUILD_DIR, "package-lock.json"), { force: true });
 
