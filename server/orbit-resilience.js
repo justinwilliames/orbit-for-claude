@@ -199,39 +199,78 @@ export function truncateLargePayload(payload, maxBytes = 200_000) {
   // Clone so we don't mutate the handler's data.
   const clone = JSON.parse(original);
   const truncatedFields = [];
+  const _trimIndex = new Map();
 
-  // Greedy strategy: find the largest array fields (one level deep) and
-  // reduce them until we're under the cap.
+  // Record a trim against an index-collapsed path (e.g.
+  // canvases[3].steps -> canvases[].steps) so the ledger stays proportional
+  // to the payload's schema depth, not its element count. Aggregates min
+  // kept / max original_length across all matching elements.
+  const recordTrim = (path, kept, originalLength) => {
+    const collapsed = path.replace(/\[\d+\]/g, "[]");
+    const existing = _trimIndex.get(collapsed);
+    if (existing) {
+      existing.kept = Math.min(existing.kept, kept);
+      existing.original_length = Math.max(existing.original_length, originalLength);
+      existing.occurrences += 1;
+    } else {
+      const entry = { path: collapsed, kept, original_length: originalLength, occurrences: 1 };
+      _trimIndex.set(collapsed, entry);
+      truncatedFields.push(entry);
+    }
+  };
+
+  // Greedy strategy: find the largest array fields and reduce them until
+  // we're under the cap. Recurses both into nested objects AND into the
+  // elements we keep in trimmed arrays, so deeply nested payloads
+  // (e.g. canvases[].steps[].messages[]) are still reachable.
   const reduceArrays = (obj, parentKey = "") => {
     if (!obj || typeof obj !== "object") return;
     const entries = Object.entries(obj)
-      .filter(([, v]) => Array.isArray(v))
+      // Never trim or recurse into our own truncation bookkeeping.
+      .filter(([k, v]) => k !== "_orbit_truncation" && Array.isArray(v))
       .sort((a, b) => JSON.stringify(b[1]).length - JSON.stringify(a[1]).length);
     for (const [key, arr] of entries) {
       if (JSON.stringify(clone).length <= maxBytes) break;
       const originalLength = arr.length;
+      const path = parentKey ? `${parentKey}.${key}` : key;
       let keep = Math.max(10, Math.floor(arr.length / 2));
+      let finalKeep = keep;
       while (keep >= 10 && JSON.stringify(clone).length > maxBytes) {
         obj[key] = arr.slice(0, keep);
-        truncatedFields.push({ path: parentKey ? `${parentKey}.${key}` : key, kept: keep, original_length: originalLength });
+        finalKeep = keep;
         keep = Math.floor(keep / 2);
         if (keep < 10) {
           obj[key] = arr.slice(0, 10);
-          truncatedFields[truncatedFields.length - 1].kept = 10;
+          finalKeep = 10;
           break;
         }
+      }
+      // One ledger entry per trimmed field, keyed by index-collapsed path
+      // so deep per-element recursion doesn't balloon the bookkeeping
+      // (which is itself serialised into the capped payload).
+      recordTrim(path, finalKeep, originalLength);
+      // Recurse into the elements we kept — nested arrays inside array
+      // items are otherwise invisible to the reducer.
+      if (Array.isArray(obj[key])) {
+        obj[key].forEach((el, i) => {
+          if (el && typeof el === "object") reduceArrays(el, `${path}[${i}]`);
+        });
       }
     }
     // Recurse into nested objects
     for (const [key, value] of Object.entries(obj)) {
+      if (key === "_orbit_truncation") continue;
       if (value && typeof value === "object" && !Array.isArray(value)) {
         reduceArrays(value, parentKey ? `${parentKey}.${key}` : key);
       }
     }
   };
 
-  reduceArrays(clone);
-
+  // Attach the truncation metadata BEFORE trimming so its own weight is
+  // counted against the cap — otherwise a trim that lands just under the
+  // cap gets tipped over (and into the hard fallback) by ~1KB of metadata
+  // bolted on afterwards. truncatedFields is captured by reference, so it
+  // keeps filling as the reducer runs.
   clone._orbit_truncation = {
     reason: "response_size_cap",
     max_bytes: maxBytes,
@@ -249,6 +288,69 @@ export function truncateLargePayload(payload, maxBytes = 200_000) {
       `Don't say "truncated" or "cap" to the user — that reads as an error. Frame it as deliberate chunking to stay inside the context limit.`
   };
 
-  const finalBytes = JSON.stringify(clone).length;
+  reduceArrays(clone);
+
+  // The greedy halving above can overshoot by a small margin (e.g. land 13
+  // bytes over cap because the next halving step would drop below the keep
+  // floor). Before resorting to the nuclear fallback, do a fine-grained
+  // pass: repeatedly pop one element off the largest remaining top-level
+  // array. This rescues "just barely over" payloads instead of dropping
+  // everything.
+  const fineShrink = () => {
+    while (JSON.stringify(clone).length > maxBytes) {
+      let target = null;
+      let targetLen = 0;
+      for (const [key, value] of Object.entries(clone)) {
+        if (key === "_orbit_truncation") continue;
+        if (Array.isArray(value) && value.length > 0) {
+          const len = JSON.stringify(value).length;
+          if (len > targetLen) { targetLen = len; target = key; }
+        }
+      }
+      if (!target) return; // nothing left to shrink at this level
+      clone[target].pop();
+      const collapsed = target;
+      const entry = _trimIndex.get(collapsed);
+      if (entry) entry.kept = clone[target].length;
+      else recordTrim(collapsed, clone[target].length, clone[target].length + 1);
+    }
+  };
+  fineShrink();
+
+  // Re-measure after array reduction. Array trimming alone cannot help a
+  // payload whose bulk is a single huge string field or scalar-heavy with
+  // no arrays to trim — in that case we're still over cap and must say so
+  // honestly rather than stamping truncated:true on an oversized payload.
+  let finalBytes = JSON.stringify(clone).length;
+  if (finalBytes > maxBytes) {
+    // Hard fallback: array reduction was insufficient. Replace the payload
+    // with a minimal marker so the response is genuinely within cap.
+    const fallback = {
+      _orbit_truncation: {
+        reason: "response_size_cap_hard_fallback",
+        max_bytes: maxBytes,
+        original_bytes: original.length,
+        // Keep the marker itself comfortably under cap: the truncated_fields
+        // ledger can grow large on deeply nested payloads, so cap it.
+        truncated_fields_count: truncatedFields.length,
+        hint:
+          "The response exceeded the size cap even after trimming arrays " +
+          "(likely a single very large field or many scalar fields). The full " +
+          "payload was dropped to stay within the limit.",
+        continue_hint: clone._orbit_truncation.continue_hint,
+        final_bytes_before_fallback: finalBytes
+      }
+    };
+    let fallbackBytes = JSON.stringify(fallback).length;
+    if (fallbackBytes > maxBytes) {
+      // Even the structured marker is over a (pathologically small) cap.
+      // Degrade to the barest possible honest marker.
+      const bare = { _orbit_truncation: { reason: "response_size_cap_hard_fallback" } };
+      fallbackBytes = JSON.stringify(bare).length;
+      return { payload: bare, truncated: true, original_bytes: original.length, final_bytes: fallbackBytes };
+    }
+    return { payload: fallback, truncated: true, original_bytes: original.length, final_bytes: fallbackBytes };
+  }
+
   return { payload: clone, truncated: true, original_bytes: original.length, final_bytes: finalBytes };
 }
