@@ -219,10 +219,20 @@ wizard widgets). Don't fight the screenshot — drive blind:
     top-level `return` throws "Illegal return statement".
   - **Output filter:** results containing a URL / query-string / token are redacted to
     `[BLOCKED: Cookie/query string data]`. Never return `location.href`; return UI text + numbers only.
-  - **Free, exact coordinates:** `el.getBoundingClientRect()` returns viewport CSS px that match
-    `computer left_click` coordinates 1:1. Pattern → **read an element's centre via JS, then click it
-    via `computer`** (pixel-precise, no screenshot). `el.scrollIntoView({block:'center'})` first to
-    pull an off-screen control to a stable spot, then re-read its rect.
+  - **Exact coordinates via JS — but CALIBRATE the scale, never assume 1:1.** `el.getBoundingClientRect()`
+    returns viewport **CSS px** (a `window.innerWidth`-wide space), while `computer left_click` consumes
+    coordinates in the **screenshot's pixel space** — a resized capture of the viewport. The two match 1:1
+    only when the screenshot width happens to equal `innerWidth`; frequently it does NOT, because the
+    screenshot is downscaled and the ratio shifts with window size, browser zoom, device-pixel-ratio, and
+    which browser is driving. **Hard-coding a width (e.g. `1518`) is the classic bug** — clicks land
+    off-target on any other viewport (observed scales have ranged ~0.85–1.0 across sessions, proof it is
+    not a constant). **Measure the scale ONCE per session:** take one `computer` screenshot and note its
+    reported pixel **width** `SW`; read `IW = window.innerWidth` via JS; `scale = SW / IW`. Then for any
+    element read its rect and click the scaled centre: `clickX = (rect.x + rect.width/2) * scale`,
+    `clickY = (rect.y + rect.height/2) * scale`. `el.scrollIntoView({block:'center'})` first to pull an
+    off-screen control to a stable spot, then re-read its rect. If screenshots are wedged so `SW` is
+    unreadable, fall back to `scale = window.devicePixelRatio` and **verify the first click landed**
+    (re-read DOM state) before trusting it for the rest of the batch.
 - **Driving React controls from JS:**
   - **Radio / checkbox:** custom-styled, the real `<input>` is hidden — coordinate-clicks and naïve
     `.click()` DON'T register. Use the native setter + dispatched events:
