@@ -96,6 +96,21 @@ Far faster than scrolling blind through a 40-step canvas.
   node's body/input. `left_click` both ends; never `left_click_drag`. This works for EVERY edge
   (branch→delay, delay→message, re-convergence into a shared step), so the **entire flow graph is
   buildable in Claude-in-Chrome — the Codex fallback in §9 is NOT needed for wiring.**
+- **Connection mode SURVIVES scrolling (Sir, 2026-06-26) — how to wire two far-apart nodes.** On a
+  tall flow the source ("+") and target can't both fit on screen at 100%. Click the source "+" to enter
+  connection mode, then **scroll the canvas** to bring the off-screen target into view — the pending edge
+  holds through the scroll — then click the target body. Proven wiring 4 staggered delays at the bottom
+  back up to the shared email at the top. (Beats zooming out, which rescales every coordinate.)
+- **Setting a Delay's duration: it defaults to "1 day".** Click the placed Delay step → a **"Set a delay"**
+  modal opens (Delay type = Duration, value field + "Days" dropdown) → clear the value (`cmd+a`), type N
+  → click **Done** (top-left of the modal's left rail, NOT the canvas Save). The card then reads "After N
+  days". Do this BEFORE wiring — a fresh delay always reads 1 day, so cohorts needing 2/3/4 days must be
+  edited or they all stagger by one.
+- **Per-branch rhythm that works: place → configure → connect, one branch at a time, Save every ~2
+  branches.** The CDP bridge drops connection intermittently ("not connected" / "Stream closed") — a bare
+  `screenshot` retry recovers it, and a partially-applied batch is common (re-screenshot to see what
+  landed before re-firing). Saving every couple of branches banks progress so a drop never costs more than
+  the current branch. A draft Save reloads the page (~5s) and resets scroll to the top.
 - The small **"+" connector** directly beneath a node enters **connection** mode (above) — that is the
   intended tool, not a mis-click. **It IS the tool for the next pattern —**
 
