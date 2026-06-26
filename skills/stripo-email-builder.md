@@ -522,6 +522,17 @@ That's the minimal contract: provenance + personalisation + one email toggle wit
 
 > The sections above produce the **spec**. This is how you actually **build, push, verify, export, and manage** the emails. Every rule here was learned the hard way during a large program rebuild (40+ emails). Ignore at your peril.
 
+## To CHANGE an existing email: recompose + replace, NEVER browser-edit
+**Default for ANY content edit to a live email (add/remove/swap a module, fix copy, restyle): recompose the whole email with `orbit_compose_stripo_email` (push:true) and DELETE the old version — do NOT drive in-browser editor edits.** Recompose is significantly faster and more reliable; the Stripo editor's synthetic drag and slot-by-slot typing are slow, fragile, and fall over under CDP flakiness. Do NOT agonise about "preserving the exact design via an in-place edit" — reproduce the design by composing from the matched library modules (match by name / HTML signature against the live synced set; see "Detecting LIVE modules" below).
+
+Recipe:
+1. Reconstruct the email's current `module_sequence` + `slot_values` (subject, preheader, every module's slots) from the live email / Braze template. From-scratch reconstruction is expected and fine — that is the efficient path, not a reason to fall back to the editor.
+2. Insert / remove the target module, then `orbit_compose_stripo_email` `push:true` with the COMPLETE payload (never a partial — see the partial-slot bug below).
+3. Export to the SAME live Braze template by explicit `braze_template_map` (`{stripo_id: braze_template_id}`) — updates the right Canvas template even if the Stripo email was renamed (more robust than `dedupe_by_name`).
+4. `orbit_delete_stripo_email` the OLD Stripo email; re-file / rename the new one into its folder.
+
+*(Justin, 2026-06-26 — firm standing instruction: "always regenerate/compose and delete old versions; significantly more efficient than browser edits." This governs CONTENT edits; foldering/tidy-up below is still UI, since there is no folder API.)*
+
 ## Do the manual work yourself — never push it back
 **Foldering, moving, sorting, renaming, any UI tidy-up is YOUR job — do it to completion via Claude-in-Chrome.** There is no Orbit/API tool for folders, but the UI move recipe below is proven and works. NEVER flag foldering/organising as "UI-only / no API / needs the user's hand / too fragile to risk the workspace" and defer it — that reads as laziness and erodes trust faster than the polish saves. If the browser is flaky, drive it **blind via `javascript_tool`/DOM** (a dead screenshot channel does NOT stop clicks or JS — see the CDP-flakiness note below), open a fresh tab to recover, and fight through. The job is done when the manual tail is done, not when the API part is. *(Justin, 2026-06-19 — firm standing instruction. See also the global `always-do-manual-work` memory.)*
 

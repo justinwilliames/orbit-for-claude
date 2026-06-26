@@ -80,10 +80,24 @@ Far faster than scrolling blind through a 40-step canvas.
 4. A side panel then opens to configure it (Message → channel Email → "Use existing template" → pick
    by name; Delay → duration). **Screenshot between every click** — the grid/panel reflows the layout
    and coordinates drift.
-- The small **"+" connector** directly beneath a node is a DIFFERENT affordance: clicking it enters
-  **connection** mode (draw an edge to an existing node), not add-step — purple drop-zones + a
-  "Cancel Connection" bar. Press Esc and use the palette-click flow above instead. **But connection
-  mode IS the tool for the next pattern —**
+- **The empty-first-step trap — and the one-click fix (Sir, 2026-06-26).** The canvas always opens
+  with a default first **Message** step ("Add Variant" + "Variant 1"). Do **NOT** delete its only
+  variant to clear it: "Delete Variant" removes the variant but leaves an **un-removable empty step
+  shell** ("Add Variant" with no output), there is no "Delete Step" for the first node, and Entry has
+  no separately-clickable output — so you get stranded, unable to wire Entry→anything. **Recovery:
+  click "Add Variant" → it re-creates "Variant 1", which restores a valid first step AND auto-wires it
+  onward to the next node** (a disconnected step below flips from DISCONNECTED → DRAFT). So: keep the
+  first Message step. If your real first action is a split, the structure is **Entry → Message
+  (Variant 1) → Audience Paths → branches** — you cannot make Audience Paths the literal first node;
+  keep/repurpose Variant 1 rather than deleting it.
+- **Click-to-connect: it HOLDS after the first click (no drag needed — Sir confirmed).** To draw an
+  edge: click the SOURCE node's output "+" connector (the dot directly beneath it) → the canvas enters
+  connection mode ("Cancel Connection · Esc") and **holds the pending edge** → then click the TARGET
+  node's body/input. `left_click` both ends; never `left_click_drag`. This works for EVERY edge
+  (branch→delay, delay→message, re-convergence into a shared step), so the **entire flow graph is
+  buildable in Claude-in-Chrome — the Codex fallback in §9 is NOT needed for wiring.**
+- The small **"+" connector** directly beneath a node enters **connection** mode (above) — that is the
+  intended tool, not a mis-click. **It IS the tool for the next pattern —**
 
 **Re-converge, don't duplicate — when many paths send the SAME email:**
 When several branches (audience-path groups, or per-cohort delays) all send the *same* message, wire
