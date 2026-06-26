@@ -1,6 +1,6 @@
 ---
 name: braze-claude-in-chrome-build
-description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', or any Braze dashboard mutation (the public API is read-only for canvas config). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, and the Codex fallback for the visual flow-builder."
+description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, and the Codex fallback for the visual flow-builder."
 ---
 
 # Braze via Claude in Chrome — Build & Edit Manual
@@ -383,3 +383,45 @@ overflows the token limit even at 3 steps (email HTML) and auto-saves to a file 
 **Tooling note:** `browser_batch`'s `actions` array uses a `{name, input}` shape per action, NOT
 `{action, …}` — the wrong shape throws an input-validation error. Single `computer` calls are a
 reliable fallback if a batch shape errors.
+
+## 12. Segment & campaign list management — archive, rename, the reference-safety check
+
+The list views (**Audience ▸ Segments**, **Messaging ▸ Campaigns**) are dashboard-only — the Braze
+API/MCP has **no delete, archive, or rename** for segments or campaigns (`get_*` reads only). Drive
+these from the browser.
+
+**Segments ARCHIVE, they don't delete.** The UI offers **Archive**, never a hard delete — archiving
+is reversible (re-activate from the Archived status filter). So a request to "delete this segment" =
+archive it; a true permanent delete is not a dashboard action — don't promise one. Select the row
+checkbox(es) → the **Archive** button appears in the bulk-action bar above the table → confirm.
+
+**The archive cascade warning is BOILERPLATE — never read it as proof of in-use.** The confirm dialog
+ALWAYS says *"Any campaigns, canvases, or other referenced segments will be archived as well."*
+verbatim — it shows even for an unreferenced throwaway test segment, and it does NOT enumerate the
+actual referencing entities. Treating it as an in-use signal either scares you off a safe archive or,
+worse, lulls you into archiving a segment that really IS a live canvas's entry audience (which WOULD
+cascade-archive that canvas).
+
+**The reliable in-use check = the segment's "Messaging Use" panel.** Open the segment (click its name)
+→ scroll past the Segment Builder → the **Messaging Use** card lists **Campaigns / Segments / Canvases**
+as either "Not used by any …" or the specific referencing entities. THIS is ground truth. Before
+archiving any segment that could plausibly be a live entry audience or filter, open it and confirm all
+three read "Not used by any …" (the panel's estimated reachable-users count near zero is a second hint
+it's safe). The boilerplate dialog never substitutes for this panel.
+
+**Campaign list hides drafts by default.** The Campaigns list defaults to a **Status: Active** filter;
+draft/disabled campaigns (incl. never-launched IAM and test campaigns) won't appear, so the list can
+look empty while drafts linger. Switch the **Status** dropdown to **Draft** (or **All**) to surface
+them, then bulk-select → **Archive** → confirm. **Archiving a draft DISCARDS its content** (the dialog
+warns "any draft in these campaigns will be discarded") — if the creative might be wanted later,
+capture it first via `get_campaign_details` (the message HTML sits in `messages[].message`).
+
+**Renaming a segment** (e.g. tidying Braze auto-generated defaults to naming convention): open it →
+**Segment Name** field → `triple_click` to select-all → `type` the new name (emoji type fine, e.g.
+`📱 iOS Users`) → **Save** → wait for the green **"Save completed"** toast. The per-app
+**"All Users (<Workspace> - iOS/Web/Android)"** defaults ARE renamable and safe to rename — Braze
+references them internally by `app_id`, not by name, so nothing downstream breaks.
+
+**Post-save wedge (same failure mode as §2):** after a segment Save the edit page can hang on
+`document_idle` (screenshots time out indefinitely). Don't fight it — navigate back to the segment
+list URL and confirm the new name/state there instead of re-screenshotting the wedged editor.

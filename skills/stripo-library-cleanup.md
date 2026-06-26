@@ -121,10 +121,53 @@ Instead, **one destination at a time**:
 - **CDP screenshots start failing / tab group drops** mid-session: `javascript_tool`
   keeps reading state when screenshots don't. To recover, `tabs_create_mcp` a **fresh
   tab** and re-navigate — screenshot capability tends to return on the new tab.
+- **Driving the whole move BLIND via JS when screenshots stay dead (proven recipe).**
+  The cabinet is Angular; its toolbar/dialog buttons respond to a **native
+  `element.click()`** but IGNORE a synthetic `dispatchEvent(new MouseEvent('click'))`.
+  So: (1) select all targets — `[...document.querySelectorAll('[id^="entity-"]')]`,
+  click each card's `input[type=checkbox]` via `.click()` → confirm `Selected: N` in
+  `document.body.innerText`. (2) Open Move-to: find the toolbar button via
+  `[...document.querySelectorAll('use')].find(u=>u.getAttribute('href')==='#ca-icon-folder-move').closest('button').click()`
+  (native click — `dispatchEvent` silently no-ops here, the trap that wasted time).
+  (3) The dialog is a `.cdk-overlay-pane` containing `cdk-tree-node` folder rows, a
+  `Move` button (disabled until a destination is picked), and the **"Move with modules
+  used in the template"** `input[type=checkbox]` — read its `.checked`; it DEFAULTS
+  UNCHECKED (the safe state — leave it). Click the destination `cdk-tree-node` (its
+  inner name span) → re-read the `Move` button's `.disabled` (now false) → guard that
+  the modules checkbox is still unchecked → click `Move`. (4) ⚠️ Verify success by
+  RELOAD + re-scrape folder counts, NOT by regex on a toast — the dunning emails' own
+  copy contains "payment **failed**", so a `/failed/i` match on page text is a false
+  positive. The whole move ran clean this way with screenshots fully dead.
+- **Cabinet REST is XSRF-guarded, not bearer.** If you try to script via
+  `fetch('/bapi/stripeapi/v3/...')`: GETs/POSTs need the `X-XSRF-TOKEN` header (the cookie
+  is httpOnly, so capture the value by hooking `XMLHttpRequest.prototype.setRequestHeader`
+  — Angular HttpClient uses XHR, not `fetch`, so a fetch-only hook captures nothing; trigger
+  one authed XHR by SPA-navigating, e.g. native-`.click()` the sidebar "Email Messages"
+  link, which does NOT reload and so preserves the hook).
+- **Creating a NESTED subfolder: use the API, not the move-dialog's inline rename.** The
+  move dialog's new-folder (+) does spawn an inline name `<input>`, and you can set its
+  value with the native-setter trick (`Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(inp,'Name'); inp.dispatchEvent(new Event('input',{bubbles:true}))`),
+  but COMMITTING it (the ✓ tick) is unreliable via synthetic clicks and silently no-ops.
+  Far cleaner: `POST /bapi/stripeapi/v3/projects/<proj>/emails/folders` with body
+  `{name:'Marketing', parentId:<parentFolderId>}` and the XSRF header → returns the new
+  `{id,name}` nested under the parent (verified by loading the parent folder). Folder
+  creation is side-effect-free (no module/email risk), so the API is safe here. THEN do
+  the email moves via the native-`.click()` UI recipe into the now-existing subfolder
+  (select emails → move icon → expand the parent tree node → click the subfolder node →
+  Move, modules unchecked). The move endpoint itself still isn't worth reverse-engineering
+  (module-relocation risk) — only the folder *create* is.
+- **Renaming an email in place (no rebuild needed):** `PATCH /bapi/stripeapi/v3/projects/<proj>/emails/<id>`
+  with body `{name:"New Name"}` + the `X-XSRF-TOKEN` header → 200, renames instantly. Verify by
+  reloading the folder grid. This beats delete-and-recompose (which mints new IDs and loses folder
+  placement). **Ordering trick:** the cabinet sorts a folder's emails alphabetically by name, so to
+  force a journey order, prefix each name with a zero-padded number — `00 `, `01 `, … — exactly the
+  convention the Activation program uses (`00 Welcome`, `01 M1 Services`, …). A `PATCH`-loop over the
+  ids renames a whole program into order in seconds.
 - **Counts look wrong**: never trust a badge or an un-reloaded grid; reload and
   re-scrape the actual `[id^="entity-"]` cards.
 
 ## Guardrails
+- **Do the filing yourself — never push it back to the user.** Filing loose emails into folders is the whole point of this skill; complete it via the browser (Claude-in-Chrome) to the end. No folder API exists, but the UI move-recipe works (see `stripo-email-builder` → "Workspace management"). Never defer foldering as "UI-only / needs your hand / too fragile to risk" — drive it blind via JS/DOM if screenshots are flaky and fight through. (Justin, firm standing instruction.)
 - Confirm before the first permanent delete; re-confirm if scope grows.
 - Never delete the master template (Orbit's write-guard blocks it anyway).
 - On a **live** program (e.g. an Activation set wired into a Braze canvas), prefer

@@ -432,6 +432,14 @@ Rules that **never** scale away:
 - **Program-wide pricing/tier rewrites that special-case a module then forget it.** When pivoting an entire program's upsell tier (e.g. entry tier → higher tier), enumerate EVERY module across ALL emails — especially the paid-only feature modules that often get special-cased because the old tier was "the cheapest one with that feature." A program rebuild script silently skipped those feature modules' Free variants and shipped the old tier's copy into 4 emails. Tells: the rewrite touched only the dedicated upsell card module but NOT the per-email body card (`Text + body + CTA`) or the comparison-table module that ALSO carry tier copy/price content-blocks. Before declaring the pivot complete, grep for the old tier name (and any old content-block names like `<old-tier>-call-volume` / `<old-tier>-price`) across every email's **rendered HTML** (`orbit_get_stripo_email`), not just the build plan — module defaults don't appear in the plan.
 - **Treating an HTML-comment hit as a copy defect.** Comparison-table and other modules embed author comments documenting slot/column mappings (e.g. `col 2 = entry tier, col 3 = higher tier`). These are non-rendering and survive a tier rewrite harmlessly. When grepping rendered HTML for an old tier name, check whether the hit is inside `<!-- -->` before raising it — visible-copy and the column header (`>Higher tier<`) are what matter.
 
+### Rich HTML inside text slots (`p_description`)
+
+Text slots (`p_description` on Heading+Text / Quote / etc.) render inline HTML via innerHTML — `<br>`, `<strong>`, `<a>`, and even `<img>` all work. This is how you build a long-form letter, inline links, or an inline product screenshot inside a single text module. Verify it baked with `orbit_get_stripo_email` + grep: the tag must appear as real markup (`<a` / `<img`), NOT escaped (`&lt;a`).
+
+- **Inline links MUST inherit the body font — this is the load-bearing rule.** A bare `<a href="…" style="color:#2D87B9;">` renders at a wrong (usually smaller) size and a different typeface, because email clients reset unstyled link fonts. ALWAYS pull the body's dynamic CSS instead of hardcoding: `style="color:#2D87B9;font-size:inherit;font-family:inherit;line-height:inherit;text-decoration:underline;"`. `inherit` makes the link follow the surrounding body text (and keeps following it if the module's font ever changes). NEVER hardcode `font-size:18px;font-family:Inter` — it looks right today but silently drifts.
+- **Inline images:** `width="600"` plus `style="width:100%;max-width:600px;height:auto;display:block;margin:0 auto;"`. Keep the file external (Braze CDN) — Gmail clips on HTML byte size, but a heavy image still kills load time.
+- **Screenshots specifically:** (1) flatten transparency onto WHITE before saving as JPEG — `PIL.Image.convert("RGB")` fills transparent areas (a macOS window's drop-shadow) with BLACK, giving an ugly black edge; composite onto a white background instead. (2) Downscale a retina screenshot to ~1200px wide (display is ~600px) so it doesn't bloat the send — three originals totalling ~1.8 MB dropped to ~200 KB after scaling.
+
 ---
 
 ## Worked example — minimal single-email scope
@@ -513,6 +521,9 @@ That's the minimal contract: provenance + personalisation + one email toggle wit
 # Building & shipping in Stripo (operational)
 
 > The sections above produce the **spec**. This is how you actually **build, push, verify, export, and manage** the emails. Every rule here was learned the hard way during a large program rebuild (40+ emails). Ignore at your peril.
+
+## Do the manual work yourself — never push it back
+**Foldering, moving, sorting, renaming, any UI tidy-up is YOUR job — do it to completion via Claude-in-Chrome.** There is no Orbit/API tool for folders, but the UI move recipe below is proven and works. NEVER flag foldering/organising as "UI-only / no API / needs the user's hand / too fragile to risk the workspace" and defer it — that reads as laziness and erodes trust faster than the polish saves. If the browser is flaky, drive it **blind via `javascript_tool`/DOM** (a dead screenshot channel does NOT stop clicks or JS — see the CDP-flakiness note below), open a fresh tab to recover, and fight through. The job is done when the manual tail is done, not when the API part is. *(Justin, 2026-06-19 — firm standing instruction. See also the global `always-do-manual-work` memory.)*
 
 ## The build pipeline: compose → push → VERIFY → export
 1. **Compose + push:** `orbit_compose_stripo_email` with `push:true`, `module_sequence` (module-ID strings; **pos 0 = header, last = footer**), `slot_values` (`{ "<moduleId>": { "<varName>": "<value>" } }`), `subject`, `preheader`, `email_name`. Returns the new Stripo `email_id`. Needs the master template configured — check with `orbit_check_stripo_auth` first.
