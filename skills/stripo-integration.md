@@ -40,6 +40,8 @@ modules intact for further Stripo-side editing.**
 
 When this skill is active, apply this sequence before diving into the user's specific request:
 
+**0. Do the manual work yourself.** Any Stripo UI tidy-up the task implies — foldering, moving, sorting, renaming, drag-and-drop — is Claude's to complete via the browser (Claude-in-Chrome), never handed back to the user as "UI-only" or "needs your hand" and never deferred. No folder API exists, but the UI move-recipe works (see `stripo-email-builder` → "Workspace management"); drive it blind via JavaScript/DOM if screenshots are flaky. Best practice: always complete the manual tidy-up yourself rather than handing it back.
+
 1. **Verify setup.** Run `orbit_setup_stripo` first. If credentials are missing, surface the
    markdown checklist and stop until the user confirms each step is done. Stripo needs THREE
    credentials, not two: Plugin ID, Secret Key, AND a separate per-project REST API token.

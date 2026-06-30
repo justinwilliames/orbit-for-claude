@@ -1,6 +1,6 @@
 ---
 name: braze-claude-in-chrome-build
-description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', or any Braze dashboard mutation (the public API is read-only for canvas config). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, and the Codex fallback for the visual flow-builder."
+description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, and the Codex fallback for the visual flow-builder."
 ---
 
 # Braze via Claude in Chrome — Build & Edit Manual
@@ -80,10 +80,39 @@ Far faster than scrolling blind through a 40-step canvas.
 4. A side panel then opens to configure it (Message → channel Email → "Use existing template" → pick
    by name; Delay → duration). **Screenshot between every click** — the grid/panel reflows the layout
    and coordinates drift.
-- The small **"+" connector** directly beneath a node is a DIFFERENT affordance: clicking it enters
-  **connection** mode (draw an edge to an existing node), not add-step — purple drop-zones + a
-  "Cancel Connection" bar. Press Esc and use the palette-click flow above instead. **But connection
-  mode IS the tool for the next pattern —**
+- **The empty-first-step trap — and the one-click fix.** The canvas always opens
+  with a default first **Message** step ("Add Variant" + "Variant 1"). Do **NOT** delete its only
+  variant to clear it: "Delete Variant" removes the variant but leaves an **un-removable empty step
+  shell** ("Add Variant" with no output), there is no "Delete Step" for the first node, and Entry has
+  no separately-clickable output — so you get stranded, unable to wire Entry→anything. **Recovery:
+  click "Add Variant" → it re-creates "Variant 1", which restores a valid first step AND auto-wires it
+  onward to the next node** (a disconnected step below flips from DISCONNECTED → DRAFT). So: keep the
+  first Message step. If your real first action is a split, the structure is **Entry → Message
+  (Variant 1) → Audience Paths → branches** — you cannot make Audience Paths the literal first node;
+  keep/repurpose Variant 1 rather than deleting it.
+- **Click-to-connect: it HOLDS after the first click (no drag needed).** To draw an
+  edge: click the SOURCE node's output "+" connector (the dot directly beneath it) → the canvas enters
+  connection mode ("Cancel Connection · Esc") and **holds the pending edge** → then click the TARGET
+  node's body/input. `left_click` both ends; never `left_click_drag`. This works for EVERY edge
+  (branch→delay, delay→message, re-convergence into a shared step), so the **entire flow graph is
+  buildable in Claude-in-Chrome — the Codex fallback in §9 is NOT needed for wiring.**
+- **Connection mode SURVIVES scrolling — how to wire two far-apart nodes.** On a
+  tall flow the source ("+") and target can't both fit on screen at 100%. Click the source "+" to enter
+  connection mode, then **scroll the canvas** to bring the off-screen target into view — the pending edge
+  holds through the scroll — then click the target body. Proven wiring 4 staggered delays at the bottom
+  back up to the shared email at the top. (Beats zooming out, which rescales every coordinate.)
+- **Setting a Delay's duration: it defaults to "1 day".** Click the placed Delay step → a **"Set a delay"**
+  modal opens (Delay type = Duration, value field + "Days" dropdown) → clear the value (`cmd+a`), type N
+  → click **Done** (top-left of the modal's left rail, NOT the canvas Save). The card then reads "After N
+  days". Do this BEFORE wiring — a fresh delay always reads 1 day, so cohorts needing 2/3/4 days must be
+  edited or they all stagger by one.
+- **Per-branch rhythm that works: place → configure → connect, one branch at a time, Save every ~2
+  branches.** The CDP bridge drops connection intermittently ("not connected" / "Stream closed") — a bare
+  `screenshot` retry recovers it, and a partially-applied batch is common (re-screenshot to see what
+  landed before re-firing). Saving every couple of branches banks progress so a drop never costs more than
+  the current branch. A draft Save reloads the page (~5s) and resets scroll to the top.
+- The small **"+" connector** directly beneath a node enters **connection** mode (above) — that is the
+  intended tool, not a mis-click. **It IS the tool for the next pattern —**
 
 **Re-converge, don't duplicate — when many paths send the SAME email:**
 When several branches (audience-path groups, or per-cohort delays) all send the *same* message, wire
@@ -125,6 +154,24 @@ Confirm the quiet window doesn't clash with the intended local send hour for the
 
 **Verify-after-save:** re-load the flow (or `find` the deleted/changed element) — a deleted group
 absent after a fresh server load = persisted. Don't trust the toast alone for high-stakes edits.
+
+**Multi-tab save-conflict (one canvas, >1 edit tab) — will eat your edit.** If two+ tabs are open on
+the same canvas, Save fails with *"These changes can't be saved — <user> has made changes to this
+Canvas. Refresh to discard your changes…"* (Braze versions per-session; the other tab bumped it).
+There is **no force-save** — only **Cancel** (still stuck) or **Refresh** (discards YOUR unsaved
+edits, loads latest). Recovery: **close every stale canvas tab (`tabs_close_mcp`, one `tabId` per
+call — it rejects arrays), Refresh, then redo the edit in the single surviving tab and Save.** Each
+Save reloads that tab; do the next edit on the reloaded copy, never a second tab. Prevention: **one
+tab, sequential** — never fan canvas edits across tabs.
+
+**Surgical CSS/HTML edit of a message step** (e.g. fix one module's padding, swap an asset URL): open
+the message step → **Edit message → HTML Editor** (Monaco, NOT CodeMirror) → drive via
+`javascript_tool`: `monaco.editor.getModels()` → pick the model whose `getValue()` holds the email →
+`model.setValue(before.replace(/<unique string>/g, <new>))` (fires Monaco's change event so Braze
+picks it up) → editor **Done** → panel **Done** → canvas **Save**. The step is a SNAPSHOT — patch the
+upstream Braze template separately (it does not inherit). Verify via `get_canvas_details` (grep the
+message `body` for the edit). Screenshots usually DON'T wedge in this in-canvas HTML editor, but JS is
+the reliable driver regardless.
 
 ## 4. What the API can/can't do (route accordingly)
 
@@ -219,10 +266,20 @@ wizard widgets). Don't fight the screenshot — drive blind:
     top-level `return` throws "Illegal return statement".
   - **Output filter:** results containing a URL / query-string / token are redacted to
     `[BLOCKED: Cookie/query string data]`. Never return `location.href`; return UI text + numbers only.
-  - **Free, exact coordinates:** `el.getBoundingClientRect()` returns viewport CSS px that match
-    `computer left_click` coordinates 1:1. Pattern → **read an element's centre via JS, then click it
-    via `computer`** (pixel-precise, no screenshot). `el.scrollIntoView({block:'center'})` first to
-    pull an off-screen control to a stable spot, then re-read its rect.
+  - **Exact coordinates via JS — but CALIBRATE the scale, never assume 1:1.** `el.getBoundingClientRect()`
+    returns viewport **CSS px** (a `window.innerWidth`-wide space), while `computer left_click` consumes
+    coordinates in the **screenshot's pixel space** — a resized capture of the viewport. The two match 1:1
+    only when the screenshot width happens to equal `innerWidth`; frequently it does NOT, because the
+    screenshot is downscaled and the ratio shifts with window size, browser zoom, device-pixel-ratio, and
+    which browser is driving. **Hard-coding a width (e.g. `1518`) is the classic bug** — clicks land
+    off-target on any other viewport (observed scales have ranged ~0.85–1.0 across sessions, proof it is
+    not a constant). **Measure the scale ONCE per session:** take one `computer` screenshot and note its
+    reported pixel **width** `SW`; read `IW = window.innerWidth` via JS; `scale = SW / IW`. Then for any
+    element read its rect and click the scaled centre: `clickX = (rect.x + rect.width/2) * scale`,
+    `clickY = (rect.y + rect.height/2) * scale`. `el.scrollIntoView({block:'center'})` first to pull an
+    off-screen control to a stable spot, then re-read its rect. If screenshots are wedged so `SW` is
+    unreadable, fall back to `scale = window.devicePixelRatio` and **verify the first click landed**
+    (re-read DOM state) before trusting it for the rest of the batch.
 - **Driving React controls from JS:**
   - **Radio / checkbox:** custom-styled, the real `<input>` is hidden — coordinate-clicks and naïve
     `.click()` DON'T register. Use the native setter + dispatched events:
@@ -307,12 +364,47 @@ precise re-add, per message step:
 This swaps the step's stale snapshot to the chosen template's *current* content in place — From / subject
 / preheader carry over from the template. No remove-and-re-add, no HTML editing.
 
+**Monaco JS-setValue fallback — if "Choose new template" is unavailable, or for a surgical image/url swap.** Braze's in-canvas HTML editor (Edit message → HTML Editor) is a **MONACO** editor, NOT CodeMirror: coordinate clicks + `Cmd+A`/`Cmd+V` land on the PREVIEW pane (it highlights, the code doesn't), `.CodeMirror` is absent, and there's no find-replace. It DOES expose Monaco's JS API, so drive it via `javascript_exec`: `monaco.editor.getModels()` → pick the model whose `getValue()` contains the email body → `model.setValue(newHtml)` **or** regex-replace just the changed asset urls (e.g. `v.replace(/<oldId>\/original\.jpg(\?\d+)?/g, '<newId>/original.png?<ts>')`) → `model.setValue(v)`. setValue fires Monaco's change event so Braze's binding marks the step dirty. Then click **Done** (editor) → **Done** (Set up Messages panel) → canvas **Save** (draft, never Update Canvas on a live canvas). **ALWAYS re-verify the persisted result via `get_canvas_details`** (grep the message `body` for the expected asset ids) — a setValue that didn't register would silently save the old snapshot. Used this to swap a redacted/transparent screenshot into a CEO-letter canvas after the template re-export hadn't propagated. Still: prefer "Choose new template" — it keeps the step a clean template snapshot rather than a hand-edited fork.
+
 **Legacy fallback (only if "Choose new template" isn't offered):** double-click the step CARD/header
 (not the body) → **Set up Messages** → click the **Email** chip → **✕** → confirm **Remove** → re-add via
 channel slot → **Email** → **Create new email → Templates** → tick by name → **Select template** →
 **Done** → **Done** → **Save**.
 Then **re-verify the canvas itself** (`orbit_read_braze_canvas`, grep for the changed string), not just
 the template — the template passing is necessary but NOT sufficient.
+
+**Bulk re-bind at scale — silent-failure traps (from a large multi-step canvas rebind).** Re-binding
+dozens of steps in one sitting surfaced gremlins that cost the better part of a day. Bank these:
+- **Screenshots die on the canvas flow editor.** It holds long-lived connections and never reaches
+  `document_idle`, so every `computer` screenshot/click times out at 45s. Drive the entire rebind via
+  `javascript_tool` (it works on the wedged page) — JS-read element rects/handlers and `.click()` them.
+- **The composer modal only renders in a genuinely FRESH tab.** Opening a step's Messages → Choose new
+  template in a stale/reused MCP tab leaves a perpetual `bcl-loading-spinner` that never populates.
+  `tabs_close_mcp` + `tabs_create_mcp` a new tab and re-navigate; a same-tab renavigate is NOT enough.
+  The editor also DEGRADES after ~1–2 binds per tab (gallery hangs, editor opens as a stub) → bind only
+  **1–2 steps per fresh tab**, save, then fresh tab.
+- **The stub-editor silent revert (the big one).** After "Select template", the bind only COMMITS once the
+  FULL editor has rendered (a Preview pane + a WIDE-footer "Done"). Click "Done" while only the NARROW stub
+  editor is showing and the selection silently reverts to the old snapshot with **no error**. Poll for the
+  full editor (Preview pane / wide Done) BEFORE clicking Done.
+- **Never verify a bind by subject line.** A Liquid/body-only fix leaves the subject identical between old
+  and corrected template versions, so an in-browser subject check PASSES on a silently-failed bind. The only
+  reliable verification is `get_canvas_details(post_launch_draft_version=true)` → parse each message `body`
+  for a body-level signature of the new content (e.g. `custom_attribute.${...}`, the new hero asset id).
+  Treat the rebind as a LOOP: bind → API-QA → re-bind the stragglers → repeat until the API shows zero
+  defects. Expect only ~60–70% commit rate per pass on a flaky session.
+- **Picker "duplicates" are mostly a ghost.** The dashboard's internal `email_templates` endpoint AND the
+  template picker include **soft-deleted** rows (≈260) while the public API `get_email_templates` returns
+  only LIVE (≈127). For LIVE truth, use the public API. Same-name copies in the picker → select the one
+  dated **today** (the freshly re-exported canonical is the only live one; older same-name copies are
+  stale/soft-deleted). `"Activation - <name>"`-prefixed templates are a different set — never an exact match.
+- **No template delete in the public API.** Braze's public API has create/update/list only — no
+  delete/archive. Deduping the library to one-per-name needs the dashboard (soft-delete via the internal
+  endpoint with the Rails `X-CSRF-Token` header, or the management UI). It is NOT required for a clean
+  rebind if you disambiguate by today's date.
+- **Liquid for CUSTOM attributes needs the namespace.** Bare `{{${orgName}}}` / `{% if ${signupDate} %}`
+  works for STANDARD profile fields but renders empty for CUSTOM attributes — Braze flags them. Use
+  `{{custom_attribute.${orgName} | default: '…'}}` and `{% if custom_attribute.${signupDate} %}`.
 
 ## 11. Wizard audience / exit / conversion config
 
@@ -373,3 +465,45 @@ overflows the token limit even at 3 steps (email HTML) and auto-saves to a file 
 **Tooling note:** `browser_batch`'s `actions` array uses a `{name, input}` shape per action, NOT
 `{action, …}` — the wrong shape throws an input-validation error. Single `computer` calls are a
 reliable fallback if a batch shape errors.
+
+## 12. Segment & campaign list management — archive, rename, the reference-safety check
+
+The list views (**Audience ▸ Segments**, **Messaging ▸ Campaigns**) are dashboard-only — the Braze
+API/MCP has **no delete, archive, or rename** for segments or campaigns (`get_*` reads only). Drive
+these from the browser.
+
+**Segments ARCHIVE, they don't delete.** The UI offers **Archive**, never a hard delete — archiving
+is reversible (re-activate from the Archived status filter). So a request to "delete this segment" =
+archive it; a true permanent delete is not a dashboard action — don't promise one. Select the row
+checkbox(es) → the **Archive** button appears in the bulk-action bar above the table → confirm.
+
+**The archive cascade warning is BOILERPLATE — never read it as proof of in-use.** The confirm dialog
+ALWAYS says *"Any campaigns, canvases, or other referenced segments will be archived as well."*
+verbatim — it shows even for an unreferenced throwaway test segment, and it does NOT enumerate the
+actual referencing entities. Treating it as an in-use signal either scares you off a safe archive or,
+worse, lulls you into archiving a segment that really IS a live canvas's entry audience (which WOULD
+cascade-archive that canvas).
+
+**The reliable in-use check = the segment's "Messaging Use" panel.** Open the segment (click its name)
+→ scroll past the Segment Builder → the **Messaging Use** card lists **Campaigns / Segments / Canvases**
+as either "Not used by any …" or the specific referencing entities. THIS is ground truth. Before
+archiving any segment that could plausibly be a live entry audience or filter, open it and confirm all
+three read "Not used by any …" (the panel's estimated reachable-users count near zero is a second hint
+it's safe). The boilerplate dialog never substitutes for this panel.
+
+**Campaign list hides drafts by default.** The Campaigns list defaults to a **Status: Active** filter;
+draft/disabled campaigns (incl. never-launched IAM and test campaigns) won't appear, so the list can
+look empty while drafts linger. Switch the **Status** dropdown to **Draft** (or **All**) to surface
+them, then bulk-select → **Archive** → confirm. **Archiving a draft DISCARDS its content** (the dialog
+warns "any draft in these campaigns will be discarded") — if the creative might be wanted later,
+capture it first via `get_campaign_details` (the message HTML sits in `messages[].message`).
+
+**Renaming a segment** (e.g. tidying Braze auto-generated defaults to naming convention): open it →
+**Segment Name** field → `triple_click` to select-all → `type` the new name (emoji type fine, e.g.
+`📱 iOS Users`) → **Save** → wait for the green **"Save completed"** toast. The per-app
+**"All Users (<Workspace> - iOS/Web/Android)"** defaults ARE renamable and safe to rename — Braze
+references them internally by `app_id`, not by name, so nothing downstream breaks.
+
+**Post-save wedge (same failure mode as §2):** after a segment Save the edit page can hang on
+`document_idle` (screenshots time out indefinitely). Don't fight it — navigate back to the segment
+list URL and confirm the new name/state there instead of re-screenshotting the wedged editor.
