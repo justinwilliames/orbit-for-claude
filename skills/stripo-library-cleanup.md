@@ -167,7 +167,7 @@ Instead, **one destination at a time**:
   re-scrape the actual `[id^="entity-"]` cards.
 
 ## Guardrails
-- **Do the filing yourself — never push it back to the user.** Filing loose emails into folders is the whole point of this skill; complete it via the browser (Claude-in-Chrome) to the end. No folder API exists, but the UI move-recipe works (see `stripo-email-builder` → "Workspace management"). Never defer foldering as "UI-only / needs your hand / too fragile to risk" — drive it blind via JS/DOM if screenshots are flaky and fight through. (Justin, firm standing instruction.)
+- **Do the filing yourself — never push it back to the user.** Filing loose emails into folders is the whole point of this skill; complete it via the browser (Claude-in-Chrome) to the end. No folder API exists, but the UI move-recipe works (see `stripo-email-builder` → "Workspace management"). Never defer foldering as "UI-only / needs your hand / too fragile to risk" — drive it blind via JS/DOM if screenshots are flaky and fight through. Best practice: always complete the filing yourself rather than handing it back.
 - Confirm before the first permanent delete; re-confirm if scope grows.
 - Never delete the master template (Orbit's write-guard blocks it anyway).
 - On a **live** program (e.g. an Activation set wired into a Braze canvas), prefer

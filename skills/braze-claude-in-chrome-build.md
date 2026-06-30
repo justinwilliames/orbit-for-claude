@@ -80,7 +80,7 @@ Far faster than scrolling blind through a 40-step canvas.
 4. A side panel then opens to configure it (Message → channel Email → "Use existing template" → pick
    by name; Delay → duration). **Screenshot between every click** — the grid/panel reflows the layout
    and coordinates drift.
-- **The empty-first-step trap — and the one-click fix (Sir, 2026-06-26).** The canvas always opens
+- **The empty-first-step trap — and the one-click fix.** The canvas always opens
   with a default first **Message** step ("Add Variant" + "Variant 1"). Do **NOT** delete its only
   variant to clear it: "Delete Variant" removes the variant but leaves an **un-removable empty step
   shell** ("Add Variant" with no output), there is no "Delete Step" for the first node, and Entry has
@@ -90,13 +90,13 @@ Far faster than scrolling blind through a 40-step canvas.
   first Message step. If your real first action is a split, the structure is **Entry → Message
   (Variant 1) → Audience Paths → branches** — you cannot make Audience Paths the literal first node;
   keep/repurpose Variant 1 rather than deleting it.
-- **Click-to-connect: it HOLDS after the first click (no drag needed — Sir confirmed).** To draw an
+- **Click-to-connect: it HOLDS after the first click (no drag needed).** To draw an
   edge: click the SOURCE node's output "+" connector (the dot directly beneath it) → the canvas enters
   connection mode ("Cancel Connection · Esc") and **holds the pending edge** → then click the TARGET
   node's body/input. `left_click` both ends; never `left_click_drag`. This works for EVERY edge
   (branch→delay, delay→message, re-convergence into a shared step), so the **entire flow graph is
   buildable in Claude-in-Chrome — the Codex fallback in §9 is NOT needed for wiring.**
-- **Connection mode SURVIVES scrolling (Sir, 2026-06-26) — how to wire two far-apart nodes.** On a
+- **Connection mode SURVIVES scrolling — how to wire two far-apart nodes.** On a
   tall flow the source ("+") and target can't both fit on screen at 100%. Click the source "+" to enter
   connection mode, then **scroll the canvas** to bring the off-screen target into view — the pending edge
   holds through the scroll — then click the target body. Proven wiring 4 staggered delays at the bottom
@@ -154,6 +154,24 @@ Confirm the quiet window doesn't clash with the intended local send hour for the
 
 **Verify-after-save:** re-load the flow (or `find` the deleted/changed element) — a deleted group
 absent after a fresh server load = persisted. Don't trust the toast alone for high-stakes edits.
+
+**Multi-tab save-conflict (one canvas, >1 edit tab) — will eat your edit.** If two+ tabs are open on
+the same canvas, Save fails with *"These changes can't be saved — <user> has made changes to this
+Canvas. Refresh to discard your changes…"* (Braze versions per-session; the other tab bumped it).
+There is **no force-save** — only **Cancel** (still stuck) or **Refresh** (discards YOUR unsaved
+edits, loads latest). Recovery: **close every stale canvas tab (`tabs_close_mcp`, one `tabId` per
+call — it rejects arrays), Refresh, then redo the edit in the single surviving tab and Save.** Each
+Save reloads that tab; do the next edit on the reloaded copy, never a second tab. Prevention: **one
+tab, sequential** — never fan canvas edits across tabs.
+
+**Surgical CSS/HTML edit of a message step** (e.g. fix one module's padding, swap an asset URL): open
+the message step → **Edit message → HTML Editor** (Monaco, NOT CodeMirror) → drive via
+`javascript_tool`: `monaco.editor.getModels()` → pick the model whose `getValue()` holds the email →
+`model.setValue(before.replace(/<unique string>/g, <new>))` (fires Monaco's change event so Braze
+picks it up) → editor **Done** → panel **Done** → canvas **Save**. The step is a SNAPSHOT — patch the
+upstream Braze template separately (it does not inherit). Verify via `get_canvas_details` (grep the
+message `body` for the edit). Screenshots usually DON'T wedge in this in-canvas HTML editor, but JS is
+the reliable driver regardless.
 
 ## 4. What the API can/can't do (route accordingly)
 
@@ -346,7 +364,7 @@ precise re-add, per message step:
 This swaps the step's stale snapshot to the chosen template's *current* content in place — From / subject
 / preheader carry over from the template. No remove-and-re-add, no HTML editing.
 
-**Monaco JS-setValue fallback (Sir, 2026-06-29) — if "Choose new template" is unavailable, or for a surgical image/url swap.** Braze's in-canvas HTML editor (Edit message → HTML Editor) is a **MONACO** editor, NOT CodeMirror: coordinate clicks + `Cmd+A`/`Cmd+V` land on the PREVIEW pane (it highlights, the code doesn't), `.CodeMirror` is absent, and there's no find-replace. It DOES expose Monaco's JS API, so drive it via `javascript_exec`: `monaco.editor.getModels()` → pick the model whose `getValue()` contains the email body → `model.setValue(newHtml)` **or** regex-replace just the changed asset urls (e.g. `v.replace(/<oldId>\/original\.jpg(\?\d+)?/g, '<newId>/original.png?<ts>')`) → `model.setValue(v)`. setValue fires Monaco's change event so Braze's binding marks the step dirty. Then click **Done** (editor) → **Done** (Set up Messages panel) → canvas **Save** (draft, never Update Canvas on a live canvas). **ALWAYS re-verify the persisted result via `get_canvas_details`** (grep the message `body` for the expected asset ids) — a setValue that didn't register would silently save the old snapshot. Used this to swap a redacted/transparent screenshot into the What's New CEO Letter canvas after the template re-export hadn't propagated. Still: prefer "Choose new template" — it keeps the step a clean template snapshot rather than a hand-edited fork.
+**Monaco JS-setValue fallback — if "Choose new template" is unavailable, or for a surgical image/url swap.** Braze's in-canvas HTML editor (Edit message → HTML Editor) is a **MONACO** editor, NOT CodeMirror: coordinate clicks + `Cmd+A`/`Cmd+V` land on the PREVIEW pane (it highlights, the code doesn't), `.CodeMirror` is absent, and there's no find-replace. It DOES expose Monaco's JS API, so drive it via `javascript_exec`: `monaco.editor.getModels()` → pick the model whose `getValue()` contains the email body → `model.setValue(newHtml)` **or** regex-replace just the changed asset urls (e.g. `v.replace(/<oldId>\/original\.jpg(\?\d+)?/g, '<newId>/original.png?<ts>')`) → `model.setValue(v)`. setValue fires Monaco's change event so Braze's binding marks the step dirty. Then click **Done** (editor) → **Done** (Set up Messages panel) → canvas **Save** (draft, never Update Canvas on a live canvas). **ALWAYS re-verify the persisted result via `get_canvas_details`** (grep the message `body` for the expected asset ids) — a setValue that didn't register would silently save the old snapshot. Used this to swap a redacted/transparent screenshot into a CEO-letter canvas after the template re-export hadn't propagated. Still: prefer "Choose new template" — it keeps the step a clean template snapshot rather than a hand-edited fork.
 
 **Legacy fallback (only if "Choose new template" isn't offered):** double-click the step CARD/header
 (not the body) → **Set up Messages** → click the **Email** chip → **✕** → confirm **Remove** → re-add via
@@ -354,6 +372,39 @@ channel slot → **Email** → **Create new email → Templates** → tick by na
 **Done** → **Done** → **Save**.
 Then **re-verify the canvas itself** (`orbit_read_braze_canvas`, grep for the changed string), not just
 the template — the template passing is necessary but NOT sufficient.
+
+**Bulk re-bind at scale — silent-failure traps (from a large multi-step canvas rebind).** Re-binding
+dozens of steps in one sitting surfaced gremlins that cost the better part of a day. Bank these:
+- **Screenshots die on the canvas flow editor.** It holds long-lived connections and never reaches
+  `document_idle`, so every `computer` screenshot/click times out at 45s. Drive the entire rebind via
+  `javascript_tool` (it works on the wedged page) — JS-read element rects/handlers and `.click()` them.
+- **The composer modal only renders in a genuinely FRESH tab.** Opening a step's Messages → Choose new
+  template in a stale/reused MCP tab leaves a perpetual `bcl-loading-spinner` that never populates.
+  `tabs_close_mcp` + `tabs_create_mcp` a new tab and re-navigate; a same-tab renavigate is NOT enough.
+  The editor also DEGRADES after ~1–2 binds per tab (gallery hangs, editor opens as a stub) → bind only
+  **1–2 steps per fresh tab**, save, then fresh tab.
+- **The stub-editor silent revert (the big one).** After "Select template", the bind only COMMITS once the
+  FULL editor has rendered (a Preview pane + a WIDE-footer "Done"). Click "Done" while only the NARROW stub
+  editor is showing and the selection silently reverts to the old snapshot with **no error**. Poll for the
+  full editor (Preview pane / wide Done) BEFORE clicking Done.
+- **Never verify a bind by subject line.** A Liquid/body-only fix leaves the subject identical between old
+  and corrected template versions, so an in-browser subject check PASSES on a silently-failed bind. The only
+  reliable verification is `get_canvas_details(post_launch_draft_version=true)` → parse each message `body`
+  for a body-level signature of the new content (e.g. `custom_attribute.${...}`, the new hero asset id).
+  Treat the rebind as a LOOP: bind → API-QA → re-bind the stragglers → repeat until the API shows zero
+  defects. Expect only ~60–70% commit rate per pass on a flaky session.
+- **Picker "duplicates" are mostly a ghost.** The dashboard's internal `email_templates` endpoint AND the
+  template picker include **soft-deleted** rows (≈260) while the public API `get_email_templates` returns
+  only LIVE (≈127). For LIVE truth, use the public API. Same-name copies in the picker → select the one
+  dated **today** (the freshly re-exported canonical is the only live one; older same-name copies are
+  stale/soft-deleted). `"Activation - <name>"`-prefixed templates are a different set — never an exact match.
+- **No template delete in the public API.** Braze's public API has create/update/list only — no
+  delete/archive. Deduping the library to one-per-name needs the dashboard (soft-delete via the internal
+  endpoint with the Rails `X-CSRF-Token` header, or the management UI). It is NOT required for a clean
+  rebind if you disambiguate by today's date.
+- **Liquid for CUSTOM attributes needs the namespace.** Bare `{{${orgName}}}` / `{% if ${signupDate} %}`
+  works for STANDARD profile fields but renders empty for CUSTOM attributes — Braze flags them. Use
+  `{{custom_attribute.${orgName} | default: '…'}}` and `{% if custom_attribute.${signupDate} %}`.
 
 ## 11. Wizard audience / exit / conversion config
 
