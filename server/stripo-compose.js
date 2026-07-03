@@ -931,8 +931,8 @@ function buildCanonicalModuleRef(item, values = null) {
 //
 // v1 checks:
 //   1. Em-dash detection in subject, preheader, and every slot_values text
-//      value. Per Sophiie brand voice (memo'd 2026-05-21), em dashes are
-//      banned across all customer-facing copy.
+//      value. Per brand-voice convention, em dashes are banned in generated
+//      copy.
 //   2. Hero H1 length cap: first body module's p_title (or any *title*
 //      / *headline* slot) is checked for max 4 words and max 1 sentence.
 //

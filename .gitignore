@@ -7,3 +7,8 @@ tests/outputs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# private session artifacts — never ship
+.worklog/
+design/
+_gen-assets.mjs
