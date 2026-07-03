@@ -103,6 +103,10 @@ failure mode each represents.
   said and done", "in essence", "in summary"
 - Vague qualifiers without purpose: "crucial", "vital", "essential",
   "myriad", "leverage", "navigate", "harness", "unlock"
+- Understatement adverb "quietly" ("quietly became the standard", "quietly
+  reshaping the industry", "the tools have quietly reached a point") — a
+  signature AI tell that fakes subtlety around an ordinary claim. Only
+  acceptable when it literally means low volume (a quiet voice, a quiet room)
 - Synonym-swap repetition: saying the same thing with different words
   rather than developing the thought
 - Flat tone with no point of view — every sentence equally weighted
