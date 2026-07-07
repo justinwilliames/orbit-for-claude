@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { brazeGet, brazePost, brazeUploadAsset, validateBrazeSetup } from "./braze-api.js";
 import { ensureDir, resolveOutputDir } from "./config.js";
-import { inferMimeType, maybeReadTextFile, parseJsonInput, slugify, writeJson, writeText } from "./utils.js";
+import { inferMimeType, isUploadableImagePath, maybeReadTextFile, parseJsonInput, slugify, writeJson, writeText } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // 1. Fetch Existing Template from Braze
@@ -385,6 +385,11 @@ export async function uploadTemplateImages({
           body: { asset_url: image.url, name: image.name }
         });
       } else if (image.file_path && fs.existsSync(image.file_path)) {
+        // Refuse to read a non-image local file (prompt-injection exfil guard).
+        if (!isUploadableImagePath(image.file_path)) {
+          errors.push({ name: image.name, error: `Refusing to read non-image local file: ${image.file_path}` });
+          continue;
+        }
         // Local file: Braze requires a multipart/form-data binary upload, not
         // base64 in a JSON body (that 400s with "must provide asset_url or
         // asset_file"). The part carries the filename and content_type.

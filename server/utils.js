@@ -189,6 +189,20 @@ export function inferMimeType(filePath) {
   }
 }
 
+// Extensions Orbit will read from local disk to upload to a media library.
+// A `file_path` tool argument is attacker-controllable via prompt injection,
+// so we refuse to read anything that isn't a recognised image type — this
+// closes the "upload ~/.ssh/id_rsa" class of local-file exfiltration to a
+// public CDN. Secrets, source, and config files don't carry these extensions.
+const UPLOADABLE_IMAGE_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tif", ".tiff"
+]);
+
+export function isUploadableImagePath(filePath) {
+  if (typeof filePath !== "string" || filePath.length === 0) return false;
+  return UPLOADABLE_IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
 export function parseJsonInput(value, fallbackLabel) {
   if (value && typeof value === "object") {
     return value;

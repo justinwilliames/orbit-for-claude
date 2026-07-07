@@ -8,6 +8,7 @@ import {
 } from "./template-library.js";
 import {
   inferMimeType,
+  isUploadableImagePath,
   maybeReadTextFile,
   parseJsonInput,
   slugify
@@ -243,17 +244,21 @@ export async function publishEmailToBraze({
   templateRef,
   libraryDir,
   state = "draft",
-  tags = []
+  tags = [],
+  dryRun = false
 }) {
   const componentSync = await syncBrazeContentBlocks({
     config,
     componentRefs,
     libraryDir,
     state,
-    tags
+    tags,
+    dryRun
   });
 
-  if (componentSync.status !== "ok") {
+  // In a dry run the component step returns status:"dry_run", not "ok", and
+  // nothing has been written — proceed to preview the template step too.
+  if (!dryRun && componentSync.status !== "ok") {
     return {
       status: "needs_attention",
       component_sync: componentSync,
@@ -264,7 +269,8 @@ export async function publishEmailToBraze({
   const templateSync = await syncBrazeEmailTemplate({
     config,
     templateRef,
-    libraryDir
+    libraryDir,
+    dryRun
   });
 
   return {
@@ -307,10 +313,10 @@ export async function uploadImagesToBraze({
   const uploaded = [];
   const errors = [];
 
-  // Braze's /media_library/create accepts asset_file (base64) up to ~5MB
-  // once base64 encoding inflates it ~33%. Conservative local-file cap
-  // sits a touch under that. Remote asset_url has no size handshake so
-  // we don't apply the limit there (Braze downloads it server-side).
+  // Local files upload as multipart/form-data binary (brazeUploadAsset), NOT
+  // base64 in a JSON body. Cap local files at 4 MB. Remote asset_url has no
+  // size handshake so we don't apply the limit there (Braze downloads it
+  // server-side).
   const MAX_LOCAL_IMAGE_BYTES = 4 * 1024 * 1024;
   const fs = await import("node:fs");
 
@@ -328,6 +334,13 @@ export async function uploadImagesToBraze({
           body: { asset_url: image.exported_url, name: image.braze_name }
         });
       } else if (image.local_path) {
+        if (!isUploadableImagePath(image.local_path)) {
+          errors.push({
+            image_id: image.id,
+            error: `Refusing to read non-image local file: ${image.local_path}. Only image files (.png/.jpg/.jpeg/.gif/.webp/.svg) can be uploaded.`
+          });
+          continue;
+        }
         if (!fs.existsSync(image.local_path)) {
           errors.push({
             image_id: image.id,
@@ -473,6 +486,12 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
     jsonBody = { asset_url, name };
   } else if (file_path) {
     const fs = await import("node:fs");
+    if (!isUploadableImagePath(file_path)) {
+      return {
+        status: "invalid_input",
+        error: "`file_path` must point to an image file (.png/.jpg/.jpeg/.gif/.webp/.svg). Refusing to read a non-image local file.",
+      };
+    }
     if (!fs.existsSync(file_path)) {
       return { status: "file_not_found", error: `File not found: ${file_path}` };
     }

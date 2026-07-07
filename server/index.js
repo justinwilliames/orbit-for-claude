@@ -2891,7 +2891,8 @@ function registerTools() {
         templateRef,
         libraryDir,
         state,
-        tags
+        tags,
+        dryRun
       });
       return makeJsonToolResponse(result);
     }
@@ -2943,11 +2944,11 @@ function registerTools() {
     {
       title: "Upload Single Image to Braze",
       description:
-        "Upload a single image to Braze's media library and get back a hosted CDN URL. Designed for use with orbit_compose_stripo_email's slot_values parameter — pass the returned URL as the value for an image_src or url Smart Element variable. Accepts a remote URL (Braze fetches it server-side, no size limit), a local file path (base64-encoded, 4 MB cap before encoding), or raw base64 data. Returns { status, url, name, size, host: 'braze' } on success.",
+        "Upload a single image to Braze's media library and get back a hosted CDN URL. Designed for use with orbit_compose_stripo_email's slot_values parameter — pass the returned URL as the value for an image_src or url Smart Element variable. Accepts a remote URL (Braze fetches it server-side, no size limit), a local image file path (uploaded as multipart/form-data binary, 4 MB cap; non-image files are refused), or raw base64 data. Returns { status, url, name, size, host: 'braze' } on success.",
       inputSchema: {
         name: z.string().min(1).max(MAX_SHORT_STRING).describe("Filename to store in Braze (e.g. 'hero-banner-summer.png'). Braze uses this for the media library listing."),
         asset_url: z.string().url().max(MAX_PATH_STRING).optional().describe("Publicly accessible remote image URL. Braze fetches it server-side — no local size limit applies. Preferred over file_path for externally-hosted images."),
-        file_path: z.string().max(MAX_PATH_STRING).optional().describe("Absolute local file path. Read and base64-encoded before upload. Capped at 4 MB pre-encoding (Braze's base64 upload cap is ~5 MB; the 33% encoding overhead is the constraint)."),
+        file_path: z.string().max(MAX_PATH_STRING).optional().describe("Absolute local path to an IMAGE file (.png/.jpg/.jpeg/.gif/.webp/.svg). Uploaded as multipart/form-data binary, capped at 4 MB. Non-image files are refused (local-file exfiltration guard)."),
         image_data_base64: z.string().max(MAX_LONG_STRING).optional().describe("Raw base64-encoded image data. Use when you've already encoded the file. Braze's ~5 MB cap applies to the encoded string.")
       }
     },
