@@ -99,22 +99,46 @@ export async function deleteStripoEmails({ config, emailIds }) {
   }
 
   const deleted = [];
+  const unconfirmed = [];
   const failed = [];
   for (const id of ids) {
     try {
       await stripoRestDelete({ config, endpoint: `/emails/${id}` });
-      deleted.push(id);
     } catch (err) {
       failed.push({ email_id: id, error_code: err.code ?? "stripo_unknown", error_message: err.message });
+      continue;
+    }
+    // Read-back: Stripo has been observed returning DELETE 2xx WITHOUT purging.
+    // Confirm the email is actually gone before reporting success — a GET must
+    // 404 (stripo_not_found). Anything else means we can't claim it's deleted.
+    try {
+      await stripoRestGet({ config, endpoint: `/emails/${id}` });
+      // Still fetchable → the delete did not purge.
+      unconfirmed.push({
+        email_id: id,
+        reason: "Stripo accepted the delete but the email is still fetchable — it was NOT purged. Retry, or delete it manually in the Stripo cabinet.",
+      });
+    } catch (err) {
+      if (err.code === "stripo_not_found") {
+        deleted.push(id);
+      } else {
+        unconfirmed.push({
+          email_id: id,
+          reason: `Delete request succeeded but the read-back was inconclusive (${err.code ?? "stripo_unknown"}: ${err.message}). Verify in the Stripo cabinet.`,
+        });
+      }
     }
   }
 
+  const clean = failed.length === 0 && unconfirmed.length === 0;
   return {
-    status: failed.length === 0 ? "ok" : deleted.length === 0 ? "failed" : "partial",
+    status: clean ? "ok" : deleted.length === 0 ? "failed" : "partial",
     requested: ids.length,
     deleted_count: deleted.length,
+    unconfirmed_count: unconfirmed.length,
     failed_count: failed.length,
     deleted,
+    unconfirmed,
     failed,
   };
 }

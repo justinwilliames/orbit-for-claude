@@ -17,6 +17,19 @@ import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
 import { assertNotHandlerCrash } from "../harness/validators.mjs";
+import { isUploadableImagePath } from "../../server/utils.js";
+
+// ── C2: local-file exfiltration guard (unit) ────────────────────────────────
+// A file_path tool arg is attacker-controllable via prompt injection. The guard
+// must only ever read recognised image files, never secrets/source/config.
+test("isUploadableImagePath allows images and refuses secrets/source/config", () => {
+  for (const ok of ["hero.png", "a.JPG", "x.jpeg", "y.gif", "z.webp", "logo.svg", "b.WEBP"]) {
+    assert.equal(isUploadableImagePath(ok), true, `should allow ${ok}`);
+  }
+  for (const bad of ["/Users/j/.ssh/id_rsa", ".env", "/etc/passwd", "secrets.json", "server/index.js", "data.csv", "note.txt", "", null, undefined]) {
+    assert.equal(isUploadableImagePath(bad), false, `should refuse ${String(bad)}`);
+  }
+});
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_ROOT = process.env.ORBIT_TEST_RUN_DIR
@@ -117,6 +130,41 @@ describe("Braze sync suite — write operations produce correct API calls", () =
       !/"asset_file"\s*:/.test(raw) && !/"asset_file_base64"\s*:/.test(raw),
       "base64 must NOT be sent as a JSON field — that is the bug this guards against"
     );
+  });
+
+  test("upload_image_to_braze REFUSES a non-image local file_path (exfil guard)", async () => {
+    mock.clearRequests();
+    // /etc/hosts exists and is readable but is NOT an image. The guard must
+    // reject it BEFORE any read — this is the local-file exfiltration CRITICAL.
+    const res = await client.callToolLenient("orbit_upload_image_to_braze", {
+      name: "totally-an-image",
+      file_path: "/etc/hosts"
+    });
+    assertNotHandlerCrash(res, "upload_image_to_braze");
+    if (res.kind === "response") {
+      assert.equal(res.parsed.status, "invalid_input");
+      assert.match(res.parsed.error ?? "", /image file/i);
+    }
+    // Load-bearing: nothing was read and uploaded to Braze.
+    const uploads = mock.getRequests().filter((r) => r.path.startsWith("/media_library"));
+    assert.equal(uploads.length, 0, "a non-image file must never be read and uploaded to Braze");
+  });
+
+  test("sync_to_braze target=all with dry_run makes ZERO write calls (dry_run bypass regression)", async () => {
+    mock.clearRequests();
+    // The CRITICAL: dry_run was dropped on the target=all branch, so a preview
+    // ran the live publish pipeline. A dry_run must never write to Braze.
+    const res = await client.callToolLenient("orbit_sync_to_braze", {
+      target: "all",
+      dry_run: true,
+      template_ref: "email_template/preview-check@1",
+      component_refs: ["email_component/preview-check@1"]
+    });
+    assertNotHandlerCrash(res, "sync_to_braze");
+    const writes = mock.getRequests().filter(
+      (r) => r.method === "POST" && (r.path.startsWith("/content_blocks") || r.path.startsWith("/templates/email"))
+    );
+    assert.equal(writes.length, 0, "a dry_run must never issue a Braze write");
   });
 
   test("braze namer dimensions returns the full dimension list", async () => {

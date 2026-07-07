@@ -137,6 +137,19 @@ export async function brazePost({ config, endpoint, body = {} }) {
   if (Array.isArray(parsed?.errors) && parsed.errors.length > 0) {
     throw new Error(`Braze API 2xx but errors on POST ${endpoint}: ${parsed.errors.join("; ")}`);
   }
+  // Braze also returns 2xx with message !== "success" on some failures (invalid
+  // key, partial failure). When a message field is present it MUST read
+  // "success", or we treat the write as failed rather than silently reporting it
+  // landed. Exempt /media_library/* — those responses signal success via
+  // new_assets[].url (validated by the caller), not a "success" message, so a
+  // blanket check here would false-positive on a good upload.
+  if (
+    typeof parsed?.message === "string" &&
+    parsed.message !== "success" &&
+    !endpoint.startsWith("/media_library/")
+  ) {
+    throw new Error(`Braze API 2xx but message="${parsed.message}" on POST ${endpoint}`);
+  }
   return parsed;
 }
 
