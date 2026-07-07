@@ -2629,7 +2629,7 @@ function registerTools() {
       file_base_name: fileBaseName
     }) => {
       const targetDir = outputDir ? ensureDir(resolveUserOutputDir(runtimeConfig, outputDir)) : null;
-      const result = compileEmailTemplate({
+      const result = await compileEmailTemplate({
         spec: specJson,
         mjml,
         outputDir: targetDir,
@@ -2664,7 +2664,7 @@ function registerTools() {
     }) => {
       const targetDir =
         ensureDir(outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : resolveOutputDir(runtimeConfig, "email-previews"));
-      const result = previewEmailTemplate({
+      const result = await previewEmailTemplate({
         rootDir: ROOT_DIR,
         spec: specJson,
         html,
@@ -2760,7 +2760,7 @@ function registerTools() {
           message: err.message
         });
       }
-      const result = generateEmailComponents({
+      const result = await generateEmailComponents({
         config: runtimeConfig,
         componentMap: componentMapJson,
         libraryDir,
@@ -2808,7 +2808,7 @@ function registerTools() {
           message: err.message
         });
       }
-      const result = assembleEmailTemplateFromComponents({
+      const result = await assembleEmailTemplateFromComponents({
         config: runtimeConfig,
         componentMap: componentMapJson,
         componentRefs: componentRefs ?? [],

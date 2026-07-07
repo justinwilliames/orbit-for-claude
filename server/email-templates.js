@@ -255,7 +255,7 @@ export function generateMjmlTemplate({ spec }) {
   };
 }
 
-export function compileEmailTemplate({
+export async function compileEmailTemplate({
   spec,
   mjml,
   outputDir,
@@ -273,7 +273,7 @@ export function compileEmailTemplate({
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const result = mjml2html(generatedMjml, {
+  const result = await mjml2html(generatedMjml, {
     minify: false,
     validationLevel: "strict",
     filePath: outputDir ?? process.cwd()
@@ -322,7 +322,7 @@ export function compileEmailTemplate({
   return payload;
 }
 
-export function previewEmailTemplate({
+export async function previewEmailTemplate({
   rootDir,
   spec,
   html,
@@ -337,7 +337,7 @@ export function previewEmailTemplate({
         html,
         spec: compiledSpec
       }
-    : compileEmailTemplate({
+    : await compileEmailTemplate({
         spec: compiledSpec,
         mjml,
         outputDir: null

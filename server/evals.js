@@ -682,13 +682,13 @@ const emailSpecNeedsConfirmation = buildEmailTemplateSpec({
 const mjmlTemplate = generateMjmlTemplate({
   spec: emailSpec.spec
 });
-const compiledEmail = compileEmailTemplate({
+const compiledEmail = await compileEmailTemplate({
   spec: emailSpec.spec,
   mjml: mjmlTemplate.mjml,
   outputDir: path.join(outputDir, "email-build"),
   fileBaseName: "trial-activation-email"
 });
-const emailPreview = previewEmailTemplate({
+const emailPreview = await previewEmailTemplate({
   rootDir: ROOT_DIR,
   spec: emailSpec.spec,
   html: compiledEmail.html,
@@ -1004,7 +1004,7 @@ results.push({
 const approvedComponentMap = approveEmailComponentMap({
   componentMap: componentMapSuggestion.component_map
 });
-const generatedComponents = generateEmailComponents({
+const generatedComponents = await generateEmailComponents({
   config,
   componentMap: approvedComponentMap.component_map,
   libraryDir,
@@ -1029,7 +1029,7 @@ results.push({
   })
 });
 
-const assembledFromComponents = assembleEmailTemplateFromComponents({
+const assembledFromComponents = await assembleEmailTemplateFromComponents({
   config,
   componentMap: approvedComponentMap.component_map,
   componentRefs: generatedComponents.component_refs,

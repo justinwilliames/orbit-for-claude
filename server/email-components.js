@@ -38,7 +38,7 @@ const COMPONENT_TYPE_LIBRARY_TAGS = {
   raw_html: ["raw-html", "custom"]
 };
 
-export function generateEmailComponents({
+export async function generateEmailComponents({
   config,
   componentMap,
   libraryDir,
@@ -60,15 +60,16 @@ export function generateEmailComponents({
   const brandColors = loadBrandColors(config);
   const targetOutputDir = outputDir ? path.resolve(outputDir) : null;
   const moduleBlocks = [];
+  const generated = [];
 
-  const generated = map.sections.map((section) => {
+  for (const section of map.sections) {
     const component = buildEmailComponentRecord({ section, sourceImportId: map.source_import_id });
     const componentDir = targetOutputDir
       ? path.join(targetOutputDir, slugify(component.inferred_name), version)
       : null;
 
     const sourceMjml = renderComponentMjml(component, brandColors);
-    const compiledResult = mjml2html(sourceMjml, {
+    const compiledResult = await mjml2html(sourceMjml, {
       minify: false,
       validationLevel: "strict"
     });
@@ -115,11 +116,11 @@ export function generateEmailComponents({
       }
     });
 
-    return {
+    generated.push({
       component,
       library_item: saved.item
-    };
-  });
+    });
+  }
 
   // Generate Stripo assembly file
   let stripoTemplatePath = null;
@@ -144,7 +145,7 @@ export function generateEmailComponents({
   };
 }
 
-export function assembleEmailTemplateFromComponents({
+export async function assembleEmailTemplateFromComponents({
   config,
   componentMap,
   componentRefs = [],
@@ -235,13 +236,13 @@ export function assembleEmailTemplateFromComponents({
 
   const compileDir = resolvedOutputDir ?? null;
   const mjml = generateMjmlTemplate({ spec: specResponse.spec });
-  const compiled = compileEmailTemplate({
+  const compiled = await compileEmailTemplate({
     spec: specResponse.spec,
     mjml: mjml.mjml,
     outputDir: compileDir,
     fileBaseName: specResponse.spec.message_id
   });
-  const previews = previewEmailTemplate({
+  const previews = await previewEmailTemplate({
     rootDir: config.rootDir,
     spec: specResponse.spec,
     html: compiled.html,

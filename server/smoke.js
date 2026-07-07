@@ -63,6 +63,9 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const GOLDENS_PATH = path.join(ROOT_DIR, "evals", "orbit-goldens.json");
 
 process.env.ORBIT_TEST_MOCK_IMAGES = "1";
+// The smoke run points Figma/Braze fetches at a localhost mock server, so it must
+// opt into the SSRF guard's loopback escape hatch (same as the test suites do).
+process.env.ORBIT_ALLOW_PRIVATE_HOSTS = "1";
 const goldens = JSON.parse(fs.readFileSync(GOLDENS_PATH, "utf8"));
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-smoke-"));
@@ -440,13 +443,13 @@ const emailSpecNeedsConfirmation = buildEmailTemplateSpec({
 const mjmlTemplate = generateMjmlTemplate({
   spec: emailSpec.spec
 });
-const compiledEmail = compileEmailTemplate({
+const compiledEmail = await compileEmailTemplate({
   spec: emailSpec.spec,
   mjml: mjmlTemplate.mjml,
   outputDir: path.join(outputDir, "email-build"),
   fileBaseName: "trial-activation-email"
 });
-const emailPreview = previewEmailTemplate({
+const emailPreview = await previewEmailTemplate({
   rootDir: ROOT_DIR,
   spec: emailSpec.spec,
   html: compiledEmail.html,
@@ -619,7 +622,7 @@ const componentMapSuggestion = suggestEmailComponentMap({
 const approvedComponentMap = approveEmailComponentMap({
   componentMap: componentMapSuggestion.component_map
 });
-const generatedComponents = generateEmailComponents({
+const generatedComponents = await generateEmailComponents({
   config,
   componentMap: approvedComponentMap.component_map,
   libraryDir,
@@ -639,7 +642,7 @@ const imageReconcile = imageUpload.status === "ok" || imageUpload.status === "pa
       stripTemplatePath: generatedComponents.stripo_template
     })
   : { status: "skipped", patched_files: [] };
-const assembledFromComponents = assembleEmailTemplateFromComponents({
+const assembledFromComponents = await assembleEmailTemplateFromComponents({
   config,
   componentMap: approvedComponentMap.component_map,
   componentRefs: generatedComponents.component_refs,
@@ -1370,7 +1373,7 @@ async function startMockApiServer() {
           JSON.stringify({
             content_block_id: body.content_block_id ?? `cb_${counts[url.pathname]}`,
             liquid_tag: `{{content_blocks.${body.name}}}`,
-            message: "ok"
+            message: "success"
           })
         );
         return;
@@ -1397,7 +1400,7 @@ async function startMockApiServer() {
       res.end(
         JSON.stringify({
           email_template_id: body.email_template_id ?? `et_${counts[url.pathname]}`,
-          message: "ok"
+          message: "success"
         })
       );
       return;
