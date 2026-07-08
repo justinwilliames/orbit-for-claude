@@ -62,15 +62,46 @@ tests/
 └── outputs/                  — .gitignored; each run gets a timestamp dir
 ```
 
+## CI gate & the compile-path guard
+
+Both `npm test` and `npm run smoke` run in `.github/workflows/build-mcpb.yml`
+**before** the extension is packaged and published. A failing tool blocks
+the release. This matters: from v0.18.11 (7 May 2026) to 8 Jul 2026 the
+three MJML compile tools — `orbit_compile_email_template`,
+`orbit_generate_email_components`, and
+`orbit_assemble_email_template_from_components` — were silently broken in
+production. `mjml2html` became async in mjml@5.1.0, so un-awaited callers
+got a Promise and returned `html: undefined`. It shipped because (a) no
+suite exercised those tools (only `orbit_generate_mjml_template`, which
+builds an MJML string and never compiles), and (b) CI ran neither the
+tests nor smoke.
+
+Both gaps are closed:
+
+- **`05-email-pipeline.test.mjs`** now asserts, unconditionally, that the
+  compiled `html`/`plain_text` from all three tools is a real non-empty
+  string — not `undefined`. The assertions are deliberately *not* guarded
+  behind `if (res.parsed.html)`; that guard is what let the old test pass
+  on undefined output. The component-pipeline guard runs the real
+  production path (Figma import → component map suggest → approve →
+  generate → assemble) so any future async/breaking change in the compile
+  path fails CI here. Verified by dropping the `await` on both `mjml2html`
+  call sites and confirming all three tests go red.
+- **`npm run smoke`** is retained in CI as belt-and-suspenders: it
+  exercises the raw exported functions directly (not via the MCP
+  transport) end-to-end with a full brand kit. It is a weaker gate on its
+  own — it only fails CI when a step *throws*, not when it returns a bad
+  value — so `npm test` is the primary gate and smoke is the backstop.
+
 ## Phases
 
 - **Phase 1 (shipped)** — harness, mock server, contract suite covering
   every registered tool. Baseline "it works via the MCP transport."
 - **Phase 2** — semantic suites for the top 6 tool groups. Validates
   that outputs are not just shape-correct but meaningful.
-- **Phase 3** — error-path classification suite (auth, 404, 429,
-  timeout, needs_inputs) + wire `npm test` into `build:extension` as
-  a pre-package gate.
+- **Phase 3 (shipped)** — error-path classification suite (auth, 404,
+  429, timeout, needs_inputs) + `npm test` and `npm run smoke` wired into
+  `build-mcpb.yml` as pre-package release gates (see above).
 
 ## Writing a new suite
 
