@@ -434,33 +434,39 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
     // clobber a hand-built template that merely shares a name — Braze has no
     // template version history, so an overwrite is unrecoverable.
     const candidateId = nameMap.get(templateName);
-    let orbitOwned = false;
-    try {
-      const info = await brazeGet({
-        config,
-        endpoint: "/templates/email/info",
-        params: { email_template_id: candidateId },
-      });
-      orbitOwned = typeof info?.description === "string" && info.description.includes("via Orbit");
-    } catch {
-      // Couldn't confirm provenance → fail safe, treat as NOT Orbit-owned.
-      orbitOwned = false;
-    }
-    if (orbitOwned) {
+    if (dryRun) {
+      // Dry-run: skip the extra provenance GET; show the would-update path.
       resolvedTemplateId = candidateId;
       matchedBy = "name";
     } else {
-      return {
-        stripo_email_id: stripoEmailId,
-        stripo_email_name: stripoName,
-        template_name: templateName,
-        status: "skipped",
-        stage: "name_collision",
-        error_code: "braze_name_collision_foreign",
-        error_message:
-          `A Braze template named "${templateName}" already exists but was NOT created by Orbit — refusing to overwrite it. ` +
-          `Pass an explicit braze_template_map id to update it deliberately, or rename the Stripo email/template.`,
-      };
+      let orbitOwned = false;
+      try {
+        const info = await brazeGet({
+          config,
+          endpoint: "/templates/email/info",
+          params: { email_template_id: candidateId },
+        });
+        orbitOwned = typeof info?.description === "string" && info.description.includes("via Orbit");
+      } catch {
+        // Couldn't confirm provenance → fail safe, treat as NOT Orbit-owned.
+        orbitOwned = false;
+      }
+      if (orbitOwned) {
+        resolvedTemplateId = candidateId;
+        matchedBy = "name";
+      } else {
+        return {
+          stripo_email_id: stripoEmailId,
+          stripo_email_name: stripoName,
+          template_name: templateName,
+          status: "skipped",
+          stage: "name_collision",
+          error_code: "braze_name_collision_foreign",
+          error_message:
+            `A Braze template named "${templateName}" already exists but was NOT created by Orbit — refusing to overwrite it. ` +
+            `Pass an explicit braze_template_map id to update it deliberately, or rename the Stripo email/template.`,
+        };
+      }
     }
   }
   const willUpdate = Boolean(resolvedTemplateId);
@@ -648,6 +654,7 @@ export async function exportStripoEmailsToBraze({
 
   const ok = results.filter((r) => r.status === "ok" || r.status === "dry_run");
   const failed = results.filter((r) => r.status === "error");
+  const skipped = results.filter((r) => r.status === "skipped");
 
   // Build a compact re-export map so the caller can persist it and run an
   // idempotent UPDATE next time instead of creating duplicates in Braze.
@@ -659,7 +666,8 @@ export async function exportStripoEmailsToBraze({
   }
 
   let status;
-  if (failed.length === 0) status = "ok";
+  if (failed.length === 0 && skipped.length === 0) status = "ok";
+  else if (ok.length === 0 && failed.length === 0) status = "skipped"; // all rows refused
   else if (ok.length === 0) status = "failed";
   else status = "partial";
 
@@ -670,6 +678,7 @@ export async function exportStripoEmailsToBraze({
     exported_count: dryRun ? 0 : ok.length,
     planned_count: dryRun ? ok.length : undefined,
     failed_count: failed.length,
+    skipped_count: skipped.length || undefined,
     // Persist this and pass it back as braze_template_map on a re-run to
     // update-in-place rather than create duplicate Braze templates.
     braze_template_map: Object.keys(exportedTemplateMap).length ? exportedTemplateMap : undefined,
@@ -681,6 +690,6 @@ export async function exportStripoEmailsToBraze({
       `Stripo has no native export-to-ESP API; Orbit bridged it (GET /emails/<id> → Braze /templates/email/${"{create,update}"}). ` +
       (dryRun
         ? `Dry-run: ${ok.length}/${ids.length} email(s) fetched and planned, nothing written to Braze.`
-        : `${ok.length}/${ids.length} Stripo email(s) exported to Braze as email templates${failed.length ? `, ${failed.length} failed` : ""}.`),
+        : `${ok.length}/${ids.length} Stripo email(s) exported to Braze as email templates${failed.length ? `, ${failed.length} failed` : ""}${skipped.length ? `, ${skipped.length} skipped (name collision with a non-Orbit template)` : ""}.`),
   };
 }

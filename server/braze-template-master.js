@@ -146,20 +146,24 @@ export function parseMasterTemplate({
     liquid_variables: liquidVars,
     sections,
     images,
-    // Store the ORIGINAL html so variation assembly reconstructs from the real
-    // document, not the 200-char section previews. Without this, reconstruction
-    // silently produced a truncated, broken template.
-    raw_html: html,
     raw_html_length: html.length
   };
 
-  // Write outputs if outputDir provided
+  // Write outputs if outputDir provided. Persist the ORIGINAL html to disk and
+  // record its path on `parsed` (raw_html_path) so variation assembly can
+  // reconstruct from the real document WITHOUT inlining a 60–200KB string into
+  // the size-capped tool response — an inline raw_html blows the 100KB cap and
+  // the truncator (arrays only) drops the WHOLE payload. Set raw_html_path
+  // before writing parsed.json so the saved copy carries it too.
   let files = {};
   if (outputDir) {
     const outDir = ensureDir(resolveUserOutputDir(config, outputDir));
+    const originalHtmlPath = path.join(outDir, `${slug}-original.html`);
+    writeText(originalHtmlPath, html);
+    parsed.raw_html_path = originalHtmlPath;
     files = {
       parsed_template: writeJson(path.join(outDir, `${slug}-parsed.json`), parsed),
-      original_html: writeText(path.join(outDir, `${slug}-original.html`), html),
+      original_html: originalHtmlPath,
       section_manifest: writeJson(path.join(outDir, `${slug}-sections.json`), sections)
     };
   }
@@ -649,17 +653,28 @@ function classifyModuleType(name) {
 }
 
 function reconstructHtmlFromSections(parsed, spec) {
-  // Variation assembly works by string-replacement on the ORIGINAL HTML, which
-  // parseMasterTemplate stores as parsed.raw_html. If it's absent (an older
-  // parsed payload from before v0.27.5), FAIL LOUDLY rather than silently
-  // joining the 200-char section previews into a truncated, broken document
-  // that then gets synced to Braze as if it were the real template.
-  if (typeof parsed.raw_html !== "string" || !parsed.raw_html) {
-    const err = new Error(
-      "Cannot assemble variation: the parsed template has no raw_html. Re-run orbit_parse_master_template to capture the original HTML, then retry."
-    );
-    err.code = "missing_raw_html";
-    throw err;
+  // Variation assembly works by string-replacement on the ORIGINAL HTML. Prefer
+  // an inline parsed.raw_html (legacy payloads), else read parsed.raw_html_path
+  // (written to disk at parse time — keeps the big string OUT of the size-capped
+  // parse response). If neither is available, FAIL LOUDLY rather than silently
+  // joining the 200-char section previews into a truncated, broken document.
+  if (typeof parsed.raw_html === "string" && parsed.raw_html) {
+    return parsed.raw_html;
   }
-  return parsed.raw_html;
+  if (typeof parsed.raw_html_path === "string" && parsed.raw_html_path) {
+    try {
+      return fs.readFileSync(parsed.raw_html_path, "utf8");
+    } catch (readErr) {
+      const err = new Error(
+        `Cannot assemble variation: raw_html_path "${parsed.raw_html_path}" is unreadable (${readErr.message}). Re-run orbit_parse_master_template with an output_dir.`
+      );
+      err.code = "missing_raw_html";
+      throw err;
+    }
+  }
+  const err = new Error(
+    "Cannot assemble variation: the parsed template has no raw_html or raw_html_path. Re-run orbit_parse_master_template WITH an output_dir so the original HTML is saved, then retry."
+  );
+  err.code = "missing_raw_html";
+  throw err;
 }
