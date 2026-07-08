@@ -270,6 +270,8 @@ The project's canonical deep-link URL list should live in a single Notion page o
 
 Click-tracking domains (e.g. `clicks.to.<domain>` / `clicks.from.<domain>`) handle Braze rewriting automatically — don't pre-wrap URLs through these in your output.
 
+**Multi-module programs: use an explicit per-module link map, NOT the generic live-URL extractor.** For any program with more than a couple of modules, maintain an explicit **module → URL** map and bind each module's CTA from it. Do **not** rely on a generic "pull the live URLs out of the rendered email" extractor to reverse-engineer the links — it mishandles **click-wrapped hrefs** (already-rewritten `clicks.*` links) and can silently drop a link to a fallback path, so a CTA points somewhere wrong. The map is the source of truth; the extractor is at best a cross-check.
+
 ### 5. Apply voice rules — defer to the project's voice-writer skill
 
 Load the project's voice-writer skill (`<project>-voice-writer`) before writing any copy. It typically covers:
@@ -348,6 +350,7 @@ The most-used module shapes in app-product email programs. Names follow common S
 - **Use:** before/after, with/without, plan-comparison content. Strong for upgrade nudges and integration value props.
 - **Slots:** `p_name`, `p_price`, `p_description`, `p_text` through `p_text5`, image slots for logos
 - **CTA column:** empty (comparison is the message; CTA lives in the next module)
+- **⚠️ `p_image`/`p_image1` slot COLLISION with the hero.** The comparison module's `p_image`/`p_image1` slots share a slot NAME with the hero module's `p_image` server-side, so binding them **blanks the rounded hero image at compose time** (the shared slot gets overwritten). **Fix: OMIT `p_image` and `p_image1`** — their defaults are the no/yes tick glyphs, which is exactly what a comparison table wants — and bind **only `p_image2`–`p_image5`** for any real logos/images. Verify the hero still renders its image after adding a comparison module (`orbit_get_stripo_email` → grep the hero's braze-images URL, confirm no placeholder).
 
 ### Quote
 - **Use:** punchy single-line value statement, occasionally a real customer quote
@@ -593,5 +596,17 @@ The per-card checkbox path is genuinely flaky — the checkbox only renders on h
 
 **⚠️ Claude-in-Chrome CDP flakiness during long sessions.** Screenshots can start failing ("Failed to capture screenshot via CDP") and the tab group can drop mid-task. JS (`javascript_tool`) keeps working when screenshots don't — use it to read state. To recover: `tabs_create_mcp` a **fresh tab** and re-navigate; screenshot capability tends to come back on the new tab.
 
+## A serialized-body grep proves PRESENCE, never RENDER (meta-rule — read this before scoping any regen)
+
+**Never scope a regeneration off a "malformed Liquid/HTML" grep of a serialized body. Demand a rendered-preview or test-send observation first.** A grep over `/canvas/details` JSON (or an exported template body) tells you a *string is present*, not *how it renders*. Scoping a rebuild off a raw-string signal repeatedly burns time chasing false bugs.
+
+**The canonical false positive: `| id:'cbN'` in content-block refs is HARMLESS.** A content-block reference that serializes as `{{content_blocks.${My Block} | id:'cb0e...'}}` renders **identically** to a plain `{{content_blocks.${My Block}}}` — the `| id:'...'` is Braze-native content-block *instance tracking*, not a Liquid filter that alters output (verified in the Braze HTML-editor preview with content-block expansion turned on). Braze **re-adds** that annotation during `/canvas/details` REST serialization on any step touched by the modern editor, so a REST grep for `| id:'cb` flags every freshly-edited step and reads as a bug that isn't there. Do not regen, do not "fix" it — confirm the render instead.
+
 ## Subagents + clip
 `general-purpose` subagents CAN call Orbit MCP (push/export/delete — creds live in the Desktop MCP server, not the subagent env, so an "ORBIT_STRIPO_* empty" self-report is a false alarm). The `stripo-operator` agent CANNOT (no MCP tools). Clip: export's `html_byte_count` already includes the folded CSS = delivered size; Gmail clips ~102KB; 8-module emails (two grids) hit ~100KB (tight). Trim modules/copy if over — never click-tracking/UTMs.
+
+### Clip fixes are COMPOSE-LEVEL — never hand-edit or minify the exported HTML
+
+Treat Stripo's export as **byte-exact-from-Stripo**. Do NOT byte-edit it to get under the Gmail clip threshold — whitespace-stripping, regex-patching the body, or letting an `orbit_sync_to_braze` minify pass rewrite it **reliably introduces render regressions** (dropped modules, dark-mode/Outlook breaks). **RETIRE the minify path for clip fixes.**
+
+The deterministic, reversible fix for a clipped email is to **drop a whole module from `module_sequence`, recompose, and re-export natively** — never to shrink the bytes of an existing export. Drop priority (re-check bytes after each): **app-download module → chat-bubbles module → promo/upsell module**. Worked example (generic): a comparison email measured **110 KB** full → **103.6 KB** with the app-download module dropped (still over the ~102 KB Gmail clip) → **88 KB** clean with app-download **and** chat-bubbles both dropped. Recompose after each drop and re-measure `html_byte_count` before deciding whether another module has to go.

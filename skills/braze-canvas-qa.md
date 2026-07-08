@@ -256,6 +256,22 @@ lead with FAILs; summarise the PASS categories in one line.
   edited directly in Braze after generation won't be reflected upstream. Flag it.
 - **Window/coords drift** when driving the dashboard via browser — re-derive from each screenshot; 50% zoom
   for navigation; clicking the zoom menu can misfire into "Add Step" mode (cancel/Esc immediately).
+- **Canvas-rebind QA — DRAFT-ONLY, and verify the DRAFT, not the live version.** When a message step's
+  template was re-bound, publishing is the human's action — QA a **saved draft**, never the live canvas.
+  Load-bearing checkpoints (full mechanics live in `braze-claude-in-chrome-build.md` §10): the rebind was
+  saved with plain **Save** (NOT "Save and continue" / "Update Canvas" — those publish); the row was
+  actually selected (a bare `.click()` on the picker row does **not** tick its checkbox); and the bind
+  committed only once the **real editor iframe rendered (width > 400px)** — the always-present **0px
+  `developer-sync.html` iframe is a decoy**, and clicking Done against the stub editor silently reverts the
+  selection. **Verify via `/canvas/details?post_launch_draft_version=true`** and grep each message `body`
+  for a body-level signature of the new content — **never verify by subject line** (a body-only fix leaves
+  the subject identical, so a subject check passes on a silently-failed bind).
+- **KNOWN GAP — the template picker's data-fetch can WEDGE.** Intermittently the picker renders skeleton
+  rows with **empty cells** ("Fetching results" resolves but zero populated rows) for templates that
+  provably exist, and a fresh tab + search + clear-search does **not** reliably recover it. Don't assume
+  your interaction failed — recovery candidates: close the picker fully back to the step panel and reopen;
+  hard-reload and reopen without touching the search/limit first; it may be a Braze-side transient or the
+  picker struggling with a large template set.
 
 ---
 

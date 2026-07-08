@@ -406,6 +406,28 @@ dozens of steps in one sitting surfaced gremlins that cost the better part of a 
   works for STANDARD profile fields but renders empty for CUSTOM attributes — Braze flags them. Use
   `{{custom_attribute.${orgName} | default: '…'}}` and `{% if custom_attribute.${signupDate} %}`.
 
+### The working canvas-rebind recipe (DRAFT-ONLY — publishing is always the human's action)
+
+Distilled from a large multi-step rebind. **You never publish — you leave a saved draft for the human to review and push.** The reliable per-step sequence:
+
+1. **Open the step card** — synthetic `MouseEvent` on the hotdog (⋯) button on the step card (screenshots wedge on the flow editor; drive via `javascript_tool`, §8).
+2. **Messaging channels tab** → **"Choose New Template"** for a step that already has a template, or **"Choose a template"** for a null/empty step.
+3. **In the picker, pick the NEWEST same-named row.** Same-name duplicates exist (the old generation + the freshly re-exported one). Sort/search and select by the **most-recent last-edited date** — the fresh export is the live one; older same-name rows are stale/soft-deleted.
+4. **Tick the row CHECKBOX with a REAL synthetic click.** A bare `.click()` on the row does **NOT** select it — dispatch a full synthetic pointer/mouse event sequence on the checkbox.
+5. **Select template.**
+6. **Wait for the REAL editor iframe** — a visible iframe with **width > 400px**. **IGNORE the always-present 0px `developer-sync.html` decoy iframe** (it's there on every step and is not the editor). Committing before the real editor renders silently reverts the selection (§10 stub-editor revert).
+7. **Done** → plain **Save**. **NEVER "Save and continue" / "Update Canvas"** — those publish the draft live. Plain Save banks it as a post-launch draft.
+8. **REST-verify** via `/canvas/details?post_launch_draft_version=true` — grep each message `body` for a body-level signature of the new content (never verify by subject line — a body-only fix leaves the subject identical, §10).
+
+### KNOWN RELIABILITY GAP — the template picker's data-fetch WEDGES
+
+Document this plainly so the next operator doesn't burn an hour thinking it's their interaction: **the template picker intermittently renders skeleton rows whose cells stay EMPTY** — "Fetching results" resolves but you get **zero populated rows** for templates that provably exist. Observed to persist even after a fresh tab + search + clear-search, so a routine re-search does **not** reliably recover it.
+
+Recovery candidates to try, in order:
+- **Close the picker fully back to the step panel, then reopen it** (a deeper reset than clearing the search).
+- **Hard-reload the page and reopen the picker without touching the limit/search controls first.**
+- Treat it as possibly a **Braze-side transient** or the picker struggling with a **large template set** — it is not necessarily your click that failed. Fall back to the §10 Monaco `setValue` path for a surgical swap if the picker stays wedged.
+
 ## 11. Wizard audience / exit / conversion config
 
 Building a canvas end-to-end surfaces how to *drive* the wizard's audience/exit/conversion config
