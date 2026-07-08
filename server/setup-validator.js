@@ -134,7 +134,7 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       passed: Boolean(config.activationKey),
       detail: config.activationKey
         ? `configured (activation status: ${activation.status})`
-        : "missing — no Activation Key reached the server. If you've already pasted one in Settings → Extensions → Orbit, fully quit Claude Desktop (Cmd+Q) and relaunch so Orbit's background server restarts and re-reads it."
+        : "missing — no Activation Key reached the server. If you've already pasted one in Settings → Extensions → Orbit, fully quit Claude Desktop (Cmd+Q on Mac; on Windows, quit from the system tray or Task Manager — closing the window is not enough) and relaunch so Orbit's background server restarts and re-reads it."
     }
   ];
 

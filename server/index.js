@@ -2151,7 +2151,7 @@ function registerTools() {
         return makeJsonToolResponse({
           status: "error",
           code: "missing_google_ai_api_key",
-          message: "Gemini API key is not configured. Set ORBIT_GOOGLE_AI_API_KEY in your environment and restart Claude Code."
+          message: "Gemini API key is not configured. Add your Google AI API key in Settings → Extensions → Orbit (the Google AI API Key field), then fully quit and relaunch Claude Desktop (Cmd+Q on Mac; quit from the system tray or Task Manager on Windows)."
         });
       }
 

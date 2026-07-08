@@ -233,12 +233,12 @@ export function activationRequiredResponse(toolName) {
       `1. Go to ${SIGNUP_URL} and create a free account (or sign in).`,
       `2. Copy your Activation Key from your account page.`,
       `3. In Claude Desktop: Settings → Extensions → Orbit → paste it into the "Activation Key" field.`,
-      `4. Fully quit Claude Desktop (Cmd+Q — not just closing the window) and relaunch it. Orbit runs as a background server that only re-reads the key when it restarts. Starting a new chat is NOT enough — it reuses the same server process and will keep reporting "not activated".`,
+      `4. Fully quit Claude Desktop and relaunch it — on Mac press Cmd+Q; on Windows right-click the Claude icon in the system tray (bottom-right, near the clock) and choose Quit, or open Task Manager and end Claude. Just closing the window is NOT enough on either OS. Orbit runs as a background server that only re-reads the key when it restarts, and starting a new chat reuses the same process and will keep reporting "not activated".`,
     ],
     signup_url: SIGNUP_URL,
     // Surfaced so the assistant tells the user plainly rather than retrying.
     assistant_instruction:
-      `Tell the user Orbit needs a free activation key: create an account at ${SIGNUP_URL}, copy the Activation Key, and paste it into Settings → Extensions → Orbit in Claude Desktop. Then they MUST fully quit Claude Desktop (Cmd+Q) and relaunch — Orbit's background server only re-reads the key on a full restart, and opening a new chat reuses the same stale process. Do not retry this tool until they've done that.`,
+      `Tell the user Orbit needs a free activation key: create an account at ${SIGNUP_URL}, copy the Activation Key, and paste it into Settings → Extensions → Orbit in Claude Desktop. Then they MUST fully quit Claude Desktop (Cmd+Q on Mac; on Windows, quit from the system tray or Task Manager — closing the window is not enough) and relaunch — Orbit's background server only re-reads the key on a full restart, and opening a new chat reuses the same stale process. Do not retry this tool until they've done that.`,
   };
 }
 
