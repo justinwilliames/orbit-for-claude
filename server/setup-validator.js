@@ -248,7 +248,7 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
         brandKit.operational_status === "incomplete"
           ? ["Configure a valid brand kit with a brand-profile.json, logo, and at least two examples."]
           : []),
-        ...(config.googleAiApiKey ? [] : ["Add a Google AI API key: set ORBIT_GOOGLE_AI_API_KEY in your environment and restart Claude Code."])
+        ...(config.googleAiApiKey ? [] : ["Add a Google AI API key in Settings → Extensions → Orbit, then fully quit and relaunch Claude Desktop (Cmd+Q on Mac; quit from the system tray or Task Manager on Windows)."])
       ]
     }
   };

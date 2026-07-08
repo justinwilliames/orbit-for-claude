@@ -100,7 +100,7 @@ export async function generateBrandArtLayer({
 
   if (!config.googleAiApiKey) {
     const error = new Error(
-      "Gemini API key is not configured. Set ORBIT_GOOGLE_AI_API_KEY in your environment and restart Claude Code."
+      "Gemini API key is not configured. Add your Google AI API key in Settings → Extensions → Orbit (the Google AI API Key field), then fully quit and relaunch Claude Desktop (Cmd+Q on Mac; quit from the system tray or Task Manager on Windows)."
     );
     error.code = "CONFIGURATION_ERROR";
     throw error;
