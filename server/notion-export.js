@@ -1,5 +1,5 @@
 import path from "node:path";
-import { ensureDir, resolveOutputDir } from "./config.js";
+import { ensureDir, resolveOutputDir, resolveUserOutputDir } from "./config.js";
 import { renderLifecycleDiagram } from "./lifecycle-diagrams.js";
 import {
   buildOrbitMarkdownFooter,
@@ -30,7 +30,9 @@ export async function exportNotionBundle({
   const programName =
     workspaceRecord?.program_name ?? plan?.program_name ?? "Orbit Program";
   const exportDir = ensureDir(
-    outputDir ?? resolveOutputDir(config, "notion-exports", slugify(programName))
+    outputDir
+      ? resolveUserOutputDir(config, outputDir)
+      : resolveOutputDir(config, "notion-exports", slugify(programName))
   );
   const branding = ensureOrbitBrandingAssets({
     rootDir,

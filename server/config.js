@@ -352,17 +352,47 @@ export function resolveOutputDir(context, ...segments) {
  * into a known external directory), but traversal-style relative
  * paths that escape the workspace are rejected.
  */
+// Persistence/credential locations we refuse as output dirs even when an
+// absolute path is passed. Writing generated files here is never legitimate
+// and is a classic prompt-injection persistence/exfil vector (drop a
+// LaunchAgent, overwrite authorized_keys, plant a Windows Startup item).
+// Defense-in-depth on top of the workspace default — operators can still write
+// to any normal project/output directory.
+const UNSAFE_OUTPUT_SEGMENTS = [
+  "/library/launchagents/",
+  "/library/launchdaemons/",
+  "/.ssh/",
+  "/.aws/",
+  "/.gnupg/",
+  "/.config/autostart/",
+  "/microsoft/windows/start menu/programs/startup/",
+];
+
+function assertSafeOutputDir(resolvedPath) {
+  const norm = (resolvedPath.replace(/\\/g, "/") + "/").toLowerCase();
+  for (const seg of UNSAFE_OUTPUT_SEGMENTS) {
+    if (norm.includes(seg)) {
+      const err = new Error(
+        `Refusing "${resolvedPath}" as an output directory — it targets a protected system/persistence location.`
+      );
+      err.code = "unsafe_output_dir";
+      throw err;
+    }
+  }
+  return resolvedPath;
+}
+
 export function resolveUserOutputDir(context, userPath) {
   if (userPath === null || userPath === undefined || userPath === "") {
     // No user path supplied — fall back to the default.
     return context.defaultOutputDir;
   }
   // Run basic safety checks (type, empty, null bytes) via resolveSafe
-  // before we apply our own traversal logic. Absolute paths are trusted
-  // (operator explicitly chose them); relative paths must stay inside
-  // the workspace root.
+  // before we apply our own traversal logic. Absolute paths are allowed
+  // (operator explicitly chose them) EXCEPT protected persistence/credential
+  // locations; relative paths must stay inside the workspace root.
   if (path.isAbsolute(userPath)) {
-    return resolveSafe(userPath);
+    return assertSafeOutputDir(resolveSafe(userPath));
   }
   // Relative paths must stay inside the workspace root.
   const root = path.resolve(context.defaultOutputDir);
@@ -418,6 +448,10 @@ export function isLocalPath(resolvedPath) {
   if (resolvedPath.startsWith(homeDir)) return true;
   // Accept macOS iCloud Drive paths
   if (resolvedPath.includes("/Mobile Documents/")) return true;
+  // Accept Windows absolute paths (drive-letter roots, e.g. C:\Users\..., D:\brand).
+  // Home-dir paths already pass above via startsWith(os.homedir()); this covers
+  // non-home Windows drives so Windows users aren't silently rejected.
+  if (/^[A-Za-z]:[\\/]/.test(resolvedPath)) return true;
   // Accept common local roots on macOS/Linux (excluding /home/claude sandbox pattern)
   const localRoots = ["/Users/", "/home/", "/Volumes/", "/tmp/", "/var/folders/"];
   if (localRoots.some((root) => resolvedPath.startsWith(root))) {

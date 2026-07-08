@@ -34,6 +34,7 @@ function loadModule({
   stripoGet,
   brazePost,
   brazeList,
+  brazeGet,
   stripoSetup = () => null,
   brazeSetup = () => null,
 } = {}) {
@@ -42,7 +43,7 @@ function loadModule({
     .replace(/^import .*;\n/gm, "")
     .replace(/^export /gm, "");
 
-  const calls = { stripoGet: [], brazePost: [], brazeList: [] };
+  const calls = { stripoGet: [], brazePost: [], brazeList: [], brazeGet: [] };
   const context = {
     Buffer,
     juice,
@@ -64,6 +65,14 @@ function loadModule({
       calls.brazeList.push({ endpoint, params });
       const items = (brazeList ?? (() => []))({ endpoint, params });
       return { items, truncated: false, pages_fetched: 1 };
+    },
+    // Provenance check on a dedupe-by-name hit: GET /templates/email/info to
+    // confirm Orbit created the target before overwriting it. Default to a
+    // description carrying the Orbit marker (the dedupe tests are re-exports of
+    // Orbit-created templates); a test can override to simulate a foreign one.
+    brazeGet: async ({ endpoint, params }) => {
+      calls.brazeGet.push({ endpoint, params });
+      return (brazeGet ?? (() => ({ description: "Exported from Stripo email 1 via Orbit" })))({ endpoint, params });
     },
     validateBrazeSetup: brazeSetup,
     buildDashboardUrl: (_endpoint, type, id) => `https://dash/${type}/${id}`,
@@ -518,6 +527,22 @@ test("duplicate same-named Braze templates surface a warning and update the firs
 
   assert.equal(calls.brazePost[0].body.email_template_id, "dup-a", "updates the first of the duplicates");
   assert.ok(res.results[0].duplicate_name_warning, "warns that duplicates exist");
+});
+
+test("dedupe-by-name REFUSES to overwrite a same-named FOREIGN (non-Orbit) template", async () => {
+  // The data-loss guard: a hand-built Braze template that merely shares a name
+  // must NOT be clobbered. Its description lacks the Orbit provenance marker.
+  const { mod, calls } = loadModule({
+    stripoGet: () => FULL_EMAIL,
+    brazeList: () => [{ template_name: "M10 Xero B - Free", email_template_id: "hand-built-1" }],
+    brazeGet: () => ({ description: "Our hand-built welcome template — do not touch" }),
+  });
+  const res = await mod.exportStripoEmailsToBraze({ config: CONFIG, emailIds: 11949287 });
+
+  assert.equal(calls.brazeGet.length, 1, "checks provenance on the name match");
+  assert.equal(calls.brazePost.length, 0, "never writes to a foreign template");
+  assert.equal(res.results[0].status, "skipped");
+  assert.equal(res.results[0].error_code, "braze_name_collision_foreign");
 });
 
 test("a dedupe listing failure does not sink the export (falls back to create)", async () => {

@@ -56,7 +56,7 @@
 import juice from "juice/client.js";
 
 import { stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
-import { brazePost, brazePaginateList, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
+import { brazePost, brazeGet, brazePaginateList, validateBrazeSetup, buildDashboardUrl } from "./braze-api.js";
 import { parseMaybeJson } from "./utils.js";
 
 const MAX_EXPORT_BATCH = 100;
@@ -429,8 +429,39 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
   let resolvedTemplateId = brazeTemplateId || null;
   let matchedBy = resolvedTemplateId ? "id" : null;
   if (!resolvedTemplateId && nameMap && nameMap.has(templateName)) {
-    resolvedTemplateId = nameMap.get(templateName);
-    matchedBy = "name";
+    // Provenance guard: only auto-overwrite a same-named Braze template that
+    // ORBIT created (its description carries the "via Orbit" marker). Never
+    // clobber a hand-built template that merely shares a name — Braze has no
+    // template version history, so an overwrite is unrecoverable.
+    const candidateId = nameMap.get(templateName);
+    let orbitOwned = false;
+    try {
+      const info = await brazeGet({
+        config,
+        endpoint: "/templates/email/info",
+        params: { email_template_id: candidateId },
+      });
+      orbitOwned = typeof info?.description === "string" && info.description.includes("via Orbit");
+    } catch {
+      // Couldn't confirm provenance → fail safe, treat as NOT Orbit-owned.
+      orbitOwned = false;
+    }
+    if (orbitOwned) {
+      resolvedTemplateId = candidateId;
+      matchedBy = "name";
+    } else {
+      return {
+        stripo_email_id: stripoEmailId,
+        stripo_email_name: stripoName,
+        template_name: templateName,
+        status: "skipped",
+        stage: "name_collision",
+        error_code: "braze_name_collision_foreign",
+        error_message:
+          `A Braze template named "${templateName}" already exists but was NOT created by Orbit — refusing to overwrite it. ` +
+          `Pass an explicit braze_template_map id to update it deliberately, or rename the Stripo email/template.`,
+      };
+    }
   }
   const willUpdate = Boolean(resolvedTemplateId);
   const endpoint = willUpdate ? "/templates/email/update" : "/templates/email/create";

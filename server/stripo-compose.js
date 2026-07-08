@@ -347,7 +347,11 @@ export async function composeStripoEmail({
     });
 
     return {
-      status: "pushed",
+      // Stripo can 2xx a push while returning NO new email id (and has, in the
+      // past, produced silently-empty emails). Only claim "pushed" when we
+      // actually got an id back; otherwise flag it unconfirmed so the caller
+      // verifies in Stripo before relying on it or syncing onward.
+      status: newEmailId != null ? "pushed" : "unconfirmed",
       stripo: {
         new_email_id: newEmailId,
         email_name: canonicalPayload.emailName,
@@ -359,7 +363,9 @@ export async function composeStripoEmail({
       composition_plan: compositionPlan,
       convention_warnings: conventionWarnings,
       message:
-        `Created a new email in your Stripo workspace using master template ${templateIdNumber}. ` +
+        (newEmailId != null
+          ? `Created a new email in your Stripo workspace using master template ${templateIdNumber}. `
+          : `Stripo accepted the push for master template ${templateIdNumber} but returned NO new email id — the email may not have been created. Open Stripo to verify before relying on it or syncing onward. `) +
         "The master template was NOT modified. Open Stripo to find the new email in the email folder." +
         (htmlOverridesResult?.status === "patched"
           ? ` CTA patched (${htmlOverridesResult.buttons_found} button(s) found). Patched HTML written to ${htmlOverridesResult.patched_html_path}.`

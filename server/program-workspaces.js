@@ -1,6 +1,6 @@
 import path from "node:path";
 import { routeTask } from "./catalog.js";
-import { ensureDir, resolveOutputDir } from "./config.js";
+import { ensureDir, resolveOutputDir, resolveUserOutputDir } from "./config.js";
 import {
   buildConnectedSourceContext,
   ingestConnectedSources
@@ -351,7 +351,9 @@ export function buildProgramWorkspace({
   }
   const workspaceSlug = slugify(finalProgramName);
   const workspaceDir = ensureDir(
-    outputDir ?? resolveOutputDir(config, "program-workspaces", workspaceSlug)
+    outputDir
+      ? resolveUserOutputDir(config, outputDir)
+      : resolveOutputDir(config, "program-workspaces", workspaceSlug)
   );
   const brief = briefMarkdown
     ? String(briefMarkdown)

@@ -1254,6 +1254,10 @@ export function reconcileImageUrls({
   }
 
   const patchedFiles = [];
+  // Track the DISTINCT replacements actually applied (a `from` found in ≥1 file),
+  // so the count reflects real substitutions rather than the size of the
+  // candidate map — a 6-entry map that patched nothing must not report "6".
+  const appliedReplacements = new Set();
 
   // Patch individual component compiled.html files
   if (outputDir) {
@@ -1268,6 +1272,7 @@ export function reconcileImageUrls({
         if (content.includes(from)) {
           content = content.split(from).join(to);
           changed = true;
+          appliedReplacements.add(from);
         }
       }
 
@@ -1299,14 +1304,15 @@ export function reconcileImageUrls({
 
   return {
     status: "ok",
-    replacements_applied: replacements.length,
+    replacements_applied: appliedReplacements.size,
+    replacements_available: replacements.length,
     patched_files: patchedFiles,
     replacements: replacements.map(({ from, to, component_name }) => ({
       original: from,
       hosted: to,
       component: component_name
     })),
-    message: `Replaced ${replacements.length} image URL(s) across ${patchedFiles.length} file(s) with Braze CDN URLs.`
+    message: `Applied ${appliedReplacements.size} of ${replacements.length} image URL replacement(s) across ${patchedFiles.length} file(s) with Braze CDN URLs.`
   };
 }
 

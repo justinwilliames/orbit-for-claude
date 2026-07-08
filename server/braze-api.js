@@ -109,10 +109,17 @@ export async function brazeGet({ config, endpoint, params = {} }) {
 /**
  * Make a POST request to the Braze REST API with retry + circuit breaker.
  */
-export async function brazePost({ config, endpoint, body = {} }) {
+export async function brazePost({ config, endpoint, body = {}, idempotent }) {
   assertActivatedForIntegration("braze");
   await rateLimit();
   const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}${endpoint}`;
+
+  // POST creates are NOT idempotent: retrying after the server already committed
+  // (e.g. the response timed out mid-flight) silently creates a DUPLICATE, and
+  // Braze allows duplicate names so it goes unnoticed. Default any /create
+  // endpoint to no-retry; a caller can override via `idempotent: true` when the
+  // endpoint is genuinely safe to replay.
+  const allowRetry = idempotent ?? !endpoint.endsWith("/create");
 
   const response = await fetchWithRetry(
     url,
@@ -124,7 +131,7 @@ export async function brazePost({ config, endpoint, body = {} }) {
       },
       body: JSON.stringify(body)
     },
-    { timeoutMs: BRAZE_API_TIMEOUT_MS, breaker: BRAZE_BREAKER }
+    { timeoutMs: BRAZE_API_TIMEOUT_MS, breaker: BRAZE_BREAKER, ...(allowRetry ? {} : { retries: 0 }) }
   );
 
   const text = await response.text();

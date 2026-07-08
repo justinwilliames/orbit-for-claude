@@ -145,37 +145,23 @@ export async function createBrazeCanvas({
     };
   }
 
-  // --- Call Braze API ---
-  const response = await brazePost({
-    config,
-    endpoint: "/canvas/create",
-    body: canvasPayload
-  });
-
-  const canvasId = response.canvas_id ?? null;
-  const dashboardUrl = canvasId
-    ? buildCanvasDashboardUrl(config.brazeRestEndpoint, canvasId)
-    : null;
-
-  const syncRecord = {
-    version: "1.0.0",
-    type: "braze_canvas_sync",
-    status: "ok",
-    canvas_id: canvasId,
-    canvas_name: canvasPayload.name,
-    dashboard_url: dashboardUrl,
-    steps_created: steps.length,
-    synced_at: new Date().toISOString(),
-    warnings: allWarnings,
-    request_body: canvasPayload,
-    response_body: response
-  };
-
+  // --- Live create is UNSUPPORTED by Braze ---
+  // Braze's public REST API has no canvas-create endpoint. Canvas authoring is
+  // dashboard-only; the REST surface is read-only (/canvas/list, /canvas/details).
+  // Earlier this POSTed to a nonexistent /canvas/create and reported "created
+  // successfully" off a null canvas_id. We now build + validate the payload and
+  // hand it back for the dashboard instead of pretending a live write happened.
   return {
-    status: "ok",
+    status: "unsupported",
     schema: BRAZE_CANVAS_SYNC_SCHEMA,
-    sync_record: syncRecord,
-    message: `Canvas "${canvasPayload.name}" created successfully. ${dashboardUrl ? `View: ${dashboardUrl}` : `Canvas ID: ${canvasId}`}`
+    payload: canvasPayload,
+    steps_planned: steps.length,
+    warnings: allWarnings,
+    errors: validation.errors,
+    message:
+      `Braze has no public API to create a Canvas — canvas authoring is dashboard-only. ` +
+      `Orbit built and validated the ${steps.length}-step payload (returned above); create the Canvas in the Braze dashboard from it, ` +
+      `or re-run with dry_run to save the payload to disk. Use orbit_read_braze_canvas to import an existing Canvas.`
   };
 }
 

@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { brazeGet, brazePost, brazeUploadAsset, validateBrazeSetup } from "./braze-api.js";
-import { ensureDir, resolveOutputDir } from "./config.js";
+import { ensureDir, resolveOutputDir, resolveUserOutputDir } from "./config.js";
 import { inferMimeType, isUploadableImagePath, maybeReadTextFile, parseJsonInput, slugify, writeJson, writeText } from "./utils.js";
 
 // ---------------------------------------------------------------------------
@@ -146,13 +146,17 @@ export function parseMasterTemplate({
     liquid_variables: liquidVars,
     sections,
     images,
+    // Store the ORIGINAL html so variation assembly reconstructs from the real
+    // document, not the 200-char section previews. Without this, reconstruction
+    // silently produced a truncated, broken template.
+    raw_html: html,
     raw_html_length: html.length
   };
 
   // Write outputs if outputDir provided
   let files = {};
   if (outputDir) {
-    const outDir = ensureDir(outputDir);
+    const outDir = ensureDir(resolveUserOutputDir(config, outputDir));
     files = {
       parsed_template: writeJson(path.join(outDir, `${slug}-parsed.json`), parsed),
       original_html: writeText(path.join(outDir, `${slug}-original.html`), html),
@@ -241,7 +245,7 @@ export function generateTemplateVariationSpecs({
   // Write outputs
   let files = {};
   if (outputDir) {
-    const outDir = ensureDir(outputDir);
+    const outDir = ensureDir(resolveUserOutputDir(config, outputDir));
     files = {
       variation_specs: writeJson(
         path.join(outDir, `${parsed.slug}-variation-specs.json`),
@@ -320,7 +324,7 @@ export function assembleTemplateVariation({
   const slug = spec.slug ?? "variation";
   let files = {};
   if (outputDir) {
-    const outDir = ensureDir(outputDir);
+    const outDir = ensureDir(resolveUserOutputDir(config, outputDir));
     files = {
       assembled_html: writeText(path.join(outDir, `${slug}.html`), assembledHtml)
     };
@@ -407,12 +411,19 @@ export async function uploadTemplateImages({
       }
 
       const asset = response.new_assets?.[0] ?? null;
-      uploaded.push({
-        name: image.name,
-        braze_cdn_url: asset?.url ?? null,
-        braze_name: asset?.name ?? image.name,
-        original_source: image.url ?? image.file_path
-      });
+      if (asset?.url) {
+        uploaded.push({
+          name: image.name,
+          braze_cdn_url: asset.url,
+          braze_name: asset?.name ?? image.name,
+          original_source: image.url ?? image.file_path
+        });
+      } else {
+        // A 2xx with no asset URL is NOT a successful upload — record it as an
+        // error so the count can't over-report and the email won't ship with a
+        // null/expiring source.
+        errors.push({ name: image.name, error: "Braze returned no asset URL", response });
+      }
     } catch (err) {
       errors.push({ name: image.name, error: err.message });
     }
@@ -638,9 +649,17 @@ function classifyModuleType(name) {
 }
 
 function reconstructHtmlFromSections(parsed, spec) {
-  // If we have the original sections in order, reconstruct
-  // For now, return a note that full HTML reconstruction requires the original
-  // The variation assembly works by string replacement on the original HTML
-  // This is a passthrough — the original HTML is preserved in the parsed template
-  return parsed.raw_html ?? parsed.sections.map((s) => s.html_preview).join("\n");
+  // Variation assembly works by string-replacement on the ORIGINAL HTML, which
+  // parseMasterTemplate stores as parsed.raw_html. If it's absent (an older
+  // parsed payload from before v0.27.5), FAIL LOUDLY rather than silently
+  // joining the 200-char section previews into a truncated, broken document
+  // that then gets synced to Braze as if it were the real template.
+  if (typeof parsed.raw_html !== "string" || !parsed.raw_html) {
+    const err = new Error(
+      "Cannot assemble variation: the parsed template has no raw_html. Re-run orbit_parse_master_template to capture the original HTML, then retry."
+    );
+    err.code = "missing_raw_html";
+    throw err;
+  }
+  return parsed.raw_html;
 }
