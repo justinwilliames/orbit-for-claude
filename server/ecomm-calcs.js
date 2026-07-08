@@ -444,7 +444,12 @@ function num(n) {
 }
 function rate(numerator, denominator) {
   if (!denominator) return 0;
-  return Math.round((numerator / denominator) * 1000) / 10;
+  // Each of open/click/CVR is part-of-a-whole, so the honest ceiling is
+  // 100%. Dirty Braze data (e.g. opens > sends from bot/proxy prefetch)
+  // would otherwise print a nonsense ">100%" straight into an exec
+  // report; clamp so leadership never reads a fabricated figure.
+  const pct = Math.round((numerator / denominator) * 1000) / 10;
+  return Math.min(100, Math.max(0, pct));
 }
 function round2(n) {
   return Math.round(n * 100) / 100;

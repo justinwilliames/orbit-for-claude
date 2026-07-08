@@ -63,13 +63,18 @@ export function forecastListGrowth({
     });
   }
 
-  // Break-even month — when acquisition equals churn. If the list
-  // is shrinking, note the month it halves (if within the horizon).
+  // Break-even month — the first month acquisition stops covering
+  // churn (net turns non-positive). We deliberately do NOT require a
+  // prior positive month: month 0's net is hard-coded to 0, so a list
+  // already shrinking from month 1 (churn > acquisition throughout)
+  // would otherwise never register a break-even — which is exactly the
+  // danger case an operator scans this field for. If the list is
+  // shrinking, also note the month it halves (if within the horizon).
   let breakEvenMonth = null;
   let halvedMonth = null;
   for (let i = 1; i < trajectory.length; i++) {
     const row = trajectory[i];
-    if (breakEvenMonth === null && row.net <= 0 && trajectory[i - 1].net > 0) {
+    if (breakEvenMonth === null && row.net <= 0) {
       breakEvenMonth = row.month;
     }
     if (halvedMonth === null && row.list_size <= currentListSize / 2) {

@@ -330,14 +330,31 @@ export function validateLiquid({ snippet, knownAttributes = [] }) {
   // 3. Every variable reference should have a default or be inside a
   // conditional. Bare {{ user.first_name }} with no fallback renders
   // an empty string on missing data.
+  // Loop iterators (`{% for u in items %}` → `u`) and `{% capture x %}`
+  // targets are populated by the tag itself, so a `| default:` on them
+  // is meaningless — flagging them produces a false "missing fallback"
+  // warning on every correctly-written loop. Collect their names and
+  // skip any reference rooted on one. We match the root token only, so
+  // a genuinely un-guarded `{{ user.email }}` inside the loop is still
+  // flagged.
+  const loopVars = new Set();
+  for (const m of snippet.matchAll(/\{%\s*for\s+([a-zA-Z_]\w*)\s+in\b/g)) {
+    loopVars.add(m[1]);
+  }
+  for (const m of snippet.matchAll(/\{%\s*capture\s+([a-zA-Z_]\w*)/g)) {
+    loopVars.add(m[1]);
+  }
+
   const varRefs = [...snippet.matchAll(/\{\{\s*([^}|]+?)(\|[^}]+)?\s*\}\}/g)];
   const noFallback = [];
   for (const v of varRefs) {
-    const body = v[0];
     const filters = v[2] ?? "";
+    const ref = v[1].trim();
+    const root = ref.split(/[.[\s]/)[0];
+    if (loopVars.has(root)) continue;
     const insideIf = isInsideTag(snippet, v.index, /\{%\s*if\b/g, /\{%\s*endif\b/g);
     if (!/default\s*:/i.test(filters) && !insideIf) {
-      noFallback.push(v[1].trim());
+      noFallback.push(ref);
     }
   }
   if (noFallback.length > 0) {

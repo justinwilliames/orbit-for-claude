@@ -431,7 +431,20 @@ function collectFgBgPairs(html) {
 }
 
 function emitPairFor(frame, stack, pairs) {
-  const fg = parseColor(cssProp(frame.style, "color"));
+  // Resolve foreground: own `color` first, else the nearest ancestor
+  // `color` (CSS `color` inherits). Real emails set body colour on a
+  // wrapping <div>/<td> and nest un-styled text inside it, so without
+  // this walk grey-on-white body copy is never checked.
+  let fg = parseColor(cssProp(frame.style, "color"));
+  if (!fg) {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const inherited = parseColor(cssProp(stack[i].style, "color"));
+      if (inherited) {
+        fg = inherited;
+        break;
+      }
+    }
+  }
   if (!fg) return;
   // Walk ancestors (innermost first) looking for a resolvable bg.
   for (let i = stack.length - 1; i >= 0; i--) {
