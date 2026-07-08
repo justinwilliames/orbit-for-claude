@@ -319,7 +319,17 @@ export function calcLtv(arpu, grossMarginPct, monthlyChurnPct, cac) {
   const ltv = contributionPerMonth / churn;
   const payback = cac > 0 ? cac / contributionPerMonth : 0;
   const ltvCacRatio = cac > 0 ? ltv / cac : Infinity;
-  return { ltv, payback, ltvCacRatio, contributionPerMonth, arpu, grossMargin: gm, churn, cac };
+  const result = { ltv, payback, ltvCacRatio, contributionPerMonth, arpu, grossMargin: gm, churn, cac };
+  // Fraction-vs-percent guard. monthlyChurnPct is a PERCENT (5 = 5%).
+  // A user typing 0.05 meaning "5%" gets churn=0.0005 and an LTV
+  // inflated ~100×. We can't know their intent (0.05% monthly churn is
+  // a rare but real best-in-class figure), so we don't reject or
+  // rewrite — we surface the ambiguity so a "320× LTV:CAC" isn't
+  // repeated to finance unchallenged.
+  if (monthlyChurnPct < 1) {
+    result.warning = `monthlyChurnPct was entered as ${monthlyChurnPct} (under 1%). If you meant ${monthlyChurnPct}% that's correct; if you meant ${monthlyChurnPct * 100}% (i.e. entered a fraction, not a percent), LTV is inflated ~100×. This tool expects a percent (5 = 5%).`;
+  }
+  return result;
 }
 
 export function tierForRatio(ltvCac) {
