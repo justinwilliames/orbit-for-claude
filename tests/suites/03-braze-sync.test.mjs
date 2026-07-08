@@ -96,6 +96,55 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     assert.equal(brazeCalls.length, 0);
   });
 
+  test("upload_images_to_braze images_json batch uploads each item, returns per-item {name, braze_cdn_url}", async () => {
+    mock.clearRequests();
+    // Flat file-list batch: three loose assets by remote URL. This is the
+    // 42-images-in-one-call path — no generated-component wrapper. Braze
+    // fetches each url server-side (POST /media_library/create).
+    // asset_url must be https (uploadSingleImageToBraze enforces it); the URL
+    // itself is never fetched by our code — Braze fetches server-side, and the
+    // mock intercepts /media_library/create regardless of the asset_url value.
+    const images = [
+      { name: "hero.png", url: "https://assets.example.com/hero.png" },
+      { name: "app-download.png", url: "https://assets.example.com/app-download.png" },
+      { name: "comparison-table.png", url: "https://assets.example.com/comparison-table.png" }
+    ];
+    const res = await client.callToolLenient("orbit_upload_images_to_braze", {
+      images_json: JSON.stringify(images)
+    });
+    assertNotHandlerCrash(res, "upload_images_to_braze(images_json)");
+    assert.equal(res.kind, "response", `Expected a response, got ${res.kind}`);
+    assert.equal(res.parsed.status, "ok");
+    assert.equal(res.parsed.uploaded_count, 3);
+    // Per-item shape: each result keyed by the OPERATOR-supplied name, with
+    // the CDN url parsed from new_assets[0].url.
+    const byName = Object.fromEntries(res.parsed.uploaded.map((u) => [u.name, u.braze_cdn_url]));
+    for (const img of images) {
+      assert.ok(img.name in byName, `missing uploaded entry for ${img.name}`);
+      assert.match(byName[img.name], /^https:\/\/mock-cdn\.example\//, `${img.name} should carry the CDN url`);
+    }
+    // One media_library/create call per item — a real batch, not a no-op.
+    const uploads = mock.getRequests().filter(
+      (r) => r.method === "POST" && r.path === "/media_library/create"
+    );
+    assert.equal(uploads.length, 3, "each batch item must produce one media_library/create call");
+  });
+
+  test("upload_images_to_braze rejects passing BOTH images_json and generated_components_json", async () => {
+    mock.clearRequests();
+    const res = await client.callToolLenient("orbit_upload_images_to_braze", {
+      images_json: JSON.stringify([{ name: "a.png", url: "https://assets.example.com/a.png" }]),
+      generated_components_json: JSON.stringify([])
+    });
+    assertNotHandlerCrash(res, "upload_images_to_braze(both inputs)");
+    if (res.kind === "response") {
+      assert.equal(res.parsed.status, "needs_inputs");
+      assert.match(res.parsed.message ?? "", /exactly one/i);
+    }
+    const uploads = mock.getRequests().filter((r) => r.path.startsWith("/media_library"));
+    assert.equal(uploads.length, 0, "no upload should occur when inputs are ambiguous");
+  });
+
   test("upload_image_to_braze sends a multipart binary upload, not JSON base64 (Braze 400 regression)", async () => {
     mock.clearRequests();
     // 1x1 transparent PNG, base64-encoded.

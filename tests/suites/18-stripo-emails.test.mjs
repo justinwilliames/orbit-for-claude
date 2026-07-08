@@ -35,6 +35,9 @@ function loadModule({ get, del, restSetup = () => null } = {}) {
     },
     validateStripoRestSetup: restSetup,
     parseMaybeJson,
+    // getStripoEmail's body_mode path uses Buffer.byteLength; the vm sandbox
+    // has no Node globals unless we pass them in.
+    Buffer,
     module: { exports: {} },
     exports: {},
   };
@@ -79,6 +82,70 @@ test("getStripoEmail surfaces needs_setup when REST token missing", async () => 
   const { mod } = loadModule({ restSetup: () => ({ status: "needs_setup", missing: ["stripo_rest_api_token"] }) });
   const res = await mod.getStripoEmail({ config: {}, emailId: 1 });
   assert.equal(res.status, "needs_setup");
+});
+
+test("getStripoEmail body_mode 'omit' returns metadata + byte count, NO body", async () => {
+  // A large branded header + comparison table can exceed the ~100 KB
+  // tool-response ceiling and come back truncated. 'omit' keeps the email
+  // inspectable: metadata + html_byte_count, but never the body itself.
+  const bigHtml = "<html>" + "x".repeat(120_000) + "</html>";
+  const { mod, calls } = loadModule({ get: () => ({ id: 42, name: "promo", html: bigHtml }) });
+  const res = await mod.getStripoEmail({ config: CONFIG, emailId: 42, bodyMode: "omit" });
+  assert.equal(res.status, "ok");
+  assert.equal(res.body_mode, "omit");
+  // Byte count reflects the real UTF-8 size the transport counts.
+  assert.equal(res.html_byte_count, Buffer.byteLength(bigHtml, "utf8"));
+  // Structure preserved, body stripped from every surfaced field.
+  assert.ok(res.structure_keys.includes("html"), "structure_keys should still list the html field");
+  assert.equal(res.metadata.name, "promo");
+  assert.equal(res.metadata.html, undefined, "the body must NOT be returned in omit mode");
+  assert.equal(res.email, undefined, "no full email object in omit mode");
+  assert.deepEqual(calls.get, ["/emails/42"]);
+});
+
+test("getStripoEmail body_mode 'grep' returns byte count + matching lines only, NO full body", async () => {
+  const html = [
+    "<html>",
+    "<a href=\"https://example.com/app-download\">Get the app</a>",
+    "<div>filler line</div>",
+    "<a href=\"https://example.com/upgrade\">Upgrade now</a>",
+    "</html>",
+  ].join("\n");
+  const { mod } = loadModule({ get: () => ({ id: 7, name: "compare", html }) });
+  const res = await mod.getStripoEmail({ config: CONFIG, emailId: 7, bodyMode: "grep", grep: "upgrade" });
+  assert.equal(res.status, "ok");
+  assert.equal(res.body_mode, "grep");
+  assert.equal(res.grep, "upgrade");
+  assert.equal(res.html_byte_count, Buffer.byteLength(html, "utf8"));
+  assert.equal(res.grep_result.match_count, 1);
+  assert.equal(res.metadata.html, undefined, "grep mode must not return the full body");
+  // The matched line is present in the snippet window.
+  assert.ok(
+    res.grep_result.snippets.some((s) => /Upgrade now/.test(s.text)),
+    "the matching line should appear in the grep snippets",
+  );
+});
+
+test("getStripoEmail body_mode 'grep' requires a grep substring", async () => {
+  const { mod, calls } = loadModule({ get: () => ({ id: 7, html: "<html></html>" }) });
+  const res = await mod.getStripoEmail({ config: CONFIG, emailId: 7, bodyMode: "grep" });
+  assert.equal(res.status, "needs_inputs");
+  assert.equal(calls.get.length, 0, "should not hit the API without a grep term");
+});
+
+test("getStripoEmail rejects an unknown body_mode", async () => {
+  const { mod, calls } = loadModule();
+  const res = await mod.getStripoEmail({ config: CONFIG, emailId: 7, bodyMode: "wat" });
+  assert.equal(res.status, "needs_inputs");
+  assert.equal(calls.get.length, 0);
+});
+
+test("getStripoEmail defaults to full body (backward-compatible)", async () => {
+  const { mod } = loadModule({ get: () => ({ id: 999, html: "<html>hi</html>" }) });
+  const res = await mod.getStripoEmail({ config: CONFIG, emailId: 999 });
+  assert.equal(res.status, "ok");
+  assert.equal(res.body_mode, "full");
+  assert.equal(res.email.html, "<html>hi</html>", "full mode must return the whole body unchanged");
 });
 
 // ─── deleteStripoEmails ──────────────────────────────────────────────────────

@@ -45,14 +45,63 @@ function coerceEmailIds(input) {
   return { ids };
 }
 
+// The HTML body of a generated email lives under email.html. A branded
+// header + comparison table can push a single body past the ~100 KB
+// tool-response ceiling, at which point the transport drops/truncates it
+// and the compose can't be verified. body_mode lets a caller inspect a
+// large email WITHOUT hauling the whole body back.
+const BODY_FIELD = "html";
+
+// Compute the UTF-8 byte length of a string (what the transport actually
+// counts against the response ceiling — not the JS character count).
+function byteLength(str) {
+  return typeof str === "string" ? Buffer.byteLength(str, "utf8") : 0;
+}
+
+// Return the lines matching `needle` (case-insensitive substring) with a
+// window of `context` lines either side, so a large body stays inspectable
+// via a targeted grep instead of the full dump.
+function grepBody(body, needle, context = 2) {
+  const lines = body.split(/\r?\n/);
+  const target = needle.toLowerCase();
+  const keep = new Set();
+  const matchedLineNumbers = [];
+  lines.forEach((line, i) => {
+    if (line.toLowerCase().includes(target)) {
+      matchedLineNumbers.push(i + 1);
+      for (let j = Math.max(0, i - context); j <= Math.min(lines.length - 1, i + context); j++) {
+        keep.add(j);
+      }
+    }
+  });
+  const ordered = [...keep].sort((a, b) => a - b);
+  const snippets = ordered.map((i) => ({ line: i + 1, text: lines[i] }));
+  return { match_count: matchedLineNumbers.length, matched_lines: matchedLineNumbers, snippets };
+}
+
 /**
  * Fetch a single Stripo email by ID (GET /emails/<id>).
  * Returns the parsed JSON the API gives back; callers can scan it for
  * the rendered html / dataSources / slot values they need.
+ *
+ * `bodyMode` controls how the (potentially large) HTML body is returned:
+ *   "full"  — default; the whole email object, body and all (legacy behaviour).
+ *   "omit"  — metadata + html_byte_count + top-level structure keys, NO body.
+ *             Use to confirm a large email pushed without hauling it back.
+ *   "grep"  — metadata + html_byte_count + the lines matching `grep`
+ *             (with context) so a big body stays inspectable.
  */
-export async function getStripoEmail({ config, emailId }) {
+export async function getStripoEmail({ config, emailId, bodyMode = "full", grep } = {}) {
   const setupError = validateStripoRestSetup(config);
   if (setupError) return setupError;
+
+  const mode = (bodyMode ?? "full").toLowerCase();
+  if (!["full", "omit", "grep"].includes(mode)) {
+    return { status: "needs_inputs", message: `body_mode must be one of full | omit | grep. Got: ${JSON.stringify(bodyMode)}` };
+  }
+  if (mode === "grep" && (typeof grep !== "string" || !grep.trim())) {
+    return { status: "needs_inputs", message: "body_mode 'grep' requires a non-empty `grep` substring to search for." };
+  }
 
   const { ids, error } = coerceEmailIds(emailId);
   if (error) return { status: "needs_inputs", message: error };
@@ -63,7 +112,40 @@ export async function getStripoEmail({ config, emailId }) {
 
   try {
     const email = await stripoRestGet({ config, endpoint: `/emails/${id}` });
-    return { status: "ok", email_id: id, email };
+
+    if (mode === "full") {
+      return { status: "ok", email_id: id, body_mode: "full", email };
+    }
+
+    // Both omit + grep strip the body so a large email stays under the
+    // response ceiling. Preserve every non-body field as metadata.
+    const body = typeof email?.[BODY_FIELD] === "string" ? email[BODY_FIELD] : "";
+    const html_byte_count = byteLength(body);
+    const { [BODY_FIELD]: _omitted, ...metadata } = email ?? {};
+    const structure_keys = Object.keys(email ?? {});
+
+    if (mode === "omit") {
+      return {
+        status: "ok",
+        email_id: id,
+        body_mode: "omit",
+        html_byte_count,
+        structure_keys,
+        metadata,
+      };
+    }
+
+    // mode === "grep"
+    return {
+      status: "ok",
+      email_id: id,
+      body_mode: "grep",
+      grep,
+      html_byte_count,
+      structure_keys,
+      metadata,
+      grep_result: grepBody(body, grep),
+    };
   } catch (err) {
     return {
       status: "error",

@@ -155,6 +155,7 @@ import {
   syncBrazeContentBlocks,
   syncBrazeEmailTemplate,
   uploadImagesToBraze,
+  uploadImageBatchToBraze,
   uploadSingleImageToBraze
 } from "./braze-sync.js";
 import {
@@ -2903,20 +2904,44 @@ function registerTools() {
     {
       title: "Upload Images to Braze",
       description:
-        "Upload email component images to Braze's media library and get back hosted CDN URLs. " +
-        "Pass the generated_components array from orbit_generate_email_components. " +
+        "Upload email images to Braze's media library and get back hosted CDN URLs. " +
+        "Two input modes: (a) pass the generated_components array from orbit_generate_email_components, or " +
+        "(b) pass images_json — a flat JSON array of { name, file_path } and/or { name, url } objects — to upload a loose file-list batch (e.g. every hosted image in a multi-module program) in ONE call, no component wrapper required. " +
+        "The batch path returns per-item { name, braze_cdn_url }. Provide exactly one of the two inputs. " +
         "After upload, use orbit_reconcile_image_urls to patch the CDN URLs into all compiled HTML files.",
       inputSchema: {
-        generated_components_json: z.string().min(1).max(MAX_LONG_STRING).describe("JSON string of the generated_components array from orbit_generate_email_components"),
-        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Output directory containing generated component files"),
+        generated_components_json: z.string().min(1).max(MAX_LONG_STRING).optional().describe("JSON string of the generated_components array from orbit_generate_email_components. Mutually exclusive with images_json."),
+        images_json: z.string().min(1).max(MAX_LONG_STRING).optional().describe("JSON array of { name, file_path } and/or { name, url } objects for a flat file-list batch upload. `url` is a public remote image URL (Braze fetches it server-side); `file_path` is an absolute local IMAGE path (multipart binary, 4 MB cap). Returns per-item { name, braze_cdn_url }. Mutually exclusive with generated_components_json."),
+        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Output directory containing generated component files (generated_components path only)"),
         dry_run: z.boolean().optional().describe("If true, list images to upload without actually uploading")
       }
     },
     async ({
       generated_components_json: generatedComponentsJson,
+      images_json: imagesJson,
       output_dir: outputDir,
       dry_run: dryRun
     }) => {
+      // File-list batch path (images_json). Kept separate from the
+      // generated-components path so both stay independently valid; the
+      // generated-components branch below is 100% unchanged.
+      if (imagesJson) {
+        if (generatedComponentsJson) {
+          return makeJsonToolResponse({
+            status: "needs_inputs",
+            message: "Provide exactly one of generated_components_json or images_json, not both."
+          });
+        }
+        const { value: images, error: imagesError } = parseToolJson(imagesJson, "images_json", []);
+        if (imagesError) return imagesError;
+        const result = await uploadImageBatchToBraze({
+          config: runtimeConfig,
+          images,
+          dryRun
+        });
+        return makeJsonToolResponse(result);
+      }
+
       const { value: generatedComponents, error: parseError } = parseToolJson(generatedComponentsJson, "generated_components_json", []);
       if (parseError) return parseError;
       let resolvedOutputDir;
@@ -4384,15 +4409,25 @@ function registerTools() {
     {
       title: "Get Stripo Email By ID",
       description:
-        "Fetch a single generated email from your Stripo workspace by its numeric email ID (GET /emails/<id>). Returns the API's JSON for that email — useful for recovering the rendered copy or structure of an email pushed earlier, since slot_values are baked in server-side at push time and don't appear in local compose previews. Read-only.",
+        "Fetch a single generated email from your Stripo workspace by its numeric email ID (GET /emails/<id>). Returns the API's JSON for that email — useful for recovering the rendered copy or structure of an email pushed earlier, since slot_values are baked in server-side at push time and don't appear in local compose previews. Read-only. " +
+        "Large emails (a branded header + comparison table can exceed the ~100 KB tool-response ceiling) come back truncated in the default mode — use body_mode 'omit' or 'grep' to inspect them without the full body.",
       inputSchema: {
         email_id: z
           .union([z.number(), z.string()])
-          .describe("The numeric Stripo email ID (e.g. 11907219).")
+          .describe("The numeric Stripo email ID (e.g. 11907219)."),
+        body_mode: z
+          .enum(["full", "omit", "grep"])
+          .optional()
+          .describe("How to return the HTML body. 'full' (default): whole email object. 'omit': metadata + html_byte_count + structure keys, no body — confirm a large email pushed without hauling it back. 'grep': metadata + html_byte_count + only the lines matching `grep` (with context)."),
+        grep: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe("Substring to search the HTML body for (case-insensitive). Required when body_mode is 'grep'. Returns matching lines with 2 lines of context each.")
       }
     },
-    async ({ email_id }) => {
-      const result = await getStripoEmail({ config: runtimeConfig, emailId: email_id });
+    async ({ email_id, body_mode, grep }) => {
+      const result = await getStripoEmail({ config: runtimeConfig, emailId: email_id, bodyMode: body_mode, grep });
       return makeJsonToolResponse(result);
     }
   );

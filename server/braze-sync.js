@@ -536,6 +536,102 @@ export async function uploadSingleImageToBraze({ config, asset_url, file_path, i
   }
 }
 
+/**
+ * Upload a flat file-list batch to the Braze media library in ONE call.
+ *
+ * This is the plain-batch counterpart to uploadImagesToBraze (which only
+ * consumes generated-component STRUCTURES). It lets an operator upload a
+ * large set of loose assets — e.g. every hosted image in a multi-module
+ * program — without wrapping them in a component tree.
+ *
+ * `images` is an array of per-item descriptors, each carrying a `name`
+ * plus ONE source:
+ *   { name, file_path }  — absolute local image path (multipart binary, 4 MB cap)
+ *   { name, url }        — publicly accessible remote URL (Braze fetches it)
+ *   { name, image_data_base64 } — raw base64 (multipart binary)
+ *
+ * Each item is normalised and pushed through uploadSingleImageToBraze, so
+ * it inherits the isUploadableImagePath guard, the SSRF host check, and the
+ * new_assets[0].url parse verbatim — the CDN url is at new_assets[0].url,
+ * NOT a top-level field. Results preserve the operator-supplied `name` as
+ * the per-item key (the Braze-echoed asset name can differ), returning
+ * { name, braze_cdn_url } per uploaded item.
+ */
+export async function uploadImageBatchToBraze({ config, images, dryRun = false }) {
+  const brazeSetup = validateBrazeSetup(config);
+  if (brazeSetup) return brazeSetup;
+
+  if (!Array.isArray(images) || images.length === 0) {
+    return {
+      status: "needs_inputs",
+      message: "Provide `images_json`: a non-empty JSON array of { name, file_path } and/or { name, url } objects.",
+    };
+  }
+
+  // Normalise each descriptor up-front so a malformed item is reported
+  // rather than silently skipped. `url` is the operator-facing alias for
+  // the single-upload helper's `asset_url`.
+  const normalised = [];
+  const errors = [];
+  images.forEach((item, index) => {
+    if (!item || typeof item !== "object") {
+      errors.push({ index, error: "Each item must be an object with a `name` and a source (file_path / url)." });
+      return;
+    }
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name) {
+      errors.push({ index, error: "Missing `name` (used as the Braze media-library filename and the per-item result key)." });
+      return;
+    }
+    const asset_url = item.url ?? item.asset_url;
+    const { file_path, image_data_base64 } = item;
+    if (!asset_url && !file_path && !image_data_base64) {
+      errors.push({ name, index, error: "Provide one source per item: `file_path`, `url`, or `image_data_base64`." });
+      return;
+    }
+    normalised.push({ name, asset_url, file_path, image_data_base64 });
+  });
+
+  if (dryRun) {
+    return {
+      status: errors.length === 0 ? "dry_run" : "needs_inputs",
+      count: normalised.length,
+      manifest: normalised.map(({ name, asset_url, file_path }) => ({
+        name,
+        source: asset_url ? "url" : file_path ? "file_path" : "image_data_base64",
+      })),
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Found ${normalised.length} image(s) to upload to Braze media library.`,
+    };
+  }
+
+  const uploaded = [];
+  for (const item of normalised) {
+    // eslint-disable-next-line no-await-in-loop -- Braze media_library has no batch endpoint; sequential keeps us under the rate limiter.
+    const result = await uploadSingleImageToBraze({
+      config,
+      name: item.name,
+      asset_url: item.asset_url,
+      file_path: item.file_path,
+      image_data_base64: item.image_data_base64,
+    });
+    if (result.status === "ok" && result.url) {
+      uploaded.push({ name: item.name, braze_cdn_url: result.url, size: result.size ?? null });
+    } else {
+      errors.push({ name: item.name, error: result.error ?? `Upload failed (${result.status}).` });
+    }
+  }
+
+  return {
+    status: errors.length === 0 ? "ok" : uploaded.length > 0 ? "partial" : "failed",
+    requested: images.length,
+    uploaded_count: uploaded.length,
+    uploaded,
+    errors: errors.length > 0 ? errors : undefined,
+    message: `Uploaded ${uploaded.length}/${images.length} image(s) to Braze media library.`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 
 function collectImageManifest(generatedComponents) {
