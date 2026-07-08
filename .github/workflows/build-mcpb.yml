@@ -36,6 +36,21 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      # Gate the release on the test suite. This is the whole point of
+      # having tests: a broken tool must fail CI here and block the publish,
+      # not ship silently. (The mjml@5 async compile break shipped for 2
+      # months precisely because nothing ran the suite in CI — only the
+      # local `npm run smoke` script caught it, and only by chance.)
+      # `npm test` spawns the real MCP server and asserts on the compile
+      # path (tests/suites/05-email-pipeline.test.mjs); `npm run smoke`
+      # additionally exercises the raw exported functions end-to-end with a
+      # full brand kit. Both are hermetic — mocked upstreams, no network.
+      - name: Run tests
+        run: npm test
+
+      - name: Run smoke
+        run: npm run smoke
+
       - run: npm run build:extension
 
       # Package the .mcpb bundle for distribution.
