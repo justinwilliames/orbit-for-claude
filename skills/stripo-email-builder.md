@@ -545,6 +545,12 @@ Recipe:
 3. **VERIFY via `orbit_get_stripo_email`** (grep the overflow file). Confirm real copy/images in the rendered `html`, not defaults. The email JSON stores only baked `html`+`css` — **no dataSources/values store.**
 4. **Export to Braze:** `orbit_export_stripo_email_to_braze`, `dedupe_by_name:true` — UPDATES the existing Braze template with the matching NAME in place (no dupes). `dry_run:true` first to confirm `operation:"update"`. **Times out at ~40 — chunk by ~8.** Idempotent.
 
+### ⭐ Name exports so the Canvas template-picker row is UNMISTAKABLE
+The whole point of exporting to Braze is that a Canvas step can then **natively select the template** (Choose New Template) — that's the correct, simple rebind (don't hand-paste HTML). But that only stays simple if the RIGHT template is obvious in the picker. Two traps and how to avoid them (learned 2026-07-09):
+- **Duplicate names.** If a Braze template with that name already exists and you export a fresh one instead of updating in place, you get TWO same-named rows and no easy way to tell which is v3. **Prevent it:** update the existing template in place via `braze_template_map: {stripo_id: braze_template_id}` (keys off id, not name → zero dupes — preferred), OR give the export a **unique, sortable name with a version/date** (e.g. `M1 Services A - Free — v3 2026-07-09`) so the picker row is self-identifying, OR archive the stale duplicate before exporting. If dupes already exist, the newest = the **most-recently-edited** row.
+- **Silent duplicate on the `orbit_sync_to_braze` path** — that path has NO dedupe-by-name and keys UPDATE-vs-CREATE solely off `metadata.braze_sync.email_template.braze_id`; omit the id and you get a dupe (see §557). Always pass the existing `braze_id`.
+Net rule: **one template per name in Braze**, kept current in place. Then the Canvas rebind is a clean point-and-click template select — no HTML editing, no guessing which row.
+
 ## The bug that will bite you: partial-slot_values re-push
 **Re-pushing to change ONE module with PARTIAL slot_values silently DROPS the other modules → they render default placeholder copy** (`Intriguing heading` / `Lorem ipsum…` / `Do the thing` / `Link here` / blank image box). Broke roughly a third of the emails in the rebuild. ALWAYS re-push the COMPLETE payload for every module, never a delta. Placeholder strings in a sent email = a population miss on that module. **Native Stripo→Braze export will NOT fix it** — values aren't stored, so there's nothing to re-generate; only a correct re-push fixes dropped content.
 

@@ -406,7 +406,13 @@ dozens of steps in one sitting surfaced gremlins that cost the better part of a 
   works for STANDARD profile fields but renders empty for CUSTOM attributes — Braze flags them. Use
   `{{custom_attribute.${orgName} | default: '…'}}` and `{% if custom_attribute.${signupDate} %}`.
 
-### The working canvas-rebind recipe (DRAFT-ONLY — publishing is always the human's action)
+### ⚠️ FIRST — don't overcomplicate. The DEFAULT rebind path is NATIVE template select.
+
+The templates already live in Braze once exported from Stripo (Stripo is the source of truth). The correct, simple rebind is: open the step → **Choose New Template** → pick the v3 template → confirm → Save. Do this FIRST. **Do NOT reach for inline-HTML editing, clipboard paste, or gzip/base64-through-the-eval** — those are LAST-RESORT fallbacks for when the native picker is genuinely unusable, and reaching for them early is how a 30-minute job becomes a multi-hour rabbit hole (learned the hard way, 2026-07-09). If the picker is slow/wedged, the fix is almost always **get the canvas tab into the FOREGROUND** (a background/throttled Dia MCP-window starves heavy UI like the picker) — ask the human to bring it to the front — NOT to invent a cleverer transport.
+
+**Prereq for a clean native select — name the exports identifiably.** When you export from Stripo, if a template name already exists in Braze the export can leave a *duplicate*, and the picker then shows two same-named rows with no easy way to tell the fresh one. Prevent it: give each export a **unique, sortable name** (e.g. append a version/date: `M1 Services A - Free — v3 2026-07-09`), OR update-in-place by `braze_template_map` id so no duplicate is created, OR archive the stale duplicate first. Then the picker row is unmistakable (and if duplicates exist anyway, pick the **most-recently-edited** row). See the `stripo-email-builder` naming rule.
+
+### The native picker recipe (DRAFT-ONLY — publishing is always the human's action)
 
 Distilled from a large multi-step rebind. **You never publish — you leave a saved draft for the human to review and push.** The reliable per-step sequence:
 
@@ -428,9 +434,9 @@ Recovery candidates to try, in order:
 - **Hard-reload the page and reopen the picker without touching the limit/search controls first.**
 - Treat it as possibly a **Braze-side transient** or the picker struggling with a **large template set** — it is not necessarily your click that failed. Fall back to the Monaco-`setValue` path below if the picker stays wedged.
 
-### ★ The BULLETPROOF inline-HTML rebind (supersedes the picker — no wedge, no freeze, no clipboard)
+### The inline-HTML rebind — LAST-RESORT FALLBACK ONLY (use native template select first)
 
-*(Proven across a full 42-step Activation rebind, 2026-07-09, after the picker-wedge and a cascade of tab-throttling failures. This is now the PREFERRED per-step swap — skip the template picker entirely.)*
+*(Proven across a 42-step rebind, 2026-07-09, but only reached for after over-engineering away from the native picker. **Do NOT start here.** Use it ONLY when the native "Choose New Template" picker is genuinely unusable AND the tab can't be foregrounded. If you find yourself building this, stop and ask whether foregrounding the tab + the native picker would just work.)*
 
 **Key insight:** a canvas Message step stores **inline HTML in a Monaco editor**, not a live template link. So a "rebind" is just replacing that Monaco model's value with the new template's HTML — no picker, no duplicate-name ambiguity, no stub-editor revert. Open the step → **"Edit message"** → the HTML lives in `monaco.editor.getModels()[0]`.
 
