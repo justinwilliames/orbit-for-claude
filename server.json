@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.justinwilliames/orbit-for-claude",
+  "title": "Orbit",
+  "description": "Lifecycle-marketing OS for Claude: 60+ skills and 80+ tools for Braze, Stripo, email, segmentation.",
+  "version": "0.27.6",
+  "websiteUrl": "https://yourorbit.team",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/justinwilliames/orbit-for-claude/releases/download/v0.27.6/orbit-lifecycle-marketing-system-for-claude.mcpb",
+      "fileSha256": "67262d4b0d6866c4b0fc7d6997a55c5787e461de234f819c2e4d865378792f60",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

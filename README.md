@@ -1,20 +1,20 @@
 # Orbit
 
-A lifecycle-marketing operating system for Claude Desktop. Free.
+A lifecycle-marketing operating system for Claude Desktop. Buy it once, use it for good.
 
 Orbit gives Claude a senior lifecycle operator's playbook — 60+ battle-tested protocols and 80+ tools spanning Braze, Stripo, email and MJML, segmentation maths, deliverability, brand voice, Figma import, Notion export, and diagram generation. It installs as an MCP extension (a `.mcpb` bundle) and works as an extension of your team: it walks you through the inputs it needs, builds the artefacts, and closes every answer with the next action.
 
-Most "AI for marketing" tools hand you generic email advice. Orbit carries the production-tested mechanics generic reasoning doesn't have — the Stripo push trap that silently drops slot values, the Braze Canvas QA checklist, the Liquid fallback rules, the segmentation maths. That's the difference between a draft you can ship and a draft you have to redo.
+Most "AI for marketing" tools hand you generic email advice. Orbit carries the production-tested mechanics generic reasoning doesn't have — the Stripo push trap that silently drops slot values, the Braze Canvas QA checklist, the Liquid fallback rules, the segmentation maths. That's the difference between a draft you can ship and a draft you have to redo. It was built by a lifecycle operator with ten-plus years in CRM seats at Linktree, Depop, Deliveroo, and Trainline — the protocols are the job, written down.
 
-## Get started (it's free)
+## Get started
 
-Orbit is free. You need one thing to use it: an Activation Key, which comes with a free account.
+Orbit is a one-off purchase. Buy it once at **[yourorbit.team/pricing](https://yourorbit.team/pricing)** — no subscription, no renewal. Your account carries the entitlement, and your Activation Key is what switches the tools on.
 
-1. Create a free account at **[yourorbit.team](https://yourorbit.team)**.
-2. Copy your Activation Key from your account.
+1. Buy Orbit at **[yourorbit.team/pricing](https://yourorbit.team/pricing)**.
+2. Copy your Activation Key from your account at [yourorbit.team](https://yourorbit.team).
 3. Install Orbit (below) and paste the key in.
 
-That's the whole funnel. No card, no trial clock — the key is what switches Orbit's tools on.
+The bundle itself is open to download — installing costs nothing but activating requires the key. That's deliberate: install it, browse the tool surface, see what it can do, then unlock it when you buy.
 
 ## Install
 
@@ -22,7 +22,7 @@ Two paths. The first keeps you up to date automatically; the second is a manual 
 
 **Recommended — install from the Claude extension directory.** Open Claude Desktop, go to the extension directory, find Orbit, and install. Claude Desktop keeps it updated as new versions ship, so you don't have to think about it.
 
-**Manual — download the bundle.** Download the `.mcpb` from [yourorbit.team](https://yourorbit.team) and double-click it to install into Claude Desktop. You'll update it yourself when a new version lands.
+**Manual — download the bundle.** Download the `.mcpb` from the releases on this repo and double-click it to install into Claude Desktop. You'll update it yourself when a new version lands.
 
 ## Activate
 
