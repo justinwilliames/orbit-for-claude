@@ -1,7 +1,7 @@
 {
   "version": "1",
-  "siteBaseUrl": "https://get.yourorbit.team",
-  "generatedAt": "2026-06-19T07:54:01.271Z",
+  "siteBaseUrl": "https://yourorbit.team",
+  "generatedAt": "2026-07-09T11:28:58.043Z",
   "courses": [
     {
       "slug": "lifecycle-fundamentals",
@@ -21,7 +21,7 @@
       ],
       "guideCount": 7,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/lifecycle-fundamentals"
+      "url": "https://yourorbit.team/courses/lifecycle-fundamentals"
     },
     {
       "slug": "building-lifecycle-programs",
@@ -42,7 +42,7 @@
       ],
       "guideCount": 8,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/building-lifecycle-programs"
+      "url": "https://yourorbit.team/courses/building-lifecycle-programs"
     },
     {
       "slug": "deliverability-and-optimisation",
@@ -63,7 +63,7 @@
       ],
       "guideCount": 8,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/deliverability-and-optimisation"
+      "url": "https://yourorbit.team/courses/deliverability-and-optimisation"
     },
     {
       "slug": "starting-a-program",
@@ -81,7 +81,7 @@
       ],
       "guideCount": 5,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/starting-a-program"
+      "url": "https://yourorbit.team/courses/starting-a-program"
     },
     {
       "slug": "email-craft-that-converts",
@@ -100,7 +100,7 @@
       ],
       "guideCount": 6,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/email-craft-that-converts"
+      "url": "https://yourorbit.team/courses/email-craft-that-converts"
     },
     {
       "slug": "winning-the-inbox",
@@ -120,7 +120,7 @@
       ],
       "guideCount": 7,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/winning-the-inbox"
+      "url": "https://yourorbit.team/courses/winning-the-inbox"
     },
     {
       "slug": "ecommerce-lifecycle",
@@ -139,7 +139,7 @@
       ],
       "guideCount": 6,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/ecommerce-lifecycle"
+      "url": "https://yourorbit.team/courses/ecommerce-lifecycle"
     },
     {
       "slug": "saas-lifecycle",
@@ -158,7 +158,7 @@
       ],
       "guideCount": 6,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/saas-lifecycle"
+      "url": "https://yourorbit.team/courses/saas-lifecycle"
     },
     {
       "slug": "advanced-experimentation",
@@ -177,7 +177,7 @@
       ],
       "guideCount": 6,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/advanced-experimentation"
+      "url": "https://yourorbit.team/courses/advanced-experimentation"
     },
     {
       "slug": "ai-personalisation-at-scale",
@@ -197,7 +197,7 @@
       ],
       "guideCount": 7,
       "quizPool": 30,
-      "url": "https://get.yourorbit.team/courses/ai-personalisation-at-scale"
+      "url": "https://yourorbit.team/courses/ai-personalisation-at-scale"
     }
   ]
 }

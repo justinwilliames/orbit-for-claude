@@ -116,15 +116,18 @@ test("FAIL-OPEN: integration calls pass while a key-bearing user's check is pend
 
 // ─── the activation-required response ─────────────────────────────────────────
 
-test("activationRequiredResponse is actionable and points to yourorbit.team", () => {
+test("activationRequiredResponse is actionable and points to the pricing page", () => {
   _setActivationStateForTest({ status: "no_key" });
   const r = activationRequiredResponse("orbit_create_braze_canvas");
   assert.equal(r.status, "needs_activation");
   assert.equal(r.code, "not_activated");
-  assert.equal(r.signup_url, "https://yourorbit.team");
+  assert.equal(r.signup_url, "https://yourorbit.team/pricing");
   assert.ok(Array.isArray(r.how_to_activate) && r.how_to_activate.length >= 3);
-  assert.match(JSON.stringify(r), /yourorbit\.team/);
-  assert.match(JSON.stringify(r), /free/i);
+  assert.match(JSON.stringify(r), /yourorbit\.team\/pricing/);
+  // Paid positioning: the ask is a one-off purchase…
+  assert.match(JSON.stringify(r), /purchase|buy/i);
+  // …and the word "free" is BANNED from the activation surface entirely.
+  assert.doesNotMatch(JSON.stringify(r), /free/i);
   // Tells the assistant not to loop on the tool.
   assert.match(r.assistant_instruction, /Do not retry/i);
 });

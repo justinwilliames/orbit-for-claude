@@ -1,14 +1,17 @@
 /**
- * Orbit activation gate — free, account-gated.
+ * Orbit activation gate — purchase-gated.
  *
- * Orbit is a FREE product. Every user creates a free account at
- * yourorbit.team, copies their Activation Key, and pastes it into the
+ * Orbit is a PAID product (one-off purchase at yourorbit.team/pricing).
+ * The buyer's account carries the entitlement; they copy their
+ * Activation Key from the account page and paste it into the
  * extension's "Activation Key" setting. This module validates that key
  * against get-orbit on startup and exposes the activation state so the
  * tool dispatcher can gate capabilities behind it.
  *
- * The key is an IDENTITY anchor (it ties extension usage to an account
- * for lifecycle comms), not a paywall — there is nothing to pay for.
+ * The key IS the paywall: get-orbit's validate-license only accepts
+ * keys whose account purchased the MCP (or was grandfathered as a
+ * pre-wall signup). It doubles as the identity anchor for lifecycle
+ * comms.
  *
  * Design (mirrors version-nag.js):
  *   - Fire-and-forget at boot. Never blocks tool execution.
@@ -24,7 +27,7 @@
  *     choke points via assertActivatedForIntegration(), not per-tool, so
  *     it can't drift as tools are added and never over-blocks local work.
  *   - HARD-REQUIRE: with NO key configured, an integration call is blocked
- *     and returns a friendly "activate at yourorbit.team" message.
+ *     and returns a friendly "buy once at yourorbit.team/pricing" message.
  *   - FAIL-OPEN: a user who HAS pasted a key is given the benefit of the
  *     doubt. We only block when (a) there is no key at all, or (b)
  *     get-orbit definitively rejected the key. A network blip, a pending
@@ -40,6 +43,7 @@ import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
 
 const VALIDATE_URL = "https://yourorbit.team/api/orbit/validate-license";
 const SIGNUP_URL = "https://yourorbit.team";
+const PRICING_URL = "https://yourorbit.team/pricing";
 const WEBSITE_BREAKER = getBreaker("orbit-website");
 
 const CACHE_FILE = join(homedir(), ".orbit", "activation-cache.json");
@@ -91,9 +95,11 @@ export function startActivationCheck({ activationKey } = {}) {
 
   // Dev/test bypass: running Orbit un-packaged from source (development,
   // CI, the test harness) shouldn't require a live account round-trip.
-  // Set ORBIT_ACTIVATION_BYPASS=1 to treat the session as activated. Soft
-  // by design — Orbit is free, so the gate exists for sign-up capture, not
-  // protection. Not advertised to end users; the packaged .mcpb never sets it.
+  // Set ORBIT_ACTIVATION_BYPASS=1 to treat the session as activated.
+  // Client-side gate, honesty-based by nature (the source is public);
+  // the entitlement check that matters lives in get-orbit's
+  // validate-license. Not advertised to end users; the packaged .mcpb
+  // never sets it.
   if (process.env.ORBIT_ACTIVATION_BYPASS === "1") {
     state = { status: "valid", email: null, tier: "dev", checkedAt: Date.now() };
     return;
@@ -189,7 +195,7 @@ export function getActivationState() {
  */
 export class ActivationRequiredError extends Error {
   constructor(integration) {
-    super(`Orbit needs a free account before it can use external integrations.`);
+    super(`Orbit needs an activated purchase before it can use external integrations.`);
     this.name = "ActivationRequiredError";
     this.code = "not_activated";
     this.integration = integration ?? null;
@@ -214,31 +220,32 @@ export function assertActivatedForIntegration(integration) {
 
 /**
  * The response an integration call returns when the user isn't activated.
- * Friendly and actionable — it's free, so the ask is "make an account."
- * Note the scope: Orbit's local tools run without a key; only external
- * integrations (Braze, Stripo, Figma, AI image generation) need activation.
+ * Friendly and actionable — the ask is "buy Orbit once, then paste your
+ * key." Note the scope: Orbit's local tools run without a key; only
+ * external integrations (Braze, Stripo, Figma, AI image generation) need
+ * activation — that open surface is the trial.
  */
 export function activationRequiredResponse(toolName) {
   const reason =
     state.status === "invalid"
       ? `The Activation Key configured for Orbit wasn't recognised. It may be mistyped, or the account it belongs to was removed.`
-      : `"${toolName}" connects to an external service, and Orbit needs a free account before it can do that. Orbit's other tools work without one.`;
+      : `"${toolName}" connects to an external service, and that part of Orbit needs an activated purchase. Orbit's local tools keep working without one.`;
   return {
     status: "needs_activation",
     code: "not_activated",
     activation_status: state.status,
     message:
-      `${reason} Orbit is free — it just needs an account.`,
+      `${reason} Orbit is a one-off purchase — buy it once and it's yours.`,
     how_to_activate: [
-      `1. Go to ${SIGNUP_URL} and create a free account (or sign in).`,
+      `1. Go to ${PRICING_URL} and buy Orbit (or sign in at ${SIGNUP_URL} if you already own it).`,
       `2. Copy your Activation Key from your account page.`,
       `3. In Claude Desktop: Settings → Extensions → Orbit → paste it into the "Activation Key" field.`,
       `4. Fully quit Claude Desktop and relaunch it — on Mac press Cmd+Q; on Windows right-click the Claude icon in the system tray (bottom-right, near the clock) and choose Quit, or open Task Manager and end Claude. Just closing the window is NOT enough on either OS. Orbit runs as a background server that only re-reads the key when it restarts, and starting a new chat reuses the same process and will keep reporting "not activated".`,
     ],
-    signup_url: SIGNUP_URL,
+    signup_url: PRICING_URL,
     // Surfaced so the assistant tells the user plainly rather than retrying.
     assistant_instruction:
-      `Tell the user Orbit needs a free activation key: create an account at ${SIGNUP_URL}, copy the Activation Key, and paste it into Settings → Extensions → Orbit in Claude Desktop. Then they MUST fully quit Claude Desktop (Cmd+Q on Mac; on Windows, quit from the system tray or Task Manager — closing the window is not enough) and relaunch — Orbit's background server only re-reads the key on a full restart, and opening a new chat reuses the same stale process. Do not retry this tool until they've done that.`,
+      `Tell the user Orbit's integrations need an Activation Key from a purchased account: buy Orbit once at ${PRICING_URL} (or sign in at ${SIGNUP_URL} if they already own it), copy the Activation Key from the account page, and paste it into Settings → Extensions → Orbit in Claude Desktop. Then they MUST fully quit Claude Desktop (Cmd+Q on Mac; on Windows, quit from the system tray or Task Manager — closing the window is not enough) and relaunch — Orbit's background server only re-reads the key on a full restart, and opening a new chat reuses the same stale process. Do not retry this tool until they've done that.`,
   };
 }
 
