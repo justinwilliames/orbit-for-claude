@@ -12,6 +12,7 @@
  * is in config. Hence the manual step in the checklist.
  */
 
+import { load as cheerioLoad } from "cheerio";
 import {
   validateStripoPluginSetup,
   validateStripoRestSetup,
@@ -55,10 +56,25 @@ export async function setupStripo({ config, action = "check" }) {
     };
   }
 
-  // REST API probe — list a single module to confirm the token works.
+  // REST API probes.
+  //
+  // Primary: GET /validate — Stripo's purpose-built token check
+  // (52-byte response, probe-confirmed 2026-07-10). Proves the token
+  // is valid and authorised for the REST surface.
+  //
+  // Secondary: GET /modules — kept because it exercises a real DATA
+  // endpoint. Custom modules are plan-gated (Business/Enterprise), so
+  // a valid token can still 402/403 here; that split diagnosis
+  // (token OK, plan lacks the feature the sync path needs) is exactly
+  // what the two-probe pair surfaces.
   if (credPresence.restTokenPresent) {
+    probeResults.rest_auth = await probeRestValidate(config);
     probeResults.rest_modules = await probeRestModules(config);
   } else {
+    probeResults.rest_auth = {
+      status: "skipped",
+      reason: "REST API token not set in extension config.",
+    };
     probeResults.rest_modules = {
       status: "skipped",
       reason: "REST API token not set in extension config.",
@@ -104,6 +120,26 @@ async function probePluginAuth(config) {
   }
 }
 
+async function probeRestValidate(config) {
+  try {
+    const result = await stripoRestGet({ config, endpoint: "/validate" });
+    if (result?.valid === true) {
+      return {
+        status: "ok",
+        detail: `REST API token valid — GET /validate returned valid:true (protocol ${result.protocolVersion ?? "unknown"}).`,
+      };
+    }
+    return {
+      status: "failed",
+      detail: `GET /validate answered but reported valid:${JSON.stringify(result?.valid ?? null)} — the token is present but not authorised. Re-generate it in Stripo under Settings → Workspace → Projects → REST API.`,
+      code: "stripo_auth_failed",
+      http_status: 200,
+    };
+  } catch (err) {
+    return errorAsProbeResult(err, "REST validate call failed.");
+  }
+}
+
 async function probeRestModules(config) {
   try {
     const result = await stripoRestGet({
@@ -111,13 +147,28 @@ async function probeRestModules(config) {
       endpoint: "/modules",
       params: { limit: 1 },
     });
-    const list = Array.isArray(result) ? result : Array.isArray(result?.modules) ? result.modules : null;
+    // Probe-confirmed response shape (same one the sync path in
+    // stripo-modules.js relies on): { data: [...modules], total: N }.
+    // Accept a bare array as a defensive fallback; anything else is
+    // genuinely unexpected and we report the actual top-level keys
+    // so the mismatch is diagnosable instead of masked.
+    const list = Array.isArray(result?.data)
+      ? result.data
+      : Array.isArray(result)
+        ? result
+        : null;
+    if (list) {
+      return {
+        status: "ok",
+        detail: `REST API auth succeeded — modules endpoint returned ${list.length} sample module(s).`,
+        sample_keys: list[0] ? Object.keys(list[0]) : [],
+      };
+    }
     return {
       status: "ok",
-      detail: `REST API auth succeeded — modules endpoint returned ${
-        list ? `${list.length} sample module(s)` : "an unexpected shape"
-      }.`,
-      sample_keys: list && list[0] ? Object.keys(list[0]) : [],
+      detail: "REST API auth succeeded — but the modules endpoint returned an unexpected shape (expected { data: [...] }).",
+      response_top_level_keys:
+        result && typeof result === "object" ? Object.keys(result) : [typeof result],
     };
   } catch (err) {
     return errorAsProbeResult(err, "REST modules call failed.");
@@ -125,29 +176,158 @@ async function probeRestModules(config) {
 }
 
 async function probeMasterTemplate(config) {
-  // No documented "get template" endpoint — the safest probe is to
-  // attempt a tiny generateemail call with a benign payload and
-  // immediately surface the error if the template ID is wrong.
-  // We do NOT actually create an email here — that's a side-effect.
-  // Instead, surface the configured ID and let the user verify it
-  // in Stripo's UI. Future: switch to a real GET if Stripo ships
-  // a template-fetch endpoint.
-  return {
-    status: "configured",
-    detail: `Master template ID configured: ${config.stripoMasterTemplateId}. Confirm it exists in Stripo by opening it in the Templates list.`,
-    // Explicit gap: an automated probe that checks the gen-area's
-    // parent Structure for non-zero padding would catch the
-    // "lopsided pushed modules" class of setup error. Wiring it
-    // requires the GET /template/<id> endpoint (response shape
-    // unproven) plus an HTML walker. Tracked as a follow-up; for
-    // now the docs in Step 3 + the Troubleshooting block cover it
-    // and a manual check in Stripo's editor is the reliable path.
-    padding_probe: {
-      status: "not_implemented",
-      detail:
-        "Automated check for non-zero padding on the gen-area's parent Structure is not yet wired. Verify manually in Stripo: open the master template, select the Structure containing the generation-area Container, and confirm Spacing → top/right/bottom/left are all 0.",
-    },
+  // GET /templates/<id> is a documented, probe-confirmed endpoint
+  // (2026-07-10): it returns the full template object including html
+  // + css, and the html carries the esd-email-gen-area marker. That
+  // lets this probe do two real checks instead of "trust the config":
+  //   1. The template exists and the ID is right (404 → failed).
+  //   2. The gen-area marker is present AND its element + ancestors
+  //      carry zero padding — the non-zero-padding setup error is the
+  //      "pushed modules render with ~24 px of dead space" class of
+  //      bug, and catching it here beats debugging it post-push.
+  const templateId = String(config.stripoMasterTemplateId).trim();
+  let template;
+  try {
+    template = await stripoRestGet({ config, endpoint: `/templates/${templateId}` });
+  } catch (err) {
+    return errorAsProbeResult(
+      err,
+      `Master template ${templateId} could not be fetched — confirm the ID matches a template in your Stripo workspace (Templates list, or orbit_list_stripo_templates).`,
+    );
+  }
+
+  const html = typeof template?.html === "string" ? template.html : "";
+  const paddingProbe = analyzeGenAreaPadding(html);
+
+  const base = {
+    template_id: templateId,
+    template_name: template?.name ?? null,
+    editor_url: template?.editorUrl ?? null,
+    padding_probe: paddingProbe,
   };
+
+  if (paddingProbe.status === "gen_area_missing") {
+    return {
+      ...base,
+      status: "warning",
+      detail:
+        `Master template "${template?.name ?? templateId}" exists, but its HTML has NO esd-email-gen-area marker. ` +
+        "Pushes will fail with \"Can not find area\" until you mark a generation area: open the template in Stripo's editor, select the Structure/Container that should receive composed modules, and toggle 'Generation area' in the right-side panel (it sets esd-email-gen-area on the underlying td).",
+    };
+  }
+
+  if (paddingProbe.status === "warning") {
+    return {
+      ...base,
+      status: "warning",
+      detail:
+        `Master template "${template?.name ?? templateId}" has a generation area, but non-zero padding was found on the gen-area element or its wrappers. ` +
+        "Pushed full-bleed modules will render with dead space on the left/right. Fix in Stripo: select the offending Structure and zero its Spacing (all four sides). Offenders are listed in padding_probe.offenders.",
+    };
+  }
+
+  return {
+    ...base,
+    status: "ok",
+    detail: `Master template "${template?.name ?? templateId}" fetched, gen-area marker present (${paddingProbe.gen_area_names.join(", ")}), and the gen-area element + all its wrappers carry zero padding.`,
+  };
+}
+
+/**
+ * Walk a template's HTML for the esd-email-gen-area element and check
+ * that neither it nor any ancestor carries non-zero inline padding.
+ *
+ * Why ancestors too: the gen-area marker sits on a td, but padding on
+ * ANY wrapper between it and <body> (the Structure's stripe td, the
+ * es-content table's cell, ...) insets every pushed module the same
+ * way — the classic "~24 px of dead space" master-template setup bug.
+ * Margin is left alone; only padding participates in the bug.
+ *
+ * Exported for direct unit-testing (network-free).
+ */
+export function analyzeGenAreaPadding(html) {
+  if (typeof html !== "string" || html.trim().length === 0) {
+    return {
+      status: "gen_area_missing",
+      gen_area_names: [],
+      offenders: [],
+      detail: "Template HTML is empty — no generation area to inspect.",
+    };
+  }
+
+  const $ = cheerioLoad(html);
+  const genAreas = $("[esd-email-gen-area]");
+  if (genAreas.length === 0) {
+    return {
+      status: "gen_area_missing",
+      gen_area_names: [],
+      offenders: [],
+      detail: "No element with an esd-email-gen-area attribute found in the template HTML.",
+    };
+  }
+
+  const genAreaNames = [];
+  const offenders = [];
+  genAreas.each((_, el) => {
+    const node = $(el);
+    const areaName = node.attr("esd-email-gen-area") || "(unnamed)";
+    genAreaNames.push(areaName);
+
+    // The element itself plus every ancestor up to the document root.
+    const chain = [el, ...node.parents().toArray()];
+    for (const chainEl of chain) {
+      const chainNode = $(chainEl);
+      const nonZero = nonZeroPaddingDeclarations(chainNode.attr("style") ?? "");
+      if (nonZero.length > 0) {
+        offenders.push({
+          gen_area: areaName,
+          element: describeElement(chainNode, chainEl),
+          declarations: nonZero,
+        });
+      }
+    }
+  });
+
+  return {
+    status: offenders.length > 0 ? "warning" : "ok",
+    gen_area_names: genAreaNames,
+    offenders,
+    detail:
+      offenders.length > 0
+        ? `${offenders.length} element(s) around the generation area carry non-zero inline padding.`
+        : "Gen-area element and all its wrappers carry zero padding.",
+  };
+}
+
+// Extract the padding declarations from an inline style string and
+// return only the ones whose value is non-zero. Handles the shorthand
+// (`padding: 0 24px`) and the four longhands; unitless zero, `0px`,
+// `0em` etc. all count as zero.
+function nonZeroPaddingDeclarations(style) {
+  const nonZero = [];
+  for (const declaration of String(style).split(";")) {
+    const [rawProp, ...rest] = declaration.split(":");
+    const prop = (rawProp ?? "").trim().toLowerCase();
+    if (!/^padding(-top|-right|-bottom|-left)?$/.test(prop)) continue;
+    const value = rest.join(":").trim();
+    if (!value) continue;
+    const hasNonZeroComponent = value
+      .split(/\s+/)
+      .some((token) => {
+        const n = Number.parseFloat(token);
+        return Number.isFinite(n) && n !== 0;
+      });
+    if (hasNonZeroComponent) {
+      nonZero.push(`${prop}: ${value}`);
+    }
+  }
+  return nonZero;
+}
+
+function describeElement(node, el) {
+  const tag = el?.tagName ?? el?.name ?? "element";
+  const className = node.attr("class");
+  return className ? `${tag}.${className.trim().split(/\s+/).join(".")}` : String(tag);
 }
 
 function errorAsProbeResult(err, headline) {
@@ -167,19 +347,16 @@ function describeCredentialPresence(config) {
   const pluginPresent = !validateStripoPluginSetup(config);
   const restTokenPresent = !validateStripoRestSetup(config);
   const masterTemplateIdPresent = Boolean(config.stripoMasterTemplateId);
-  const folderIdPresent = Boolean(config.stripoDefaultFolderId);
 
   return {
     pluginPresent,
     restTokenPresent,
     masterTemplateIdPresent,
-    folderIdPresent,
     summary: {
       stripo_plugin_id: pluginPresent ? "set" : "missing",
       stripo_secret_key: pluginPresent ? "set" : "missing",
       stripo_rest_api_token: restTokenPresent ? "set" : "missing",
       stripo_master_template_id: masterTemplateIdPresent ? "set" : "missing (recommended)",
-      stripo_default_folder_id: folderIdPresent ? "set" : "missing (optional)",
     },
   };
 }
@@ -206,10 +383,13 @@ function nextStepFor(presence, probeResults = null) {
       where: "Stripo: Settings → Workspace → Projects → REST API",
     };
   }
-  if (probeResults?.rest_modules?.status === "failed") {
+  if (probeResults?.rest_auth?.status === "failed" || probeResults?.rest_modules?.status === "failed") {
     return {
       step: 2,
-      action: "REST API call failed — re-check the token, and confirm your Stripo plan supports REST API access (typically Business+).",
+      action:
+        probeResults?.rest_auth?.status === "failed"
+          ? "REST token validation failed (GET /validate) — re-check the token."
+          : "REST token is valid but the modules endpoint failed — confirm your Stripo plan supports custom modules + REST API access (typically Business+).",
       where: "Stripo: Settings → Workspace → Projects → REST API",
     };
   }
@@ -218,6 +398,20 @@ function nextStepFor(presence, probeResults = null) {
       step: 3,
       action: "Create the Orbit Master Template in Stripo, then paste its ID into Orbit's extension settings.",
       where: "Stripo: Templates → New template (see instructions for the generation-area block setup)",
+    };
+  }
+  if (probeResults?.master_template?.status === "failed") {
+    return {
+      step: 3,
+      action: "The configured master template ID could not be fetched — confirm the ID (orbit_list_stripo_templates lists every template with its ID).",
+      where: "Stripo: Templates list, or the editor URL (my.stripo.email/editor/v5/<projectId>/template/<id>)",
+    };
+  }
+  if (probeResults?.master_template?.status === "warning") {
+    return {
+      step: 3,
+      action: `Master template needs attention: ${probeResults.master_template.detail}`,
+      where: "Stripo: open the master template in the editor",
     };
   }
   return {
@@ -231,8 +425,17 @@ function computeOverallStatus(presence, probeResults) {
   if (!presence.pluginPresent) return "needs_plugin_credentials";
   if (probeResults.plugin_auth?.status === "failed") return "plugin_auth_failed";
   if (!presence.restTokenPresent) return "needs_rest_token";
-  if (probeResults.rest_modules?.status === "failed") return "rest_token_failed";
+  if (probeResults.rest_auth?.status === "failed" || probeResults.rest_modules?.status === "failed") {
+    return "rest_token_failed";
+  }
   if (!presence.masterTemplateIdPresent) return "needs_master_template";
+  // The master-template probe now does real work (fetch + gen-area +
+  // padding walk), so its result participates in the overall verdict:
+  // a fetch failure means the configured ID is wrong; a warning means
+  // pushes will misbehave (no gen-area → hard failure; non-zero
+  // padding → dead-space rendering) even though credentials are fine.
+  if (probeResults.master_template?.status === "failed") return "master_template_failed";
+  if (probeResults.master_template?.status === "warning") return "ready_with_warnings";
   return "ready";
 }
 
@@ -244,8 +447,14 @@ function buildInstructionsMarkdown(presence, probeResults = null) {
   const tick = (ok) => (ok ? "✅" : "⬜");
 
   const pluginOk = presence.pluginPresent && probeResults?.plugin_auth?.status !== "failed";
-  const restOk = presence.restTokenPresent && probeResults?.rest_modules?.status !== "failed";
-  const templateOk = presence.masterTemplateIdPresent;
+  const restOk =
+    presence.restTokenPresent &&
+    probeResults?.rest_auth?.status !== "failed" &&
+    probeResults?.rest_modules?.status !== "failed";
+  const templateOk =
+    presence.masterTemplateIdPresent &&
+    probeResults?.master_template?.status !== "failed" &&
+    probeResults?.master_template?.status !== "warning";
 
   return [
     "# Connect Stripo to Orbit",

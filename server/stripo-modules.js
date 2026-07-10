@@ -423,6 +423,15 @@ export function listStripoSyncedModules({
   return {
     status: "ok",
     library_dir: result.library_dir,
+    // Field-reliability note surfaced in the tool response itself so
+    // LLM callers see it next to the data. The per-item `archived`
+    // flag is derived from the local stripo_archived tag, which in
+    // practice has reported archived:false for every module (e.g.
+    // 69/69) even when most were stale. The trustworthy live-vs-
+    // archived signal is a non-null artifact_path / html_path in an
+    // include_html:true listing — only truly-live modules get one.
+    archived_flag_warning:
+      "The per-item `archived` flag is tag-derived and UNRELIABLE (known to report archived:false for every module). To determine which modules are actually live, re-list with include_html:true and treat a non-null artifact_path/html_path as the live signal.",
     total: items.length,
     by_classification: Object.fromEntries(
       Object.entries(grouped).map(([k, list]) => [k, list.length]),
@@ -453,6 +462,11 @@ function projectListedItem(item, includeHtml) {
     width: item.metadata?.width ?? null,
     height: item.metadata?.height ?? null,
     last_synced_at: item.metadata?.last_synced_at ?? null,
+    // Tag-derived and unreliable — kept for backwards compatibility.
+    // Known to report false for every module (69/69 in one audit)
+    // even when most were stale. The response-level
+    // archived_flag_warning points callers to the real live signal:
+    // non-null artifact_path/html_path under include_html:true.
     archived: (item.tags ?? []).includes(TAG_ARCHIVED),
     artifact_path: item.artifact_path,
   };

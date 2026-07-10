@@ -46,7 +46,6 @@ export function loadRuntimeConfig(rootDir) {
     stripoRestApiToken: cleanString(process.env.ORBIT_STRIPO_REST_API_TOKEN),
     stripoWorkspaceId: cleanString(process.env.ORBIT_STRIPO_WORKSPACE_ID),
     stripoMasterTemplateId: cleanString(process.env.ORBIT_STRIPO_MASTER_TEMPLATE_ID),
-    stripoDefaultFolderId: cleanString(process.env.ORBIT_STRIPO_DEFAULT_FOLDER_ID),
     stripoPluginAuthUrl:
       cleanString(process.env.ORBIT_STRIPO_PLUGIN_AUTH_URL) ?? "https://plugins.stripo.email/api/v1/auth",
     stripoRestBaseUrl:

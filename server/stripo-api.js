@@ -29,6 +29,11 @@ import { assertActivatedForIntegration } from "./activation.js";
 const STRIPO_BREAKER = getBreaker("stripo");
 const STRIPO_API_TIMEOUT_MS = 20_000;
 
+// Wildcard Accept header value for endpoints that don't serve JSON
+// (the metered /export/html/ endpoints). Exported so callers don't
+// hand-roll the string.
+export const STRIPO_ACCEPT_ANY = "*/*";
+
 // Promise-chain rate limiter — same pattern as braze-api.js. A bare
 // _lastCallTime variable would let two concurrent awaiters bypass
 // the limit; the chain serialises strictly.
@@ -167,9 +172,16 @@ export function clearStripoJwtCache() {
  * Pass `auth: 'plugin-api-jwt'` to use the Plugin JWT instead — only
  * useful for endpoints that genuinely accept it (TBC by Phase 0+
  * follow-up probe; current evidence says: none).
+ *
+ * `accept` overrides the Accept header (default 'application/json').
+ * Required for the /export/html/ endpoints, which 500 with "No
+ * acceptable representation" when asked for application/json — they
+ * serve the compiled email as an HTML/octet-stream body, so callers
+ * must pass a wildcard Accept (STRIPO_ACCEPT_ANY). Probe-confirmed
+ * 2026-07-10.
  */
-export async function stripoRestGet({ config, endpoint, params = {}, auth = "rest-token" }) {
-  return stripoRestRequest({ config, endpoint, params, auth, method: "GET" });
+export async function stripoRestGet({ config, endpoint, params = {}, auth = "rest-token", accept }) {
+  return stripoRestRequest({ config, endpoint, params, auth, method: "GET", accept });
 }
 
 export async function stripoRestPost({ config, endpoint, body = {}, params = {}, auth = "rest-token" }) {
@@ -188,7 +200,7 @@ export async function stripoRestDelete({ config, endpoint, params = {}, auth = "
   return stripoRestRequest({ config, endpoint, params, auth, method: "DELETE" });
 }
 
-async function stripoRestRequest({ config, endpoint, params, body, auth, method }) {
+async function stripoRestRequest({ config, endpoint, params, body, auth, method, accept }) {
   assertActivatedForIntegration("stripo");
 
   // ─── Defence-in-depth: never mutate the master template. ────────────
@@ -244,7 +256,11 @@ async function stripoRestRequest({ config, endpoint, params, body, auth, method 
     method,
     headers: {
       "Stripo-Api-Auth": token,
-      Accept: "application/json",
+      // Default stays application/json for every JSON endpoint. The
+      // /export/html/ endpoints are the exception: they 500 with "No
+      // acceptable representation" unless the caller overrides with a
+      // wildcard Accept (see STRIPO_ACCEPT_ANY + stripoRestGet docs).
+      Accept: accept || "application/json",
     },
   };
   if (body !== undefined && method !== "GET" && method !== "DELETE") {

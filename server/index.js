@@ -118,6 +118,13 @@ import { syncStripoModules, listStripoSyncedModules } from "./stripo-modules.js"
 import { documentStripoDesignSystem } from "./stripo-design-system.js";
 import { composeStripoEmail } from "./stripo-compose.js";
 import { getStripoEmail, deleteStripoEmails, checkStripoAuth } from "./stripo-emails.js";
+import {
+  listStripoEmails,
+  listStripoFolders,
+  listStripoTemplates,
+  exportStripoEmailHtml,
+  getStripoLimits
+} from "./stripo-workspace.js";
 import { exportStripoEmailsToBraze } from "./stripo-export-braze.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
@@ -4247,7 +4254,7 @@ function registerTools() {
     {
       title: "List Synced Stripo Modules",
       description:
-        "Read Stripo modules from Orbit's local library (does NOT call Stripo's API). Filter by classification (header / hero / content / footer) or free-text search. Returns lightweight per-module summaries by default; pass include_html: true to get file paths for the assembler. Each item includes slot_definitions (if the module has Smart Element variable bindings) — these are the varNames to reference in orbit_compose_stripo_email's slot_values parameter. Use this before composing an email to see what modules are available and which support per-send content variation.",
+        "Read Stripo modules from Orbit's local library (does NOT call Stripo's API). Filter by classification (header / hero / content / footer) or free-text search. Returns lightweight per-module summaries by default; pass include_html: true to get file paths for the assembler. Each item includes slot_definitions (if the module has Smart Element variable bindings) — these are the varNames to reference in orbit_compose_stripo_email's slot_values parameter. Use this before composing an email to see what modules are available and which support per-send content variation. CAUTION: the per-item `archived` flag is tag-derived and UNRELIABLE (known to report archived:false for every module even when most were stale) — to determine which modules are actually live, list with include_html:true and treat a non-null artifact_path/html_path as the live signal.",
       inputSchema: {
         classification: z
           .enum(["header", "hero", "content", "footer", "other"])
@@ -4261,7 +4268,7 @@ function registerTools() {
         include_archived: z
           .boolean()
           .optional()
-          .describe("Include modules tagged stripo_archived (default false)."),
+          .describe("Include modules tagged stripo_archived (default false). Note the tag — and the per-item `archived` flag it drives — is unreliable; use include_html:true + non-null artifact_path as the live-module signal."),
         include_html: z
           .boolean()
           .optional()
@@ -4460,6 +4467,164 @@ function registerTools() {
     },
     async () => {
       const result = await checkStripoAuth({ config: runtimeConfig });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_list_stripo_emails",
+    {
+      title: "List Stripo Emails",
+      description:
+        "List generated emails in your Stripo workspace (GET /emails) — paginated, searchable, sortable. No more driving the cabinet UI to discover email IDs. Returns total + per-item {id, name, folder_id (null = root), created/updated time, editor_url, preview_url}. " +
+        "IMPORTANT: folder_id filtering is RECURSIVE — filtering by a parent folder returns emails from ALL its subfolders too. Use orbit_list_stripo_folders to discover folder IDs. Read-only; max 100 per page (page is 0-based).",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Emails per page (default 25, max 100)."),
+        page: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("0-based page number (default 0). Combine with `total` in the response to page through."),
+        query: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe("Free-text name search (Stripo's queryStr)."),
+        folder_id: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe("Filter to a folder by numeric ID. RECURSIVE: includes emails in every subfolder under it. Get IDs from orbit_list_stripo_folders."),
+        without_folder: z
+          .boolean()
+          .optional()
+          .describe("If true, only emails at the workspace root (not filed in any folder)."),
+        sorting_column: z
+          .enum(["folderId", "createdTime", "updatedAt", "name", "userId"])
+          .optional()
+          .describe("Sort column."),
+        sorting_asc: z
+          .boolean()
+          .optional()
+          .describe("Sort ascending when true (default is Stripo's server-side ordering).")
+      }
+    },
+    async ({ limit, page, query, folder_id, without_folder, sorting_column, sorting_asc }) => {
+      const result = await listStripoEmails({
+        config: runtimeConfig,
+        limit,
+        page,
+        queryStr: query,
+        folderId: folder_id,
+        withoutFolder: without_folder,
+        sortingColumn: sorting_column,
+        sortingAsc: sorting_asc
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_list_stripo_folders",
+    {
+      title: "List Stripo Folders",
+      description:
+        "Fetch the full recursive folder tree of your Stripo workspace (GET /folders/EMAIL or /folders/TEMPLATE). Each node: {id, name, type, treeRef, children[]}. " +
+        "READ-ONLY discovery: Stripo has NO folder create/move/write API — moving an email into a folder is still a cabinet-UI operation. Use this tree to find destination folder IDs for the UI move recipe, and to feed folder_id filters into orbit_list_stripo_emails.",
+      inputSchema: {
+        type: z
+          .enum(["EMAIL", "TEMPLATE"])
+          .optional()
+          .describe("Which folder tree to fetch (default EMAIL).")
+      }
+    },
+    async ({ type }) => {
+      const result = await listStripoFolders({ config: runtimeConfig, type: type ?? "EMAIL" });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_list_stripo_templates",
+    {
+      title: "List Stripo Templates",
+      description:
+        "List templates in your Stripo workspace (GET /templates) — paginated with total. Auto-discovers the master template ID: each item carries template_id, name, title, editor_url, preview_url, plus is_configured_master marking the template Orbit is currently configured to push into. Use during setup instead of copying the ID out of the editor URL by hand. Read-only.",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Templates per page (default 25, max 100)."),
+        page: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("0-based page number (default 0)."),
+        query: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe("Free-text name search (Stripo's queryStr).")
+      }
+    },
+    async ({ limit, page, query }) => {
+      const result = await listStripoTemplates({ config: runtimeConfig, limit, page, queryStr: query });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_export_stripo_email_html",
+    {
+      title: "Export Stripo Email as Send-Ready HTML",
+      description:
+        "Export one generated email as compiled, CSS-inlined, send-ready HTML (GET /export/html/emails/<id>) — the same output as Stripo's UI export. Writes the file under Orbit's outputs dir and returns html_path + byte count (never the raw HTML — large emails blow the tool-result cap). " +
+        "⚠️ METERED: exports draw down a shared org quota (~300/period) — check orbit_get_stripo_limits first and NEVER loop this across a workspace. Emails only: template export exists upstream but strips the esd-email-gen-area marker (not round-trippable), so it is deliberately not exposed. For Braze delivery use orbit_export_stripo_email_to_braze instead (unmetered — it reads GET /emails/<id>).",
+      inputSchema: {
+        email_id: z
+          .union([z.number(), z.string()])
+          .describe("The numeric Stripo email ID to export."),
+        minimize: z
+          .boolean()
+          .optional()
+          .describe("If true, Stripo compresses/minifies the exported HTML (default false)."),
+        set_image_sizes: z
+          .boolean()
+          .optional()
+          .describe("If true, Stripo writes explicit width/height attributes on images (default false).")
+      }
+    },
+    async ({ email_id, minimize, set_image_sizes }) => {
+      const result = await exportStripoEmailHtml({
+        config: runtimeConfig,
+        emailId: email_id,
+        minimize: minimize ?? false,
+        setImageSizes: set_image_sizes ?? false
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_get_stripo_limits",
+    {
+      title: "Get Stripo Organization Limits",
+      description:
+        "Read the Stripo org's quota counters (GET /organizationLimits): email_and_template (TOTAL stored emails+templates vs the plan cap — pushes fail once it's hit; deleting superseded emails frees it), export (the metered /export/html quota), and timer. Each surfaces count / limit / remaining / renewal_time, with warnings when usage passes 85%. Check before push batches and before any HTML export. Read-only.",
+      inputSchema: {}
+    },
+    async () => {
+      const result = await getStripoLimits({ config: runtimeConfig });
       return makeJsonToolResponse(result);
     }
   );

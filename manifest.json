@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "orbit-lifecycle-system",
   "display_name": "Orbit",
-  "version": "0.27.7",
+  "version": "0.27.8",
   "icon": "icon.png",
   "description": "Lifecycle marketing, CRM, email, SMS, push, retention, deliverability, segmentation, experimentation, and martech operating system for Claude — Orbit Intelligence. Walks users through getting the right inputs, cites practitioner guides, and closes every answer with a concrete next action. Native Braze, Iterable, HubSpot, PostHog integration.",
   "long_description": "Orbit gives Claude a local lifecycle marketing operating system — Orbit Intelligence — that behaves like a senior lifecycle operator working as an extension of the user's team. It routes requests to the right Orbit protocol, walks the user through any missing data before tools fire (Guided Discovery), cites the specific practitioner guides that informed each answer as Further reading, and returns diagnoses / recommendations with the concrete next action the user needs. Exposes the full skill library as resources, bundles 80+ long-form practitioner guides on lifecycle marketing, deliverability, Braze, email craft, and experimentation as MCP resources for inline citation, loads a canonical skill manifest for routing and validation, creates and maintains a local ~/Orbit workspace automatically on first run without requiring folder setup, runs a step-by-step brand-guidelines intake before drafting brand kits with brand-profile.json plus brand-guidelines.md, runs a discovery-first workflow for journeys, programs, and campaigns so Orbit grounds the work in objectives, KPIs, audience context, connected data sources, and execution constraints before building flows, validates local setup and brand kits, imports Figma email designs and PDF references, infers reusable email components with a controlled taxonomy plus reusable props-and-slots contracts, generates component-first MJML lifecycle emails with HTML previews and QA, saves reusable templates, components, and programs into a local library, syncs Braze Content Blocks and HTML email templates via API, packages Braze-ready implementation bundles, and exports Notion-friendly documentation.",
@@ -33,7 +33,6 @@
         "ORBIT_STRIPO_REST_API_TOKEN": "${user_config.stripo_rest_api_token}",
         "ORBIT_STRIPO_WORKSPACE_ID": "${user_config.stripo_workspace_id}",
         "ORBIT_STRIPO_MASTER_TEMPLATE_ID": "${user_config.stripo_master_template_id}",
-        "ORBIT_STRIPO_DEFAULT_FOLDER_ID": "${user_config.stripo_default_folder_id}",
         "ORBIT_TELEMETRY": "${user_config.enable_telemetry}"
       }
     }
@@ -122,12 +121,6 @@
       "type": "string",
       "title": "Stripo Master Template ID",
       "description": "Numeric ID of the Stripo template Orbit uses as the skeleton when creating new emails. Find it in the URL when editing the template in Stripo: my.stripo.email/editor/v5/<projectId>/template/<thisId>. The template must contain a stripe block with the esd-email-gen-area attribute set on its td (Orbit_setup_stripo walks you through this). Required for the orbit_compose_stripo_email push step; not needed for the sync/list/document tools.",
-      "default": ""
-    },
-    "stripo_default_folder_id": {
-      "type": "string",
-      "title": "Stripo Default Folder ID",
-      "description": "Optional Stripo folder ID where Orbit-composed emails should land. Find it in your workspace's URL when viewing a folder. Defaults to the account's root folder when blank.",
       "default": ""
     },
     "enable_telemetry": {
@@ -396,7 +389,7 @@
     },
     {
       "name": "orbit_list_stripo_modules",
-      "description": "Read Stripo modules from Orbit's local library (no API call). Filter by classification or free-text search. Use this before composing an email to see what's available. Pass include_html for file paths the composer needs."
+      "description": "Read Stripo modules from Orbit's local library (no API call). Filter by classification or free-text search. Use this before composing an email to see what's available. Pass include_html for file paths the composer needs. The per-item archived flag is tag-derived and unreliable — use include_html:true + non-null artifact_path as the live-module signal."
     },
     {
       "name": "orbit_document_stripo_design_system",
@@ -513,6 +506,26 @@
     {
       "name": "orbit_check_stripo_auth",
       "description": "Live-probe Stripo credentials before relying on them. Reports whether the REST token and Plugin credentials are configured and actively validates the REST token with a read-only GET, so an expired or revoked token (the 401 that blocks pushes) is caught proactively instead of mid-push."
+    },
+    {
+      "name": "orbit_list_stripo_emails",
+      "description": "List generated emails in your Stripo workspace (GET /emails) — paginated, searchable, sortable; returns id/name/folder_id/timestamps/editor_url/preview_url per email. folder_id filtering is RECURSIVE (includes subfolders). Read-only; max 100 per page."
+    },
+    {
+      "name": "orbit_list_stripo_folders",
+      "description": "Fetch the full recursive folder tree of your Stripo workspace (GET /folders/EMAIL or TEMPLATE). Read-only discovery — Stripo has NO folder write/move API; use the IDs for email-list filters and as destinations for the cabinet-UI move recipe."
+    },
+    {
+      "name": "orbit_list_stripo_templates",
+      "description": "List templates in your Stripo workspace (GET /templates) with IDs, names, editor/preview URLs. Auto-discovers the master template ID (is_configured_master flags the one Orbit pushes into). Read-only."
+    },
+    {
+      "name": "orbit_export_stripo_email_html",
+      "description": "Export one generated Stripo email as compiled, CSS-inlined, send-ready HTML to a local file (returns path + byte count, never raw HTML). METERED against the org's export quota (~300/period) — check orbit_get_stripo_limits first and never loop it. Emails only (template export strips the gen-area marker)."
+    },
+    {
+      "name": "orbit_get_stripo_limits",
+      "description": "Read Stripo org quota counters: email_and_template (stored emails+templates vs plan cap — pushes fail at the cap), export (metered HTML-export quota), timer. Surfaces count/limit/remaining + warnings at 85% pressure. Check before push batches or exports."
     }
   ],
   "keywords": [
