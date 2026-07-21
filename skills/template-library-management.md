@@ -4,7 +4,8 @@ description: >
   Use this skill whenever Orbit is asked to save, version, tag, favourite, deprecate, or reuse
   lifecycle email templates, modules, or program artifacts. Trigger on "save this template",
   "add to the library", "version this module", "favourite this asset", "what can we reuse?", or
-  any request to turn outputs into a reusable production library.
+  any request to turn outputs into a reusable production library. The library is ESP-neutral —
+  assets it holds can be published to any supported ESP via the generic tools (see Other ESPs).
 ---
 
 # Template Library Management
@@ -47,3 +48,15 @@ Default response shape for this skill:
 - Version intentionally; do not overwrite approved assets casually.
 - Mark favourites and deprecated assets clearly.
 
+---
+
+## Other ESPs
+
+The library itself is **ESP-neutral** — it stores templates, modules, and program artifacts as local source of truth regardless of where they eventually ship. Tag assets by their target `platform` so the library stays navigable across a multi-ESP estate.
+
+When it is time to publish a library asset **to** an ESP:
+
+- **Braze** — reusable components publish as Content Blocks + a final template via `orbit_sync_to_braze` (see `braze-template-sync`).
+- **Other supported ESPs** — publish the compiled template via `orbit_esp_push_template` with the target `platform` (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io unsupported** — no public template CRUD, author in-app).
+
+Call `orbit_esp_capabilities` before a cross-ESP publish for the honest what-works-where matrix. Because each ESP uses a different templating dialect (Liquid / Handlebars / Django / merge tags / AMPscript), tag the library asset with the dialect it was authored in, and validate against the target ESP's dialect on publish — consult the matching `*-documentation-expert` skill.

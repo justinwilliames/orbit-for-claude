@@ -14,12 +14,39 @@
 
 const DEFAULT_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 300;
+const MAX_RETRY_AFTER_DELAY_MS = 30_000;
 const TRANSIENT_STATUSES = new Set([500, 502, 503, 504, 522, 524]);
 const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 405, 409, 410, 422]);
 
 /** Small async helper — promise-based sleep. */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Parse Retry-After as delta-seconds or an HTTP-date, returning seconds. */
+function parseRetryAfter(value, nowMs = Date.now()) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) {
+    const seconds = Number(raw);
+    return Number.isFinite(seconds) ? seconds : null;
+  }
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at)) return null;
+  return Math.max(0, Math.ceil((at - nowMs) / 1_000));
+}
+
+function attachRetryAfter(response, retryAfter) {
+  if (retryAfter == null) return;
+  try {
+    Object.defineProperty(response, "retryAfter", {
+      value: retryAfter,
+      configurable: true,
+      enumerable: false,
+    });
+  } catch {
+    // A frozen Response is unusual; the header remains available to callers.
+  }
 }
 
 /**
@@ -58,6 +85,33 @@ export async function fetchWithRetry(
       clearTimeout(timer);
 
       if (res.ok) {
+        if (breaker) breaker.recordSuccess();
+        return res;
+      }
+
+      if (res.status === 429) {
+        const retryAfter = parseRetryAfter(res.headers?.get?.("retry-after"));
+        attachRetryAfter(res, retryAfter);
+        lastError = new Error(`Upstream 429 on attempt ${attempt + 1}`);
+        lastError.status = 429;
+        lastError.retryAfter = retryAfter;
+
+        const waitMs = retryAfter == null ? null : retryAfter * 1_000;
+        if (
+          attempt < retries &&
+          waitMs != null &&
+          waitMs <= MAX_RETRY_AFTER_DELAY_MS
+        ) {
+          if (onRetry) {
+            try { onRetry({ attempt, status: 429, url, retryAfter }); } catch { /* ignore */ }
+          }
+          await sleep(waitMs);
+          continue;
+        }
+
+        // No usable Retry-After, retries exhausted, or the requested wait is
+        // beyond our cap: surface the 429 with parsed metadata instead of
+        // sleeping an unbounded time or retrying earlier than requested.
         if (breaker) breaker.recordSuccess();
         return res;
       }

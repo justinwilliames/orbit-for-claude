@@ -33,6 +33,17 @@
         "ORBIT_STRIPO_REST_API_TOKEN": "${user_config.stripo_rest_api_token}",
         "ORBIT_STRIPO_WORKSPACE_ID": "${user_config.stripo_workspace_id}",
         "ORBIT_STRIPO_MASTER_TEMPLATE_ID": "${user_config.stripo_master_template_id}",
+        "ORBIT_ITERABLE_API_KEY": "${user_config.iterable_api_key}",
+        "ORBIT_ITERABLE_ENDPOINT": "${user_config.iterable_endpoint}",
+        "ORBIT_CUSTOMERIO_APP_API_KEY": "${user_config.customerio_app_api_key}",
+        "ORBIT_CUSTOMERIO_REGION": "${user_config.customerio_region}",
+        "ORBIT_KLAVIYO_API_KEY": "${user_config.klaviyo_api_key}",
+        "ORBIT_MAILCHIMP_API_KEY": "${user_config.mailchimp_api_key}",
+        "ORBIT_MAILCHIMP_SERVER_PREFIX": "${user_config.mailchimp_server_prefix}",
+        "ORBIT_SFMC_CLIENT_ID": "${user_config.sfmc_client_id}",
+        "ORBIT_SFMC_CLIENT_SECRET": "${user_config.sfmc_client_secret}",
+        "ORBIT_SFMC_SUBDOMAIN": "${user_config.sfmc_subdomain}",
+        "ORBIT_SFMC_ACCOUNT_ID": "${user_config.sfmc_account_id}",
         "ORBIT_TELEMETRY": "${user_config.enable_telemetry}"
       }
     }
@@ -54,7 +65,7 @@
     "default_platform": {
       "type": "string",
       "title": "Default Platform",
-      "description": "Optional default lifecycle platform, such as braze, iterable, or hubspot.",
+      "description": "Optional default ESP for the generic orbit_esp_* tools when no platform is passed. One of: braze, iterable, customerio, klaviyo, mailchimp, sfmc. Defaults to braze.",
       "default": ""
     },
     "default_geography": {
@@ -88,6 +99,78 @@
       "type": "string",
       "title": "Braze REST Endpoint",
       "description": "Optional Braze REST API endpoint, for example https://rest.iad-01.braze.com.",
+      "default": ""
+    },
+    "iterable_api_key": {
+      "type": "string",
+      "title": "Iterable API Key",
+      "description": "Iterable server-side API key used to read and push templates, campaigns, and metrics. Create it in Iterable under Integrations → API Keys.",
+      "sensitive": true,
+      "default": ""
+    },
+    "iterable_endpoint": {
+      "type": "string",
+      "title": "Iterable API Endpoint",
+      "description": "Optional Iterable API base URL. Defaults to https://api.iterable.com; EU projects use https://api.eu.iterable.com. Find your data centre in Iterable under Settings → Project.",
+      "default": ""
+    },
+    "customerio_app_api_key": {
+      "type": "string",
+      "title": "Customer.io App API Key",
+      "description": "Customer.io App API Bearer key used to read campaigns, newsletters, segments, and metrics and to send transactional proofs. Create it in Customer.io under Account Settings → API Credentials → App API Keys.",
+      "sensitive": true,
+      "default": ""
+    },
+    "customerio_region": {
+      "type": "string",
+      "title": "Customer.io Region",
+      "description": "Optional Customer.io data centre: us (api.customer.io) or eu (api-eu.customer.io). Defaults to us. Find your region in Customer.io under Account Settings → Workspaces.",
+      "default": ""
+    },
+    "klaviyo_api_key": {
+      "type": "string",
+      "title": "Klaviyo API Key",
+      "description": "Klaviyo private API key (pk_…) used to read and push templates, campaigns, flows, segments, and reports. Create it in Klaviyo under Settings → API Keys.",
+      "sensitive": true,
+      "default": ""
+    },
+    "mailchimp_api_key": {
+      "type": "string",
+      "title": "Mailchimp API Key",
+      "description": "Mailchimp API key used to read and push templates, campaigns, audiences, and reports. The datacenter is parsed from the key's -usX suffix. Create it in Mailchimp under Account → Extras → API keys.",
+      "sensitive": true,
+      "default": ""
+    },
+    "mailchimp_server_prefix": {
+      "type": "string",
+      "title": "Mailchimp Server Prefix",
+      "description": "Optional Mailchimp datacenter prefix (for example us14). Only set this if your API key has no -usX suffix. Find it in the browser address bar after logging in to Mailchimp (…admin.mailchimp.com → the usX subdomain).",
+      "default": ""
+    },
+    "sfmc_client_id": {
+      "type": "string",
+      "title": "SFMC Client ID",
+      "description": "Salesforce Marketing Cloud OAuth2 Client Id from a server-to-server Installed Package. Find it in SFMC under Setup → Apps → Installed Packages → your package → API Integration.",
+      "sensitive": true,
+      "default": ""
+    },
+    "sfmc_client_secret": {
+      "type": "string",
+      "title": "SFMC Client Secret",
+      "description": "Salesforce Marketing Cloud OAuth2 Client Secret paired with the Client Id. Find it in SFMC under Setup → Apps → Installed Packages → your package → API Integration.",
+      "sensitive": true,
+      "default": ""
+    },
+    "sfmc_subdomain": {
+      "type": "string",
+      "title": "SFMC Subdomain",
+      "description": "Salesforce Marketing Cloud tenant subdomain used to build the auth and REST base URLs. Take it from the Authentication Base URI of your Installed Package (the host segment before .auth.marketingcloudapis.com).",
+      "default": ""
+    },
+    "sfmc_account_id": {
+      "type": "string",
+      "title": "SFMC Account ID (MID)",
+      "description": "Optional Salesforce Marketing Cloud business-unit MID to scope API calls. Find it in SFMC under Setup → Account Settings, or in the account switcher. Leave blank to use the package's default business unit.",
       "default": ""
     },
     "stripo_plugin_id": {
@@ -520,12 +603,56 @@
       "description": "List templates in your Stripo workspace (GET /templates) with IDs, names, editor/preview URLs. Auto-discovers the master template ID (is_configured_master flags the one Orbit pushes into). Read-only."
     },
     {
+      "name": "orbit_import_stripo_template",
+      "description": "Create a NEW Stripo template from an MJML document (POST /templates/import/mjml — Stripo's only API door into template creation). Reads the template back after import and checks the esd-email-gen-area marker + zero-padding rule; returns template_id, editor_url, preview_url + verification report (never compiled HTML). NOTE: mj-raw content is DROPPED by Stripo's compiler, so the gen-area marker always needs one manual editor step (the response's next_step explains it). Existing templates stay API-read-only. Counts 1 against the email_and_template quota."
+    },
+    {
       "name": "orbit_export_stripo_email_html",
       "description": "Export one generated Stripo email as compiled, CSS-inlined, send-ready HTML to a local file (returns path + byte count, never raw HTML). METERED against the org's export quota (~300/period) — check orbit_get_stripo_limits first and never loop it. Emails only (template export strips the gen-area marker)."
     },
     {
       "name": "orbit_get_stripo_limits",
       "description": "Read Stripo org quota counters: email_and_template (stored emails+templates vs plan cap — pushes fail at the cap), export (metered HTML-export quota), timer. Surfaces count/limit/remaining + warnings at 85% pressure. Check before push batches or exports."
+    },
+    {
+      "name": "orbit_esp_capabilities",
+      "description": "Return the honest capability matrix for one ESP or all of them — what each platform supports natively, what is partial (with the named constraint), and what its public API cannot do. Includes the reason and nearest alternative for every unsupported operation."
+    },
+    {
+      "name": "orbit_check_esp_auth",
+      "description": "Probe the configured credentials for an ESP (defaults to your ORBIT_DEFAULT_PLATFORM, or braze) and report ok, auth_failed, or needs_setup. Returns the exact setup message naming which fields are missing and where to find them."
+    },
+    {
+      "name": "orbit_esp_templates",
+      "description": "Read email templates from any supported ESP in a normalized shape (list or get a single template with HTML). Pass platform to target a specific ESP, or rely on the default-platform fallback."
+    },
+    {
+      "name": "orbit_esp_push_template",
+      "description": "Create or update an email template on a supported ESP (write path, kept separate from reads so approving a read never silently approves a write). Returns whether the template was created or updated, its id, and a link; returns an unsupported response where the ESP has no template CRUD (Customer.io)."
+    },
+    {
+      "name": "orbit_esp_read",
+      "description": "Read campaigns and flows, segments and lists, or performance metrics from any supported ESP, normalized with the untranslated payload attached. Stats an ESP cannot provide are left null and listed as unavailable, never zero-filled."
+    },
+    {
+      "name": "orbit_esp_send_test",
+      "description": "Send a proof email through an ESP that supports test sends, to a named recipient. Returns an unsupported response with the nearest alternative where the ESP has no test-send endpoint (Klaviyo — use render plus Orbit's local QA gate)."
+    },
+    {
+      "name": "orbit_bootstrap_brain",
+      "description": "Scaffold a ready template-brain repo at a given path — README with the four operating rules, CONVENTIONS, stage program folders, knowledge stubs, and a graphify-out gitignore — worded for the user's named company and ESP. Refuses to overwrite a non-empty directory."
+    },
+    {
+      "name": "orbit_scaffold_brain_program",
+      "description": "Create one program folder under a stage with a fully-framed prd.md stub (status backlog, human_approved false so AI drafts never build unreviewed) plus pre-cross-linked copy, email-build, and technical spec siblings. The stub is what makes the program exist to any agent reading the brain."
+    },
+    {
+      "name": "orbit_init_verified_claims",
+      "description": "Generate a verified-claims file with the staleness rule, the receipt table (claim, raw value, safe rounded-down display, source query, date read), and the hard gate that any figure in a proof module must trace to a receipt. Also writes a check-claims script that fails a build on figures absent from the claims file."
+    },
+    {
+      "name": "orbit_generate_brain_gate",
+      "description": "Generate a build gate script parameterised to the user's limits and templating branches — compile, resolve every branch off one variable map, byte-based clip check, mobile overflow, orphan and CTA-parity checks, axe-core, and master-module drift. States its honest scope: a layout and structure gate only; render and inbox truth stay with Orbit's render gate."
     }
   ],
   "keywords": [

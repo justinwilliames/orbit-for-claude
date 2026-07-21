@@ -8,7 +8,8 @@ description: >
   "change the CTA text", "swap the hero image", or any request that implies long-term reuse
   of a specific master template's modular structure. Orbit persists the learned template in
   its library and preserves Stripo's es-* / esd-* markup so assembled HTML remains
-  editable when pasted back into Stripo.
+  editable when pasted back into Stripo. Learning and assembly are ESP-neutral; the learned
+  HTML can be published to any supported ESP via `orbit_esp_push_template` (see Other ESPs).
 ---
 
 # Email Template Learning
@@ -134,3 +135,16 @@ and which were skipped (and why).
   source or update the library item directly.
 - **Does not NLP-parse briefs.** Tool 2's `brief` parameter is context only. For
   precise content control, compose instructions for Tool 3.
+
+---
+
+## Other ESPs
+
+Learning, module classification, brand-token extraction, and assembly are all **ESP-neutral** — they operate on the HTML itself, not on any ESP's API. A template learned from a Stripo export (or any HTML) can therefore be composed once and published to whichever ESP the brand sends from.
+
+To publish learned/assembled HTML to a non-Braze ESP, pass the output to `orbit_esp_push_template` with the target `platform` (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io unsupported** — no public template CRUD). Honest caveats:
+
+- **Stripo round-trip stays Braze-flavoured.** The Stripo export path today lands via the Braze bridge; the `es-*`/`esd-*` preservation guarantees editability when pasted back into Stripo, but the direct "export to ESP" convenience is Braze-only. For other ESPs, take the assembled HTML and push it with `orbit_esp_push_template`.
+- **Personalisation dialect is not translated.** Learned templates preserve their original merge syntax verbatim. If the source used Braze Liquid and the target is Iterable (Handlebars), Klaviyo (Django), Mailchimp (merge tags), or SFMC (AMPscript), the personalisation tokens must be re-authored for the target dialect — this skill does not convert them. Consult the matching `*-documentation-expert` skill.
+
+Call `orbit_esp_capabilities` before any cross-ESP publish for the what-works-where matrix.

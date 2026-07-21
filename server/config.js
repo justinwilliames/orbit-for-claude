@@ -4,7 +4,14 @@ import path from "node:path";
 import { resolveHomeWorkspacePaths } from "./home-workspace.js";
 import { resolveSafe } from "./path-safety.js";
 
-const DEFAULT_PLATFORM_OPTIONS = ["braze", "iterable", "hubspot"];
+const DEFAULT_PLATFORM_OPTIONS = [
+  "braze",
+  "iterable",
+  "customerio",
+  "klaviyo",
+  "mailchimp",
+  "sfmc"
+];
 
 export function loadRuntimeConfig(rootDir) {
   const explicitBrandKitDir = resolveOptionalPath(process.env.ORBIT_BRAND_KIT_DIR);
@@ -50,6 +57,24 @@ export function loadRuntimeConfig(rootDir) {
       cleanString(process.env.ORBIT_STRIPO_PLUGIN_AUTH_URL) ?? "https://plugins.stripo.email/api/v1/auth",
     stripoRestBaseUrl:
       cleanString(process.env.ORBIT_STRIPO_REST_BASE_URL) ?? "https://my.stripo.email/emailgeneration/v1",
+    // Iterable — single Api-Key header; EU projects override the endpoint.
+    iterableApiKey: cleanString(process.env.ORBIT_ITERABLE_API_KEY),
+    iterableEndpoint:
+      cleanString(process.env.ORBIT_ITERABLE_ENDPOINT) ?? "https://api.iterable.com",
+    // Customer.io — App API Bearer key; region switches the base host (us | eu).
+    customerioAppApiKey: cleanString(process.env.ORBIT_CUSTOMERIO_APP_API_KEY),
+    customerioRegion:
+      (cleanString(process.env.ORBIT_CUSTOMERIO_REGION)?.toLowerCase() === "eu" ? "eu" : "us"),
+    // Klaviyo — private API key (pk_…); revision header is pinned in klaviyo-api.js.
+    klaviyoApiKey: cleanString(process.env.ORBIT_KLAVIYO_API_KEY),
+    // Mailchimp — Basic-auth key; datacenter parsed from the -usX suffix (override optional).
+    mailchimpApiKey: cleanString(process.env.ORBIT_MAILCHIMP_API_KEY),
+    mailchimpServerPrefix: cleanString(process.env.ORBIT_MAILCHIMP_SERVER_PREFIX),
+    // SFMC — OAuth2 client-credentials; subdomain builds the auth/base URLs, MID optional.
+    sfmcClientId: cleanString(process.env.ORBIT_SFMC_CLIENT_ID),
+    sfmcClientSecret: cleanString(process.env.ORBIT_SFMC_CLIENT_SECRET),
+    sfmcSubdomain: cleanString(process.env.ORBIT_SFMC_SUBDOMAIN),
+    sfmcAccountId: cleanString(process.env.ORBIT_SFMC_ACCOUNT_ID),
     brandProfile,
     brandProfileError,
     homeWorkspace,

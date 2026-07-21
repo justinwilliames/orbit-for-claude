@@ -33,6 +33,27 @@ import {
   checkpointInfo,
   classifyMissingCheckpoint,
 } from "./continuation.js";
+import {
+  ESP_TOOL_DEFINITIONS,
+  setEspRuntimeConfig,
+  espSetupSummary,
+  checkTemplateCollisionForPlatform,
+} from "./esp/tools.js";
+import { BRAIN_TOOL_DEFINITIONS } from "./brain/index.js";
+import { REGISTERED_PLATFORMS } from "./esp/registry.js";
+
+/**
+ * Shared optional `platform` argument for the multi-ESP-aware tools. Omit to
+ * fall through the default chain (ORBIT_DEFAULT_PLATFORM, then Braze), which
+ * preserves each tool's original single-platform behaviour byte-for-byte.
+ */
+const espPlatformArg = z
+  .enum(REGISTERED_PLATFORMS)
+  .optional()
+  .describe(
+    "ESP to target. Omit to use the default platform (Braze). One of: " +
+      `${REGISTERED_PLATFORMS.join(", ")}.`
+  );
 
 /**
  * Handler registry — every tool registered via registerToolSafe is
@@ -126,6 +147,7 @@ import {
   getStripoLimits
 } from "./stripo-workspace.js";
 import { exportStripoEmailsToBraze } from "./stripo-export-braze.js";
+import { importStripoTemplateFromMjml } from "./stripo-import.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
 import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
@@ -1287,6 +1309,12 @@ function setupInterceptIfNeeded() {
 }
 
 function registerTools() {
+  // Wire the ESP tool family to live runtime config BEFORE any ESP/BRAIN tool
+  // can be invoked (Ruling 4a): every network handler reads config through this
+  // provider and errors loudly if it is missing. The getter form keeps handlers
+  // reading the live config, never a snapshot captured before bootstrap.
+  setEspRuntimeConfig(() => runtimeConfig);
+
   registerToolSafe(
     "orbit_list_skills",
     {
@@ -1463,11 +1491,16 @@ function registerTools() {
           )
           .max(MAX_SHORT_ARRAY)
           .optional(),
-        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional()
+        brand_kit_dir: z.string().max(MAX_PATH_STRING).optional(),
+        platform: espPlatformArg
       }
     },
-    async ({ requested_features: requestedFeatures, brand_kit_dir: brandKitDir }) => {
+    async ({ requested_features: requestedFeatures, brand_kit_dir: brandKitDir, platform }) => {
       ensureBootstrappedOnFirstRun();
+      if (platform) {
+        const espResult = await espSetupSummary({ config: runtimeConfig, platform });
+        return makeJsonToolResponse(espResult);
+      }
       const result = checkSetup({
         config: runtimeConfig,
         rootDir: ROOT_DIR,
@@ -3499,11 +3532,16 @@ function registerTools() {
         "Check whether an email template with a given name already exists in Braze before creating. " +
         "Returns the existing template details if a collision is found.",
       inputSchema: {
-        template_name: z.string().min(1).describe("Template name to check for collisions")
+        template_name: z.string().min(1).describe("Template name to check for collisions"),
+        platform: espPlatformArg
       }
     },
-    async ({ template_name: templateName }) => {
-      const result = await checkTemplateCollision({ config: runtimeConfig, templateName });
+    async ({ template_name: templateName, platform }) => {
+      // Omit platform => the original Braze-only path, byte-identical. Pass a
+      // platform => the registry-routed helper covering every supported ESP.
+      const result = platform
+        ? await checkTemplateCollisionForPlatform({ config: runtimeConfig, platform, templateName })
+        : await checkTemplateCollision({ config: runtimeConfig, templateName });
       return makeJsonToolResponse(result);
     }
   );
@@ -4584,6 +4622,49 @@ function registerTools() {
   );
 
   registerToolSafe(
+    "orbit_import_stripo_template",
+    {
+      title: "Import MJML as a New Stripo Template",
+      description:
+        "CREATE a brand-new Stripo template from an MJML document (POST /templates/import/mjml — Stripo compiles the MJML to editor-compatible HTML server-side). This is Stripo's ONLY API door into template creation; there is no raw-HTML creation endpoint, and existing templates stay API-read-only. " +
+        "By default (verify:true) the template is READ BACK after import and its HTML is checked for the esd-email-gen-area marker + the zero-padding rule — a template without the marker cannot receive composed emails, and the response's next_step carries the one manual editor instruction to add it. " +
+        "Returns template_id + editor_url + preview_url + the verification report; never the compiled HTML. Counts 1 against the plan's email_and_template quota (orbit_get_stripo_limits). " +
+        "Probe-confirmed 2026-07-16: Stripo's compiler emits the full esd- parse skeleton (drag-and-drop editable) and passes css-class through, but DROPS mj-raw content entirely — the gen-area marker can NOT be smuggled via mj-raw and always needs the one manual editor step. Square brackets in template_name are accepted by Stripo (unlike emailName) but stripped anyway for naming-convention consistency.",
+      inputSchema: {
+        mjml: z
+          .string()
+          .min(1)
+          .max(MAX_LONG_STRING)
+          .describe("The full MJML document (must contain an <mjml> root). Compiled server-side by Stripo."),
+        template_name: z
+          .string()
+          .min(1)
+          .max(MAX_SHORT_STRING)
+          .describe("Name for the new template. Square brackets are stripped for naming-convention consistency (middot-separated, e.g. 'Orbit · Master v2 · 2026-07-16')."),
+        folder_id: z
+          .number()
+          .int()
+          .optional()
+          .describe("Optional numeric TEMPLATE folder ID to file the template into (orbit_list_stripo_folders type=TEMPLATE)."),
+        verify: z
+          .boolean()
+          .optional()
+          .describe("Read the template back and run the gen-area + padding checks after import (default true). Stripo has silent-2xx heritage — leave this on unless you have a reason not to.")
+      }
+    },
+    async ({ mjml, template_name, folder_id, verify }) => {
+      const result = await importStripoTemplateFromMjml({
+        config: runtimeConfig,
+        mjml,
+        templateName: template_name,
+        folderId: folder_id,
+        verify: verify ?? true
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
     "orbit_export_stripo_email_html",
     {
       title: "Export Stripo Email as Send-Ready HTML",
@@ -5474,6 +5555,13 @@ function registerTools() {
       return makeJsonToolResponse(result);
     }
   );
+
+  // Multi-ESP + template-brain tools. Each definition is
+  // `{ name, inputSchema, handler }`, so registration is a uniform loop over
+  // registerToolSafe — additive, no per-tool wiring in the monolith.
+  for (const def of [...ESP_TOOL_DEFINITIONS, ...BRAIN_TOOL_DEFINITIONS]) {
+    registerToolSafe(def.name, def.inputSchema, def.handler);
+  }
 }
 
 function requireSkill(name) {

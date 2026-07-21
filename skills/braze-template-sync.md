@@ -4,6 +4,8 @@ description: >
   Use this skill whenever Orbit is asked to publish reusable email components or final HTML email
   templates into Braze. Trigger on "push this to Braze", "publish content blocks", "sync template
   to Braze", "create the Braze template", or any request to move Orbit assets into Braze via API.
+  This skill's protocol is Braze-specific — Content Blocks are a Braze concept. Publishing a plain
+  HTML template to another ESP is portable and handled by `orbit_esp_push_template` (see Other ESPs).
 ---
 
 # Braze Template Sync
@@ -57,3 +59,16 @@ When producing a publish-ready answer, include:
 - Braze sync results
 - Any failures or warnings
 - Next operational step
+
+---
+
+## Other ESPs
+
+This skill's protocol is Braze-specific because **Content Blocks are a Braze concept** — there is no cross-ESP equivalent, so component-level reuse via Content Blocks stays behind the Braze-named tools (`orbit_sync_to_braze`).
+
+**Publishing a final HTML template, however, is a portable operation.** To push a compiled template to another supported ESP, use the generic tool `orbit_esp_push_template` with the target `platform` (`iterable`, `klaviyo`, `mailchimp`, `sfmc`). Honest constraints per platform:
+
+- **Iterable / Klaviyo / Mailchimp / SFMC** — native template create/update (upsert on Iterable; `htmlemail` Content Builder asset on SFMC).
+- **Customer.io** — **no template push**. Customer.io exposes no public template CRUD; `orbit_esp_push_template` returns `{unsupported}`. Author content in-app and verify with a transactional proof send. See `customerio-documentation-expert`.
+
+Before pushing to any non-Braze ESP, call `orbit_esp_capabilities` for the exact what-works-where matrix. The per-platform templating dialect differs (Braze Liquid vs Iterable Handlebars vs Klaviyo Django vs Mailchimp merge tags vs SFMC AMPscript) — validate the template against the target ESP's dialect, not Braze Liquid. See the matching `*-documentation-expert` skill.

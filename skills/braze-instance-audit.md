@@ -5,7 +5,10 @@ description: >
   workspace. Trigger on "what's in my Braze instance?", "audit our Braze setup", "how
   many Canvases do we have?", "find unused content blocks", "check our Braze naming
   conventions", or any request to understand the current state of a Braze workspace
-  before building new programs. This skill reads everything, writes nothing.
+  before building new programs. This skill reads everything, writes nothing. The full
+  audit (Canvases, Content Blocks, custom attributes) is Braze-specific; a portable
+  cross-ESP inventory of templates/campaigns/segments is available via the generic ESP
+  read tools (see Other ESPs).
 ---
 
 # Braze Instance Audit
@@ -52,3 +55,16 @@ Returns a structured audit with:
 | Validate data model | `orbit_validate_braze_data` |
 | Check deliverability | `orbit_check_deliverability` |
 | Read a specific Canvas | `orbit_read_braze_canvas` |
+
+---
+
+## Other ESPs
+
+The full-fidelity audit above is **Braze-specific** — Canvases, Content Blocks, custom events, and custom attributes have no clean cross-ESP equivalent, so the deep inventory stays behind `orbit_audit_braze_instance`.
+
+For the **portable slice of an inventory** — templates, campaigns/flows, and segments/lists — the generic ESP tools give a comparable read against any supported platform:
+
+- `orbit_esp_templates` (`action: "list"`) — template inventory (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io unsupported** — no public template listing).
+- `orbit_esp_read` (`resource: "campaigns"` / `"segments"`) — programs and audiences, normalized across ESPs (SFMC segments are SOAP-first → `{unsupported}` in v1).
+
+Call `orbit_esp_capabilities` first for the honest per-ESP matrix — it distinguishes "the ESP's API doesn't offer this" from "not built yet". Each ESP's object model differs; consult the matching `*-documentation-expert` skill (`iterable-`, `klaviyo-`, `mailchimp-`, `customerio-`, `sfmc-`) before interpreting the inventory.
