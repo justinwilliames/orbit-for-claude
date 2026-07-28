@@ -106,7 +106,12 @@ Far faster than scrolling blind through a 40-step canvas.
    grid runs past the viewport edge). JS-read `[class*="db-grid-placeholder"]` for exact viewport-px
    centres instead of eyeballing the purple cells.
 3. **Click the placeholder where the step belongs** — the main path is the centre column; the first
-   step of an empty variant is the top-centre cell. Braze wires the new node to the preceding one.
+   step of an empty variant is the top-centre cell.
+   **CORRECTION (28 Jul 2026, 5-delay build): placing a step does NOT auto-wire it.** This line
+   previously claimed "Braze wires the new node to the preceding one" — it does not. Every step
+   placed on the grid lands with a **DISCONNECTED** badge and needs an explicit connection-mode
+   wire from its intended parent. Budget **two** connections per new step (one inbound, one
+   outbound), not zero. Verify with a REST readback, not the canvas picture.
 4. A side panel then opens to configure it (Message → channel Email → "Use existing template" → pick
    by name; Delay → duration). **Screenshot between every click** — the grid/panel reflows the layout
    and coordinates drift.
@@ -202,6 +207,50 @@ picks it up) → editor **Done** → panel **Done** → canvas **Save**. The ste
 upstream Braze template separately (it does not inherit). Verify via `get_canvas_details` (grep the
 message `body` for the edit). Screenshots usually DON'T wedge in this in-canvas HTML editor, but JS is
 the reliable driver regardless.
+
+### Ramped-wave build — hard-won specifics (28 Jul 2026, 6-branch announcement canvas)
+
+From building a ramped one-time send: one Audience Paths step of five dated wave groups plus an
+"Everyone Else" catch-all, each routed through its own calendar delay into ONE shared decision split
+and ONE shared pair of emails (the §3 re-convergence pattern, at scale).
+
+- **Two sibling Audience Paths groups CANNOT converge on the same node.** Wiring group A and group B
+  of the SAME Audience Paths step into one shared target fails. Confirmed over four attempts,
+  including a click at the DOM-exact `.db-connectable` centre. **The failure is completely silent** —
+  connection mode simply stays active, no error, and the edge can even *look* drawn until a Save +
+  REST readback shows it absent. Workaround: give the second group its own duplicate intermediate
+  step (e.g. a second identical delay) and converge from there. Name it so the reason is obvious.
+  Corollary: **never confirm a wire from the canvas picture — only from `/canvas/details`.**
+- **Never press Esc after a connection click.** It reverts an edge that appeared drawn. Confirm the
+  bottom bar has returned to Save instead of "Cancel Connection".
+- **Calendar-date delays have NO "At a specific time" checkbox.** That toggle belongs to the Duration
+  delay type. Calendar date exposes date + time + timezone fields directly. Set the timezone
+  deliberately — "Company time" renders on the card as e.g. "company time (AEST)".
+- **Every Save resets canvas zoom to 100% and scrolls to the top.** Re-set your zoom before the next
+  coordinate-based click or every coordinate you calculated is wrong.
+- **`/canvas/details` reports audience-path `next_paths` COMPLETELY once branches are wired** — it
+  omits only *unwired* branches. That makes it a reliable wiring check and a genuinely useful
+  "what's still disconnected" detector. (Do not assume it returns only the first path; that is true
+  only while the rest are unwired, which is exactly when it looks like an API limitation.)
+- **`variant_percentage` still returns `null`** even on a fully-wired canvas — variant splits remain
+  dashboard-only reads. Unchanged, and worth re-stating because it looks like missing data.
+
+### When screenshots die but the tab is alive (28 Jul 2026)
+
+- **CDP screenshot capture fails whenever the Braze tab is not the ACTIVE tab of a frontmost window.**
+  The tell: `document.visibilityState === "hidden"` while `document.hasFocus() === true`. Foregrounding
+  the browser app does NOT fix it if the *active tab* is some other site. Fix: make the Braze tab the
+  active tab (a fresh tab navigated to the canvas is the reliable route).
+- **`read_page` and `find` keep working when screenshots are dead**, and `computer` can click a `ref`
+  instead of a coordinate — which sidesteps the CSS-px-vs-screenshot-px trap entirely. Prefer refs for
+  dialogs, form fields and buttons.
+- **BUT the flow-canvas connectors and drop-zones are NOT in the accessibility tree** — they are
+  graphics. Branch wiring and step placement are irreducibly coordinate-based; only the panels are
+  ref-driveable. Plan for screenshots on the graph, refs everywhere else.
+- **Coordinate scale must be measured per session, not assumed.** Observed on one machine in a single
+  evening: 2122 CSS px → 1316 px screenshots (×0.620) and 2122 → 1530 (×0.721) after a window change.
+  `getBoundingClientRect()` returns CSS px; the click tool expects SCREENSHOT px. Re-measure after any
+  window resize, and prefer reading coordinates straight off the returned image.
 
 ## 4. What the API can/can't do (route accordingly)
 
