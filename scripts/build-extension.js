@@ -134,6 +134,16 @@ for (const pkg of EXTERNAL_PACKAGES) {
     extPkgJson.dependencies[pkg] = srcPkg.dependencies[pkg];
   }
 }
+// Carry the root `overrides` through to the bundle's package.json. The root
+// lockfile below is RESOLVED WITH those overrides, and `npm ci` refuses to run
+// when package.json and the lockfile disagree — without this it fails with
+// "Missing: brace-expansion@2.1.2 from lock file", because the override pins a
+// different version than the un-overridden tree would resolve. Overrides live in
+// package.json, not the lockfile, so a minimal generated package.json silently
+// drops them and desyncs the pair.
+if (srcPkg.overrides) {
+  extPkgJson.overrides = srcPkg.overrides;
+}
 fs.writeFileSync(
   path.join(BUILD_DIR, "package.json"),
   JSON.stringify(extPkgJson, null, 2)
