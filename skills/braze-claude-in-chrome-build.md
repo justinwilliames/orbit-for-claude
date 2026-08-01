@@ -10,6 +10,96 @@ config** and **cannot read** audience-path filters, segments, delay durations, c
 quiet hours — the dashboard browser session is the only read/write path for those. This skill is how
 to drive it without wedging anything.
 
+> ## ⛔ READ FIRST — the silent killer: `comparison_key`
+>
+> **Never guess, infer, or extrapolate a filter `comparison_key`. Read it off the live control.**
+>
+> Comparison codes are a **sparse global enum** (`1` equals, `2` does not equal, `10` matches regex,
+> `11` is not blank, `12` is blank, `17` does not match regex, …) **shared across filter types, with
+> each type exposing only a subset.** Knowing three of them tells you nothing about a fourth.
+>
+> The specific trap: **`comparison_key:"1"` with `value:false` is NOT Braze's `false or not set`.**
+> Equals-false **excludes every user who never had the attribute set** — and on a capability gate
+> those are precisely the users who should receive the message. Get this wrong and the canvas
+> builds clean, saves clean, passes every structural check, and quietly never emails most of its
+> audience. Nothing fails; the send just doesn't happen.
+>
+> §8b has the safe way to obtain any code: harvest a saved filter from a **segment**, or mount a
+> filter row in `renderMode:"edit"` and read the React-Select's `options` prop. Do that on a
+> throwaway surface — never on a live filter, and never on a test-guard row holding a canvas's
+> population at 0.
+
+## 0. THE MANUAL FALLBACK LAW — read before you inject a single line of JS
+
+**Justin's standing instruction, 01 Aug 2026: "ALWAYS fall back to fully manual clicking when other
+methods are not working. JS handlers can only go so far."**
+
+The dashboard is built for humans. **The human path is the reliable path.** Everything below in this
+skill — the fiber action API (§8b), the `javascript_tool` drivers (§8), the REST reads (§4) — is an
+**optimisation for speed**, not the primary route. When an optimisation stops working, you do not
+escalate cleverness. You drop to the slow path and finish the job.
+
+**The rule of two.** When a JS / fiber / handler approach fails **twice** on the same objective,
+STOP injecting and switch to fully manual clicking:
+
+```
+computer{action:"screenshot"} → LOOK at it → computer{action:"left_click", coordinate:[x,y]}
+→ computer{action:"screenshot"} → computer{action:"type", text:"…"} → screenshot again
+```
+
+No injection at any step. One click, one screenshot, repeat. It is slow, dumb, and it works.
+
+**A screenshot is the primary instrument, not a fallback.** `read_page`, `find` and
+`computer{left_click, ref}` all share ONE injection gate (`document_idle`) which this SPA stops
+satisfying once a panel has been committed (§2, §8b) — **a screenshot does not use that gate, so it
+survives that wedge.** Click by coordinate off what you can SEE. Losing the accessibility tree is not
+losing the UI.
+
+If the screenshot ITSELF fails, that is a **different** fault with its own fix, not a dead end: CDP
+capture fails when the Braze tab is not the active tab of a frontmost window (§3), and a tab hidden
+for minutes freezes outright (§8b). Make the Braze tab active, or open a fresh one, and screenshot
+again. Two distinct causes, two distinct fixes — neither of them is "blocked".
+
+**"Programmatic surfaces exhausted" is NOT "blocked."** They are different claims and only one of
+them is ever true early. Never report a task blocked until fully manual clicking has been tried
+**end to end** and also failed — with a screenshot as the evidence of the failure. "I tried the API
+and the handlers" is not an exhausted search; it is two of the three surfaces.
+
+### ⭐⭐ The proof case — this is not a theory (1 Aug 2026)
+
+A three-session canvas build drove this dashboard entirely through fiber handlers (`mutateData`, the
+step-store slices, `setStepData`, `syncFilters`, `onStepUpdate`, `onSave()`), persisted **zero**
+changes, and concluded that **"Save is a silent no-op — the server is discarding the POST, this is a
+Braze-side problem with the document."** Fully manual clicking was never attempted end to end.
+
+**Then the same canvas was driven by hand** — screenshot, click the step's pencil icon,
+triple-click the field, type, Enter, click Save by coordinate. **No JS injection at any point.**
+
+**It saved. First attempt.** Server `updated_at` moved `2026-08-01T00:51:18Z` →
+`2026-08-01T11:03:25Z`; the renamed step read back correctly over REST.
+
+> **The elegant path was not just slower — it produced a FALSE CONCLUSION** that would have sent the
+> team to Braze support for a problem that did not exist. Record save behaviour as *"JS-driven saves
+> did not persist; fully-manual clicking saved immediately"* — **never** as "the canvas doesn't
+> save".
+
+**The failure to kill: reporting "I have exhausted the programmatic surfaces" as "this is blocked",
+when the manual surface was never touched.**
+
+⛔ **The page wedges after a manual save too** — `Script injection timed out`, screenshots and
+`read_page` stop working. **That is not evidence the save failed.** Verify server-side (REST
+readback), never by re-reading the page. A wedged page after a *successful* save looks exactly like
+a failed one, and that ambiguity is what manufactured the wrong conclusion above.
+
+**Corollary — elegance is not a requirement.** A hundred boring clicks that finish beats an elegant
+approach that reports blocked. If a coordinate click lands, take it and move on; do not stop to
+build the general solution.
+
+> Everything in §8 and §8b is TRUE and worth using — the fiber API really does build a 35-step graph
+> in one call, and the create-control rule (`.click()` is inert) really is a rule. Use them **first**,
+> because they are faster. Use them **under this law**, because when they fail the answer is the
+> mouse, not a cleverer injection.
+
 ## 1. Connect & navigate
 
 1. `list_connected_browsers` → `select_browser` (local instance) → `tabs_context_mcp` with
@@ -373,6 +463,737 @@ wizard widgets). Don't fight the screenshot — drive blind:
     `[role=option]`, so match menu items by **visible text + rect**, not by selector.
 - **Verify structurally via the API, not pixels:** `orbit_read_braze_canvas` / `get_canvas_details`
   confirm step graph / name / draft-state after blind edits.
+
+## 8b. ⭐ The flow editor's OWN action API — build the graph as data, no pixels (PROVEN 1 Aug 2026)
+
+> **This section is an ACCELERATOR under §0, not a replacement for it.** Everything here is real and
+> fast. When it stops working — twice — the answer is the mouse (§0), not a cleverer injection. Three
+> sessions proved that the hard way: every write surface below was exercised, the work was reported
+> "blocked", and nothing persisted.
+
+Six rounds of pixel-driven canvas building failed before this landed. **The flow graph is DATA, not a
+gesture** — `next_step_ids` and `variations[].first_step_ids` are plain fields on the document the
+dashboard POSTs. Nobody has to draw an edge. Reach the app's own handlers through the React fiber.
+
+**Verified end-to-end on 1 Aug 2026:** a `full` step created and wired to canvas entry, saved, and
+confirmed by `get_canvas_details` (`first_step_ids` non-empty). Draft canvas, nothing launched.
+
+### The law that governs everything else: the MCP tab FREEZES
+
+The automation tab is `document.visibilityState === "hidden"`, `hasFocus() === false`. After a few
+minutes hidden, **Chrome freezes its task queues**. Measured, not assumed:
+
+| | Frozen tab |
+|---|---|
+| `setTimeout` / `requestAnimationFrame` | **never fire** |
+| Microtasks (`Promise.then`) | **still fire** (injected JS drives the microtask checkpoint) |
+| XHR/fetch *completion* handlers | never fire |
+| `javascript_tool` injection | still runs (that's why the tab *looks* alive) |
+| `computer screenshot` | fails: `Script injection timed out after 5000ms` |
+| The SPA itself | **cannot finish bootstrapping** — nav chrome only, no canvas, no palette |
+
+This single fact explains symptoms that three earlier rounds blamed on Braze: the "wedged page", the
+"degraded long-lived tab", `.click()` on Save producing no request, and a POST that leaves
+`updated_at` untouched. **Detect it in one line** — `localStorage.setItem('__t','no');
+setTimeout(()=>localStorage.setItem('__t','yes'),50)` then read `__t` from a LATER call. `'no'` =
+frozen; the tab is dead for building, **do not try to revive it.**
+
+**Procedure:** `tabs_create_mcp` → `navigate` → confirm the palette rendered
+(`document.querySelectorAll('button')` includes `Message` / `Audience Paths`) → **do the whole build
+promptly.** One tab only (multiple tabs on one canvas is the documented save-conflict trap).
+
+### Getting the action surface
+
+```js
+// from any canvas node, walk the fiber up ~25 levels
+var els = document.querySelectorAll('.db-connectable,[class*="db-canvas-content"]');
+for (var i=0;i<els.length;i++){
+  var el = els[i];
+  var k = Object.keys(el).find(x=>x.indexOf('__reactFiber$')===0); if(!k) continue;
+  var f = el[k], d = 0;
+  while (f && d<90){
+    var mp = f.memoizedProps;
+    if (mp && typeof mp.onStepAdd==='function' && mp.steps){ window.__sfiber = f; break; }
+    f = f.return; d++;
+  }
+}
+```
+
+`memoizedProps` carries: `steps`, `variants`, `getCanvasDataWithMessages`, `onStepAdd`,
+`onStepUpdate`, `onStepDelete`, `onStepMove`, `onStepTypeChange`, `onStepNameChange`, `onStepClone`,
+`onStepAction`, `onAddMultipleSteps`, `onConnectionAdd`, `onConnectionDelete`, `onVariantAdd`,
+`onVariantUpsert`, `onVariantDelete`, `onControlAdd`, `onSetVariationPercentage`, `onUpdateColumns`.
+
+**`getCanvasDataWithMessages()` returns the exact document that gets POSTed** — the only honest way to
+inspect state. It **re-serialises fresh on every call**, so mutating its output does nothing.
+
+### The four calls that build and persist a step
+
+1. **`onStepAdd(type, {row, column})`** — see the token table below.
+   The model reports `type` uppercased (`FULL`); `onStepAdd` takes the lowercase token.
+   ⚠ `onStepAdd('message', …)` creates **TWO** steps — a `FULL` wrapper *and* a `MESSAGE` — at the
+   same `{row, column}`. Budget for that when laying out a grid.
+
+   ### ⭐ Step-type tokens are KEBAB-CASE, and they do NOT match the REST vocabulary
+
+   This cost six rounds. REST reports `audience_paths`; **`onStepAdd` wants `audience-paths`.**
+   Twenty-three underscore/camelCase guesses failed against a registry that was never underscored.
+
+   **Never guess a type token — read it off the palette.** Each palette button carries the internal
+   token in its React props: from the button whose text is the palette label, walk `.return` ~4
+   levels to the fiber whose `memoizedProps` is `{type, label, onSelect, tag}`.
+
+   | Palette label | `onStepAdd` token | REST reports |
+   |---|---|---|
+   | Message | `message` | `message` |
+   | Delay | `delay` | `delay` |
+   | Agent Step | `llm` | — |
+   | Decision Split | `decision-split` | — |
+   | **Audience Paths** | **`audience-paths`** | `audience_paths` |
+   | Action Paths | `action-paths` | — |
+   | Experiment Paths | `experiment` | — |
+   | Send to Destination | `send-to-destination` | — |
+   | *(variant entry node — no palette button)* | `full` | `full` |
+
+   Other creation routes, all verified dead across calls: `onStepTypeChange(stepId, type)` on an
+   existing step returns clean and changes nothing; `onAddMultipleSteps([step])` throws
+   `Cannot read properties of undefined (reading 'viewModel')` and `onAddMultipleSteps({steps:[…]})`
+   returns clean and adds nothing. The webpack registry (`webpackChunkplatform.push([[id],{},r=>…)`)
+   *is* reachable — 6400+ modules — but the type table is keyed by variables, so the palette props
+   are the reliable source, not a bundle grep.
+2. **`onConnectionAdd(sourceId, targetId)`** — ⭐ **this is the wiring API.** Passing the *variant* id
+   as source attaches the step to canvas entry: `onConnectionAdd(variantId, stepId)` →
+   `first_step_ids: [stepId]` and `is_disconnected: false`. Signature was recovered from the app's own
+   errors: every other arg shape threw `Cannot read properties of undefined (reading 'type')`, i.e.
+   arg 1 is looked up in a node map. **It does not dedupe** — calling it twice yields a duplicated id
+   in `first_step_ids`.
+3. **`onConnectionDelete(sourceId, targetId)`** — removes the edge, and removes **all** duplicates of
+   it at once. This is the fix for a double-added connection.
+4. **Save: call `onSave()` off the fiber, NOT `.click()` on the button.**
+   `[...document.querySelectorAll('button')].find(b=>b.innerText.trim()==='Save')` → walk `.return`
+   ~11 levels to the fiber whose `memoizedProps.onSave` is a function → `onSave()`. A DOM `.click()`
+   on that exact button fires **no network request at all** (verified with an XHR recorder); the
+   direct `onSave()` call POSTs `/engagement/canvas` immediately.
+   ⚠ Never match `Save and continue` — that's the validation/review path.
+
+### Read state in a LATER call — not the same one
+
+Handlers are **inconsistent** about when the serialised document reflects them:
+
+- `onStepAdd` and `onConnectionAdd` show up **synchronously** in the next `getCanvasDataWithMessages()`.
+- `onStepDelete` (and probably `onStepTypeChange`) do **not** — they look like silent no-ops if you
+  re-serialise in the same synchronous block, and land correctly by the next `javascript_tool` call.
+
+**Default to verifying in a separate call.** A same-call read cost one round of "that handler is
+broken" that was simply commit lag.
+
+### Two id spaces — never conflate them
+
+The dashboard's internal step id (Mongo-style, e.g. `6a6d3d2a…`) is **not** the REST step id (UUID,
+e.g. `c6a770e2-…`). The fiber API speaks internal ids; `get_canvas_details` reports REST ids. Map them
+by position/name, never assume equality.
+
+### Structural rule: Audience Paths cannot be the first node
+
+The REST export of a live 85-step canvas gives the type census `message=42, audience_paths=21,
+delay=21, **full=1**`. That single `full` step is the variant entry node. The shape is
+**Entry → `full` → Audience Paths → arms.** Every attempt to hang an audience split straight off entry
+fails — that is a shape error, not a mechanics error.
+
+### Dead ends — do not re-litigate these
+
+| Route | Verdict |
+|---|---|
+| A canvas-write REST API | **Does not exist.** Braze MCP exposes 43 functions, zero canvas-write. Orbit's own `server/braze-canvas.js:149-164` says canvas authoring is dashboard-only. |
+| `orbit_create_braze_canvas` | Dead for flow building — proven twice; it only writes a payload file. |
+| **Any CREATE control, from a DOM `.click()`** | ⭐ **Inert — this is a rule, not a quirk.** Proven on three independent controls: the step **palette**, the segments list's **`Create Segment`**, and the audience wizard's **`Add filter group`**. All three run with no error and produce **no state change at all**. Controls that only navigate or toggle local UI (`Edit`, wizard progress tabs, a filter row flipping view→edit) *do* work from `.click()`. **First move on any create-button: pull its handler off the fiber (`memoizedProps.onClick` / router prop) and invoke it directly, or use the domain action API** — `onStepAdd` is exactly this fix for the palette. Don't rediscover it per control. |
+| Capture-then-replay the save request | Blocked by tooling, not Braze. Injected JS cannot make authenticated requests — sync XHR returns `status 0`, async never resolves. ⛔ Do **not** route around this by extracting session cookies/tokens. |
+| `onStepAdd('audience_paths', …)` | ✅ **SOLVED 1 Aug 2026 — the token is `audience-paths` (kebab-case).** REST's underscored `audience_paths` is a different vocabulary. Read tokens off the palette props (table above); never brute-force. |
+| `onVariantUpsert({… first_step_ids:[id] …})` | Runs without error, changes nothing. Not the wiring API. |
+| Mutating `props.variants[0].headSteps` | View-model only; the serialiser ignores it. |
+| Any pixel/coordinate targeting in the flow editor | Retired. The layout drifts with no input (a card moved x=825→841 between two consecutive screenshots; Save sat at x=1163/1194/1315 across tabs). |
+
+### ⭐ An audience-paths step persists ONE outbound branch PER CONFIGURED GROUP
+
+Measured on a 38-node build: `onConnectionAdd` happily attaches a second branch in the browser model,
+but **the save silently drops any branch with no group behind it.** After reload, all 11
+`audience_paths` steps had exactly `1` outbound edge — 11 edges lost, exactly one per step — while
+messages (12/12), delays (12/12) and the entry `full` (1/1) kept everything.
+
+This follows from the REST shape `next_paths[] = {name, next_step_id}` where `name` **is the group
+name**. No group ⇒ no name ⇒ no path. **Configure the groups BEFORE wiring the branches** — re-adding
+the edges first just drops them again.
+
+**Where the groups live.** The live step object exposes `getData()` / `mutateData()`. For an
+`audience-paths` step, `getData().step_data` is:
+
+```jsonc
+{
+  decision_splits: [                    // ONE ENTRY PER GROUP
+    { id, name,                         // `name` is what REST reports as next_paths[].name
+      next: null,                       // the branch target step id
+      filters: {}, exclusion_filters: {},   // {} = unconfigured ⇒ the branch will NOT survive a save
+      segments_data_array: [], using_v2_filters: true,
+      audience_description_hash: {filters:[],segments:[],apps:[]},
+      exits_canvas: false, should_show_read_only_sentences: false }
+  ],
+  everyone_else_exits_canvas: false     // default is ADVANCE, not exit — usually what you want
+}
+```
+
+Every audience-paths step is born with exactly one group (`Group 1`) plus Everyone Else. After a save
+that dropped a branch, `decision_splits[0].filters` is `{}` and `.next` is `null` — the edge that
+survives is the Everyone Else one.
+
+**v2 filter tree shape** (verbatim, from a working canvas entry filter):
+
+```json
+{"filter_key":"and_filter","filters":[
+  {"filter_key":"or_filter","group_name":"","filters":[
+    {"filter_key":"email_filter","value":"…","comparison_key":"1",
+     "display_name":"Email Address","filter_config":{},"raw_value":"…"}]}]}
+```
+
+**Finding an internal canvas doc id:** `dashboard-…/canvas/<REST_id>` does **not** deep-link — it
+redirects to Data Overview. Go to the canvas **list** page and read every `<a>` whose pathname matches
+`/engagement/canvas/([0-9a-f]{24})`, pairing the id with the link text.
+
+**Reading a group editor's filter vocabulary — currently UNSOLVED from injected JS.** All three routes
+fail on a live tab: `onStepAction(stepId)` throws `reading 'type'` (wants an object);
+`onModalityEnter({stepId})` returns clean and sets `modality`, but mounts no panel; a DOM `.click()`
+on the step's `.db-connectable` node does nothing. A sweep of every element's `__reactProps$` for
+`filters`/`filterKey`/`availableFilters`/`filterOptions` returns zero — the filter editor is never
+mounted, so its props cannot be read. **The cheap unblock is to have a human configure ONE group of
+each kind by hand, then lift the exact `filters` tree out of
+`getData().step_data.decision_splits[0]`** and replicate it programmatically.
+
+### ⭐ Harvest the filter vocabulary from a SEGMENT — zero risk, and it works
+
+Canvas audience-path groups and segments share one filter vocabulary. A segment has no launch or
+enrolment risk, so it is the safe donor. **The REST API will not give you this** —
+`get_segment_details` / `orbit_read_braze_segment` return only prose (`"PlanType equals FREE"`) with
+`filter: null`. Read the segment's own React model instead:
+
+1. `dashboard-…/segments/<REST_id>` **redirects to Data Overview** — not a deep link.
+2. `dashboard-…/engagement/segments?locale=en` returns **raw JSON** — `{hits, results:[{id, name, …}]}`
+   where `id` is the **internal** id. This maps segment name → internal id.
+3. `dashboard-…/engagement/segmenter/edit/<internal_id>/<app_group_id>?locale=en` is the editor.
+4. Sweep fibers for a prop whose value carries `filter_key` or a non-empty `filters[]` (it surfaces on
+   `calculateStatsParams`, and again as `props.filter.data`).
+
+**Custom-attribute condition, verbatim from a live segment:**
+
+```json
+{"filter_key":"and_filter","filters":[{"filter_key":"or_filter","group_name":"","filters":[
+  {"filter_key":"custom_attributes_filter","display_name":"planType",
+   "value":"FREE","raw_value":"FREE","comparison_key":"1","filter_config":{}}]}]}
+```
+
+`filter_key` is **`custom_attributes_filter`** (plural). `display_name` carries the attribute name.
+**`comparison_key:"1"` = equals** — proven across three independent live filters: a string
+(`planType`=`"FREE"`), a boolean (`hasSimpro`=`true`), and an email address. It is the **generic
+equality** comparator, not a type-specific one. A boolean value is sent as a **real JSON boolean**
+(`true`), not `"true"`, in both `value` and `raw_value`.
+
+⚠ **`comparison_key:"1"` with `value:false` is NOT the same as Braze's `false or not set`.**
+Equals-false **excludes users who never had the attribute set** — for a capability gate those are
+precisely the users who should receive the message. `false or not set` is a separate comparator with
+its own code. Getting this wrong fails silently and skips most of the audience.
+
+### The audience-filter action API (the create-control fix, applied)
+
+The `Add filter group` button's own React `onClick`, invoked directly at depth 0 with a synthetic
+event, is **also inert** — the create-control rule is stronger than "`.click()` doesn't work". The
+domain API is the answer. **From a mounted filter row, walk `.return` to depth ~39:**
+
+```
+onAddFilter, onRemoveFilter, onDuplicateFilter,
+onOpenFilterEditor, onCloseFilterEditor, onRemoveGroup, resetFilterComponent
+```
+
+⭐ **Prefer the depth-~28 handlers — they are PRE-BOUND to their own row and have arity 0**, so there
+is nothing to guess: `onOpenFilterEditor()`, `onDuplicateFilter()`, `onRemoveFilter()`,
+`onCloseFilterEditor()`. `onAddFilter` (depth ~39, `length === 1`) is the one that needs an argument,
+and guessing it crashed the wizard.
+
+**Working sequence to get an editable filter row without any create control:**
+1. Collect every distinct fiber whose props have `filter.filter_key && onOpenFilterEditor`.
+2. `onDuplicateFilter()` on the first → a clone appears.
+3. `onOpenFilterEditor()` on the **last** row (the clone) → it mounts in **edit** mode.
+4. Sweep fiber props for `[{value,label}]` arrays → **four live option maps at once**: the segment
+   picker, the **comparison map**, the custom-event list, and one more.
+
+**Probe discipline (this is what broke it the first time): ONE arg shape per `javascript_tool` call,
+result read in the FOLLOWING call.** Check `fn.length` first and let arity constrain the shape.
+Firing three shapes at once (`[]`, `[0]`, `[0,0]`) returned cleanly from all three and then crashed
+the wizard — with no way to attribute which one did it. The batching instinct that makes a 35-step
+build work in one call is exactly wrong for probing an unknown signature.
+
+✅ **A client-side crash in the Braze wizard is harmless as long as no save has been fired** — the
+reload is the reset. Verified: after that crash, a fresh-tab reload showed the server document
+byte-identical (same node census, same 36 edges, same `first_step_ids`, test-guard filter intact).
+That makes the wizard a **safe place to probe handlers** — provided you never call save, and you
+re-verify by fresh-tab reload afterwards.
+
+### Reading the comparison map (label → `comparison_key`)
+
+Filters render read-only (`renderMode:"view"`) until clicked. To enumerate the codes:
+
+1. In the flow editor, click the Entry-Rules card's **3rd `Edit`** button → the wizard opens at
+   `step=basics`. (Putting `step=target` in the URL does **not** open the wizard.)
+2. Click the **`3 Target Audience`** tab → filter rows mount.
+3. **Click the filter row element** → it flips to `renderMode:"edit"`.
+4. The comparison control is a **React-Select, not a `<select>`**. Its choices sit in a fiber prop
+   named **`options`**: `[{value, label}]`. From the row's fiber go up ~6 `.return`, then recurse
+   `child`/`sibling` collecting `{value,label}` arrays.
+
+**String / email comparison map (verbatim):**
+
+| `comparison_key` | label |
+|---|---|
+| `1` | equals |
+| `2` | does not equal |
+| `10` | matches regex |
+| `11` | is not blank |
+| `12` | is blank |
+| `17` | does not match regex |
+
+The codes are a **sparse global enum** (1, 2, 10, 11, 12, 17) shared across filter types, each type
+exposing a subset. So a boolean's `false or not set` is genuinely absent from this list — it loads
+only once a **boolean custom attribute** is selected in a row. **Never infer one comparison code from
+another.**
+
+⚠ Do that selection on a **throwaway** surface — a new segment or scratch canvas — never on a live
+filter or on a test-guard row that is holding a canvas's population at 0.
+
+⛔ **`filter_key`/`comparison_key` codes for CUSTOM ATTRIBUTE conditions are NOT in the bundle** —
+`custom_attribute_filter` appears in none of the 6400+ loaded webpack modules, because filter
+definitions are server-provided. **Never guess them**: a wrong `comparison_key` mis-targets silently
+and mails the wrong people. Get them by opening the group editor and reading the filter UI's React
+props (same technique as the type tokens). Note `onStepAction(stepId)` throws `reading 'type'` (wants
+an object) and `onModalityEnter({stepId})` sets `modality` but does not render the panel — the
+panel-open call shape is the remaining unknown.
+
+### Message steps come with a FULL companion
+
+`onStepAdd('message')` creates a `MESSAGE` **and** a `FULL` companion at the same `{row, column}`.
+The companion has `is_disconnected: null`, never takes an edge, and is **not** reported by REST.
+Always connect to the **MESSAGE** id. On a 38-graph-node canvas the model held 52 nodes.
+
+### Verification — REST is necessary but NOT sufficient
+
+`get_canvas_details` / `orbit_read_braze_canvas` proves **node existence, `draft`, `enabled`,
+`archived` and `variants[].first_step_ids`**. It does **not** prove the graph:
+
+- Per the REST schema, `next_step_ids` lists only next steps that are **full or Message** — a message
+  step pointing at a delay correctly reports `next_step_ids: []`. Empty is not evidence of a missing edge.
+- A step that is `is_disconnected` may not surface in REST `steps[]` at all, so **"REST shows nothing"
+  can mean "saved but unwired" rather than "not saved".**
+- **`updated_at` is not a reliable save signal** — observed twice: a save that persisted 36 new nodes
+  left `updated_at` unchanged. Do not gate a claim on it.
+
+**The only honest structural test: place → save → CLOSE THE TAB → reload a fresh one → read
+`getCanvasDataWithMessages()` and count nodes, edges and `is_disconnected`.** Never the canvas picture.
+
+### Chunk the work to the ~5-minute freeze window
+
+Measured repeatedly: a fresh tab stays live about five minutes, then freezes *while `javascript_tool`
+keeps working* — the model still mutates, the save no longer persists, and work is silently lost.
+The rhythm that works: **navigate → setup+probe → ONE big mutation call → verify call → save call.**
+Batch aggressively (35 steps and 46 edges went in as a single scripted call using an id-diffing helper
+that reads the new step's id straight back out of `getCanvasDataWithMessages()` after each add).
+
+### ⭐⭐ Reading ANY Braze segmenter registry — the option lists ARE the registry (1 Aug 2026)
+
+Braze's filter definitions are server-provided, not bundled, so you cannot grep them out of webpack.
+They arrive as the `options` prop of the filter editor's React-Selects. Read those and you have the
+whole vocabulary without clicking anything.
+
+**Route to an editable filter row (no create-control clicking, which is always inert — §8b):**
+1. Fresh tab → flow editor → the Entry-Rules card's **3rd** `Edit` → the wizard's `3 Target Audience`.
+2. Collect fibers whose props have `filter.filter_key && onOpenFilterEditor`; walk `.return` to the
+   bag carrying `formId && onDuplicateFilter`; call **`onDuplicateFilter()`** (arity 0, pre-bound).
+   The clone mounts **already in `renderMode:"edit"`**.
+3. The clone is a safe scratch surface: it lives in browser memory and dies with the tab.
+
+**The four registries, by fiber prop (`aria-label` → what its `options` holds):**
+
+| `aria-label` | `placeholder` | `options` contains |
+|---|---|---|
+| `Select filter` | `Search filter...` | the **entire filter-type registry**, grouped: `options[].options[].items[]`, each item a filter descriptor `{filter_key, display_name, varies_by_app_group, …}` |
+| `Custom Attributes` | `Select...` | every custom attribute, `{label:<name>, value:{…, data_type}}` — `data_type` is Braze's inferred **Ruby class** (`String`, `TrueClass`, `FalseClass`, …) |
+| `Comparison` | `Select...` | the comparison map for the CURRENT filter type, `{value:<comparison_key>, label}` |
+| `Attribute value` | `Select...` | the value enum, when the attribute type has one |
+
+**Setting them, in order** (one arg shape per `javascript_tool` call, result read in the NEXT call):
+- Type: use the **app-level wrapper** (`onChange.length === 1`, depth ~7), not the react-select at
+  depth 3 → `onChange(<filter descriptor>)`.
+- Attribute / value: react-select signature, `onChange(opt, {action:'select-option', option:opt})`
+  (arity 2, `isMulti:false`).
+
+**Red herrings — do not chase these.** The segmenter context provider (depth ~68:
+`{segmentId, canvasId, featureSource, readOnly, customFilterConfig, availableFilters, meta,
+filterTypesById, isReady}`) has `filterTypesById: {}` and `availableFilters: "segment"` (a mode
+string). The react-hook-form controller (depth ~69) holds only `{displayName, comparison, component,
+value}` per filter — **no type field**, so there is no "form type setter" to find. And the only redux
+Providers on this surface are react-beautiful-dnd's (`{phase, completed, shouldFlush}`).
+**Read the Select's `options`. Nothing else has the registry.**
+
+### ⭐⭐ Boolean custom attributes: `false or not set` is a VALUE, not a comparison
+
+The single most consequential gotcha in gate-building, and it burned eight passes of searching the
+wrong field. A boolean custom attribute exposes only **three** comparisons:
+
+| `comparison_key` | label |
+|---|---|
+| `"1"` | **is** |
+| `"11"` | is not blank |
+| `"12"` | is blank |
+
+`false or not set` is **not among them**. Selecting a boolean attribute mounts a third control,
+`Attribute value`, whose four options are:
+
+| label | `value` | JS type |
+|---|---|---|
+| `true` | `true` | boolean |
+| `false` | `false` | boolean |
+| `true or not set` | `"true or not set"` | **string** |
+| `false or not set` | `"false or not set"` | **string** |
+
+⇒ the filter is `comparison_key:"1"` **plus** `value:"false or not set"`:
+
+```json
+{"filter_key":"custom_attributes_filter","display_name":"<attr>",
+ "comparison_key":"1","value":"false or not set","raw_value":"false or not set",
+ "filter_config":{}}
+```
+
+**Why it matters:** `comparison_key:"1"` with `value:false` is "equals false", which **excludes every
+user who never had the attribute set** — usually the exact audience a capability gate exists to
+reach. It builds clean, saves clean, passes every structural check, and silently never sends.
+`comparison_key:"1"` is the generic equality/`is` code across strings, booleans and emails alike, so
+it tells you nothing about the value semantics. **Never infer a value enum from a comparison map.**
+
+### ⛔ `getData()` / `mutateData()` are NOT symmetric — and `filters` is unwritable
+
+On a flow-editor step view model:
+
+```
+getData()      -> { step_data: {...} }     // WRAPPED
+mutateData(x)  -> x BECOMES step_data       // UNWRAPPED — pass the INNER object
+```
+
+`mutateData(getData())` yields `step_data.step_data` and every field then reads as `undefined`. It
+looks like a wipe; it is not, and a reload clears it. `mutateData.length === 1` and accepts either a
+value or a React-setState-style updater.
+
+**And it does not write everything.** On an `audience_paths` step's `decision_splits[0]`, `name` and
+`next` write through and read back; **`filters` is silently stripped and reads back `{}`** — same
+object, same call. A group's audience is owned by a separate store, exactly like the Target Audience
+editor's `formId` form. Knowing the filter vocabulary is therefore **not** sufficient to write a
+group; you still need the UI's own write path.
+
+### ⛔ `next_paths[].name === "Everyone Else"` — read the direction, never assume it
+
+An `audience_paths` step's surviving path after a save is the **Everyone Else** one, and REST names it
+literally. **Read `next_paths[].name` before trusting any branch.** On a gate whose intent is
+"condition true → skip, false → send", an Everyone-Else edge pointing at the *message* is inverted:
+it mails the lesson to the users who already did the thing and skips the ones who did not. The check
+costs one `orbit_read_braze_canvas` call; the miss ships a wrong send to a whole cohort.
+
+### ⚠ The freeze window can collapse to 2–3 calls
+
+§8b's ~5-minute figure is an upper bound, not a promise — the same canvas froze after two or three
+`javascript_tool` calls in a later session. Budget **one bootstrap read, one mutation, one save**, and
+verify the timer probe in the FOLLOWING call (a `setTimeout` set in the current call cannot have
+fired yet). Also: **do not reload a wedged tab in place.** Repeated navigation to the same flow-editor
+URL ends in a nav-chrome-only shell (~400-char body, no `.db-connectable`) that never recovers —
+close the tab and create a fresh one.
+
+### ⚠ Browser tool output redacts raw ids — key by grid position
+
+24-hex dashboard ids and UUIDs come back as `[BLOCKED: Base64 encoded data]` in `javascript_tool`
+results. Do all id work **inside the page** and return only `row,column` coordinates, names and
+booleans. `steps.find(s => s.row===r && s.column===c)` is the reliable handle.
+
+### ⭐⭐ A canvas step's data lives in TWO store slices — `mutateData` only writes one
+
+The flow editor's step view model is not the store. Behind it:
+
+```
+<header component>.getCanvasStore()   // arity 0; the same prop bag carries onSave/0, onSaveDraft/0
+  -> { stateMap, nonFullSteps: Map(stepId -> {data, store}), fullStepStores, messageToFullMap, … }
+
+  stepEntry.store.stateMap = {
+      stepData : {signal, initialValue, currentValue},   // mutateData writes HERE
+      filters  : {signal, initialValue, currentValue}    // and never here
+  }
+  stateMap.filters.currentValue : Map( groupId -> {filters, exclusionFilters, usingV2Filters} )
+```
+
+For an audience-paths step, `groupId === step_data.decision_splits[i].id`.
+
+**Consequence:** `mutateData(getData().step_data)` writes `name` and `next` fine and **silently drops
+`filters`** — not a validation failure, a different slice. Write the audience directly:
+
+```js
+const e = getCanvasStore().nonFullSteps.get(step.id);
+e.store.stateMap.filters.currentValue.get(gid).filters = {filter_key:'and_filter', filters:[…]};
+```
+
+after which `step.getData()` returns the complete group. Note `getData()` returns `{step_data:…}`
+while `mutateData()` takes the **inner** object — they are not symmetric.
+
+Step-store prototype: `getFilters/0`, `syncFilters/2`, `setStepData/1`, `getStepData/0`, `getStep/0`.
+Canvas-store prototype: `getStepStore`, `getStepWithMessages`, `getAggregatedCanvas`,
+`setAggregatedCanvas`, `recomputeSteps`, `resetToClean`, `createDataStepStore`.
+⚠ **Never call `syncFilters()` bare** — arity 2; a 0-arg call silently inserts an `undefined`-keyed
+entry into the filters Map.
+
+### ⭐⭐ `getCanvasDataWithMessages()` IS THE SAVE PAYLOAD — trust it over `step.getData()`
+
+When a step's `getData()` and the canvas serialiser disagree, **the serialiser is right about what
+will be saved.** Proven the hard way: a group's `name`/`next`/`filters` written at every writable
+layer read back perfectly from `step.getData()`, the serialiser still showed the originals, the save
+POSTed clean — and a fresh-tab reload showed **nothing had persisted**, with the server's
+`updated_at` unmoved.
+
+> **If a change is not in `getCanvasDataWithMessages()`, it will not be saved.** No matter what
+> `step.getData()` says.
+
+There are four step representations and only the last one is written to the server:
+
+| accessor | writable | reflects a store write | saved |
+|---|---|---|---|
+| `step.getData()` / `step.store.stateMap.*.currentValue` | yes | ✅ | ❌ |
+| `canvasStore.nonFullSteps.get(id).data.step_data` | yes | ✅ | ❌ |
+| `canvasStore.getStepWithMessages(id)` | derived | ✅ | ❌ |
+| `canvasStore.getAggregatedCanvas()` — **the POST body** | `setAggregatedCanvas/1` | ❌ **stale** | ✅ |
+
+`recomputeSteps()` (arity 0) does **not** rebuild the aggregate. Writing step stores directly is
+therefore necessary but not sufficient for audience-path group config, and the call the real editor
+makes to refresh the aggregate has not been identified. **Budget for hand-configuring one group in
+the UI and reading the persisted shape back, rather than assuming a data-layer write will stick.**
+
+### ⭐ ALWAYS GATE `onSave()` ON THE PAYLOAD
+
+Never fire it unconditionally — an unguarded save silently re-POSTs the stale document and reports
+success:
+
+```js
+const agg = getCanvasStore().getAggregatedCanvas();
+const s = agg.steps.find(x => x.step_id === stepId);
+if (s.step_data.decision_splits[0].filters.filter_key) onSave();   // else: do not save, report
+```
+
+A clean 2xx and an unchanged `updated_at` are perfectly compatible on this endpoint.
+
+### ⛔⛔ NEVER run two edit-mode tabs on one canvas — including two agents
+
+`onSave()` POSTs the **entire** canvas document as FormData. Two flow editors open on the same canvas
+in `isEditing=true` are **last-write-wins, and the loser's work disappears with no error, no 409, and
+no conflict dialog**. Any "back off if you hit a save conflict" rule is unenforceable here because
+nothing throws.
+
+If you are parallelising canvas work across agents (e.g. one binding templates to Message steps while
+another configures audience paths), **sequence them** — the surfaces look disjoint but the save is
+whole-document, so disjoint edits do not make disjoint writes. Check `tabs_context_mcp` for a second
+editor on the same canvas URL before firing any save.
+
+### ⭐⭐⭐ Audience-path groups: DRIVE THE REAL UI. Store injection cannot work.
+
+`getAggregatedCanvas()` (the POST body) is built by the editor's own handlers, so **only the
+editor's own handlers can populate it.** Writing model state and hoping the serialiser notices is a
+dead end no matter which layer you write.
+
+**⭐ Open a group's editor with `onOpen(index)` — do NOT click at the card.** Five click strategies
+failed across two sessions; the handler works first time, every time.
+
+From the group-row button's fiber, **depth ~8** carries a per-row bag:
+`{ onOpen/0, index, name, isSelected, canDrag, isDragging, exitingCanvas, hasError }` — one per path
+row (`index:0` = Group 1, `index:1` = Everyone Else).
+
+```js
+bag.onOpen(0)   // opens THAT group's editor. Button count ~287 → ~299.
+```
+
+> **`onOpen.length === 0` does NOT mean it takes no arguments.** It is a *bound partial* — its
+> minified source contains `arguments` / `apply` / `concat`, which means it forwards extra args to
+> the wrapped function. Called bare, the index arrives `undefined` and the panel renders the wrong
+> group titled `Group NaN`. **Any arity-0 minified handler with that source shape is a partial;
+> check the source before concluding it takes nothing.**
+
+The panel is `Audience Group Name · I want this group to exit the Canvas · Segments · Filters ·
+Add filter group · Done`.
+
+**⚠ Correction to the "create-controls are inert" rule:** that applies only to **synthetic**
+`.click()` and JS-dispatched events. A **`computer{left_click, ref}` CDP click is a real trusted
+input event and it works.** Get the ref from `find`, then click it. Full synthetic pointer sequences
+(`pointerdown`/`mousedown`/`pointerup`/`mouseup`/`click`) still do nothing — the difference is
+trustedness, not event completeness.
+
+**⚠ Do not double-click a step card** — it starts an in-place NAME edit. `Escape` exits cleanly.
+
+**Per-group recipe (~8 calls):**
+1. `find` the group row → `computer{left_click, ref}`.
+2. Filter type: the fiber with `aria-label:"Select filter"`, `onChange.length===1` →
+   `onChange(<filter descriptor>)`. Driving a *mounted* control's own React `onChange` is the
+   editor's code path — that is not injection, and it populates the aggregate.
+3. Attribute: `aria-label:"Custom Attributes"` → `onChange(opt,{action:'select-option',option:opt})`.
+4. Value and group name: **set text inputs via React's own value setter** — no ref clicks, so the
+   injection gate cannot bite:
+   ```js
+   const d=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value');
+   d.set.call(el,val); el.dispatchEvent(new Event('input',{bubbles:true}));
+   el.dispatchEvent(new Event('change',{bubbles:true}));
+   ```
+6. **Check the exit-canvas checkbox's `.checked`, never its `value`** — an unchecked checkbox still
+   reports `value:"on"`, which reads as enabled and would silently drop users out of the journey.
+7. **`Done`** — the commit that builds the aggregate. Use **Done's own React `onClick()`** (arity 0,
+   on the bag carrying `loadingState`); a coordinate click on it did not take. Verify in
+   `getAggregatedCanvas()` before saving.
+
+⛔ **The open panel COVERS the Save button.** `elementFromPoint` at Save's centre returns `null`
+while the editor is open — a coordinate click there hits the panel, not Save. **Always hit-test with
+`elementFromPoint` before any coordinate click; "in viewport" is not "clickable".** Close the panel
+first, then re-hit-test.
+
+### ⛔⛔ RUN THE SAVE DISCRIMINATOR BEFORE ANY CANVAS BUILD WORK — **MANUALLY**
+
+> ### ⭐⭐ CORRECTION, 1 Aug 2026 — "Save is a silent no-op" was WRONG
+>
+> This section previously concluded that Save was inert on a real canvas and that the server was
+> discarding the POST — possibly "a Braze-side problem with that canvas document". **That conclusion
+> has been overturned by direct observation.** The same canvas was driven **fully manually** —
+> screenshot, click the step's pencil icon, triple-click the field, type, Enter, click Save by
+> coordinate, **no JS injection at any point** — and **it saved on the first attempt.** Server
+> `updated_at` moved `2026-08-01T00:51:18Z` → `2026-08-01T11:03:25Z` and the renamed step read back
+> correctly over REST.
+>
+> **The correct framing: JS-driven saves did not persist; fully-manual clicking saved immediately.**
+> Never record this as "the canvas doesn't save" — anyone reading that would abandon a working
+> canvas and open a support ticket for a problem that does not exist.
+>
+> **This is the proof case for §0.** Three sessions of React-fiber handler work produced zero
+> persisted changes *and* a confident, wrong diagnosis. The elegant path was not merely slower — it
+> manufactured a false conclusion. Manual clicking answered it in one attempt.
+
+**Aggregate-correct is necessary but NOT sufficient**, so before building anything, prove the canvas
+accepts writes at all — and **run the test by hand**, because a JS-driven write test can return a
+false negative, which is exactly what happened here.
+
+```
+MANUAL: screenshot → click the step's pencil/edit icon → triple_click the name field
+        → type '<name> ZZTEST' → Enter → screenshot → click Save by coordinate
+→ REST readback (orbit_read_braze_canvas / get_canvas_details)
+→ did updated_at move, and does the step read back renamed?
+```
+
+- **Survived** → saves work; build normally.
+- **Did not** → STOP. Nothing you build will persist. But re-read §0 before you call it blocked: if
+  the failing test was scripted, it proves nothing about the canvas.
+
+⛔ **The page wedges after a manual Save too** (`Script injection timed out` — screenshot and
+`read_page` stop working). **That is NOT evidence the save failed.** Verify **server-side via REST
+readback**, never by re-reading the page. This is the exact trap that produced the wrong conclusion
+above: a wedged page after a successful save reads identically to a failed save.
+
+**`updated_at` not moving after a save is the tell** — treat a clean 2xx with a frozen `updated_at`
+as a failed save, always. Equally: `updated_at` moving is proof it worked, whatever the page says.
+
+Legacy diagnostics, still worth trying **after** a manual test has failed: **`Save and continue`**
+(the footer has three buttons — `Test Canvas` · `Save` · `Save and continue`), then `create_version`
+/ `last_edit_changelog_id` in the aggregate versus the server's for a stale-version or lock conflict.
+
+### ⭐ Flow-editor handlers are BOUND PARTIALS
+
+`onOpen`, `onStepNameChange` and most of the flow-editor prop bag report `length === 0` yet **do**
+take arguments — their minified source contains `arguments`/`apply`/`concat`, meaning they forward to
+a wrapped function. Calling them bare passes `undefined` and produces silent misbehaviour (a panel
+titled `Group NaN`, a no-op rename). **Check the source shape before concluding a handler takes no
+arguments.**
+
+**Braze's own filter output omits `raw_value`** — it emits
+`{filter_key, value, comparison_key, display_name, filter_config}`. Prefer what the UI produces over
+a hand-built tree.
+
+**Comparison maps are per filter type AND per data type.** A String custom attribute exposes TEN
+comparisons (`1 equals · 2 does not equal · 10 matches regex · 11 is not blank · 12 is blank ·
+17 does not match regex · 25 is any of · 26 is none of · 27 contains any of · 28 doesn't contain any
+of`) where `email_filter` exposes six and a boolean exposes three. Never reuse a map across types.
+
+### ⭐ CAPTURE THE `Save` REF FIRST — the page stops being readable after you edit
+
+`find` and `read_page` share ONE injection gate and both fail with
+`executeScript waited 45000ms for document_idle`. **`read_page` is not a workaround for `find`.**
+After the audience editor's `Done` commit this SPA stops reaching `document_idle` and does not
+recover, `computer{screenshot}` fails with a CDP capture error, and `javascript_tool` may be
+classifier-blocked — leaving **no way to locate the Save button at the moment you need it.**
+
+**⚠ Capturing refs early is NOT enough.** `computer{left_click, ref}` resolves the ref to
+coordinates **at click time**, via the same injection gate — so a banked ref fails just like `find`
+once the page wedges (`Failed to get element coordinates from ref: Script injection timed out`).
+**A banked ref is not a banked click.** Only `computer{left_click, coordinate}` survives a wedge, and
+coordinates cannot be verified without a screenshot (which also fails) — which is why footer clicks
+must never be done by coordinate.
+
+Capture refs early anyway, and **do the clicking early too** — but treat the whole UI-driving phase
+as something that must finish inside the page's brief idle window, and be ready to replace the tab
+rather than fight it.
+
+Session order that works:
+1. Fresh tab → flow editor.
+2. `find` / `read_page` → capture the **Save button ref** and the target group-row ref.
+3. Open the group editor → configure → `Done`.
+4. Verify `getAggregatedCanvas()` contains the change.
+5. `computer{left_click, ref: <the Save ref from step 2>}`.
+6. Close tab → fresh tab → reload → verify.
+
+Don't read these timeouts as a dead tab either — probe liveness with a `setTimeout` written in one
+call and read in the FOLLOWING one.
+
+⛔ **Never click `Test Canvas`.** It sits directly beside `Save` in the footer, which is why you
+should click Save **by ref, never by coordinate**. On a canvas guarded to population 0 a test send
+does nothing visible while telling you nothing true.
+
+### Message steps use a DIFFERENT envelope from audience-paths steps
+
+Discovered while binding 14 templates (1 Aug 2026) — **read-only; the write was never executed, so
+treat this as a lead, not a proven recipe.** A message step has **no `step_data` wrapper**. Its
+`getData()` returns `{messaging_actions, composition_mode, filters, exclusion_filters,
+using_v2_filters}`, and the binding pair on the step view model is:
+
+```
+getInitialMessagesData()   // arity 0 → {compositionMode:'quick-push-multichannel', messages:[]}
+setMessagesData(e)         // arity 1
+```
+
+The step also exposes `getTemporalStore()` → `{type:'canvasMessage', stateMap:{messages,
+compositionMode, filters, selectedMessageId, …}, composer:{store, strategy:{getAllMessages,
+storeUpdatedMessage, persistMessage, replaceAllStoredMessages, …}}}`.
+
+⛔ **The shape of a populated `messages[0]` is UNKNOWN and must not be guessed** — harvest it from a
+donor canvas that already has a bound email (pick a **draft + disabled** one; never a live canvas).
+Until then, bind templates through the UI: open the message step → **Use existing template** → pick
+by name. That is the §0 manual path, and it is available today.
+
+### URL shapes that waste time (know these before you navigate)
+
+- `…/engagement/canvas/<24-hex internal_doc_id>/<workspace_doc_id>?version=flow&isEditing=true` — the
+  editor. **Both ids, in that order.**
+- `…/engagement/canvas/<workspace_doc_id>` alone — the canvas **LIST**, not a canvas. Easy to
+  misread as "the canvas failed to load".
+- The list is **server-rendered and hides drafts** behind a `Status: Active` filter — a draft canvas
+  you just built will not appear. Do not conclude the canvas is missing.
+- ⭐ **Harvesting an internal doc id: do it by hand.** A whole night of fiber-crawling the list
+  called this id "unharvestable". Manually it is three clicks: open the list → set **Status** to
+  **All Statuses** → **click the canvas name**. The edit URL you land on is
+  `/engagement/canvas/<CANVAS_doc_id>/<WORKSPACE_id>?locale=en&version=flow&isEditing=true`. This is
+  §0 in miniature — the scripted route was "impossible", the human route took seconds.
+- **REST UUID ≠ internal doc id.** `…/canvas/<REST_uuid>` does not deep-link (it redirects to Data
+  Overview), and feeding the internal 24-hex id to `/canvas/details` is rejected (400). Two
+  vocabularies; map them by name, never by assumption. Harvest internal ids from the list page's
+  `<a>` hrefs matching `/engagement/canvas/([0-9a-f]{24})`.
 
 ## 9. The hard limit — and the Codex fallback for the visual canvas
 
