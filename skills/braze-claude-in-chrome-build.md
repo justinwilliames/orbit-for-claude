@@ -1,6 +1,6 @@
 ---
 name: braze-claude-in-chrome-build
-description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, and the Codex fallback for the visual flow-builder."
+description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, the three-rung escalation ladder (JS/fiber -> Claude-in-Chrome clicking -> OS-level Codex Computer Use), the proven one-change-Save-verify canvas-surgery loop, and the four things the REST API is structurally blind to (entry audience, audience-path filters, delay durations, template-vs-inline bodies)."
 ---
 
 # Braze via Claude in Chrome — Build & Edit Manual
@@ -38,6 +38,24 @@ The dashboard is built for humans. **The human path is the reliable path.** Ever
 skill — the fiber action API (§8b), the `javascript_tool` drivers (§8), the REST reads (§4) — is an
 **optimisation for speed**, not the primary route. When an optimisation stops working, you do not
 escalate cleverness. You drop to the slow path and finish the job.
+
+### The escalation ladder — go DOWN a rung, never sideways into more cleverness
+
+Three rungs, each **more reliable and slower** than the one above it. The whole discipline is:
+when a rung fails twice on the same objective, take the next rung down. Never answer a failure at
+rung 1 with a more elaborate rung-1 attempt.
+
+| # | Rung | What it is | When it dies |
+|---|---|---|---|
+| 1 | **JS / fiber handlers** (§8, §8b) | Build the graph as data, no pixels. Fastest by an order of magnitude. | The SPA stops reaching `document_idle`; saves stop persisting |
+| 2 | **Claude-in-Chrome clicking** (§0 rule of two) | Screenshot → look → click a coordinate → type. In-browser, DOM-adjacent. | `Script injection timed out` — the extension's injection gate wedges the tab |
+| 3 | **OS-level clicking (Codex Computer Use)** (§9) | Screen capture + real mouse/keyboard on the real screen. No injection gate exists to wedge. | Effectively doesn't, for browser work — see the 9-run record in §9 |
+
+**Rung 3 is not exotic and it is not a last resort you apologise for.** It is the rung a human
+occupies, which is why it is the one that finishes. On the 2 Aug 2026 Activation canvas build,
+rung 2 wedged **9 times** on `Script injection timed out`; rung 3 ran **9 tasks with 0 wedges** and
+not one injection error. If the work is long and the tab keeps dying, go to rung 3 *early* — the
+time you "save" retrying rung 2 is the time you lose.
 
 **The rule of two.** When a JS / fiber / handler approach fails **twice** on the same objective,
 STOP injecting and switch to fully manual clicking:
@@ -342,6 +360,110 @@ and ONE shared pair of emails (the §3 re-convergence pattern, at scale).
   `getBoundingClientRect()` returns CSS px; the click tool expects SCREENSHOT px. Re-measure after any
   window resize, and prefer reading coordinates straight off the returned image.
 
+## 3c. ⭐ THE PROVEN CANVAS-SURGERY LOOP — what actually finished the build (2 Aug 2026)
+
+§0 says what to do when the fast path dies. **This section is the positive recipe** — the loop and
+the mechanics that took a stalled 37-step Activation canvas to done, run over 9 OS-level tasks
+(§9) with zero wedges. Everything here is *observed*, not inferred.
+
+### The loop — one change → Done → Save → REST-verify
+
+```
+ONE change  →  panel Done  →  canvas Save  →  REST readback  →  next change
+```
+
+**Never batch.** A wedge costs you everything since the last save, so a batch of six edits is a bet
+that nothing wedges for six edits. One-at-a-time is slower per edit and dramatically faster per
+*build*, because nothing is ever redone.
+
+### ⛔ The Save button STAYS ENABLED after a successful save — it is NOT an unsaved-changes indicator
+
+The single most misread control on the surface. An enabled Save button means nothing at all. Reading
+it as "still dirty" manufactures phantom failures and re-saves that overwrite good state.
+
+**What a real save looks like:** a **full-page purple spinner**, then the **canvas reloads**, then
+`Save completed.` Anything short of the spinner + reload is not evidence of a save.
+
+**And even that is only local evidence. Verification is server-side, always** — because the page
+frequently wedges immediately after a save, so re-reading it looks *exactly* like failure (§0).
+
+- **The positive proof:** `get_canvas_details` → **a save worked iff `updated_at` advanced.** A 2xx
+  with a frozen `updated_at` is a FAILED save; a wedged page with an advanced `updated_at` is a
+  SUCCESSFUL one.
+- **The cheap negative proof:** `get_canvas_list` with `last_edit_time_gt=<timestamp before the
+  edit>` returns `[]` if nothing persisted. **~1k tokens versus ~9k for full canvas details** — use
+  it for the routine "did that land?" check and save the full read for when it didn't.
+- That same `last_edit_time_gt` call is the **standard no-mutation proof** for a read-only
+  inspection pass: an empty list is positive evidence you changed nothing.
+
+### Building a gate: you must build the COMPLEMENT, because Braze cannot detach an edge
+
+**There is NO way to detach an existing edge.** The step gear menu offers only *Delete Step /
+Duplicate Step / Copy Step ID*, and edges themselves have **no click affordance at all** — you
+cannot select one, so you cannot remove one without deleting a node.
+
+**Consequence — invert the naive spec.** A gate written as "if the user has X, send them the X
+message" cannot be built by re-pointing the existing edge. Build it as the complement instead:
+
+> **`Group 1 = <attribute> is true → skip target`**, leaving the immovable **`Everyone Else`** edge
+> where it already is, on the message.
+
+Delays happily accept extra inbound edges (§3 re-convergence), so the skip lands cleanly.
+
+### ⭐ The universal skip-target rule — structural, NOT name-based (verified 9/9)
+
+> **A gate's Group 1 connects to the delay IMMEDIATELY DOWNSTREAM of the message that
+> `Everyone Else` feeds.**
+
+Held on all 9 gates built. **Use the structure, never the name** — the canvas carried duplicate
+delay names (two `Free D 3d`, two `Free D 4d`), so name-matching mis-wires the gate silently and
+you find out weeks later. Walk the graph: find the message `Everyone Else` points at, take its
+outgoing edge, that delay is your target.
+
+### Panel & control mechanics that hold
+
+- **Open a group's editor by DOUBLE-CLICKING the Group row inside the card.** Deterministic, and it
+  retires the click strategies in §3 for this case.
+- **The `+` connector under a node enters connection mode and it works.** Its only failure mode is
+  **card overlap** — if another card sits over the handle, the click hits the card. **Pan the canvas
+  so the handle sits in open space,** then click. Not a broken control, a covered one.
+- ⛔ **The async attribute dropdown silently selects `account_created_at` if you click before it
+  renders.** It is alphabetically first, so an early click lands on it and you get a filter on the
+  wrong attribute that looks deliberate and saves clean. **Wait, confirm the option you want has
+  actually rendered, then click it.** This is the mechanism behind wrong-attribute filters.
+- ⛔ **Never press Return to pick a dropdown option.** Return creates a **blank filter**. Click the
+  option.
+
+### The template picker's search is FUZZY — it is not a filter
+
+Typing the exact full template name returned **459 of 477** results. The search ranks, it does not
+narrow, so "I searched the name and picked the top hit" is not a binding you can trust.
+
+**What works:** sort **`last_edited desc`**, page through at 12/page, and **match the full name
+visually.**
+
+⛔ **v1 decoys sit on the same page as v2 targets, and the number prefix is the only safe
+discriminator.** Read the prefix, every time.
+
+### Verify bindings against SHIPPING COPY, not template names
+
+`get_canvas_details` returns **`title: null`** for message steps — the template name is simply not
+available to check against. So verify what a step will actually send by its **body**:
+
+- Extract each step's body and **sha256 it**. Unique hashes prove unique emails; a repeated hash is
+  a copy-paste duplicate that every name-based check passes.
+- Spot-check the rendered copy (subject, headline, CTA) against the copy spec — the shipping words
+  are the ground truth, not the label on the step.
+
+### Coordinate space (restating, because it is the #1 silent mis-click)
+
+**Coordinate space = SCREENSHOT space** (measured 1461×812 that session). **`read_page`'s CSS
+viewport is NOT the click space.** See §8 for the per-session scale calibration; the failure looks
+like "clicks land near but not on", never like an error.
+
+**URL shapes / the three distinct identifiers** are documented in §9 — read them before concluding a
+canvas is missing.
+
 ## 4. What the API can/can't do (route accordingly)
 
 | Need | Use |
@@ -351,6 +473,40 @@ and ONE shared pair of emails (the §3 re-convergence pattern, at scale).
 | Mutating anything on a canvas | **Dashboard only** |
 | Per-variant entries/engagement stats | API: `get_canvas_data_series` `include_variant_breakdown` (14-day windows, loop) |
 | orbit_read_braze_canvas | Email HTML overflows the token limit **even for a 3-step canvas** (~100KB → auto-saved to a file). **Grep the file** for structure: it returns `draft` state, `variants[].first_step_ids`, the step graph (`next_step_id`/`next_paths`), and per-message `subject`/`from`/`preheader`. Does NOT surface delay durations, exit criteria, conversion events, or audience filters (dashboard-only) |
+
+### 4b. ⭐ The FOUR things REST is structurally BLIND to — verified by keyword count (2 Aug 2026)
+
+Not "probably missing" — **counted against the full 1.29MB `get_canvas_details` payload of a live
+37-step canvas.** These can NEVER be API-verified. Every one of them requires eyes on the dashboard,
+which is exactly why a canvas QA pass that is REST-only is not a QA pass.
+
+| # | Blind to | The evidence |
+|---|---|---|
+| 1 | **The entry guard / entry audience** | The test-guard email address appears **0 times** in the whole payload. The Entry step returns only `{name, id, next_step_ids, next_paths, channels:[], messages:{}, type:"full"}` — the audience is simply not in it |
+| 2 | **Every audience-path filter definition** | `filter` **0** occurrences · `segment_id` **0** · `criteria` **0**. `audience_paths` steps expose only `{id, name, next_paths, type}` — **edges visible, logic invisible.** You can see that a branch exists and where it goes, never who takes it |
+| 3 | **Every delay duration** | `duration` **0** · `seconds` **0**. A delay step carries a *name*, and a name is a label, not configuration |
+| 4 | **Whether a step links a reusable template or holds a one-off body** | REST returns inlined content either way. Identical payloads, completely different maintenance model |
+
+**Corollary — REST also under-reports half-built gates.** An audience group with **no outgoing edge**
+does not appear in `next_paths` at all (§3, ramped-wave notes). So "REST shows 2 groups" is
+consistent with a dashboard showing 3, one of them unwired. REST alone cannot tell you a gate is
+incomplete.
+
+> ### ⛔ The find that proves the point — 10 of 12 delays were lying (2 Aug 2026)
+>
+> On the Activation v2 canvas, **10 of 12 delay steps were configured as `1 Days` while NAMED
+> `2d` / `3d` / `4d`.** Every fresh delay defaults to 1 day (§3), and the build had named them
+> correctly but never set them. The intended cadence — **Day 0/1/3/6/9/13/17** — was silently
+> compressed to **Day 0/1/2/3/4/5/6**. A 17-day program would have run in 6.
+>
+> **No gate could have caught it.** Durations are absent from the REST payload (row 3 above), and
+> the step *names* actively concealed the defect — a name-based structural check reads `Free D 3d`
+> and passes it. There was no API readback, no schema check, and no diff that could see this.
+> **Only a look at the screen.**
+>
+> **Standing consequence: for any delay-bearing canvas, an eye-on-the-dashboard pass over every
+> delay's configured duration is a MANDATORY pre-launch gate, not a nice-to-have.** Read the value
+> in the modal, not the label on the card.
 
 ## 5. Graph-analysis traps (learned the embarrassing way)
 
@@ -1195,35 +1351,66 @@ by name. That is the §0 manual path, and it is available today.
   vocabularies; map them by name, never by assumption. Harvest internal ids from the list page's
   `<a>` hrefs matching `/engagement/canvas/([0-9a-f]{24})`.
 
-## 9. The hard limit — and the Codex fallback for the visual canvas
+## 9. ⭐ Codex Computer Use — rung 3, and the route that finished the build
 
-**The flow editor IS fully buildable via Claude in Chrome — that was the hard-won lesson.** The §8
-wedge is the *wizard's* dropdowns, NOT the flow canvas. Reload fresh to the flow canvas
-(`…&step=build`, or open an existing canvas's flow editor), DON'T touch the wizard's wedge-prone
-Selects on that tab, and screenshots work fine (5-10s paint) — then add steps by **click-to-place**
-(§3, `db-grid-placeholder` targets, NOT drag) and configure each step by sight. Drop-targets are
-discoverable DOM, not "opaque SVG". Only reach for Codex when the screen genuinely won't render at
-all — and note its traps:
+**Updated 2 Aug 2026.** This section used to read "only reach for Codex when the screen genuinely
+won't render at all". That framing was wrong on the evidence and is retired. Both statements below
+are true at once:
 
-- **Codex Computer Use** (`computer-control` skill → `scripts/codex-cu.sh gui "<task>"`, run in the
-  background) drives the **real screen** via OS-level capture — immune to `document_idle`, and it
-  does native drag-drop. The right tool for the flow build. **Bake this manual's rules into its
-  prompt:** Save = draft only / never Launch, verify the `email=<your-test-email>` guard, don't edit
-  email content, **use the browser where Braze is logged in**, not Chrome by reflex.
+- **The flow editor IS fully buildable via Claude in Chrome.** The §8 wedge is the *wizard's*
+  dropdowns, not the flow canvas. Reload fresh to the flow canvas (`…&step=build`, or an existing
+  canvas's flow editor), don't touch the wizard's wedge-prone Selects on that tab, and screenshots
+  work fine (5-10s paint) — add steps by **click-to-place** (§3, `db-grid-placeholder` targets, NOT
+  drag) and configure by sight. Drop-targets are discoverable DOM, not "opaque SVG".
+- **…and over a long editing session it wedges anyway.** Which is the whole point of rung 3.
+
+### The record (same canvas, same work, 2 Aug 2026)
+
+| Engine | Runs | Wedges |
+|---|---|---|
+| Claude in Chrome (rung 2) | — | **9** `Script injection timed out` |
+| **Codex Computer Use (rung 3)** | **9** | **0** — not one injection error |
+
+Rung 3 has **no injection gate to wedge**: it captures the real screen and moves a real mouse. That
+is the entire reason it doesn't fail the way rung 2 fails. **Reach for it early on long builds** —
+retrying rung 2 through a wedge costs more time than starting at rung 3 would have.
+
+### How to run it
+
+```bash
+~/.claude/skills/computer-control/scripts/codex-cu.sh gui "<task>"
+```
+
+- **Driven from Bash, BACKGROUNDED.** Runs take **8–25 minutes** and the Bash tool caps at 600s —
+  a foreground call will time out on a task that is working perfectly. Background it.
+- ⛔ **Point it at the browser where Braze is actually logged in — that was DIA, not Chrome.**
+  Chrome's CU screen capture timed out repeatedly. Don't reach for Chrome by reflex; name the
+  logged-in browser in the prompt.
+- **Bake this manual's rules into every prompt:** Save = draft only / **never** Launch, verify the
+  `email=<your-test-email>` entry guard, don't edit email content, and one change → Done → Save →
+  verify (§3c).
+
+### ⛔ Native `mcp__computer-use__*` is PERMANENTLY non-viable for browser work
+
+Not a bug, not a permissions state you can fix: **`list_granted_applications` returns Chrome at
+tier `read`, because macOS caps browsers by category.** Clicks and typing are blocked *at the tool
+layer* — it can screenshot a browser and never touch it. Do not spend time on it for any Braze
+task; it is architecturally excluded. Codex CU is the OS-level engine.
+
+### Traps when Codex CU itself misbehaves
+
 - If Codex's `get_app_state` times out: its SkyComputerUseClient is wedged or lacks macOS perms.
   `pkill -f SkyComputerUseClient` forces a fresh spawn on the next run. If a *fresh* one still times
   out, the Screen-Recording grant is ineffective (common after an app update) — re-grant (toggle
   off/on) + quit/reopen "Codex Computer Use"; a locked/contended screen also blocks it.
-- **Launch-context trap (cost hours once):** if Codex CU works when the *user* runs it
-  interactively (Codex app/CLI) but EVERY `codex exec gui` you launch from Bash times out on
-  `get_app_state` / `list_apps` — including a fresh post-`pkill` respawn, and even after the user
-  confirms the setup — the Screen-Recording grant is likely not inheriting into your Bash-spawned
-  process (it's bound to the Codex app's TCC context, not the shell's). You CANNOT fix this from the
-  shell. Hand the build prompt to the user to paste into the Codex app directly, or fall back to the
-  user driving the dashboard for the vision-only steps (the drag-drop flow).
-- The native `mcp__computer-use__*` tools are NOT a substitute for the flow build — macOS caps
-  browsers at "read" tier, so they can screenshot the browser but cannot click in it; and their
-  `request_access` needs the user to approve a dialog on-screen.
+- **Launch-context trap — real, but NOT universal (softened 2 Aug 2026).** It has been observed that
+  Codex CU works when the *user* runs it interactively while every `codex exec gui` launched from
+  Bash times out on `get_app_state` / `list_apps` — the Screen-Recording grant not inheriting into
+  the Bash-spawned process (it is bound to the Codex app's TCC context, not the shell's). **But the
+  9-run build above was launched from Bash and worked.** So treat a Bash-launch timeout as a machine
+  state to repair (re-grant + quit/reopen the CU app, `pkill` the client), **not** as proof that
+  Bash-launched CU is impossible. Only after repairing and retrying should you hand the prompt to
+  the user to paste into the Codex app directly.
 
 ## 10. Getting emails INTO Braze (prereq for any Message step)
 
