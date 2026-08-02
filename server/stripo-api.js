@@ -220,10 +220,23 @@ async function stripoRestRequest({ config, endpoint, params, body, auth, method,
   // If a future endpoint legitimately needs to mutate templates, this
   // guard MUST be revisited consciously rather than worked around in
   // calling code.
+  //
+  // ── Conscious revisit, 2026-07-16 (stripo-format-research.md) ───────
+  // POST /templates/import/mjml is explicitly ALLOWLISTED. It CREATES a
+  // brand-new template from an MJML document (Stripo compiles it
+  // server-side) — it cannot touch any existing template, so it does not
+  // violate the "never modify the master template" rule this guard
+  // enforces. It is also the only documented API door into template
+  // creation. The allowlist is exact-path + POST-only: PUT/PATCH/DELETE
+  // on /templates/<id> (DELETE /templates is documented upstream) remain
+  // refused, as does any other non-GET on template paths.
   const normalisedEndpoint = String(endpoint || "").toLowerCase();
+  const normalisedPath = normalisedEndpoint.split("?")[0].replace(/\/+$/g, "");
   const touchesTemplatePath = /(^|\/)templates?(\/|$|\?)/.test(normalisedEndpoint);
   const isMutatingMethod = method !== "GET" && method !== "HEAD";
-  if (touchesTemplatePath && isMutatingMethod) {
+  const isAllowlistedTemplateCreate =
+    method === "POST" && /(^|\/)templates\/import\/mjml$/.test(normalisedPath);
+  if (touchesTemplatePath && isMutatingMethod && !isAllowlistedTemplateCreate) {
     const err = new Error(
       `Refused: Orbit must never modify Stripo templates. Blocked ${method} ${endpoint}. ` +
         "If you genuinely need to mutate a template, revisit the guard in stripoRestRequest() " +
