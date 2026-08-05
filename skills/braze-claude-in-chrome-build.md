@@ -1214,6 +1214,72 @@ while the editor is open — a coordinate click there hits the panel, not Save. 
 `elementFromPoint` before any coordinate click; "in viewport" is not "clickable".** Close the panel
 first, then re-hit-test.
 
+### ⭐⭐⭐ THE SIX-RUN CORRECTION SET (05 Aug 2026) — these SUPERSEDE conflicting guidance above
+
+From six runs rebuilding one canvas's audience-path groups. Reproduced, not inferred.
+
+**1. SCREENSHOT-BEFORE-CLICK IS MANDATORY — and it is the root cause of most "clicks aren't
+landing" reports in this file.** A coordinate click with **no screenshot immediately
+preceding it** silently no-ops **at verified-correct coordinates**. Reproduced three times;
+a screenshot as **action 0 of every batch** fixed it every time. **Before you reach for
+synthetic pointer sequences, `elementFromPoint` hit-tests, or a "the surface is broken"
+diagnosis — add the screenshot.** On this canvas the omission cost six failed attempts and
+manufactured a false *"the server rejects saves"* conclusion that stood for three sessions.
+
+**2. CLICK SPACE IS SCREENSHOT SPACE, NOT CSS PIXELS.** `K = shot_width / window.innerWidth`;
+click at `DOM_rect_center × K`. K measured **0.9485 and later 0.8218 within one session** as
+the window changed. This contradicts the "`getBoundingClientRect()` matches click coordinates
+1:1" note elsewhere in this file — **trust the measurement, not the 1:1 claim. Never hardcode
+a coordinate map. Never call `resize_window`** (it re-scales the viewport and invalidates
+everything).
+
+**3. ACTIVATION IS PER-CONTROL — there is no universal method.**
+
+| Control | Fires via |
+|---|---|
+| `Add A New Group` | **React `onClick` ONLY** — a real click is inert |
+| `Save` | **Real click ONLY** — fiber `onSave()` does not persist group config |
+| `Done` | Either |
+| **AND/OR join** | **No `onClick` at all** — `onChangeRelationship('and')` off the FilterConditionGroup fiber |
+
+**The AND/OR row is a correctness bug, not ergonomics: without that handler every new group
+saves as `OR`,** silently matching far more users than intended. Verify the relationship in
+the readback, every time.
+
+**4. NEVER use the DOM value setter on filter ATTRIBUTE-VALUE inputs.** It desyncs React's
+`_valueTracker`, after which **every subsequent real keystroke is swallowed** — DOM shows the
+value, React state stays `""`, `Field required` persists. The group **name** field tolerates
+it; value fields do not. Cost one full group before it was spotted.
+
+**5. Tab budget is ~10–12 interactions, and screenshots beginning to time out is the EARLY
+WARNING** that the tab is about to freeze — bank the Save and open a fresh tab. A Save
+triggers a reload that resets the budget, so **save-per-group is cheaper than fighting a
+wedged tab.** (Earlier framings of this ceiling as interaction-count-only or wall-clock-only
+were both partial; treat ~10–12 interactions as the working number and the screenshot timeout
+as the signal.)
+
+**6. STOP AT A CLEAN GATE BOUNDARY.** A half-built multi-condition gate **tier-qualifies the
+legacy groups and drops the other tier to Everyone Else** — a partial gate is **worse than an
+untouched one**. Finish the gate you start, or revert it by reloading without saving.
+
+**7. Prove a Save landed by watching `last_edit` move** in
+`/engagement/canvas_data/<doc_id>?omit_steps=false`. That endpoint is also the **only** way to
+read audience-path filter definitions — REST is blind to them. **Never run the fetch inside an
+editing tab; it wedges the editor.**
+
+#### Three structural facts worth not rediscovering
+
+- **Audience→audience routing is LEGAL.** Braze restricts **cycles**, not step types; a split
+  may route directly to another split, including across parallel arms. Verified by arming
+  connection mode and reading the canvas's own React props — the invalid targets were the
+  origin's ancestors, not other splits.
+- **Braze persists NO template reference on canvas message steps.** No `template_id` anywhere
+  in the payload, only the copied body. "Which template is this step bound to" is **not
+  answerable from any API** — match subject/preheader against your push registry instead.
+- **A canvas step body can NEVER be byte-identical to its template** — Braze injects per-link
+  `?lid=` tracking and re-adds `| id: 'cbNN'` content-block suffixes at bind time. **Verify a
+  rebind by CONTENT assertion, never by hash equality.**
+
 ### ⛔⛔ RUN THE SAVE DISCRIMINATOR BEFORE ANY CANVAS BUILD WORK — **MANUALLY**
 
 > ### ⭐⭐ CORRECTION, 1 Aug 2026 — "Save is a silent no-op" was WRONG
