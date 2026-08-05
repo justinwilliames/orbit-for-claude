@@ -1233,18 +1233,26 @@ the window changed. This contradicts the "`getBoundingClientRect()` matches clic
 a coordinate map. Never call `resize_window`** (it re-scales the viewport and invalidates
 everything).
 
-**3. ACTIVATION IS PER-CONTROL — there is no universal method.**
+**3. ⛔ RETRACTED 05 Aug 2026 (same day) — "activation is per-control" was an ARTEFACT.**
+An earlier version of this section claimed `Add A New Group` fired only via React `onClick`
+and the AND/OR join only via `onChangeRelationship`. **Both are wrong.** With
+screenshot-before-click discipline (rule 1), **every control responded to plain real clicks** —
+the AND/OR join simply opens an AND/OR menu. The "per-control" rule was measuring clicks made
+without a preceding screenshot. **Use real clicks throughout.**
 
-| Control | Fires via |
-|---|---|
-| `Add A New Group` | **React `onClick` ONLY** — a real click is inert |
-| `Save` | **Real click ONLY** — fiber `onSave()` does not persist group config |
-| `Done` | Either |
-| **AND/OR join** | **No `onClick` at all** — `onChangeRelationship('and')` off the FilterConditionGroup fiber |
+**⛔ ALSO RETRACTED: do NOT call `onAddFilter({filter_key:...})`.** The depth-34 handler is
+**arity-1 `filterIndex` — a NUMBER, not a descriptor.** Calling it with a descriptor **wedges
+the renderer permanently** and costs the tab. **Build filter rows through the UI.**
 
-**The AND/OR row is a correctness bug, not ergonomics: without that handler every new group
-saves as `OR`,** silently matching far more users than intended. Verify the relationship in
-the readback, every time.
+**3b. ⭐⭐⭐ THE ~60–90s FREEZE IS A STALL, NOT A WEDGE — AND IT RECOVERS. WAIT IT OUT.**
+Creating the **first** Custom-Attributes filter row in a tab blocks the renderer for 60–90
+seconds while the custom-attribute list loads. **Screenshots time out for the entire
+duration, then the tab returns with state intact.** It costs **once per tab** — the list is
+cached afterwards, so a single warm tab can carry many gates (ten, on one canvas). **This
+very likely explains a large share of this file's historic "wedge" record: tabs were being
+killed that would have recovered.** Treat a screenshot timeout during first-filter creation
+as *expected*, not as failure. Reserve "the tab is dead" for a freeze that outlasts ~2
+minutes.
 
 **4. NEVER use the DOM value setter on filter ATTRIBUTE-VALUE inputs.** It desyncs React's
 `_valueTracker`, after which **every subsequent real keystroke is swallowed** — DOM shows the
