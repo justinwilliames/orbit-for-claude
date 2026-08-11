@@ -8,13 +8,18 @@ const ROOT_DIR = process.cwd();
 const BUILD_DIR = path.join(ROOT_DIR, ".mcpb-build");
 const BUNDLE_SERVER_DIR = path.join(BUILD_DIR, "server");
 
-// Version consistency guard — fail fast if package.json and manifest.json disagree.
+// Version consistency guard — THREE files, not two. server.json was the
+// missing one, and it sat a release behind (0.27.7 against a 0.27.8
+// bundle) while being the document the MCP registry publishes from, so
+// the one channel built for strangers advertised the wrong version of a
+// file it also mis-checksummed.
 const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "package.json"), "utf8")).version;
 const manifestVersion = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8")).version;
-if (pkgVersion !== manifestVersion) {
+const serverJsonVersion = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "server.json"), "utf8")).version;
+if (pkgVersion !== manifestVersion || pkgVersion !== serverJsonVersion) {
   process.stderr.write(
-    `Version mismatch: package.json=${pkgVersion} manifest.json=${manifestVersion}\n` +
-    `Update both files to the same version before building.\n`
+    `Version mismatch: package.json=${pkgVersion} manifest.json=${manifestVersion} server.json=${serverJsonVersion}\n` +
+    `Update all three files to the same version before building.\n`
   );
   process.exit(1);
 }
@@ -33,6 +38,16 @@ try {
   execSync("node scripts/sync-manifest-annotations.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
 } catch {
   console.log("manifest.json annotations were stale and have been rewritten — commit the change.");
+}
+
+// Keep every stated skill/tool count matching the real inventory. These
+// numbers are read by strangers deciding whether to bother, and they were
+// understating the product by 41 tools.
+console.log("Syncing stated skill/tool counts...");
+try {
+  execSync("node scripts/sync-counts.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
+} catch {
+  console.log("Inventory counts were stale and have been rewritten — commit the change.");
 }
 
 // Refresh the guide library export from get.yourorbit.team so the

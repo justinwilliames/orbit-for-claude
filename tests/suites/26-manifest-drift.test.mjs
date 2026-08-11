@@ -98,6 +98,43 @@ describe("Manifest drift guard — manifest.json tool list matches server regist
     );
   });
 
+  test("package.json, manifest.json and server.json agree on the version", () => {
+    // server.json is what the MCP registry publishes from, and it sat a
+    // release behind while being invisible to every guard — so the one
+    // channel built for strangers advertised the wrong version of a file
+    // whose checksum was also wrong.
+    const read = (f) => JSON.parse(fs.readFileSync(path.join(ROOT_DIR, f), "utf8")).version;
+    const versions = {
+      "package.json": read("package.json"),
+      "manifest.json": read("manifest.json"),
+      "server.json": read("server.json"),
+    };
+    assert.equal(
+      new Set(Object.values(versions)).size,
+      1,
+      `version drift across the three files a release reads: ${JSON.stringify(versions)}`
+    );
+  });
+
+  test("server.json's checksum is generated, never hand-written", () => {
+    // The live registry entry pinned a fileSha256 that did not match its
+    // own release asset, so any installer honouring the checksum refused
+    // the download. The checked-in copy is a TEMPLATE — the hash cannot
+    // be known until the asset exists, so an empty string here is
+    // correct and a populated one means somebody typed it.
+    // scripts/build-server-json.mjs fills it in CI from the exact bytes
+    // that were uploaded.
+    const serverJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "server.json"), "utf8"));
+    for (const pkg of serverJson.packages) {
+      assert.equal(
+        pkg.fileSha256,
+        "",
+        "server.json carries a hand-written fileSha256 — it must be stamped by " +
+        "scripts/build-server-json.mjs from the released asset, never typed"
+      );
+    }
+  });
+
   test("every manifest entry declares the same safety class the server registers", async () => {
     // Names alone were never enough. The manifest said nothing at all
     // about which of 121 tools write to a production ESP while the server

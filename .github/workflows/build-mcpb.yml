@@ -113,6 +113,33 @@ jobs:
               --notes "Orbit MCPB v$VERSION. Free, no account and no key required. Install: download the .mcpb and double-click it (Claude Desktop replaces any older version in place)."
           fi
 
+      # Publish to the MCP registry from the asset we just uploaded.
+      #
+      # This step exists because the manual version of it produced a live
+      # registry entry whose fileSha256 did not match its own release
+      # asset — so an installer that honours the checksum refused the
+      # download, on the one channel built for strangers. The hash is
+      # computed here from the exact bytes that were released; nothing is
+      # typed by hand. Skips cleanly if the publisher isn't configured, so
+      # a missing token degrades to "the registry is stale," not a failed
+      # release.
+      - name: Stamp and publish the MCP registry entry
+        env:
+          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
+        run: |
+          node scripts/build-server-json.mjs \
+            orbit-lifecycle-marketing-system-for-claude.mcpb
+          cat server.json
+          if [ -z "$MCP_REGISTRY_TOKEN" ]; then
+            echo "MCP_REGISTRY_TOKEN not set — skipping registry publish. server.json is stamped above; publish it manually with \`mcp-publisher publish\`."
+            exit 0
+          fi
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+          ./mcp-publisher publish --token "$MCP_REGISTRY_TOKEN" \
+            && echo "Registry entry published." \
+            || echo "Registry publish failed — server.json above is correct; retry manually."
+
       # Notify the get-orbit website immediately that a new MCPB
       # version is live. Triggers the sync-mcpb-version workflow
       # there, which updates lib/orbit-version.ts + pushes → Railway

@@ -1,6 +1,6 @@
 {
   "name": "orbit-claude-extension",
-  "version": "0.27.8",
+  "version": "0.28.0",
   "private": true,
   "type": "module",
   "description": "Orbit - Lifecycle Marketing System for Claude, packaged as a local Claude-first MCP extension.",
@@ -8,7 +8,7 @@
     "start": "node server/index.js",
     "build:skills-manifest": "node server/build-skill-manifest.js",
     "build:extension": "node scripts/build-extension.js",
-    "check": "node -e \"const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));const m=JSON.parse(require('fs').readFileSync('manifest.json','utf8'));if(p.version!==m.version){process.stderr.write('Version mismatch: package.json '+p.version+' vs manifest.json '+m.version+'\\n');process.exit(1)}console.log('Version check OK: '+p.version)\" && for f in server/*.js scripts/*.js scripts/*.mjs; do node --check \"$f\" || exit 1; done && echo \"Syntax check OK\"",
+    "check": "node -e \"const r=f=>JSON.parse(require('fs').readFileSync(f,'utf8')).version;const v={'package.json':r('package.json'),'manifest.json':r('manifest.json'),'server.json':r('server.json')};const u=[...new Set(Object.values(v))];if(u.length>1){process.stderr.write('Version mismatch: '+JSON.stringify(v)+'\\n');process.exit(1)}console.log('Version check OK: '+u[0])\" && for f in server/*.js scripts/*.js scripts/*.mjs; do node --check \"$f\" || exit 1; done && echo \"Syntax check OK\"",
     "smoke": "node server/smoke.js",
     "evals": "node server/evals.js",
     "test": "node tests/run.mjs",

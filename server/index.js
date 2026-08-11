@@ -292,7 +292,7 @@ const server = new McpServer({
     "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
 }, {
   instructions: [
-    "Orbit is a lifecycle-marketing operating system carrying 60+ battle-tested SKILLS (protocols) plus 80+ tools. The skills encode hard-won, production-tested knowledge that generic reasoning does NOT have — Stripo build/push/export mechanics and their silent-failure traps, Braze canvas QA checklists and dashboard-driving quirks, module/Liquid/Smart-Element behaviour, naming conventions, deliverability rules, segmentation maths, and brand voice. Relying on generic email/Braze/Stripo knowledge when Orbit has a skill for the task produces wrong, drift-prone output.",
+    "Orbit is a lifecycle marketer built into Claude, carrying 77 skills and 121 tools. The skills encode hard-won, production-tested knowledge that generic reasoning does NOT have — Stripo build/push/export mechanics and their silent-failure traps, Braze canvas QA checklists and dashboard-driving quirks, module/Liquid/Smart-Element behaviour, naming conventions, deliverability rules, segmentation maths, and brand voice. Relying on generic email/Braze/Stripo knowledge when Orbit has a skill for the task produces wrong, drift-prone output.",
     "",
     "DEFAULT BEHAVIOUR — consult Orbit's skills FIRST. Before doing ANY email, Stripo, Braze, lifecycle, campaign, canvas, segmentation, deliverability, or naming work with Orbit connected:",
     "  1. Call `orbit_route_task` with the user's request (or `orbit_list_skills` to browse) to identify the right skill.",
