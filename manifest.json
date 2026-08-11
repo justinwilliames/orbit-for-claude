@@ -231,6 +231,10 @@
       "description": "Run a structural validation pass on a draft against an Orbit skill."
     },
     {
+      "name": "orbit_continue_job",
+      "description": "Resume a prior Orbit tool call that hit the Claude context limit before finishing. Pass the continuation_token from the earlier response \u2014 Orbit will reload the checkpointed work state and pick up where it left off. If the token has expired (>1h old), was never created, or is already in progress, you'll get a structured error explaining what to do next."
+    },
+    {
       "name": "orbit_check_setup",
       "description": "Run a healthcheck for Orbit config, brand-kit readiness, output paths, and Gemini image generation setup."
     },
@@ -331,12 +335,20 @@
       "description": "Upload email component images to Braze's media library and get back hosted CDN URLs."
     },
     {
+      "name": "orbit_upload_image_to_braze",
+      "description": "Upload a single image to Braze's media library and get back a hosted CDN URL. Designed for use with orbit_compose_stripo_email's slot_values parameter \u2014 pass the returned URL as the value for an image_src or url Smart Element variable. Accepts a remote URL (Braze fetches it server-side, no size limit), a local image file path (uploaded as multipart/form-data binary, 4 MB cap; non-image files are refused), or raw base64 data. Returns { status, url, name, size, host: 'braze' } on success."
+    },
+    {
       "name": "orbit_reconcile_image_urls",
       "description": "Patch Braze-hosted CDN URLs into compiled email HTML files and the Stripo assembly template."
     },
     {
       "name": "orbit_build_braze_pack",
       "description": "Package Orbit production artifacts into a Braze-ready implementation bundle."
+    },
+    {
+      "name": "orbit_export_stripo_email_to_braze",
+      "description": "Turn one or more finished STRIPO emails into Braze email templates so a Braze Canvas can reference them \u2014 fully programmatic, no GUI exports. By default it overwrites rather than duplicates: it UPDATES any Braze template whose name matches the Stripo email's name in place (each row reports operation + matched_by). Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). For emails compiled LOCALLY by Orbit (not built in Stripo), use orbit_sync_to_braze instead."
     },
     {
       "name": "orbit_create_braze_canvas",
@@ -355,6 +367,10 @@
       "description": "Read the full structure of an existing Braze Campaign \u2014 channels, messages, schedule, conversion behaviours, and tags."
     },
     {
+      "name": "orbit_read_braze_segment",
+      "description": "Read the full definition of an existing Braze Segment \u2014 name, description, filter logic, tags, timestamps, and analytics-tracking status. Use this to audit segment targeting logic against canonical attribute names and expected values, or to import segment definitions into Orbit's program model."
+    },
+    {
       "name": "orbit_analyse_segments",
       "description": "List all Braze segments with details, tags, and optional size trend data."
     },
@@ -365,6 +381,10 @@
     {
       "name": "orbit_validate_braze_data",
       "description": "Check whether custom events and custom attributes referenced in an Orbit message"
+    },
+    {
+      "name": "orbit_export_braze_user_by_id",
+      "description": "Read raw Braze user profiles by external_id \u2014 returns custom_attributes, custom_events, campaigns_received, canvas_steps_received, and identity fields exactly as Braze stores them. Use for audit and drift-detection workflows (e.g. checking that billingLifecycleState / planType / hasActiveSubscription match the warehouse source of truth). Up to 50 external_ids per call. For QA-style 'are test users populated' checks, use orbit_validate_test_users instead."
     },
     {
       "name": "orbit_check_deliverability",
@@ -481,6 +501,22 @@
     {
       "name": "orbit_fix_stripo_module",
       "description": "Returns corrected HTML for a Stripo module + paste-back instructions. Auto-fixes available for orphaned_float and sub_600_width. Manual paste required because Stripo's REST API is read-only for modules. Run orbit_audit_stripo_modules first to find what needs fixing."
+    },
+    {
+      "name": "orbit_inspect_stripo_module_bindings",
+      "description": "Diagnostic report on a single Stripo module: which Smart Property variables are registered (and therefore substitutable via slot_values), which esd-gen-* CSS class hooks exist in the module HTML, whether the module looks like a Smart Container (layout shell with empty slots that accept child modules via content[]), and whether the module has a top-level OG-preview link field (the Smart Element wizard dead-end that silently drops CTA bindings). Also flags static-asset patterns (repeating fixed assets registered as Smart Properties without an HTML-comment intent marker) and nesting hazards (esd-gen-* classes on wrapper elements that swallow inner-element edits). Returns the recommended varNames to pass in slot_values today and short actionable notes for the author when bindings are missing or mis-routed. Reads the synced library first; falls back to Stripo's /modules/{id} endpoint if not cached. Use this to verify a module's bindings before composing against it. When notes flag orphan classes or unbound elements, invoke the `stripo-module-bindings` skill for the step-by-step registration walkthrough."
+    },
+    {
+      "name": "orbit_probe_stripo_smart_element",
+      "description": "Tests the production path for content substitution: pushing `values` via the canonical-JSON API into modules marked up with Stripo's `esd-dynamic-block` Smart Element bindings. Auto-picks the first synced module containing `esd-dynamic-block`, parses the JSON config to discover variable names, sends a sentinel value for each variable via POST /email, fetches the rendered email back via GET /emails/<id>, and verifies every sentinel appears in the rendered output. This is the only supported production path for per-send content variation in orbit_compose_stripo_email \u2014 modules must have `esd-dynamic-block` bindings registered via Stripo's Smart Elements wizard for substitution to work. Writes findings to <workspace>/outputs/stripo-smart-element-probe/<timestamp>.md."
+    },
+    {
+      "name": "orbit_probe_stripo_values",
+      "description": "Diagnostic probe \u2014 exercises the older `data-stripo-slot` markup pattern (NOT what Orbit's production setup uses). Production modules use `esd-dynamic-block` Smart Element bindings instead. Creates up to 10 throwaway emails in your Stripo workspace (all named `Orbit \u00b7 values-probe \u00b7` for easy bulk-delete), exercising baseline, per-module + top-level value placement, empty strings, script injection, Liquid passthrough, unknown keys, and HTML in slot values. Auto-picks Module A (no data-stripo-slot markup) and Module B (has markup) from your synced modules; tests against Module B are skipped if no marked-up module exists yet. Writes findings to <workspace>/outputs/stripo-values-probe/<timestamp>.md. Kept for regression-detection if Stripo's API behaviour changes."
+    },
+    {
+      "name": "orbit_probe_stripo_inline_html",
+      "description": "Diagnostic probe \u2014 empirically confirms that pushing locally-assembled HTML into a Stripo email is NOT supported by Stripo's API. All three inline-HTML paths (legacy `areas` shape, `dataSources` inline html, edit-after-push via PUT) fail \u2014 the first two silently. Tests each path in turn and verifies the sentinel HTML appears in the fetched rendered email. Auto-discovers the gen-area name from the master template (never hardcoded). Writes findings to <workspace>/outputs/stripo-inline-html-probe/<timestamp>.md. Kept for regression-detection. Not user setup guidance."
     },
     {
       "name": "orbit_learn_email_template",
