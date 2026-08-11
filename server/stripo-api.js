@@ -24,7 +24,6 @@
 
 import { safeParseJson } from "./utils.js";
 import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
-import { assertActivatedForIntegration } from "./activation.js";
 
 const STRIPO_BREAKER = getBreaker("stripo");
 const STRIPO_API_TIMEOUT_MS = 20_000;
@@ -100,7 +99,6 @@ export function validateStripoRestSetup(config) {
  * authorise REST API calls despite the name; Phase 0 probe confirmed).
  */
 export async function mintStripoPluginJwt({ config, role = "USER", userId = "orbit-mcp" }) {
-  assertActivatedForIntegration("stripo");
   const setupError = validateStripoPluginSetup(config);
   if (setupError) throw new Error(setupError.message);
 
@@ -201,8 +199,6 @@ export async function stripoRestDelete({ config, endpoint, params = {}, auth = "
 }
 
 async function stripoRestRequest({ config, endpoint, params, body, auth, method, accept }) {
-  assertActivatedForIntegration("stripo");
-
   // ─── Defence-in-depth: never mutate the master template. ────────────
   //
   // Hard rule: Orbit must NEVER edit the Master template provided by the

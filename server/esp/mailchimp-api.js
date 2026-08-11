@@ -33,7 +33,6 @@
 
 import { safeParseJson } from "../utils.js";
 import { fetchWithRetry, getBreaker } from "../orbit-resilience.js";
-import { assertActivatedForIntegration } from "../activation.js";
 import { EspApiError } from "./errors.js";
 
 const PLATFORM = "mailchimp";
@@ -144,7 +143,6 @@ function mapHttpError({ status, verb, endpoint, parsed, text, retryAfter }) {
  * no-retry default (mirrors braze-api.js:120-124).
  */
 async function mailchimpRequest({ config, method, endpoint, params = {}, body, idempotent }) {
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit();
 
   const url = new URL(`${baseUrl(config)}${endpoint}`);

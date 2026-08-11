@@ -81,10 +81,6 @@ import {
 import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
-import {
-  startActivationCheck,
-  activationRequiredResponse,
-} from "./activation.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -380,11 +376,6 @@ registerTools();
 // never blocks transport connect. Result is cached for 24h on disk
 // so repeat sessions don't re-hit GitHub.
 startVersionNag({ installedVersion: ORBIT_VERSION });
-// Kick off the free account-activation check. Fire-and-forget; validates
-// the user's Activation Key against get-orbit and caches the result. The
-// tool dispatcher (withToolErrorHandling) reads getActivationState() to
-// gate capabilities. No key configured → gated tools prompt to activate.
-startActivationCheck({ activationKey: runtimeConfig.activationKey });
 // Fire a session_start telemetry event if opted in (no-op otherwise).
 trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
 
@@ -5713,13 +5704,9 @@ function withToolErrorHandling(toolName, handler) {
     trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
     trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
 
-    // Activation gate (free, account-gated). NOT enforced here per-tool —
-    // only EXTERNAL API integrations are gated, at their network choke
-    // points via assertActivatedForIntegration() (server/activation.js).
-    // That guard throws ActivationRequiredError (code "not_activated"),
-    // which the catch below converts into the friendly activation
-    // response. Every local tool and skill — and the local preview/compose
-    // paths of integration tools — runs without a key.
+    // Orbit is free and ungated: every tool runs for every user. No
+    // licence check, no call-home, no key. The only gate a tool can hit
+    // is a missing third-party credential it genuinely needs.
     try {
       // Deadline-wrapped handler. Promise.race lets us return a shaped
       // timeout response without leaving the handler hanging in the
@@ -5824,13 +5811,6 @@ function withToolErrorHandling(toolName, handler) {
       });
       return result;
     } catch (err) {
-      // Activation gate: an external integration call (Braze/Stripo/Figma/
-      // Gemini) was attempted without activation. Convert the thrown guard
-      // into the friendly "activate at yourorbit.team" response. Local
-      // tools never throw this, so they're unaffected.
-      if (err?.code === "not_activated" || err?.name === "ActivationRequiredError") {
-        return makeJsonToolResponse(activationRequiredResponse(toolName));
-      }
       const message = err?.message ?? String(err);
       const errName = err?.name ?? "Error";
       // Prefer the structured HTTP status when the upstream client attached

@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { assertActivatedForIntegration } from "./activation.js";
 
 const GEMINI_TIMEOUT_MS = 90_000;
 const GEMINI_MAX_ATTEMPTS = 2;
@@ -95,8 +94,6 @@ export async function generateBrandArtLayer({
   if (process.env.ORBIT_TEST_MOCK_IMAGES === "1") {
     return generateTestArtLayer({ canvas, variationIndex });
   }
-
-  assertActivatedForIntegration("gemini");
 
   if (!config.googleAiApiKey) {
     const error = new Error(

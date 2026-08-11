@@ -4,7 +4,7 @@
  * Implements the frozen adapter contract (design §2.1) for Klaviyo's
  * supported operations, mirroring braze-api.js's hardening: a promise-chain
  * rate limiter, retry + circuit breaker via orbit-resilience.js, a 20s
- * timeout, activation gating at the single network funnel, and ESP-specific
+ * timeout, and ESP-specific
  * error normalisation (JSON:API error arrays → EspApiError codes).
  *
  * Klaviyo specifics (design §1.4, capability rows re-verified against the
@@ -26,7 +26,6 @@
 
 import { fetchWithRetry, getBreaker } from "../orbit-resilience.js";
 import { safeParseJson } from "../utils.js";
-import { assertActivatedForIntegration } from "../activation.js";
 import { EspApiError } from "./errors.js";
 
 const PLATFORM = "klaviyo";
@@ -77,12 +76,10 @@ function validateSetup(config) {
 }
 
 // ---------------------------------------------------------------------------
-// Core request funnel — the single network entry point (activation-gated)
+// Core request funnel — the single network entry point
 // ---------------------------------------------------------------------------
 
 async function klaviyoRequest({ config, method, path, query, body, idempotent }) {
-  // Single activation choke point for the whole adapter (design §2.1 / §2.5).
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit();
 
   const url = new URL(`${BASE_URL}${path}`);

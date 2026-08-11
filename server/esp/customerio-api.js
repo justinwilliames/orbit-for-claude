@@ -28,7 +28,6 @@
 
 import { safeParseJson } from "../utils.js";
 import { fetchWithRetry, getBreaker } from "../orbit-resilience.js";
-import { assertActivatedForIntegration } from "../activation.js";
 import { EspApiError } from "./errors.js";
 
 const PLATFORM = "customerio";
@@ -106,7 +105,6 @@ function mapHttpError({ response, endpoint, parsed, text }) {
  * timeout must never double-send a proof).
  */
 async function cioRequest({ config, method = "GET", endpoint, params = {}, body }) {
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit();
 
   const url = new URL(`${baseUrl(config)}${endpoint}`);
@@ -247,7 +245,6 @@ async function checkAuth({ config }) {
     return { ok: true, detail: "Customer.io App API key accepted." };
   } catch (err) {
     // Auth/permission/etc. resolve to a soft { ok:false }; the activation gate
-    // (ActivationRequiredError) is NOT an EspApiError and propagates untouched.
     if (err instanceof EspApiError) {
       return { ok: false, code: err.code, detail: err.detail };
     }

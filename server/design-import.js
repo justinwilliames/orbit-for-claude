@@ -14,7 +14,6 @@ import {
 } from "./utils.js";
 import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
 import { fetchGuarded } from "./url-guard.js";
-import { assertActivatedForIntegration } from "./activation.js";
 
 const FIGMA_BREAKER = getBreaker("figma");
 
@@ -423,7 +422,6 @@ function normalizeFigmaNodeId(value) {
 const FIGMA_API_TIMEOUT_MS = 15_000;
 
 async function fetchFigmaJson({ config, resourcePath, headers }) {
-  assertActivatedForIntegration("figma");
   // Retry + circuit breaker for transient Figma failures.
   const response = await fetchWithRetry(
     `${config.figmaApiBaseUrl}${resourcePath}`,

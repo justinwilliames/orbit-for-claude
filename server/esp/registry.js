@@ -108,8 +108,7 @@ export function resolvePlatform(explicit, config) {
  *   3. Adapter missing/broken -> friendly needs_setup for that platform only.
  *   4. Adapter omits the method -> centrally-manufactured {unsupported}.
  *   5. Adapter's validateSetup returns an object -> that needs_setup, returned.
- *   6. Otherwise -> the adapter method runs (its own activation assert fires
- *      inside it, at the network entry point).
+ *   6. Otherwise -> the adapter method runs.
  *
  * @param {string} platform    a resolved platform key.
  * @param {string} operation   an adapter method name (see capabilities.OPERATIONS).

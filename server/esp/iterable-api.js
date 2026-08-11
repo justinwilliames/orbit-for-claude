@@ -14,7 +14,6 @@
  *     per project).
  *   - Metrics arrive as CSV, not JSON — parsed here into NormalizedMetrics.
  *
- * Every network entry point calls assertActivatedForIntegration("iterable")
  * before leaving the machine (the locked one-liner). A missing key never
  * crashes: validateSetup returns a friendly needs_setup object.
  *
@@ -28,7 +27,6 @@
  * what this adapter uses.
  */
 
-import { assertActivatedForIntegration } from "../activation.js";
 import { fetchWithRetry, getBreaker } from "../orbit-resilience.js";
 import { safeParseJson } from "../utils.js";
 import { EspApiError } from "./errors.js";
@@ -156,7 +154,6 @@ function wrapTransportError(err, endpoint) {
  * clientTemplateId is safe; email/proof and email/target are not).
  */
 async function iterableJson({ config, method, endpoint, params = {}, body, idempotent }) {
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit(endpoint.startsWith(METRICS_ENDPOINT) ? METRICS_CALL_GAP_MS : DEFAULT_CALL_GAP_MS);
 
   const url = new URL(`${baseUrl(config)}${endpoint}`);
@@ -213,7 +210,6 @@ async function iterableJson({ config, method, endpoint, params = {}, body, idemp
 
 /** CSV GET helper — used only for /api/campaigns/metrics (returns text/csv). */
 async function iterableCsvGet({ config, endpoint, params = {} }) {
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit(METRICS_CALL_GAP_MS);
 
   const url = new URL(`${baseUrl(config)}${endpoint}`);

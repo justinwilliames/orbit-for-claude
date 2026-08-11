@@ -8,7 +8,6 @@
 
 import { randomUUID } from "node:crypto";
 
-import { assertActivatedForIntegration } from "../activation.js";
 import { fetchWithRetry, getBreaker } from "../orbit-resilience.js";
 import { safeParseJson } from "../utils.js";
 import { EspApiError } from "./errors.js";
@@ -247,7 +246,6 @@ async function mintToken(config, identity) {
   const setupFailure = setupError(config, "/v2/token");
   if (setupFailure) throw setupFailure;
 
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit();
 
   const subdomain = normalizeSubdomain(config.sfmcSubdomain);
@@ -389,7 +387,6 @@ function buildRestUrl(restBaseUrl, endpoint, params = {}) {
 }
 
 async function requestOnce({ token, endpoint, method, params, body, allowRetry }) {
-  assertActivatedForIntegration(PLATFORM);
   await rateLimit();
   const url = buildRestUrl(token.restBaseUrl, endpoint, params);
   const init = {

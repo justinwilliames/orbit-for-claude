@@ -8,7 +8,6 @@ import {
   scanBrandKitFolder
 } from "./config.js";
 import { loadBrandGuidelines } from "./brand-kit.js";
-import { getActivationState } from "./activation.js";
 import { loadOrbitPreferences, saveCopyPreferences } from "./preferences.js";
 import { BRAND_LAYOUT_FAMILIES, PLATFORM_OPTIONS } from "./visual-specs.js";
 import { fileExists, isHexColor } from "./utils.js";
@@ -57,10 +56,6 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
   const allowCopyWithoutBrandGuidelines = Boolean(
     preferences.copy_preferences?.allow_without_brand_guidelines
   );
-  // Live activation state (no_key | valid | invalid | unverified). Surfaced
-  // so this ungated healthcheck can self-diagnose a key-gated tool surface.
-  const activation = getActivationState();
-
   const checks = [
     {
       key: "default_output_dir",
@@ -122,19 +117,6 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       key: "stripo_master_template_id",
       passed: Boolean(config.stripoMasterTemplateId),
       detail: config.stripoMasterTemplateId ?? null
-    },
-    // Free account-activation key (yourorbit.team). Appended LAST so the
-    // index-based featureReadiness references above (checks[5..7]) stay
-    // valid. `passed` reflects whether a key actually reached the server's
-    // environment — the single field most likely to be empty right after a
-    // version update, because Claude Desktop's long-lived MCP process keeps
-    // running with the pre-update environment until it's fully relaunched.
-    {
-      key: "activation_key",
-      passed: Boolean(config.activationKey),
-      detail: config.activationKey
-        ? `configured (activation status: ${activation.status})`
-        : "missing — no Activation Key reached the server. If you've already pasted one in Settings → Extensions → Orbit, fully quit Claude Desktop (Cmd+Q on Mac; on Windows, quit from the system tray or Task Manager — closing the window is not enough) and relaunch so Orbit's background server restarts and re-reads it."
     }
   ];
 
@@ -279,8 +261,6 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
       company_name: config.companyName ?? null,
       default_platform: config.defaultPlatform ?? null,
       default_geography: config.defaultGeography ?? null,
-      activation_key: config.activationKey ? "configured" : "missing",
-      activation_status: activation.status,
       brand_kit_dir: effectiveBrandKitDir,
       default_output_dir: config.defaultOutputDir ?? null,
       library_dir: config.libraryDir ?? null,

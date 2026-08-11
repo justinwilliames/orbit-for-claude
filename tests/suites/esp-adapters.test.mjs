@@ -14,15 +14,10 @@
  *      (grep-level assertion is sufficient per the ruling).
  *
  * All network is stubbed by replacing globalThis.fetch, so the suite is
- * hermetic. Activation is bypassed the same way the harness does it
- * (ORBIT_ACTIVATION_BYPASS=1), set here BEFORE activation.js loads so a
- * direct `node --test` of this file behaves identically to `npm test`.
+ * hermetic.
  *
  * Import target resolves via ORBIT_TEST_SERVER_DIR, defaulting to ../../server.
  */
-
-// Must be set before activation.js is imported/started below.
-process.env.ORBIT_ACTIVATION_BYPASS = "1";
 
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -47,12 +42,6 @@ const { fetchWithRetry } = await import(srvUrl("orbit-resilience.js"));
 const { ESP_TOOL_DEFINITIONS, setEspRuntimeConfig } = await import(
   srvUrl("esp/tools.js")
 );
-const { startActivationCheck } = await import(srvUrl("activation.js"));
-
-// Flip the session to activated (dev bypass) so the adapters' network-entry
-// activation guard doesn't short-circuit the paths under test.
-startActivationCheck();
-
 // ── fetch stubbing ────────────────────────────────────────────────
 const REAL_FETCH = globalThis.fetch;
 afterEach(() => {

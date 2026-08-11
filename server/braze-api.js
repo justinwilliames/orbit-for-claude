@@ -10,7 +10,6 @@
 import { validateBrazeEndpoint } from "./config.js";
 import { safeParseJson } from "./utils.js";
 import { fetchWithRetry, getBreaker } from "./orbit-resilience.js";
-import { assertActivatedForIntegration } from "./activation.js";
 
 const BRAZE_BREAKER = getBreaker("braze");
 
@@ -69,7 +68,6 @@ export function validateBrazeSetup(config) {
  * consecutive failures to protect Braze (and Orbit) during outages.
  */
 export async function brazeGet({ config, endpoint, params = {} }) {
-  assertActivatedForIntegration("braze");
   await rateLimit();
   const baseUrl = config.brazeRestEndpoint.replace(/\/+$/g, "");
   const url = new URL(`${baseUrl}${endpoint}`);
@@ -110,7 +108,6 @@ export async function brazeGet({ config, endpoint, params = {} }) {
  * Make a POST request to the Braze REST API with retry + circuit breaker.
  */
 export async function brazePost({ config, endpoint, body = {}, idempotent }) {
-  assertActivatedForIntegration("braze");
   await rateLimit();
   const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}${endpoint}`;
 
@@ -175,7 +172,6 @@ export async function brazePost({ config, endpoint, body = {}, idempotent }) {
  * file / base64 uploads need this multipart helper.
  */
 export async function brazeUploadAsset({ config, fileBuffer, fileName, contentType, name }) {
-  assertActivatedForIntegration("braze");
   await rateLimit();
   const url = `${config.brazeRestEndpoint.replace(/\/+$/g, "")}/media_library/create`;
 
