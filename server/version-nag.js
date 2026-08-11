@@ -15,6 +15,8 @@
  *     same day don't re-call GitHub.
  *   - Privacy-neutral. No identifiers sent; only a public manifest
  *     fetch. Works whether or not telemetry is opted in.
+ *   - Opt-out via ORBIT_UPDATE_CHECK=0. Separate switch from
+ *     ORBIT_TELEMETRY on purpose — see startVersionNag.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -32,6 +34,12 @@ let checked = false;
 // notice doesn't attach to every tool response. First tool of the
 // session shows the nag; everything after stays clean.
 let surfacedThisSession = false;
+
+/** ORBIT_UPDATE_CHECK=0 / false / no turns the startup check off. */
+function updateCheckDisabled() {
+  const raw = String(process.env.ORBIT_UPDATE_CHECK ?? "").trim().toLowerCase();
+  return raw === "0" || raw === "false" || raw === "no" || raw === "off";
+}
 
 function readCache() {
   try {
@@ -62,6 +70,12 @@ function writeCache(result) {
 export function startVersionNag({ installedVersion } = {}) {
   if (checked) return;
   checked = true;
+  // Its own opt-out, separate from ORBIT_TELEMETRY. Deliberately not
+  // folded into the telemetry switch: this call carries no identifiers
+  // and is the only way an already-installed user learns a new release
+  // exists, so someone opting out of analytics shouldn't silently opt
+  // out of updates too. Both are documented in PRIVACY.md.
+  if (updateCheckDisabled()) return;
   // Disk cache first
   const cachedResult = readCache();
   if (cachedResult) {
@@ -94,7 +108,13 @@ export function startVersionNag({ installedVersion } = {}) {
  */
 export function getVersionNag() {
   if (!cached) return null;
-  if (cached.update_available !== true || !cached.latest_version) return null;
+  // Gate on `status`, which is the field checkOrbitVersion actually
+  // returns. This read `cached.update_available !== true` from the
+  // commit that introduced both halves — a boolean the producer has
+  // never set — so the nag could not fire, ever, on any install. Dead
+  // for the whole life of the feature, and it's the only channel that
+  // reaches somebody who already has Orbit installed.
+  if (cached.status !== "update_available" || !cached.latest_version) return null;
   // Already surfaced this session — stay silent.
   if (surfacedThisSession) return null;
   surfacedThisSession = true;
@@ -118,5 +138,16 @@ export function getVersionNag() {
  * Not called in production.
  */
 export function _resetVersionNagForTest() {
+  surfacedThisSession = false;
+}
+
+/**
+ * Test helper — seed the in-memory cache directly so a test can assert
+ * getVersionNag()'s gate without a network call or a disk write.
+ * Not called in production.
+ */
+export function _seedVersionNagForTest(result) {
+  cached = result;
+  checked = true;
   surfacedThisSession = false;
 }

@@ -2,12 +2,18 @@
  * Opt-in structured tool-invocation logging.
  *
  * Writes one JSONL event per tool call to ~/Orbit/logs/orbit-trace.jsonl
- * when ORBIT_DEBUG_TRACE=1. Each event records tool name, args hash,
+ * when ORBIT_DEBUG_TRACE is on. Each event records tool name, args hash,
  * duration, outcome (ok/error/timeout/...), response size, and any
  * retry/breaker/truncation signals. Users hitting mysterious bugs can
  * flip the flag, reproduce, and share the log.
  *
  * Strictly opt-in — zero overhead when the env var is unset.
+ *
+ * Accepts "1" or "true" because there are two ways in: an env var a
+ * developer exports, and the "Debug trace log" checkbox in the extension
+ * settings, which substitutes the string "true". This flag was the only
+ * diagnostic Orbit had and it was documented nowhere outside this
+ * comment — see docs/SETUP.md and .github/ISSUE_TEMPLATE/bug_report.yml.
  */
 
 import crypto from "node:crypto";
@@ -15,7 +21,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const ENABLED = process.env.ORBIT_DEBUG_TRACE === "1";
+const ENABLED = ["1", "true", "yes", "on"].includes(
+  String(process.env.ORBIT_DEBUG_TRACE ?? "").trim().toLowerCase()
+);
 
 let _logPath = null;
 let _logStream = null;

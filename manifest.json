@@ -4,7 +4,7 @@
   "display_name": "Orbit",
   "version": "0.28.0",
   "icon": "icon.png",
-  "description": "Lifecycle marketing, CRM, email, SMS, push, retention, deliverability, segmentation, experimentation, and martech operating system for Claude — Orbit Intelligence. Walks users through getting the right inputs, cites practitioner guides, and closes every answer with a concrete next action. Native Braze, Iterable, HubSpot, PostHog integration.",
+  "description": "Lifecycle marketing, CRM, email, SMS, push, retention, deliverability, segmentation, experimentation, and martech operating system for Claude — Orbit Intelligence. Walks users through getting the right inputs, cites practitioner guides, and closes every answer with a concrete next action. Native API integration with Braze, Iterable, Customer.io, Klaviyo, Mailchimp, Salesforce Marketing Cloud, Stripo, Figma and Gemini.",
   "long_description": "Orbit gives Claude a local lifecycle marketing operating system — Orbit Intelligence — that behaves like a senior lifecycle operator working as an extension of the user's team. It routes requests to the right Orbit protocol, walks the user through any missing data before tools fire (Guided Discovery), cites the specific practitioner guides that informed each answer as Further reading, and returns diagnoses / recommendations with the concrete next action the user needs. Exposes the full skill library as resources, bundles 80+ long-form practitioner guides on lifecycle marketing, deliverability, Braze, email craft, and experimentation as MCP resources for inline citation, loads a canonical skill manifest for routing and validation, creates and maintains a local ~/Orbit workspace automatically on first run without requiring folder setup, runs a step-by-step brand-guidelines intake before drafting brand kits with brand-profile.json plus brand-guidelines.md, runs a discovery-first workflow for journeys, programs, and campaigns so Orbit grounds the work in objectives, KPIs, audience context, connected data sources, and execution constraints before building flows, validates local setup and brand kits, imports Figma email designs and PDF references, infers reusable email components with a controlled taxonomy plus reusable props-and-slots contracts, generates component-first MJML lifecycle emails with HTML previews and QA, saves reusable templates, components, and programs into a local library, syncs Braze Content Blocks and HTML email templates via API, packages Braze-ready implementation bundles, and exports Notion-friendly documentation.",
   "author": {
     "name": "Justin Williames",
@@ -44,7 +44,9 @@
         "ORBIT_SFMC_CLIENT_SECRET": "${user_config.sfmc_client_secret}",
         "ORBIT_SFMC_SUBDOMAIN": "${user_config.sfmc_subdomain}",
         "ORBIT_SFMC_ACCOUNT_ID": "${user_config.sfmc_account_id}",
-        "ORBIT_TELEMETRY": "${user_config.enable_telemetry}"
+        "ORBIT_TELEMETRY": "${user_config.enable_telemetry}",
+        "ORBIT_UPDATE_CHECK": "${user_config.enable_update_check}",
+        "ORBIT_DEBUG_TRACE": "${user_config.enable_debug_trace}"
       }
     }
   },
@@ -70,8 +72,20 @@
     "enable_telemetry": {
       "type": "boolean",
       "title": "Anonymous usage telemetry",
-      "description": "Sends only the event type, the skill / tool slug, the MCPB version, and an opaque per-install ID to https://yourorbit.team/api/mcp/telemetry. Never sends prompts, queries, tool arguments, file contents, or your IP address. It is the only network call Orbit makes on its own behalf — everything else goes to a platform you configured. Untick to opt out, or set ORBIT_TELEMETRY=0. Full detail in PRIVACY.md.",
+      "description": "Sends only the event type, the skill / tool slug, the MCPB version, and an opaque per-install ID to https://yourorbit.team/api/mcp/telemetry. Never sends prompts, queries, tool arguments, file contents, or your IP address. Untick to opt out, or set ORBIT_TELEMETRY=0. The only other call Orbit makes on its own behalf is the startup update check below; everything else goes to a platform you configured. Full detail in PRIVACY.md.",
       "default": true
+    },
+    "enable_update_check": {
+      "type": "boolean",
+      "title": "Check for Orbit updates on startup",
+      "description": "Asks https://yourorbit.team/api/orbit/latest-version once per day whether a newer Orbit exists, and tells you in the chat if so. Sends nothing \u2014 no identifiers, no usage, no arguments. Separate from telemetry on purpose: it is the only way an install already on your machine learns that an update shipped. Untick, or set ORBIT_UPDATE_CHECK=0, to turn it off.",
+      "default": true
+    },
+    "enable_debug_trace": {
+      "type": "boolean",
+      "title": "Debug trace log",
+      "description": "Writes one line per tool call to ~/Orbit/logs/orbit-trace.jsonl \u2014 tool name, duration, outcome, response size, and a hash of the arguments. Never the arguments themselves, and never any of your content. Off by default and zero overhead when off. Turn it on, reproduce the problem, and attach the log to a bug report so the failure can be diagnosed without guessing.",
+      "default": false
     },
     "google_ai_api_key": {
       "type": "string",

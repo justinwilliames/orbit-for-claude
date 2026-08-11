@@ -30,10 +30,19 @@ Every event carries exactly these fields and no others:
 ```
 
 - **`slug`** — the skill or tool name. `"orbit"` for `session_start`.
-- **`errorClass`** — `tool_error` only. One of a closed set:
-  `timeout`, `upstream_unavailable`, `auth_failed`, `not_found`,
-  `rate_limited`, `error`. Never the error message, which can carry an
-  upstream credential.
+- **`errorClass`** — `tool_error` only. One of a closed, identifier-shaped
+  set: the transport failures (`timeout`, `upstream_unavailable`,
+  `auth_failed`, `not_found`, `rate_limited`, `error`), the
+  missing-credential refusals (`needs_setup`, `push_not_configured`,
+  `needs_plugin_credentials`), the bad-input rejections (`invalid_input`,
+  `validation_failed`, `unsupported_platform`, …) and the
+  not-there-to-work-on cases (`module_not_found`, `no_modules`,
+  `file_not_found`, …). The full list is `FAILED_STATUSES` in
+  `server/status-vocabulary.js` — it is the same set the code reads, not
+  a copy of it, and a test fails if a new status appears that isn't in
+  it. Two more come from before the handler ran: `invalid_args` (the
+  arguments failed schema validation) and `unknown_tool`. Never the
+  error message, which can carry an upstream credential.
 - **`version`** — the MCPB version from `manifest.json`.
 - **`clientId`** — a random UUID generated once on your machine, hashed
   with SHA-256, stored at `~/.orbit/client-id` and never regenerated. It
@@ -65,14 +74,35 @@ happens. Nothing is queued, nothing is sent later.
 You can also point it somewhere else entirely: set
 `ORBIT_TELEMETRY_ENDPOINT` to your own collector.
 
+## The update check
+
+Orbit makes one other call on its own behalf, and this page previously
+said it didn't. On startup the server GETs
+`https://yourorbit.team/api/orbit/latest-version` and compares the
+version it finds against the installed one. The request carries no body,
+no identifiers and nothing derived from you; the answer is cached at
+`~/.orbit/version-cache.json` for 24 hours, so repeat sessions in the
+same day make no call at all.
+
+It is a separate switch from telemetry, on purpose. Turning off
+analytics shouldn't also cut you off from finding out a new release
+exists — that notice is the only thing Orbit can ever push to an install
+that already lives on your machine. To turn the check off anyway, set
+`ORBIT_UPDATE_CHECK=0` (`false`, `no` and `off` also work).
+
+`server/version-check.js` and `server/version-nag.js` are the whole
+implementation, and `tests/suites/32-version-nag.test.mjs` asserts when
+the notice fires and when it stays quiet.
+
 ## Everything else Orbit talks to
 
-Orbit's other network calls all go to a platform *you* configured, using
-*your* credentials, and only when you call the tool that needs it: Braze,
-Stripo, Figma, Google AI (Gemini), Iterable, Klaviyo, Mailchimp,
+Orbit's remaining network calls all go to a platform *you* configured,
+using *your* credentials, and only when you call the tool that needs it:
+Braze, Stripo, Figma, Google AI (Gemini), Iterable, Klaviyo, Mailchimp,
 Customer.io, Salesforce Marketing Cloud, and DNS resolvers for the email
-authentication checks. Orbit is not a proxy — nothing routes through
-yourorbit.team.
+authentication checks. Orbit is not a proxy — no data of yours routes
+through yourorbit.team; the telemetry POST and the version-check GET
+above are the only two requests it ever receives.
 
 ## Where it lives in the code
 

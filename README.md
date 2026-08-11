@@ -50,14 +50,29 @@ Then, optionally: Claude Desktop → **Settings → Extensions → Orbit** → f
 
 ## What Orbit sends home
 
-Orbit posts anonymous usage telemetry to `https://yourorbit.team/api/mcp/telemetry`, on by default. Four event types — `session_start`, `skill_load`, `tool_call`, `tool_error` — each carrying only: the event type, the skill or tool slug, the failure class on errors (one of a fixed set like `timeout` or `auth_failed`), the MCPB version, and an opaque per-install ID. **Prompts, queries, tool arguments, file contents, email HTML and IP addresses are never sent.** It is the only network call Orbit makes on its own behalf; everything else goes to a platform you configured.
+Orbit posts anonymous usage telemetry to `https://yourorbit.team/api/mcp/telemetry`, on by default. Four event types — `session_start`, `skill_load`, `tool_call`, `tool_error` — each carrying only: the event type, the skill or tool slug, the failure class on errors (one of a fixed set like `timeout` or `auth_failed`), the MCPB version, and an opaque per-install ID. **Prompts, queries, tool arguments, file contents, email HTML and IP addresses are never sent.**
 
-Opt out either way: untick **Anonymous usage telemetry** in the extension settings, or set `ORBIT_TELEMETRY=0`. Full detail, including the exact payload shape, is in [PRIVACY.md](PRIVACY.md).
+Orbit makes one other call on its own behalf: a startup GET to `https://yourorbit.team/api/orbit/latest-version` to see whether a newer release exists. It sends nothing — no identifiers, no headers about you — and the answer is cached for 24 hours at `~/.orbit/version-cache.json`. It is separate from telemetry on purpose: it is the only way an install already on your machine finds out an update shipped.
+
+Opt out of either independently: untick **Anonymous usage telemetry** in the extension settings or set `ORBIT_TELEMETRY=0`; set `ORBIT_UPDATE_CHECK=0` for the version check. Full detail, including the exact payload shape, is in [PRIVACY.md](PRIVACY.md).
 
 ## Licence
 
 MIT — see [LICENSE](LICENSE). Fork it, vendor a skill file into your own stack, rewrite the protocols for your ESP. That's the point.
 
-## Support
+## Something broken?
 
-Questions or issues: [yourorbit.team](https://yourorbit.team) or open an issue on this repo.
+Turn on the trace log — Claude Desktop → **Settings → Extensions → Orbit**
+→ tick **Debug trace log** (or set `ORBIT_DEBUG_TRACE=1`), restart, and
+reproduce. One JSON line per tool call lands in
+`~/Orbit/logs/orbit-trace.jsonl`: tool, duration, outcome, response size,
+and a *hash* of the arguments — never the arguments themselves, never your
+content, never a credential. Safe to paste into an issue as-is.
+
+Then [open a bug report](https://github.com/justinwilliames/orbit-for-claude/issues/new/choose).
+The template asks for the version, the host app, `orbit_check_setup`, and
+that trace line. Orbit runs locally against accounts nobody else can see,
+so those four things are the difference between a fix and a guessing game.
+More detail in [docs/SETUP.md](docs/SETUP.md#when-something-is-actually-broken).
+
+Anything else: [yourorbit.team](https://yourorbit.team).

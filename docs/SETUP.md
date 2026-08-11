@@ -154,3 +154,29 @@ Orbit uses Gemini only for the art layer of brand-header rendering. Orbit keeps 
 - Run `orbit_validate_brand_kit` to verify `brand-profile.json`, `brand-guidelines.md`, logo files, and example assets.
 - Use `orbit_update_brand_guidelines` to revise the longform brand guide without redoing the full intake.
 - Use `orbit://privacy/image-generation` if you need the payload/privacy summary.
+
+## When something is actually broken
+
+`orbit_check_setup` answers "is it configured". When it says everything's
+fine and a tool still misbehaves, turn on the trace log:
+
+- Claude Desktop → **Settings → Extensions → Orbit** → tick **Debug trace
+  log**, then restart Claude Desktop. Or set `ORBIT_DEBUG_TRACE=1` in the
+  environment if you launch the server yourself.
+- Reproduce the problem.
+- The log is at `~/Orbit/logs/orbit-trace.jsonl` — one JSON line per tool
+  call, with the tool name, duration, outcome, response size, retry and
+  circuit-breaker signals, and a **hash** of the arguments.
+
+It never records your arguments, your prompts, your email content or your
+credentials, so the file is safe to attach to a bug report as-is. Read it
+yourself first if you like — `outcome` and `duration_ms` on the failing
+line usually say which layer gave up.
+
+Then open an issue with it: <https://github.com/justinwilliames/orbit-for-claude/issues/new/choose>.
+The bug template asks for the four things needed to reproduce anything —
+your Orbit version, your host app, the `orbit_check_setup` output, and the
+trace line. Without them a bug report is a guess, and Orbit is a local
+server on a machine nobody else can see.
+
+Turn the trace off again when you're done. It's zero overhead when off.

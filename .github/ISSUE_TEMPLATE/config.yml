@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Feature idea or "does Orbit do X?"
+    url: https://github.com/justinwilliames/orbit-for-claude/discussions
+    about: Open a discussion. Orbit is 77 skills deep and the answer is often "yes, it's called something else".
+  - name: Guides, courses and the free web apps
+    url: https://yourorbit.team
+    about: 90 lifecycle-marketing guides, the courses, and the calculators — free, no account.

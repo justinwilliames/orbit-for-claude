@@ -1,0 +1,81 @@
+name: Bug report
+description: A tool did the wrong thing, crashed, or silently did nothing.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Orbit runs as a local server on your machine, talking to accounts
+        nobody else can see. That makes reproducing a bug from a prose
+        description close to impossible — so the four fields below are the
+        whole ask. With them, most bugs are diagnosable without a single
+        follow-up question.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you asked Claude for, which tool ran, and what came back instead.
+      placeholder: |
+        Asked Claude to push a template to Braze. orbit_sync_to_braze returned
+        "ok" but nothing appeared in the dashboard.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Orbit version
+      description: Ask Claude to run `orbit_check_version`, or read it in Settings → Extensions → Orbit.
+      placeholder: "0.28.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host app
+      options:
+        - Claude Desktop (macOS)
+        - Claude Desktop (Windows)
+        - Claude Code
+        - Other MCP client
+    validations:
+      required: true
+
+  - type: textarea
+    id: check-setup
+    attributes:
+      label: orbit_check_setup output
+      description: |
+        Ask Claude: **"run orbit_check_setup"** and paste the whole result.
+        It reports which credentials are present — never their values.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: trace
+    attributes:
+      label: Trace log for the failing call
+      description: |
+        Turn on **Settings → Extensions → Orbit → Debug trace log** (or set
+        `ORBIT_DEBUG_TRACE=1`), restart the host app, reproduce the problem,
+        then paste the matching line(s) from `~/Orbit/logs/orbit-trace.jsonl`.
+
+        The log records tool name, duration, outcome, response size and a
+        **hash** of the arguments — never the arguments, your prompts, your
+        content or your credentials. It is safe to paste as-is.
+
+        If the server never started, paste the host app's MCP log instead.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Whether it used to work, whether it's every time or intermittent, which platform's credentials are involved.
+    validations:
+      required: false
