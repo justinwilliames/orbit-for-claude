@@ -1,6 +1,6 @@
 # Orbit
 
-A lifecycle-marketing operating system for Claude Desktop. Buy it once, use it for good.
+A free, open lifecycle-marketing operating system for Claude Desktop.
 
 Orbit gives Claude a senior lifecycle operator's playbook — 60+ battle-tested protocols and 80+ tools spanning Braze, Stripo, email and MJML, segmentation maths, deliverability, brand voice, Figma import, Notion export, and diagram generation. It installs as an MCP extension (a `.mcpb` bundle) and works as an extension of your team: it walks you through the inputs it needs, builds the artefacts, and closes every answer with the next action.
 
@@ -8,13 +8,19 @@ Most "AI for marketing" tools hand you generic email advice. Orbit carries the p
 
 ## Get started
 
-Orbit is a one-off purchase. Buy it once at **[yourorbit.team/pricing](https://yourorbit.team/pricing)** — no subscription, no renewal. Your account carries the entitlement, and your Activation Key is what switches the tools on.
+Orbit is free — no account, no licence key, no signup. Install the extension and start using it.
 
-1. Buy Orbit at **[yourorbit.team/pricing](https://yourorbit.team/pricing)**.
-2. Copy your Activation Key from your account at [yourorbit.team](https://yourorbit.team).
-3. Install Orbit (below) and paste the key in.
+Roughly two-thirds of the tool surface needs nothing beyond that: the calculators (sample size, significance, RFM, cohort retention, LTV/payback, growth forecasting), the QA and compliance lint (accessibility, dark-mode, GDPR consent, unsubscribe-page audits), the MJML build/compile/preview pipeline, brand-kit intake, the skill library, and the local workspace tools all run with zero external credentials.
 
-The bundle itself is open to download — installing costs nothing but activating requires the key. That's deliberate: install it, browse the tool surface, see what it can do, then unlock it when you buy.
+The remaining tools talk to a third-party platform on your behalf, so they need that platform's own API credentials — yours, not Orbit's. All of them are optional; skip whichever you don't use:
+
+- **Braze** — REST API key + endpoint, to publish templates, read Canvases/campaigns, pull performance data.
+- **Stripo** — REST API token (+ plugin credentials for the compose/push flow), to sync modules and export emails.
+- **Figma** — API token, to import email designs.
+- **Google AI (Gemini)** — API key, for on-brand header image generation.
+- **Iterable / Klaviyo / Mailchimp / Customer.io / SFMC** — that platform's API key, for the generic `orbit_esp_*` tools.
+
+Set whichever of these you need after installing — Orbit degrades cleanly and tells you what's missing when a tool needs a credential you haven't set.
 
 ## Install
 
@@ -24,14 +30,12 @@ Two paths. The first keeps you up to date automatically; the second is a manual 
 
 **Manual — download the bundle.** Download the `.mcpb` from the releases on this repo and double-click it to install into Claude Desktop. You'll update it yourself when a new version lands.
 
-## Activate
+## Configure (optional)
 
-After installing, Orbit's tools stay locked until you add your key. They'll prompt you to activate if you try to use them first.
+Orbit works out of the box. If you want the Braze, Stripo, Figma, image-generation, or other-ESP tools, add the relevant credentials:
 
 1. Open Claude Desktop → **Settings → Extensions → Orbit**.
-2. Paste your Activation Key (from your [yourorbit.team](https://yourorbit.team) account) into the **Activation Key** field.
-
-That's it. Orbit's tools unlock and Claude can start routing your requests to the right protocol.
+2. Fill in the fields for whichever platforms you use — everything is optional and stays local to your machine.
 
 ## What's inside
 
