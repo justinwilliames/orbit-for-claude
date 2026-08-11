@@ -31,6 +31,10 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 
 import { renderReviewGallery, REVIEW_GALLERY_URI } from "./widgets/review-gallery.js";
+import { renderRenderGate, RENDER_GATE_URI } from "./widgets/render-gate.js";
+import { renderQaReport, QA_REPORT_URI } from "./widgets/qa-report.js";
+import { renderAuditReport, AUDIT_REPORT_URI } from "./widgets/audit-report.js";
+import { renderDiagramView, DIAGRAM_VIEW_URI } from "./widgets/diagram-view.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -45,6 +49,34 @@ export const ORBIT_WIDGETS = [
     description:
       "Interactive review console for lifecycle creatives — email, in-app messages and push — with per-item approve / needs-changes verdicts and notes.",
     render: renderReviewGallery,
+  },
+  {
+    uri: RENDER_GATE_URI,
+    name: "Orbit render gate",
+    description:
+      "Renders email HTML at 640px and 390px in a real engine and measures what only a render reveals — single-word last lines, CTA rows that wrap, tap targets under 44px, computed contrast, byte size against Gmail's clipping limit.",
+    render: renderRenderGate,
+  },
+  {
+    uri: QA_REPORT_URI,
+    name: "Orbit pre-send QA report",
+    description:
+      "Accessibility, dark-mode and Gmail-size findings from orbit_qa_email, grouped by severity with the evidence behind each one.",
+    render: renderQaReport,
+  },
+  {
+    uri: AUDIT_REPORT_URI,
+    name: "Orbit Braze workspace audit",
+    description:
+      "Workspace inventory counts plus every audit finding, filterable by severity and kind, each naming the Braze object it concerns.",
+    render: renderAuditReport,
+  },
+  {
+    uri: DIAGRAM_VIEW_URI,
+    name: "Orbit lifecycle flow",
+    description:
+      "A lifecycle diagram spec as a walkable flow — edge labels on the connectors, branch exits where they leave the trunk, per-step detail, and the Mermaid source one button away.",
+    render: renderDiagramView,
   },
 ];
 
