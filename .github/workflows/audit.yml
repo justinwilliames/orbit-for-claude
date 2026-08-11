@@ -1,0 +1,35 @@
+name: Weekly dependency audit
+
+# The release workflow already gates on `npm audit --omit=dev
+# --audit-level=high`, but it only runs on a push to main. A new advisory
+# against an already-installed transitive dependency therefore turns the
+# release pipeline red silently, and the discovery happens at the exact
+# moment someone wants to ship. This job finds it on a Monday instead.
+#
+# It runs the audit ALONE — no build, no publish — so a failure here means
+# one thing only and the fix is always the same shape: bump the offending
+# package (usually via the `overrides` block in package.json, since these
+# are transitive) and commit the lockfile.
+
+on:
+  schedule:
+    # 07:00 UTC Monday — 17:00 Australia/Brisbane, start of the week.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      # Same flags as the release gate in build-mcpb.yml, deliberately —
+      # if this passes, that one passes.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

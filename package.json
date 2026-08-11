@@ -12,15 +12,20 @@
     "smoke": "node server/smoke.js",
     "evals": "node server/evals.js",
     "test": "node tests/run.mjs",
-    "pack": "npm run build:extension && npx @anthropic-ai/mcpb pack .mcpb-build orbit-lifecycle-marketing-system-for-claude.mcpb"
+    "pack": "npm run build:extension && npx @anthropic-ai/mcpb pack .mcpb-build orbit-lifecycle-marketing-system-for-claude.mcpb",
+    "sync:manifest": "node scripts/sync-manifest-annotations.mjs"
   },
-  "//overrides": "Force patched TRANSITIVE deps pulled in by mjml's tree. These five carry high-severity advisories and gate the release workflow's `npm audit --omit=dev --audit-level=high`. Every pin stays INSIDE the existing major version, so mjml 5.1.0 is untouched — do NOT let `npm audit fix --force` bump mjml itself, which moved mjml2html to async at 5.1.0 and broke the compiler once already. Re-check with `npm audit --omit=dev --audit-level=high` and `npm run smoke` after changing any of these.",
+  "//overrides": "Force patched TRANSITIVE deps pulled in by the mjml / hono trees. These carry high-severity advisories and gate the release workflow's `npm audit --omit=dev --audit-level=high`. Every pin stays INSIDE the existing major version, so mjml 5.1.0 is untouched — do NOT let `npm audit fix --force` bump mjml itself, which moved mjml2html to async at 5.1.0 and broke the compiler once already. A caret range here is not a pin; the lockfile is — commit package-lock.json with every change. Re-check with `npm audit --omit=dev --audit-level=high` and `npm run smoke`.",
   "overrides": {
-    "brace-expansion": "^5.0.8",
-    "fast-uri": "^3.1.4",
-    "js-yaml": "^4.3.0",
+    "brace-expansion": "^5.0.9",
+    "fast-uri": "^3.1.5",
+    "js-yaml": "^4.3.1",
     "postcss": "^8.5.23",
-    "svgo": "^4.0.2"
+    "svgo": "^4.0.2",
+    "undici": "^7.29.0",
+    "nanoid": "^3.3.17",
+    "ip-address": "^10.4.0",
+    "hono": "^4.13.1"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
@@ -39,5 +44,6 @@
   "devDependencies": {
     "@anthropic-ai/mcpb": "^2.1.2",
     "esbuild": "^0.25.10"
-  }
+  },
+  "license": "MIT"
 }
