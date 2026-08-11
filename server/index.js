@@ -81,6 +81,7 @@ import {
 import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
+import { annotationsFor } from "./tool-annotations.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -5929,7 +5930,14 @@ function ensureFriendlyTitle(name, schema) {
  */
 function registerToolSafe(name, schema, handler) {
   TOOL_HANDLERS.set(name, handler);
-  return server.registerTool(name, ensureFriendlyTitle(name, schema), withToolErrorHandling(name, handler));
+  // Behavioural hints (read-only / destructive / idempotent / open-world)
+  // are applied centrally so a tool cannot ship unclassified — see
+  // server/tool-annotations.js for the tiers and the reasoning.
+  const annotated = {
+    ...ensureFriendlyTitle(name, schema),
+    annotations: { ...annotationsFor(name), ...(schema?.annotations ?? {}) },
+  };
+  return server.registerTool(name, annotated, withToolErrorHandling(name, handler));
 }
 
 // ──────────────────────────────────────────────────────────────
