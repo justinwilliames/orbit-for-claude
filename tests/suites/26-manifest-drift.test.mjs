@@ -26,6 +26,21 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
+import { safetyMarkerFor } from "../../scripts/sync-manifest-annotations.mjs";
+import {
+  REMOTE_WRITE,
+  LOCAL_WRITE,
+  LOCAL_WRITE_NETWORKED,
+} from "../../server/tool-annotations.js";
+
+/** Every marker the generator can emit, derived from the generator itself. */
+const ALL_SAFETY_MARKERS = [
+  ...new Set(
+    [...REMOTE_WRITE, ...LOCAL_WRITE, ...LOCAL_WRITE_NETWORKED]
+      .map((n) => safetyMarkerFor(n))
+      .filter(Boolean)
+  ),
+];
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(TEST_DIR, "..", "..");
@@ -80,6 +95,52 @@ describe("Manifest drift guard — manifest.json tool list matches server regist
       undocumented.length + stale.length,
       0,
       `manifest.json drifted from the server's registered tools (${liveNames.size} live, ${manifestNames.size} documented):\n${lines.join("\n")}`
+    );
+  });
+
+  test("every manifest entry declares the same safety class the server registers", async () => {
+    // Names alone were never enough. The manifest said nothing at all
+    // about which of 121 tools write to a production ESP while the server
+    // registered a full annotations block on every one, so the two
+    // artifacts a reviewer can read disagreed — and this guard, comparing
+    // names, could not see it.
+    //
+    // The manifest schema forbids an `annotations` key on a tool entry
+    // (additionalProperties:false, name + description only), so the class
+    // is carried in the description as a generated marker. Run
+    // `npm run sync:manifest` to fix a failure here.
+    const liveTools = await client.listTools();
+    const liveAnnotations = new Map(liveTools.map((t) => [t.name, t.annotations]));
+
+    const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
+    const wrong = [];
+    for (const tool of manifest.tools) {
+      const live = liveAnnotations.get(tool.name);
+      if (!live) continue; // covered by the name-drift test above
+
+      const expected = safetyMarkerFor(tool.name);
+      const carries = ALL_SAFETY_MARKERS.some((m) => (tool.description ?? "").includes(m));
+
+      if (expected && !(tool.description ?? "").includes(expected)) {
+        wrong.push(`${tool.name} — manifest is missing "${expected}"`);
+      } else if (!expected && carries) {
+        wrong.push(`${tool.name} — manifest carries a safety marker but the server says read-only`);
+      }
+
+      // The marker and the live annotation must agree about the one bit
+      // that matters: is this tool read-only?
+      if (Boolean(expected) === live.readOnlyHint) {
+        wrong.push(
+          `${tool.name} — marker says ${expected ? "writes" : "read-only"}, ` +
+          `server says readOnlyHint=${live.readOnlyHint}`
+        );
+      }
+    }
+
+    assert.deepEqual(
+      wrong,
+      [],
+      `manifest.json safety classes disagree with the server (${wrong.length}) — run \`npm run sync:manifest\`:\n  ${wrong.join("\n  ")}`
     );
   });
 });

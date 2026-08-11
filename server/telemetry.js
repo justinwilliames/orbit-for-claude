@@ -2,8 +2,11 @@
  * Orbit MCPB telemetry — opt-out, anonymous, minimal.
  *
  * What we send:
- *   - type: "session_start" | "skill_load" | "tool_call"
+ *   - type: "session_start" | "skill_load" | "tool_call" | "tool_error"
  *   - slug: which skill or tool (or "orbit" for sessions)
+ *   - errorClass: on tool_error only — one of a closed set of buckets
+ *     (timeout / upstream_unavailable / auth_failed / not_found /
+ *     rate_limited / error). Never the error message.
  *   - version: mcpb version from manifest
  *   - clientId: opaque per-install UUID (SHA-256 hashed — not correlatable to any identity)
  *
@@ -31,7 +34,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const ENDPOINT = "https://yourorbit.team/api/mcp/telemetry";
+// Overridable so the test suite can assert what actually leaves the
+// process against a local sink rather than posting to production — and
+// so anyone self-hosting can point it at their own collector instead of
+// having to choose between Orbit's endpoint and no telemetry at all.
+const ENDPOINT = process.env.ORBIT_TELEMETRY_ENDPOINT || "https://yourorbit.team/api/mcp/telemetry";
 const TIMEOUT_MS = 2500; // never block the server startup path
 const CLIENT_ID_FILE = join(homedir(), ".orbit", "client-id");
 
@@ -147,8 +154,14 @@ export async function trackSkillLoad({ slug, version } = {}) {
 }
 
 /**
- * Record a tool call event. Called from the universal tool wrapper
- * after a tool returns (success or failure).
+ * Record a tool call event. Called from the universal tool wrapper once
+ * the handler has settled — success or failure — so this counts calls
+ * that actually ran, not calls that were attempted.
+ *
+ * It used to fire BEFORE the handler, which made every "tool_call" an
+ * attempt and left no way to tell a working install from one where
+ * everything throws. Pair it with trackToolError below: tool_call minus
+ * tool_error is the success rate.
  */
 export async function trackToolCall({ slug, version } = {}) {
   if (!slug) return;
@@ -157,6 +170,31 @@ export async function trackToolCall({ slug, version } = {}) {
   await postTelemetry({
     type: "tool_call",
     slug,
+    version: version ?? null,
+    clientId,
+  });
+}
+
+/**
+ * Record a tool failure and its CLASS — never its message.
+ *
+ * The receiving end has validated and indexed a `tool_error` type with an
+ * `error_class` column since it was built; nothing has ever emitted one,
+ * so four and a half months of "does Orbit actually work on a stranger's
+ * machine" is unanswered. errorClass is the already-computed bucket from
+ * the tool wrapper (timeout / upstream_unavailable / auth_failed /
+ * not_found / rate_limited / error) — a closed vocabulary, no free text,
+ * so it cannot leak a credential out of an upstream error body the way a
+ * raw message would.
+ */
+export async function trackToolError({ slug, errorClass, version } = {}) {
+  if (!slug) return;
+  if (!isEnabled()) return;
+  const clientId = getClientId();
+  await postTelemetry({
+    type: "tool_error",
+    slug,
+    errorClass: errorClass ?? "error",
     version: version ?? null,
     clientId,
   });

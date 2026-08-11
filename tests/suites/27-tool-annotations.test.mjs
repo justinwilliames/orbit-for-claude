@@ -30,6 +30,7 @@ import { makeTempWorkspace } from "../harness/fixtures.mjs";
 import {
   REMOTE_WRITE,
   LOCAL_WRITE,
+  LOCAL_WRITE_NETWORKED,
   READ_ONLY_NETWORKED,
   classifiedToolNames,
 } from "../../server/tool-annotations.js";
@@ -72,6 +73,34 @@ describe("Tool annotation guard — every tool declares how it behaves", () => {
       [],
       `${missing.length} tool(s) registered without complete annotations:\n  ${missing.join("\n  ")}`
     );
+  });
+
+  test("no tool falls through to the unclassified default", () => {
+    // The old default returned readOnlyHint:true for anything unlisted,
+    // which meant 57 tools reached hosts with a safety claim nobody had
+    // ever checked — including orbit_compose_stripo_email, which POSTs an
+    // email into the user's Stripo workspace. Every tool now names its
+    // tier; this is the assertion that keeps it that way.
+    const classified = classifiedToolNames();
+    const unclassified = liveTools.map((t) => t.name).filter((n) => !classified.has(n)).sort();
+    assert.deepEqual(
+      unclassified,
+      [],
+      `${unclassified.length} tool(s) have no annotation tier in server/tool-annotations.js — ` +
+      `they are currently shipping the conservative default:\n  ${unclassified.join("\n  ")}`
+    );
+  });
+
+  test("locally-writing tools that call a third party are open-world", () => {
+    const byName = new Map(liveTools.map((t) => [t.name, t]));
+    const wrong = [];
+    for (const name of LOCAL_WRITE_NETWORKED) {
+      const a = byName.get(name)?.annotations;
+      if (!a) continue;
+      if (a.readOnlyHint !== false) wrong.push(`${name} (readOnlyHint=${a.readOnlyHint})`);
+      if (a.openWorldHint !== true) wrong.push(`${name} (openWorldHint=${a.openWorldHint})`);
+    }
+    assert.deepEqual(wrong, [], `local-write-networked tools misannotated:\n  ${wrong.join("\n  ")}`);
   });
 
   test("no classification entry names a tool the server doesn't register", () => {
