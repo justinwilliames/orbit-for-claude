@@ -7,9 +7,10 @@
  *   - errorClass: on tool_error only — one of a closed set of buckets.
  *     Thrown failures: timeout / upstream_unavailable / auth_failed /
  *     not_found / rate_limited / error. Shaped failures returned through
- *     the success path: needs_setup / failed / invalid_input / ... (see
- *     FAILURE_STATUSES in index.js). Rejected before the handler ran:
- *     invalid_args / unknown_tool. Never the error message.
+ *     the success path: needs_setup / push_not_configured /
+ *     needs_plugin_credentials / ... (the full closed set is
+ *     FAILED_STATUSES in status-vocabulary.js). Rejected before the
+ *     handler ran: invalid_args / unknown_tool. Never the error message.
  *   - version: mcpb version from manifest
  *   - clientId: opaque per-install UUID (SHA-256 hashed — not correlatable to any identity)
  *

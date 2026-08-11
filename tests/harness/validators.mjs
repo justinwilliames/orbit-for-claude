@@ -11,6 +11,8 @@
 
 import assert from "node:assert/strict";
 
+import { ALL_STATUSES } from "../../server/status-vocabulary.js";
+
 /**
  * Assert that a raw MCP tool response matches the transport contract.
  * Throws AssertionError with a useful message on mismatch.
@@ -26,25 +28,21 @@ export function validateMcpResponse(toolName, raw) {
 
 /**
  * Assert the parsed JSON payload has a recognised `status` field.
- * Every Orbit tool returns one of: ok, partial, needs_setup,
- * needs_inputs, not_found, auth_failed, rate_limited, timeout,
- * dry_run, error, and a few tool-specific variants.
+ *
+ * The vocabulary is NOT duplicated here. It comes from
+ * server/status-vocabulary.js — the same module the telemetry
+ * classifier reads — because two hand-maintained copies is how the old
+ * 21-entry list ended up rejecting five statuses the server ships every
+ * day while the suite stayed green.
  */
-const KNOWN_STATUSES = new Set([
-  "ok", "partial", "needs_setup", "needs_inputs", "not_found",
-  "auth_failed", "rate_limited", "timeout", "dry_run", "error",
-  "no_collision", "collision_found", "warnings", "no_strong_match",
-  "success", "failed", "needs_platform_confirmation",
-  "invalid_platform_logic", "needs_attention", "no_changes",
-  "already_exists"
-]);
-
 export function validateStatusField(toolName, parsed) {
   assert.ok(parsed, `[${toolName}] parsed payload is null`);
   if (parsed.status !== undefined) {
     assert.ok(
-      KNOWN_STATUSES.has(parsed.status),
-      `[${toolName}] unexpected status "${parsed.status}". Known: ${[...KNOWN_STATUSES].join(", ")}`
+      ALL_STATUSES.has(parsed.status),
+      `[${toolName}] unexpected status "${parsed.status}". ` +
+        `Add it to a bucket in server/status-vocabulary.js — an unclassified status is ` +
+        `counted as a success by the telemetry classifier.`
     );
   }
 }

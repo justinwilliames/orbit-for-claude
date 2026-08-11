@@ -202,8 +202,18 @@ export function buildEmailTemplateSpec({
 export function generateMjmlTemplate({ spec }) {
   const record =
     typeof spec === "string" ? parseJsonInput(spec, "email template spec") : spec;
+  // Missing or wrong-shaped spec is a conversational gap, not a fault.
+  // Throwing here surfaced as status:"error" — which now feeds the
+  // telemetry failure rate, so "the model hasn't built the spec yet"
+  // was being counted as Orbit breaking on a stranger's machine.
   if (record?.type !== "email_template_spec") {
-    throw new Error("The supplied spec is not an Orbit email_template_spec.");
+    return {
+      status: "needs_inputs",
+      missing: ["spec"],
+      message:
+        "This needs an Orbit email_template_spec (an object with type: \"email_template_spec\"). Run orbit_build_email_template_spec first and pass its result through.",
+      received_type: record?.type ?? typeof record
+    };
   }
 
   // A spec with no modules can't render anything useful. Return a
@@ -263,11 +273,15 @@ export async function compileEmailTemplate({
 }) {
   const compiledSpec =
     typeof spec === "string" ? parseJsonInput(spec, "email template spec") : spec;
-  const generatedMjml =
-    mjml ??
-    generateMjmlTemplate({
-      spec: compiledSpec
-    }).mjml;
+  let generatedMjml = mjml;
+  if (!generatedMjml) {
+    const generated = generateMjmlTemplate({ spec: compiledSpec });
+    // generateMjmlTemplate answers needs_inputs rather than throwing when
+    // the spec is missing or has no modules. Pass that straight back —
+    // mjml2html(undefined) would otherwise crash one layer down.
+    if (!generated.mjml) return generated;
+    generatedMjml = generated.mjml;
+  }
 
   if (outputDir) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -342,6 +356,10 @@ export async function previewEmailTemplate({
         mjml,
         outputDir: null
       });
+
+  // Nothing to preview — compile answered needs_inputs. Hand that back
+  // rather than wrapping `undefined` in three preview frames.
+  if (!compileResult.html) return compileResult;
 
   const baseName = slugify(fileBaseName ?? compiledSpec?.message_id ?? compiledSpec?.title ?? "email-preview");
   const branding = outputDir

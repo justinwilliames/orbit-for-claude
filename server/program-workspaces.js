@@ -290,8 +290,16 @@ export function buildProgramWorkspace({
   outputDir
 }) {
   const sourceRequest = String(request ?? briefMarkdown ?? "").trim();
+  // A first call with nothing to build from is a conversational gap, not
+  // a fault — answer with what's missing instead of throwing into
+  // status:"error", which now counts against the telemetry success rate.
   if (!sourceRequest) {
-    throw new Error("A request or existing brief is required to build an Orbit workspace.");
+    return {
+      status: "needs_inputs",
+      missing: ["request"],
+      message:
+        "Building a workspace needs either a `request` describing the program, or `brief_markdown` from an existing brief. Run orbit_start_program_discovery first if you have neither."
+    };
   }
 
   const parsedDiscoveryState =

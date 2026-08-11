@@ -80,6 +80,7 @@ import {
 } from "./calculators.js";
 import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall, trackToolError } from "./telemetry.js";
+import { isFailureStatus } from "./status-vocabulary.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { annotationsFor } from "./tool-annotations.js";
 import { registerOrbitWidgets, widgetMeta, writeWidgetArtifact } from "./ui/register.js";
@@ -5973,35 +5974,17 @@ const PER_TOOL_TIMEOUT_MS = {
 };
 
 /**
- * Response `status` values that mean "this call did not do the thing",
- * even though the handler returned normally instead of throwing.
+ * Response `status` values that mean "this call did not do the thing"
+ * live in ./status-vocabulary.js — see isFailureStatus below.
  *
- * This exists because tool_call minus tool_error was documented as the
- * success rate and wasn't one: 66 return sites across the server hand
- * back a shaped `{status:"needs_setup"}` / `{status:"error"}` payload
- * through the SUCCESS path, so the single most common way Orbit fails a
- * fresh install — no Braze/Stripo credential on day one — was being
- * counted as a win.
- *
- * Deliberately a closed allowlist, not "anything that isn't ok". Most
- * statuses in the codebase are legitimate outcomes: `needs_inputs` is a
- * conversational prompt, `dry_run`/`skipped`/`partial`/`approved` are
- * the tool working as designed. Only genuine non-delivery belongs here,
- * and every member is identifier-shaped so it survives the receiving
- * end's error_class regex (get-orbit lib/db.ts).
+ * The first cut of this was a ten-entry allowlist maintained by hand
+ * against a vocabulary of seventy-odd, which meant the two most common
+ * fresh-install refusals (`push_not_configured`,
+ * `needs_plugin_credentials`) were both recorded as successes. The
+ * vocabulary module classifies the whole set into delivered / prompted /
+ * failed, and tests/suites/31-status-vocabulary.test.mjs greps every
+ * status literal out of server/ and fails if one isn't classified.
  */
-const FAILURE_STATUSES = new Set([
-  "needs_setup",
-  "error",
-  "failed",
-  "auth_failed",
-  "invalid_input",
-  "validation_failed",
-  "not_found",
-  "fetch_failed",
-  "push_failed",
-  "unexpected_response"
-]);
 
 /**
  * Wrap an async tool handler with:
@@ -6084,7 +6067,7 @@ function withToolErrorHandling(toolName, handler) {
       let originalBytes = 0;
       let truncated = false;
       // First shaped failure status seen on the success path — see
-      // FAILURE_STATUSES above. Costs nothing: the block is already
+      // ./status-vocabulary.js. Costs nothing: the block is already
       // JSON.parsed here for attribution injection.
       let shapedFailure = null;
       const attribution = getAttribution(toolName);
@@ -6098,7 +6081,7 @@ function withToolErrorHandling(toolName, handler) {
         try { parsed = JSON.parse(block.text); } catch { /* non-JSON — handled below */ }
 
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          if (!shapedFailure && typeof parsed.status === "string" && FAILURE_STATUSES.has(parsed.status)) {
+          if (!shapedFailure && isFailureStatus(parsed.status)) {
             shapedFailure = parsed.status;
           }
           if (attribution && !parsed.orbit_attribution) {

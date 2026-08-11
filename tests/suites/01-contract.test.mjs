@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace, makeSampleLifecycleSpec, makeSampleMessagePlan, makeSampleProgramBrief } from "../harness/fixtures.mjs";
-import { validateMcpResponse, validateStatusField } from "../harness/validators.mjs";
+import { validateMcpResponse, validateStatusField, assertNotHandlerCrash } from "../harness/validators.mjs";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 // The runner sets ORBIT_TEST_RUN_DIR so every suite writes into the
@@ -151,18 +151,32 @@ describe("Contract suite — every tool meets the MCP response contract", () => 
     for (const tool of tools) {
       const args = minimalArgsFor(tool.name);
       try {
-        const res = await client.callTool(tool.name, args);
-        validateMcpResponse(tool.name, res);
-        const text = res.content.find((c) => c.type === "text")?.text ?? "";
+        // callToolLenient, not callTool. The raw call hands back the
+        // FIRST text block, and heavy tools prepend an "✦ Orbit · skill"
+        // attribution banner — which never parses as JSON. That, plus a
+        // try/catch that swallowed the validator along with the parse
+        // error, is why validateStatusField had never rejected anything:
+        // 93 of 121 tools never reached it.
+        const res = await client.callToolLenient(tool.name, args);
+        if (res.raw) validateMcpResponse(tool.name, res.raw);
+
         let parsed = null;
-        try {
-          parsed = JSON.parse(text);
+        if (res.kind === "response") {
+          parsed = res.parsed;
+          // OUTSIDE any try/catch. An unknown status is a real failure —
+          // it means the telemetry classifier is silently counting an
+          // outcome it has never been told about as a success.
           validateStatusField(tool.name, parsed);
-        } catch {
-          // Non-JSON text content is legal for some responses; the shape
-          // check is what matters for contract.
         }
-        results.push({ tool: tool.name, status: "pass", parsed });
+
+        // A handler that threw and got absorbed by withToolErrorHandling
+        // looks identical to a working one at the transport layer. This
+        // is the check that tells them apart.
+        if (!CRASH_CHECK_EXEMPT.has(tool.name)) {
+          assertNotHandlerCrash(res, tool.name);
+        }
+
+        results.push({ tool: tool.name, status: "pass", kind: res.kind, parsed });
       } catch (err) {
         results.push({ tool: tool.name, status: "fail", error: err.message });
       }
@@ -180,7 +194,54 @@ describe("Contract suite — every tool meets the MCP response contract", () => 
       `Contract failures (${failed.length}):\n${failed.map((f) => `  - ${f.tool}: ${f.error}`).join("\n")}`
     );
   });
+
+  test("a floor of tools return a shaped, status-bearing response", async () => {
+    // The honest reading of the test above: most tools are rejected by
+    // the MCP SDK's schema validation before the handler runs, so the
+    // only thing asserted about them is that the rejection is
+    // well-formed. That's a weak contract, and it should get stronger
+    // over time, never weaker — so pin the count.
+    //
+    // Raise this number when you add a fixture to minimalArgsFor. Never
+    // lower it to make a red suite green.
+    const tools = await client.listTools();
+    let shaped = 0;
+    const unshaped = [];
+    for (const tool of tools) {
+      const res = await client.callToolLenient(tool.name, minimalArgsFor(tool.name));
+      if (res.kind === "response" && typeof res.parsed?.status === "string") shaped += 1;
+      else unshaped.push(`${tool.name} (${res.kind})`);
+    }
+    fs.writeFileSync(
+      path.join(OUTPUT_ROOT, "contract-unshaped.txt"),
+      `${shaped}/${tools.length} tools reached a handler and returned a status.\n\n` +
+        `No fixture in minimalArgsFor, so only the schema rejection was checked:\n` +
+        unshaped.map((u) => `  - ${u}`).join("\n") + "\n"
+    );
+    assert.ok(
+      shaped >= SHAPED_RESPONSE_FLOOR,
+      `Only ${shaped}/${tools.length} tools returned a shaped status (floor: ${SHAPED_RESPONSE_FLOOR}). ` +
+        `Something regressed, or a fixture was removed from minimalArgsFor.`
+    );
+  });
 });
+
+/**
+ * Tools exempt from the handler-crash check because they cannot succeed
+ * without arguments the contract suite has no way to supply.
+ *
+ * Empty, and it should stay empty: every entry here is a tool that
+ * answers a first, argument-less call with a red error instead of
+ * telling the caller what it needs. That's a product defect wearing a
+ * test exemption.
+ */
+const CRASH_CHECK_EXEMPT = new Set([]);
+
+/**
+ * How many tools currently reach a handler and return a shaped status
+ * under minimalArgsFor. A ratchet, not a target.
+ */
+const SHAPED_RESPONSE_FLOOR = 45;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

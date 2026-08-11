@@ -573,6 +573,14 @@ export function updateBrandGuidelines({
     draft,
     brandKitDir
   });
+  if (!resolvedGuidelines.markdown) {
+    return {
+      status: "needs_inputs",
+      missing: ["guidelines_markdown"],
+      message:
+        "Revising brand guidelines needs a source: pass `guidelines_markdown`, a `draft` payload from orbit_build_brand_kit_draft, or a `brand_kit_dir` containing brand-guidelines.md."
+    };
+  }
 
   const parsed = parseBrandGuidelinesMarkdown(resolvedGuidelines.markdown);
   const inferred = inferGuidelineUpdates(revisionRequest);
@@ -1220,9 +1228,10 @@ function resolveGuidelinesInput({ guidelinesMarkdown, draft, brandKitDir }) {
     return { markdown: guidelines.raw };
   }
 
-  throw new Error(
-    "Provide guidelines_markdown, a draft payload, or a brand_kit_dir with brand-guidelines.md."
-  );
+  // No source to revise. Report it rather than throwing — the caller
+  // turns this into needs_inputs, which is what "you haven't given me
+  // guidelines yet" actually is.
+  return { markdown: null };
 }
 
 function inferGuidelineUpdates(revisionRequest) {
