@@ -44,6 +44,12 @@ wraps render-QA plus accessibility, dark-mode, size, and inbox-row scoring.**
    validity, and `orbit_check_email_auth` on the sending domain. Both should also pass.
 5. **Before send**: score the inbox row. `orbit_score_subject_line` + `orbit_score_preheader`
    — ensure the combined inbox preview is on-brand and clipping-safe.
+6. **Before send, in the ESP**: confirm **"Add whitespace after preheader" is CHECKED** on every
+   email. Standing rule (Justin, 10 Aug 2026) — it is always on. Unchecked, the client scavenges
+   markup after the preheader (nav alt text, view-in-browser links) into the preview row, so a
+   preheader that scored well still lands ugly. **No API exposes this flag** — the Braze template
+   API returns `preheader` text only — so it is a dashboard click and an eyes-on verification.
+   A REST readback is not evidence. See `braze-claude-in-chrome-build` §4b row 5.
 
 ## Components called by the wrapper
 

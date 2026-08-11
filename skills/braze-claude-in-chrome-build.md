@@ -474,7 +474,7 @@ canvas is missing.
 | Per-variant entries/engagement stats | API: `get_canvas_data_series` `include_variant_breakdown` (14-day windows, loop) |
 | orbit_read_braze_canvas | Email HTML overflows the token limit **even for a 3-step canvas** (~100KB → auto-saved to a file). **Grep the file** for structure: it returns `draft` state, `variants[].first_step_ids`, the step graph (`next_step_id`/`next_paths`), and per-message `subject`/`from`/`preheader`. Does NOT surface delay durations, exit criteria, conversion events, or audience filters (dashboard-only) |
 
-### 4b. ⭐ The FOUR things REST is structurally BLIND to — verified by keyword count (2 Aug 2026)
+### 4b. ⭐ The FIVE things REST is structurally BLIND to — verified by keyword count (2 Aug 2026; row 5 added 10 Aug 2026)
 
 Not "probably missing" — **counted against the full 1.29MB `get_canvas_details` payload of a live
 37-step canvas.** These can NEVER be API-verified. Every one of them requires eyes on the dashboard,
@@ -486,6 +486,46 @@ which is exactly why a canvas QA pass that is REST-only is not a QA pass.
 | 2 | **Every audience-path filter definition** | `filter` **0** occurrences · `segment_id` **0** · `criteria` **0**. `audience_paths` steps expose only `{id, name, next_paths, type}` — **edges visible, logic invisible.** You can see that a branch exists and where it goes, never who takes it |
 | 3 | **Every delay duration** | `duration` **0** · `seconds` **0**. A delay step carries a *name*, and a name is a label, not configuration |
 | 4 | **Whether a step links a reusable template or holds a one-off body** | REST returns inlined content either way. Identical payloads, completely different maintenance model |
+| 5 | **"Add whitespace after preheader"** | `/templates/email/info` returns `preheader` (the text) and nothing else — full field list is `amp_body, body, created_at, description, email_template_id, message, plaintext_body, preheader, should_inline_css, subject, tags, template_name, updated_at`. No whitespace/padding flag exists in any Braze API surface (verified 10 Aug 2026) |
+
+> ### ⭐ "Add whitespace after preheader" is ALWAYS ON — and it is a dashboard-only click (10 Aug 2026)
+>
+> **Justin's standing instruction:** *"this should always be checked moving forward."* The checkbox
+> sits under the preheader field in the email composer: *"Prevents most email clients from pulling
+> additional content from your email to fill the remaining preview space."* Unchecked, the inbox
+> row scavenges whatever markup follows the preheader — nav alt text, a "View in browser" link,
+> Liquid debris — and appends it to the preview.
+>
+> **There is no API path.** It is not in the template API (row 5), and canvas-step message bodies
+> are not templates at all, so there is nothing to PATCH. Turning it on is: open the step → open
+> the message editor → tick the box → **Done → Done → Save** (§3c loop). One step at a time, one
+> tab, per the freeze law (§8b).
+>
+> **Verification is by eye only.** REST readback cannot confirm it — a 2xx and a matching sha256
+> prove the body, not the flag. Screenshot the checked box per step, or re-open the editor and look.
+> Do not claim a canvas is done on a REST readback alone.
+>
+> **It IS readable from the fiber — the field is `should_whitespace_preheader` (10 Aug 2026).**
+> Audit all steps in one call, no clicking:
+> ```js
+> mp.getCanvasDataWithMessages()   // path: .steps[N].messages.messaging_actions[0].should_whitespace_preheader
+> ```
+> This makes the AUDIT cheap and exact. **The WRITE is a different story — both store-injection
+> routes fail, and one fails silently:**
+>
+> | Route | Result |
+> |---|---|
+> | `step.mutateData(d => …)` | Reports success on all 14 steps; `getCanvasDataWithMessages()` still returns **14 × false**. Classic two-slice no-op (§"TWO store slices"). **An ungated `onSave()` here saves nothing and looks like success.** |
+> | `step.setMessagesData(clone)` | Throws `Cannot read properties of undefined (reading 'map')` on every step — it does not take the payload's `messages` object shape |
+>
+> So the §1134 payload gate is not optional here; it is the only thing standing between you and a
+> confident false "done". Turning the flag on means **driving the real composer UI**, which needs a
+> **foregrounded, focused browser window** — on a hidden MCP tab the freeze law applies (`setTimeout`
+> never fires, saves do not persist), so the clicks appear to work and nothing lands.
+>
+> **Scope:** every email step of every canvas, and the v2 master template in the brain
+> (`templates/email/v2/`) already pads preview text with the Litmus five-entity chain — belt and
+> braces, keep both. The two are not alternatives.
 
 **Corollary — REST also under-reports half-built gates.** An audience group with **no outgoing edge**
 does not appear in `next_paths` at all (§3, ramped-wave notes). So "REST shows 2 groups" is
@@ -1720,3 +1760,58 @@ references them internally by `app_id`, not by name, so nothing downstream break
 **Post-save wedge (same failure mode as §2):** after a segment Save the edit page can hang on
 `document_idle` (screenshots time out indefinitely). Don't fight it — navigate back to the segment
 list URL and confirm the new name/state there instead of re-screenshotting the wedged editor.
+
+
+## Preview as User — the only sequence that works
+
+Proving a template's Liquid resolves for a REAL user requires Braze's own engine. An offline
+render with the same attribute values proves your resolver, not Braze's, and is not a substitute.
+
+**Finding the template.** The templates UI is
+`/engagement/templates_and_media/email_templates/<workspace_id>`. Do NOT use
+`/engagement/email_templates` — that path returns raw JSON, caps at 100 rows, and IGNORES
+`?page=`, `?offset=` and `?query=` (the last returns an error page). Dashboard item ids are
+24-char ObjectIds and are DIFFERENT from the REST `email_template_id` UUID; a REST UUID in a
+dashboard URL returns `{"warn":"Could not find the requested Email Template"}`. Search the UI
+list, then read the anchor hrefs with JS to get ObjectIds.
+
+**The sequence.** Open the template → scroll down → **Preview and test** →
+1. Click the dropdown **TEXT** (it reads "Random user"), NOT the chevron. The chevron opens the
+   list but the following option click does not register.
+2. Choose **Select existing user**.
+3. Set the external id with **`form_input` on the element ref** — locate it with `find` first.
+   **Typing with the computer tool does not work**: the text never lands, the field reads empty,
+   and the box clears on Return so it looks like "user not found". Same React controlled-input
+   wall as the template Name field (see §Name field gotcha).
+4. Click the magnifier. The profile card renders (name, Braze ID, email) and the preview
+   re-renders against that user's real attributes.
+
+**Verify both arms.** A Random user exercises the fallback branch of a
+`{% if attr != true %}fallback{% else %}enriched{% endif %}` guard; a real enriched user
+exercises the other. Seeing both is stronger evidence than either alone.
+
+**Traps.**
+- The preview pane is a **cross-origin iframe** — `contentDocument` is null, so the rendered
+  text cannot be read with JS. Verify visually, or use the Plaintext tab / Download file.
+- The preview iframe ignores wheel scroll and Page_Down, so a screenshot captures only the top
+  of the email without extra work.
+- The Braze SPA **wedges the CDP channel** repeatedly. A fresh tab clears it SOMETIMES and is
+  NOT reliable — measured: it worked repeatedly early in a session, then a brand-new tab on the
+  same URL failed capture on its first attempt.
+- **Diagnose before reacting.** Run a trivial `javascript_tool` read of `document.readyState`:
+  JS returns and screenshots work -> you were impatient. JS returns but screenshots fail AND real
+  clicks do not land -> the CDP input/capture path is down while the page is healthy; waiting does
+  NOT fix it (90s on one tab, 30s on a fresh tab, both still failing at `readyState=complete`).
+  The fix is toggling the extension OFF/ON — a user action. JS also failing -> worker asleep, needs
+  a user click.
+- In the clicks-dead/JS-alive state you can still READ the DOM, so investigation continues even
+  though driving cannot. React selects will not open from `.click()` nor from synthetic
+  pointerdown/mousedown/pointerup/mouseup/click — they require trusted events.
+- **App Identifiers** render as 36-char values in INPUT elements, but the Chrome extension's
+  credential filter blocks reading them (`[BLOCKED: Cookie/query string data]`). Record the value
+  in your own config rather than trying to extract it.
+
+**REST adjuncts worth knowing.** `/messages/send` for email requires BOTH `app_id` and a `from`
+address, else `{"message":"Invalid app id"}` / `"Missing from address for email"`.
+`/templates/email/create` REJECTS tags that do not already exist, atomically — nothing is created.
+`/templates/email/info` returns the name under `template_name`, not `email_template_name`.

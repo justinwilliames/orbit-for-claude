@@ -8,7 +8,10 @@ description: >
   "set up a template brain", "make our email knowledge AI-readable", "put our lifecycle
   program in git", "our templates live in the ESP and it's a mess", "how do we structure
   an email knowledge repo", "scaffold a brain repo", "add a program to the brain",
-  "write to the brain correctly", or when scattered wiki pages and ESP dashboards keep
+  "write to the brain correctly", "set up an email design system", "build our email
+  design system", "single source of truth for our emails", "where should our email
+  knowledge live", "our templates keep drifting", "source of truth for my lifecycle
+  programme", or when scattered wiki pages and ESP dashboards keep
   drifting from what actually ships. Pairs with `brain-graphify-setup` (the graph layer
   on top of the repo). The brain is the upstream knowledge layer; it does NOT certify
   render correctness — that stays with the compile + render QA gate.
