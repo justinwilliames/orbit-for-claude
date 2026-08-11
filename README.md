@@ -15,7 +15,7 @@ Install the extension, then paste this into Claude. It needs no credentials of a
 
 Orbit renders it at 640px and 390px in a real engine and measures what only a render reveals: single-word last lines, CTA rows that wrap, tap targets under 44px, computed contrast, byte size against Gmail's clipping limit. That grey paragraph fails contrast and that button is under the 44px tap minimum — neither is visible in the source.
 
-Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook."
+Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 90 long-form guides bundled inside the extension, offline, no account.
 
 ## What you get with no credentials at all
 
@@ -26,6 +26,7 @@ Roughly two-thirds of the tool surface needs nothing beyond the install:
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
 - **The skill library** — 77 protocols Claude loads and follows, on lifecycle design, deliverability, Braze mechanics, Stripo mechanics, experimentation, copy, and brand.
+- **A 184,000-word practitioner library, offline.** 90 long-form guides and 10 courses ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no account, no network call, and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing.
 
 ## What needs a credential
 

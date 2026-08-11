@@ -102,8 +102,13 @@ export function getVersionNag() {
     update_available: true,
     installed_version: cached.installed_version,
     latest_version: cached.latest_version,
-    download_url: cached.download_url ?? "https://yourorbit.team/download",
-    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}). Download the latest .mcpb from https://yourorbit.team/download and double-click it — Claude replaces the old version in place, no uninstall needed.`,
+    // /downloads (plural), never /download. The singular is a 301 into
+    // /sign-up — the account wall this release exists to remove — and it
+    // was the URL every already-installed user was being handed at the
+    // one moment they were about to act on it. This nag is also the only
+    // channel that reaches an existing install, so it carries the news.
+    download_url: cached.download_url ?? "https://yourorbit.team/downloads",
+    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}) — and Orbit is now free: no account, no licence key, every tool unlocked. Download the .mcpb from https://yourorbit.team/downloads and double-click it — Claude replaces the old version in place, no uninstall needed.`,
   };
 }
 

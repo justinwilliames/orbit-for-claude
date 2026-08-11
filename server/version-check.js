@@ -79,10 +79,11 @@ export async function checkOrbitVersion({ installedVersion }) {
     latest_version: latest,
     source: sourceUsed,
     message,
-    download_url: "https://yourorbit.team/download",
+    // Plural. The singular /download is a redirect into the sign-up wall.
+    download_url: "https://yourorbit.team/downloads",
     suggested_next_steps: comparison < 0
       ? [
-          "Open https://yourorbit.team/download in your browser.",
+          "Open https://yourorbit.team/downloads in your browser — free, no account and no key.",
           "Download the latest .mcpb and double-click it. Claude Desktop replaces the old version in place — no uninstall required.",
           "Restart Claude Desktop after install to load the updated skills and tools."
         ]
