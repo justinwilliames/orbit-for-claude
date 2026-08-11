@@ -378,6 +378,7 @@ setInterval(() => {
 registerResources();
 registerPrompts();
 registerTools();
+instrumentSchemaRejections();
 
 // Kick off background version-check on startup. Fire-and-forget —
 // never blocks transport connect. Result is cached for 24h on disk
@@ -5966,6 +5967,37 @@ const PER_TOOL_TIMEOUT_MS = {
 };
 
 /**
+ * Response `status` values that mean "this call did not do the thing",
+ * even though the handler returned normally instead of throwing.
+ *
+ * This exists because tool_call minus tool_error was documented as the
+ * success rate and wasn't one: 66 return sites across the server hand
+ * back a shaped `{status:"needs_setup"}` / `{status:"error"}` payload
+ * through the SUCCESS path, so the single most common way Orbit fails a
+ * fresh install — no Braze/Stripo credential on day one — was being
+ * counted as a win.
+ *
+ * Deliberately a closed allowlist, not "anything that isn't ok". Most
+ * statuses in the codebase are legitimate outcomes: `needs_inputs` is a
+ * conversational prompt, `dry_run`/`skipped`/`partial`/`approved` are
+ * the tool working as designed. Only genuine non-delivery belongs here,
+ * and every member is identifier-shaped so it survives the receiving
+ * end's error_class regex (get-orbit lib/db.ts).
+ */
+const FAILURE_STATUSES = new Set([
+  "needs_setup",
+  "error",
+  "failed",
+  "auth_failed",
+  "invalid_input",
+  "validation_failed",
+  "not_found",
+  "fetch_failed",
+  "push_failed",
+  "unexpected_response"
+]);
+
+/**
  * Wrap an async tool handler with:
  *   - try/catch + error classification (auth_failed / not_found /
  *     rate_limited / timeout / upstream_unavailable / error)
@@ -6045,6 +6077,10 @@ function withToolErrorHandling(toolName, handler) {
       let finalBytes = 0;
       let originalBytes = 0;
       let truncated = false;
+      // First shaped failure status seen on the success path — see
+      // FAILURE_STATUSES above. Costs nothing: the block is already
+      // JSON.parsed here for attribution injection.
+      let shapedFailure = null;
       const attribution = getAttribution(toolName);
 
       for (const block of result.content) {
@@ -6056,6 +6092,9 @@ function withToolErrorHandling(toolName, handler) {
         try { parsed = JSON.parse(block.text); } catch { /* non-JSON — handled below */ }
 
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          if (!shapedFailure && typeof parsed.status === "string" && FAILURE_STATUSES.has(parsed.status)) {
+            shapedFailure = parsed.status;
+          }
           if (attribution && !parsed.orbit_attribution) {
             parsed.orbit_attribution = {
               skill: attribution.skill,
@@ -6100,6 +6139,12 @@ function withToolErrorHandling(toolName, handler) {
         bytes: finalBytes, original_bytes: originalBytes, truncated
       });
       trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
+      // A handler that returned a shaped failure instead of throwing is
+      // still a failure. Without this, "no credentials configured" — the
+      // dominant fresh-install outcome — reads as a successful call.
+      if (shapedFailure) {
+        trackToolError({ slug: toolName, errorClass: shapedFailure, version: ORBIT_VERSION }).catch(() => {});
+      }
       return result;
     } catch (err) {
       const message = err?.message ?? String(err);
@@ -6234,6 +6279,53 @@ function registerToolSafe(name, schema, handler) {
     annotations: { ...annotationsFor(name), ...(schema?.annotations ?? {}) },
   };
   return server.registerTool(name, annotated, withToolErrorHandling(name, handler));
+}
+
+/**
+ * Record the one failure class the tool wrapper structurally cannot see.
+ *
+ * The SDK validates arguments against the tool's zod schema BEFORE the
+ * handler runs, so a call the model got wrong (-32602 "Input validation
+ * error") short-circuits above withToolErrorHandling and emitted nothing
+ * at all — not a tool_call, not a tool_error. For a 121-tool server
+ * whose problem is "nobody knows what these tools do", *which tools
+ * Claude consistently calls wrong* is the highest-value signal there is,
+ * and it was the only one that couldn't be recorded.
+ *
+ * Rather than patch 121 registrations, wrap the single `tools/call`
+ * request handler the SDK installs, and classify the two error shapes it
+ * can produce on its own (bad arguments, unknown tool). Both emit a
+ * tool_call as well as a tool_error: from the caller's side the tool WAS
+ * invoked and it did fail, so counting the attempt keeps "tool_call
+ * minus tool_error is the success rate" true.
+ *
+ * This reaches into SDK internals (`_requestHandlers`), so the whole
+ * thing is best-effort: if the shape ever changes, telemetry quietly
+ * loses one class rather than the server failing to boot.
+ */
+function instrumentSchemaRejections() {
+  try {
+    const handlers = server.server?._requestHandlers;
+    const original = handlers?.get?.("tools/call");
+    if (typeof original !== "function") return;
+
+    handlers.set("tools/call", async (request, extra) => {
+      const result = await original(request, extra);
+      try {
+        if (!result?.isError) return result;
+        const slug = request?.params?.name;
+        if (!slug) return result;
+        const text = result.content?.find?.((b) => b?.type === "text")?.text ?? "";
+        let errorClass = null;
+        if (/Input validation error/i.test(text)) errorClass = "invalid_args";
+        else if (/not found$|is disabled$|disabled$/i.test(text.trim())) errorClass = "unknown_tool";
+        if (!errorClass) return result;
+        trackToolCall({ slug, version: ORBIT_VERSION }).catch(() => {});
+        trackToolError({ slug, errorClass, version: ORBIT_VERSION }).catch(() => {});
+      } catch { /* telemetry must never break a tool call */ }
+      return result;
+    });
+  } catch { /* SDK internals moved — lose the class, keep the server */ }
 }
 
 // ──────────────────────────────────────────────────────────────

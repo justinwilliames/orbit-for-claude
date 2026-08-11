@@ -9,6 +9,13 @@ on:
       - 'tests/**'
       - 'manifest.json'
       - 'package.json'
+      # server.json (repo root) and scripts/** are what PUBLISH the
+      # registry entry. 'server/**' is a directory and matches neither, so
+      # without these two lines a fix to the checksum stamper — or the
+      # registry rename itself, which is a server.json-only edit — pushes
+      # green and never deploys.
+      - 'server.json'
+      - 'scripts/**'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -40,7 +47,14 @@ jobs:
       # the actual quality gate — contract tests, manifest-drift guard,
       # Braze/Stripo/ESP flows, calculator correctness. A release with a
       # failing test never reaches the bucket or the GitHub Release.
+      # ORBIT_TELEMETRY=0 belt-and-braces: the test harness already forces
+      # it off per-spawn, but CI runs on an ephemeral HOME, so any event
+      # that did escape would mint a brand-new "install" in the same table
+      # the relaunch is measured by — a release job must never look like a
+      # user.
       - name: Run tests
+        env:
+          ORBIT_TELEMETRY: '0'
         run: npm test
 
       - run: npm run build:extension
@@ -130,15 +144,54 @@ jobs:
           node scripts/build-server-json.mjs \
             orbit-lifecycle-marketing-system-for-claude.mcpb
           cat server.json
+          set -euo pipefail
           if [ -z "$MCP_REGISTRY_TOKEN" ]; then
-            echo "MCP_REGISTRY_TOKEN not set — skipping registry publish. server.json is stamped above; publish it manually with \`mcp-publisher publish\`."
-            exit 0
+            echo "::error::MCP_REGISTRY_TOKEN not set — the registry entry cannot be published, so the registry would keep serving the previous version's checksum against this release's asset. Set the secret and re-run."
+            exit 1
           fi
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz" \
             | tar -xz mcp-publisher
-          ./mcp-publisher publish --token "$MCP_REGISTRY_TOKEN" \
-            && echo "Registry entry published." \
-            || echo "Registry publish failed — server.json above is correct; retry manually."
+          # No `|| echo` here. A swallowed publish failure is exactly the
+          # bug this step was written to fix, relocated into YAML where it
+          # is harder to notice.
+          ./mcp-publisher publish --token "$MCP_REGISTRY_TOKEN"
+          echo "Registry entry published — reading it back."
+
+      # Read the LIVE registry entry back and assert it matches what we
+      # just stamped. A 2xx from the publisher is a claim; this is the
+      # observation. Without it, "the registry serves a checksum that does
+      # not match its own asset" stays undetectable until a stranger's
+      # installer refuses the download.
+      - name: Verify the published registry entry
+        run: |
+          set -euo pipefail
+          NAME=$(node -p "require('./server.json').name")
+          WANT_VERSION=$(node -p "require('./server.json').version")
+          WANT_SHA=$(node -p "
+            const s = require('./server.json');
+            const p = (s.packages || []).find(p => p.fileSha256) || {};
+            p.fileSha256 || '';
+          ")
+          echo "Expecting $NAME v$WANT_VERSION sha256=$WANT_SHA"
+          for attempt in 1 2 3 4 5; do
+            BODY=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=$NAME" || echo '')
+            GOT=$(node -e "
+              let d = {}; try { d = JSON.parse(process.argv[1] || '{}'); } catch {}
+              const list = d.servers || [];
+              const hit = list.find(s => (s.name || s.server?.name) === process.argv[2]);
+              const srv = hit?.server ?? hit ?? {};
+              const pkg = (srv.packages || []).find(p => p.fileSha256) || {};
+              console.log((srv.version || '') + ' ' + (pkg.fileSha256 || ''));
+            " "$BODY" "$NAME")
+            if [ "$GOT" = "$WANT_VERSION $WANT_SHA" ]; then
+              echo "Registry readback OK: $GOT"
+              exit 0
+            fi
+            echo "Registry not consistent yet (got '$GOT') — retrying in 15s (attempt $attempt/5)."
+            sleep 15
+          done
+          echo "::error::Registry readback never matched the stamped server.json (wanted '$WANT_VERSION $WANT_SHA'). The registry is serving an entry that does not describe this release."
+          exit 1
 
       # Notify the get-orbit website immediately that a new MCPB
       # version is live. Triggers the sync-mcpb-version workflow

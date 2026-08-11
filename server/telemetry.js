@@ -4,9 +4,12 @@
  * What we send:
  *   - type: "session_start" | "skill_load" | "tool_call" | "tool_error"
  *   - slug: which skill or tool (or "orbit" for sessions)
- *   - errorClass: on tool_error only — one of a closed set of buckets
- *     (timeout / upstream_unavailable / auth_failed / not_found /
- *     rate_limited / error). Never the error message.
+ *   - errorClass: on tool_error only — one of a closed set of buckets.
+ *     Thrown failures: timeout / upstream_unavailable / auth_failed /
+ *     not_found / rate_limited / error. Shaped failures returned through
+ *     the success path: needs_setup / failed / invalid_input / ... (see
+ *     FAILURE_STATUSES in index.js). Rejected before the handler ran:
+ *     invalid_args / unknown_tool. Never the error message.
  *   - version: mcpb version from manifest
  *   - clientId: opaque per-install UUID (SHA-256 hashed — not correlatable to any identity)
  *
@@ -162,6 +165,12 @@ export async function trackSkillLoad({ slug, version } = {}) {
  * attempt and left no way to tell a working install from one where
  * everything throws. Pair it with trackToolError below: tool_call minus
  * tool_error is the success rate.
+ *
+ * One exception to "calls that actually ran": a call the SDK rejected on
+ * its input schema never reaches a handler, but it is still an attempt
+ * that failed, so instrumentSchemaRejections() emits a tool_call
+ * alongside its tool_error. Without that pair the subtraction above
+ * would silently exclude the largest stranger-facing failure class.
  */
 export async function trackToolCall({ slug, version } = {}) {
   if (!slug) return;

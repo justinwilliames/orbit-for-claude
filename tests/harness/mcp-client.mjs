@@ -37,7 +37,15 @@ export async function spawnMcpClient({
 } = {}) {
   const child = spawn(process.execPath, [SERVER_ENTRY], {
     cwd,
-    env: { ...process.env, ...env },
+    // ORBIT_TELEMETRY=0 by default: every suite here spawns a REAL server,
+    // and the real server posts to the production endpoint. A clean run
+    // used to fire 135 live events (13 session_start, 110 tool_call, 11
+    // tool_error) into the same table the relaunch is judged by — and CI
+    // runs on an ephemeral HOME, so each release job minted a brand-new
+    // "install". A caller that is deliberately testing the emitter passes
+    // its own ORBIT_TELEMETRY/ORBIT_TELEMETRY_ENDPOINT in `env` and wins,
+    // because the spread below comes last.
+    env: { ...process.env, ORBIT_TELEMETRY: "0", ...env },
     stdio: ["pipe", "pipe", "pipe"]
   });
 
