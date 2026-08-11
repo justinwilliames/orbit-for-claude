@@ -84,6 +84,10 @@ import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { annotationsFor } from "./tool-annotations.js";
 import { registerOrbitWidgets, widgetMeta, writeWidgetArtifact } from "./ui/register.js";
 import { REVIEW_GALLERY_URI } from "./ui/widgets/review-gallery.js";
+import { RENDER_GATE_URI } from "./ui/widgets/render-gate.js";
+import { QA_REPORT_URI } from "./ui/widgets/qa-report.js";
+import { AUDIT_REPORT_URI } from "./ui/widgets/audit-report.js";
+import { DIAGRAM_VIEW_URI } from "./ui/widgets/diagram-view.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -2085,7 +2089,8 @@ function registerTools() {
         style_preset: z.enum(["orbit-default", "presentation", "minimal"]).optional(),
         output_dir: z.string().max(MAX_PATH_STRING).optional(),
         formats: z.array(z.enum(["svg", "png", "pdf", "html"])).max(10).optional()
-      }
+      },
+      _meta: widgetMeta(DIAGRAM_VIEW_URI)
     },
     async ({
       action,
@@ -2117,7 +2122,7 @@ function registerTools() {
             defaultGeography: runtimeConfig.defaultGeography
           }
         });
-        return makeJsonToolResponse(result);
+        return makeJsonToolResponse(result, diagramWidgetPayload(result));
       }
       if (action === "update") {
         if (!specJson) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "spec_json is required for action=update" });
@@ -2140,7 +2145,7 @@ function registerTools() {
             defaultGeography: runtimeConfig.defaultGeography
           }
         });
-        return makeJsonToolResponse(result);
+        return makeJsonToolResponse(result, diagramWidgetPayload(result));
       }
       // action === "render"
       if (!specJson) return makeJsonToolResponse({ status: "error", code: "missing_input", message: "spec_json is required for action=render" });
@@ -2154,7 +2159,9 @@ function registerTools() {
         outputDir: targetDir,
         formats
       });
-      return makeJsonToolResponse(result);
+      // The render result is file paths; the flow the widget draws comes
+      // from the spec that was rendered.
+      return makeJsonToolResponse(result, diagramWidgetPayload({ spec }));
     }
   );
 
@@ -3270,7 +3277,8 @@ function registerTools() {
         "Produces a structured audit report with counts, naming convention compliance, and warnings. " +
         "Resumable: if the workspace is large enough to hit the context limit, the response " +
         "includes a continuation_token you can pass to orbit_continue_job to finish the audit.",
-      inputSchema: {}
+      inputSchema: {},
+      _meta: widgetMeta(AUDIT_REPORT_URI)
     },
     async (args) => {
       const toolName = "orbit_audit_braze_instance";
@@ -3315,7 +3323,7 @@ function registerTools() {
 
       // Audit completed — clean up any prior checkpoint token.
       if (resume?.token) completeCheckpoint(resume.token);
-      return makeJsonToolResponse(result);
+      return makeJsonToolResponse(result, auditWidgetPayload(result));
     }
   );
 
@@ -5480,11 +5488,114 @@ function registerTools() {
       inputSchema: {
         html: z.string().min(1).describe("The email HTML to QA."),
         include_size_check: z.boolean().optional().describe("Include the Gmail-clipping size check (default: true).")
-      }
+      },
+      _meta: widgetMeta(QA_REPORT_URI)
     },
     async ({ html, include_size_check: includeSizeCheck }) => {
       const result = qaEmail({ html, includeSizeCheck: includeSizeCheck !== false });
-      return makeJsonToolResponse(result);
+      // Widget payload: the verdict, the counts, and the findings with
+      // their evidence. The `breakdown` block stays out — it is the raw
+      // output of the three underlying checks, which the report surface
+      // does not read and which would double the payload.
+      return makeJsonToolResponse(result, {
+        verdict: result.verdict,
+        status: result.status,
+        message: result.message,
+        fail_count: result.fail_count,
+        warn_count: result.warn_count,
+        pass_count: result.pass_count,
+        combined_findings: result.combined_findings,
+        breakdown: result.breakdown
+          ? {
+              accessibility: { verdict: result.breakdown.accessibility?.verdict },
+              dark_mode: { verdict: result.breakdown.dark_mode?.verdict },
+              size: result.breakdown.size
+                ? {
+                    verdict: result.breakdown.size.verdict,
+                    message: result.breakdown.size.message
+                  }
+                : null
+            }
+          : null
+      });
+    }
+  );
+
+  registerToolSafe(
+    "orbit_render_gate",
+    {
+      title: "Render Gate (measured in a real browser)",
+      description:
+        "Render email HTML at desktop (640px) and mobile (390px) inside the widget's own browser engine and measure what static analysis cannot see: headings and paragraphs whose last line holds a single word, CTA rows that wrap at mobile, tap targets under 44x44 CSS px, computed foreground/background contrast below WCAG AA, and rendered height. Every finding cites the pixel value, ratio, or byte count it came from. " +
+        "IMPORTANT: the layout measurements happen in the widget, not in this call — this response carries only the checks computable without a render (byte size against Gmail's 102 KB limit). The measured findings arrive back in the conversation from the widget once it has laid the email out. Use orbit_qa_email for the markup-level checks (alt text, heading order, dark-mode risk); the two are complements, not substitutes.",
+      inputSchema: {
+        html: z.string().min(1).max(MAX_LONG_STRING).describe("The email HTML to render and measure."),
+        label: z.string().max(MAX_SHORT_STRING).optional().describe("Short label for the gate header."),
+        max_height_px: z
+          .number()
+          .int()
+          .min(200)
+          .max(50_000)
+          .optional()
+          .describe(
+            "Optional rendered-height budget. Without it the height is reported as a measurement only — there is no client-imposed pixel ceiling for email, so no verdict is invented."
+          ),
+        artifact_path: z
+          .string()
+          .max(MAX_PATH_STRING)
+          .optional()
+          .describe("Also write a standalone copy of the gate to this path — the fallback when a host sandboxes the widget into an opaque origin.")
+      },
+      _meta: widgetMeta(RENDER_GATE_URI)
+    },
+    async ({ html, label, max_height_px: maxHeightPx, artifact_path: artifactPath }) => {
+      const payload = {
+        label: label ?? "Render gate",
+        html,
+        max_height_px: maxHeightPx ?? null
+      };
+
+      let artifact = null;
+      if (artifactPath) {
+        artifact = writeWidgetArtifact({
+          uri: RENDER_GATE_URI,
+          data: payload,
+          outPath: artifactPath
+        });
+      }
+
+      // The only check that does not need a render: message size is
+      // exact from the bytes, and Gmail clips on bytes, never on pixel
+      // height. Computing it here means the tool result is useful even
+      // if the widget never renders.
+      const bytes = Buffer.byteLength(html, "utf8");
+      const GMAIL_CLIP_BYTES = 102_400;
+      const sizeVerdict =
+        bytes >= GMAIL_CLIP_BYTES ? "fail" : bytes >= GMAIL_CLIP_BYTES * 0.9 ? "warn" : "pass";
+
+      const summary = [
+        `Render gate open: ${payload.label}`,
+        `Size (measured here, no render needed): ${(bytes / 1024).toFixed(1)} KB of Gmail's 102 KB limit — ${sizeVerdict}.`,
+        artifact ? `Standalone copy written to ${artifact}` : null,
+        "",
+        "The widget is now laying this out at 640px and 390px. It measures widows, CTA row wrap, tap-target size, computed contrast and rendered height, then sends the findings back into this conversation with the px values behind each one. Wait for that message before judging the render.",
+        "Checks it will NOT perform, deliberately: client-specific rendering (Outlook's Word engine, Yahoo), image loading from blocked hosts, and any pixel-height verdict without max_height_px."
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      return {
+        content: [{ type: "text", text: summary }],
+        structuredContent: {
+          ...payload,
+          pre_render: {
+            bytes,
+            kilobytes: Number((bytes / 1024).toFixed(1)),
+            gmail_limit_bytes: GMAIL_CLIP_BYTES,
+            verdict: sizeVerdict
+          }
+        }
+      };
     }
   );
 
@@ -5675,7 +5786,76 @@ function makeJsonResource(uri, payload) {
   };
 }
 
-function makeJsonToolResponse(payload) {
+/**
+ * Compact widget payload for a lifecycle diagram result.
+ *
+ * The spec also carries source_data, the router trace and the revision
+ * history — provenance the flow widget never draws. Returns undefined
+ * on the error/needs-input paths so those responses stay plain text.
+ */
+function diagramWidgetPayload(result) {
+  const spec = result?.spec;
+  if (!spec || !Array.isArray(spec.nodes)) return undefined;
+  return {
+    spec: {
+      title: spec.title,
+      platform: spec.platform,
+      diagram_type: spec.diagram_type,
+      lanes: spec.lanes,
+      nodes: spec.nodes,
+      edges: spec.edges,
+      warnings: spec.warnings,
+      validation: spec.validation,
+      mermaid: spec.mermaid
+    }
+  };
+}
+
+/**
+ * Compact widget payload for a Braze workspace audit.
+ *
+ * The audit's inventory arrays are the bulk of it and the report
+ * surface reads none of them wholesale — only the counts, the findings,
+ * and the dashboard URLs of the objects a finding actually names. A
+ * thousand-canvas workspace would otherwise be carried twice in one
+ * response.
+ */
+function auditWidgetPayload(result) {
+  const audit = result?.audit;
+  if (!audit?.summary) return undefined;
+  const flagged = new Set((audit.naming_issues ?? []).map((i) => `${i.type}:${i.id}`));
+  const linked = (items, type) =>
+    (items ?? [])
+      .filter((item) => flagged.has(`${type}:${item.id}`) && item.dashboard_url)
+      .map((item) => ({ id: item.id, dashboard_url: item.dashboard_url }));
+
+  return {
+    status: result.status,
+    audit: {
+      timestamp: audit.timestamp,
+      summary: audit.summary,
+      naming_issues: audit.naming_issues,
+      warnings: audit.warnings,
+      // Only the segments that are themselves a finding.
+      segments: (audit.segments ?? []).filter((s) => s.analytics_tracking_enabled === false),
+      canvases: linked(audit.canvases, "canvas"),
+      campaigns: linked(audit.campaigns, "campaign")
+    }
+  };
+}
+
+/**
+ * @param {object} payload            the JSON body every Orbit tool returns
+ * @param {object} [widgetPayload]    optional structuredContent for a tool
+ *   that has a widget attached. Deliberately NOT a copy of `payload`:
+ *   the spec has servers serialise the JSON into `content` as well, so
+ *   anything placed here is carried twice. The widget payloads are
+ *   therefore trimmed to what the widget actually reads — a workspace
+ *   audit's findings, not its full inventory — and every widget also
+ *   parses the `content` block, so a host that forwards only one of the
+ *   two still renders.
+ */
+function makeJsonToolResponse(payload, widgetPayload) {
   // Attach a quality report to content-field strings before
   // serialising. This is the universal slop-gate hook — every tool
   // response that contains user-facing prose (subject lines,
@@ -5693,7 +5873,7 @@ function makeJsonToolResponse(payload) {
       gated._orbit_update = nag;
     }
   }
-  return {
+  const response = {
     content: [
       {
         type: "text",
@@ -5701,6 +5881,8 @@ function makeJsonToolResponse(payload) {
       }
     ]
   };
+  if (widgetPayload !== undefined) response.structuredContent = widgetPayload;
+  return response;
 }
 
 // Tightened limits to stay comfortably inside Claude Desktop's

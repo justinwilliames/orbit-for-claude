@@ -75,6 +75,10 @@ export const LOCAL_WRITE = new Set([
   "orbit_learn_email_template",
   "orbit_modify_email_template",
   "orbit_reconcile_image_urls",
+  // Measures rather than mutates, but it writes a standalone copy of
+  // the gate when artifact_path is passed — same profile as
+  // orbit_review_creative, so it is classified by what it can write.
+  "orbit_render_gate",
   "orbit_review_creative",
   "orbit_save_logo_file",
   "orbit_scaffold_brain_program",
