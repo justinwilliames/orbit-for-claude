@@ -36,6 +36,13 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      # The test suite (tests/suites/*.test.mjs, run via `npm test`) is
+      # the actual quality gate — contract tests, manifest-drift guard,
+      # Braze/Stripo/ESP flows, calculator correctness. A release with a
+      # failing test never reaches the bucket or the GitHub Release.
+      - name: Run tests
+        run: npm test
+
       - run: npm run build:extension
 
       # Package the .mcpb bundle for distribution.
@@ -103,7 +110,7 @@ jobs:
               orbit-lifecycle-marketing-system-for-claude.mcpb \
               --title "Orbit v$VERSION" \
               --latest \
-              --notes "Orbit MCPB v$VERSION. Free — needs a free account: get your Activation Key at https://yourorbit.team. Install: download the .mcpb and double-click it (Claude Desktop replaces any older version in place), then paste your Activation Key in Settings → Extensions → Orbit."
+              --notes "Orbit MCPB v$VERSION. Free, no account and no key required. Install: download the .mcpb and double-click it (Claude Desktop replaces any older version in place)."
           fi
 
       # Website version-sync runs on a 5-minute cron in get-orbit
