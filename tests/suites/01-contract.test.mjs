@@ -138,6 +138,42 @@ describe("Contract suite — every tool meets the MCP response contract", () => 
     fs.writeFileSync(path.join(OUTPUT_ROOT, "tools-list.json"), JSON.stringify(tools, null, 2));
   });
 
+  test("the tools/list payload stays inside its byte budget", async () => {
+    // 121 tools serialise to ~142KB — call it 38k tokens. In hosts that
+    // load every schema up front, that is a fixed tax on every
+    // conversation, lifecycle work or not, and the most likely reason a
+    // stranger uninstalls something that isn't broken.
+    //
+    // Measured before assuming: descriptions are 43KB, schemas 68KB
+    // (23KB of which is structure, not prose), titles/annotations/_meta
+    // 17KB. There is no fat — only 11 of 500 parameters have a
+    // description over 200 characters. The cost is 121 tools, not
+    // verbosity, so trimming prose cannot fix it and the only real lever
+    // is registering fewer tools.
+    //
+    // Not doing that yet, deliberately: Claude Code and Desktop now load
+    // tool NAMES at session start and fetch schemas on demand, so the
+    // tax this budget guards against is already absorbed by the host in
+    // the places Orbit actually runs. Gating toolsets behind a setting
+    // would trade a cost the host is already paying for a user who can't
+    // reach a tool without restarting the app.
+    //
+    // What this does is stop the number moving silently. Adding tool 122
+    // should be a decision, not a diff.
+    const tools = await client.listTools();
+    const bytes = Buffer.byteLength(JSON.stringify(tools), "utf8");
+    fs.writeFileSync(
+      path.join(OUTPUT_ROOT, "tools-list-size.txt"),
+      `${tools.length} tools\n${bytes} bytes\n~${Math.round(bytes / 3.7)} tokens\nbudget: ${TOOLS_LIST_BYTE_BUDGET} bytes\n`
+    );
+    assert.ok(
+      bytes <= TOOLS_LIST_BYTE_BUDGET,
+      `tools/list is ${bytes} bytes (~${Math.round(bytes / 3.7)} tokens) across ${tools.length} tools, ` +
+        `over the ${TOOLS_LIST_BYTE_BUDGET}-byte budget. Every host that eagerly loads schemas pays this ` +
+        `on every conversation. Cut a tool, or raise the budget on purpose and say why.`
+    );
+  });
+
   test("every registered tool has a non-empty description", async () => {
     const tools = await client.listTools();
     const missing = tools.filter((t) => !t.description || t.description.length < 20);
@@ -242,6 +278,13 @@ const CRASH_CHECK_EXEMPT = new Set([]);
  * under minimalArgsFor. A ratchet, not a target.
  */
 const SHAPED_RESPONSE_FLOOR = 45;
+
+/**
+ * Ceiling on the serialised tools/list payload. Currently ~142KB / 121
+ * tools; 150,000 leaves room for a handful of additions before someone
+ * has to justify the next one.
+ */
+const TOOLS_LIST_BYTE_BUDGET = 150_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

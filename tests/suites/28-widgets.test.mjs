@@ -24,6 +24,9 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
@@ -33,6 +36,7 @@ import { VERDICT_BINDING_JS } from "../../server/ui/widgets/review-gallery.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /** Tools that must declare a widget, and the uri each one must name. */
 const TOOL_WIDGETS = {
@@ -169,6 +173,31 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     // Provenance the flow never draws must stay out of the second copy.
     assert.equal(spec.source_data, undefined);
     assert.equal(spec.route, undefined);
+  });
+
+  test("the flow says a node's type in words, not only in a stripe colour", () => {
+    // The five node types were distinguished by a 4px border-left-colour
+    // and nothing else — no text, no icon — so entry / decision / wait /
+    // exit were indistinguishable without clicking each node to read the
+    // detail rail. That is close to the entire job of a flow diagram, and
+    // the same colour-only-meaning defect already fixed on the gallery's
+    // verdict dots.
+    const src = fs.readFileSync(
+      path.resolve(TEST_DIR, "..", "..", "server", "ui", "widgets", "diagram-view.js"),
+      "utf8"
+    );
+    const flow = src.slice(src.indexOf("function renderFlow"), src.indexOf("function renderDetail"));
+    assert.match(
+      flow,
+      /n-type/,
+      "renderFlow() no longer writes the node type into the node — type is colour-only again"
+    );
+    for (const type of ["entry", "segment", "decision", "wait", "exit"]) {
+      assert.ok(
+        new RegExp(`"${type}"`).test(src.slice(src.indexOf("var TYPED"), src.indexOf("function renderFlow"))),
+        `"${type}" has a stripe colour but is missing from TYPED, so it renders with no label`
+      );
+    }
   });
 });
 

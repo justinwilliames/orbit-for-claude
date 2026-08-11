@@ -154,7 +154,14 @@ body { height: 100vh; overflow: hidden; }
 .notif-icon { width: 15px; height: 15px; border-radius: 4px; background: var(--brand); }
 .notif-title { font-size: 13.5px; font-weight: 650; color: #14161f; line-height: 1.3; }
 .notif-body { font-size: 13px; color: #34384a; line-height: 1.35; margin-top: 1px; }
-.notif-clip { color: var(--warn); font-size: 10.5px; margin-top: 5px; font-weight: 600; }
+/* Hardcoded, like .notif-title and .notif-body above it. The .notif card
+   is a fixed-light phone screen in both themes, so a theme-switching
+   token painted onto it is wrong by construction: in dark mode --warn
+   resolves to #f87171, calibrated for a dark background, and lands at
+   2.65:1 on this near-white card — under the 4.5:1 floor, at 10.5px.
+   And this is the routine case, not an edge one: it fires on every push
+   body over 110 characters. */
+.notif-clip { color: #b3402e; font-size: 10.5px; margin-top: 5px; font-weight: 600; }
 .frame--iam { width: 100%; height: 520px; border-radius: 14px; background: #fff; }
 
 /* ---- verdict bar --------------------------------------------------- */

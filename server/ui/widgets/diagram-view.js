@@ -44,12 +44,18 @@ body { height: 100vh; overflow: hidden; }
 }
 .node:hover { border-color: var(--brand-line); }
 .node[aria-current="true"] { background: var(--brand-wash); border-color: var(--brand-line); }
+/* The stripe is a fast scan cue, not the label. Telling an entry from a
+   decision from a wait is most of what a flow diagram is FOR, so the
+   type is also written on the node (.n-type below) — a 4px colour is not
+   a legend, and a reader who can't distinguish these hues is left
+   clicking every step to read the type out of the detail rail. */
 .node[data-type="entry"]    { border-left-color: var(--ok); }
 .node[data-type="segment"]  { border-left-color: var(--brand-soft); }
 .node[data-type="decision"] { border-left-color: var(--active); }
 .node[data-type="wait"]     { border-left-color: var(--pending); }
 .node[data-type="exit"]     { border-left-color: var(--ink-3); }
 .n-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.n-type { text-transform: uppercase; letter-spacing: .05em; font-size: 9.5px; }
 .n-label { font-size: 13px; font-weight: 650; }
 .n-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 3px; line-height: 1.4; }
 
@@ -168,6 +174,10 @@ function render() {
   renderDetail();
 }
 
+// The node types the stripe colour distinguishes — kept in step with the
+// .node[data-type=...] rules above.
+var TYPED = ["entry", "segment", "decision", "wait", "exit"];
+
 function renderFlow() {
   var html = "";
   spec.nodes.forEach(function (n, i) {
@@ -185,6 +195,11 @@ function renderFlow() {
       '<button class="node" data-id="' + esc(n.id) + '" data-type="' + esc(n.type || "step") +
       '" aria-current="' + (n.id === currentId) + '">' +
       '<span class="n-top"><span class="n-label">' + esc(n.label) + "</span>" +
+      // Type as text, not just as the stripe colour. Only for the types
+      // that actually change the stripe — labelling every ordinary step
+      // "STEP" would be noise for no gain.
+      (TYPED.indexOf(n.type) >= 0
+        ? '<span class="o-pill o-pill--pending n-type">' + esc(n.type) + "</span>" : "") +
       (n.channel ? '<span class="o-pill o-pill--brand">' + esc(n.channel) + "</span>" : "") +
       (n.badge ? '<span class="o-pill o-pill--pending">' + esc(n.badge) + "</span>" : "") +
       "</span>" +

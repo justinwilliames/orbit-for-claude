@@ -21,7 +21,19 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { ORBIT_TOKENS_CSS, ORBIT_BASE_CSS } from "../../server/ui/tokens.js";
+
+// The gallery's CSS is a module-private template literal, so read the
+// source. Reading the file is the point anyway: this guard is about what
+// ships, not about what a re-export happens to expose.
+const REVIEW_GALLERY_CSS = fs.readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "server", "ui", "widgets", "review-gallery.js"),
+  "utf8"
+);
 
 /** WCAG 2.x relative luminance for an #rrggbb string. */
 function luminance(hex) {
@@ -37,6 +49,20 @@ function contrastRatio(fg, bg) {
   const a = luminance(fg);
   const b = luminance(bg);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+/** Composite `fg` at `alpha` over `bg`, returning the flattened #rrggbb. */
+function composite(fg, alpha, bg) {
+  const parse = (h) => [0, 2, 4].map((i) => parseInt(h.replace("#", "").slice(i, i + 2), 16));
+  const [fr, fg_, fb] = parse(fg);
+  const [br, bg_, bb] = parse(bg);
+  const mix = (a, b) => Math.round(a * alpha + b * (1 - alpha));
+  return (
+    "#" +
+    [mix(fr, br), mix(fg_, bg_), mix(fb, bb)]
+      .map((v) => v.toString(16).padStart(2, "0"))
+      .join("")
+  );
 }
 
 /**
@@ -104,6 +130,49 @@ describe("Widget contrast — Orbit's own chrome clears the bar it enforces", ()
       );
     });
   }
+
+  test("the fixed-light push preview never reads a theme-switching colour token", () => {
+    // The .notif card is a phone screen: deliberately light in BOTH
+    // themes, which is why .notif-title and .notif-body hardcode their
+    // colours. .notif-clip — the "Clipped on iOS" warning, which fires on
+    // any push body over 110 chars, so the routine case — read var(--warn)
+    // instead. In dark that resolves to #f87171, calibrated for a dark
+    // background, painted on a near-white card: 2.65:1 at 10.5px.
+    //
+    // A colour on fixed-light chrome cannot come from a token that
+    // changes with the theme. Assert the shape, not the one instance.
+    const notifRules = [...REVIEW_GALLERY_CSS.matchAll(/\.notif[a-z-]*\s*\{([^}]*)\}/g)];
+    assert.ok(notifRules.length >= 3, "no .notif rules found — did the preview move?");
+    const themed = notifRules
+      .map(([rule, body]) => [rule, /(^|;|\s)color:\s*var\(--/.test(body)])
+      .filter(([, isThemed]) => isThemed)
+      .map(([rule]) => rule.split("{")[0].trim());
+    assert.deepEqual(
+      themed,
+      [],
+      `Fixed-light push-preview rules reading a theme-switching colour token: ${themed.join(", ")}`
+    );
+
+    // And the hardcoded values actually clear the bar on that card.
+    // rgba(250,250,252,.94) composited over the darkest stop of the phone
+    // gradient (#222a3c) — the worst case the card ever sits on.
+    const cardBg = composite("#fafafc", 0.94, "#222a3c");
+    const failures = [];
+    for (const [name, hex] of [
+      [".notif-title", "#14161f"],
+      [".notif-body", "#34384a"],
+      [".notif-clip", "#b3402e"],
+    ]) {
+      const declared = REVIEW_GALLERY_CSS.match(
+        new RegExp(`\\${name}\\s*\\{[^}]*color:\\s*(#[0-9a-fA-F]{6})`)
+      );
+      assert.ok(declared, `${name} no longer declares a hex colour`);
+      assert.equal(declared[1].toLowerCase(), hex, `${name} colour changed — re-check its contrast`);
+      const ratio = contrastRatio(hex, cardBg);
+      if (ratio < AA_NORMAL) failures.push(`${name} — ${hex} on ${cardBg} = ${ratio.toFixed(2)}:1`);
+    }
+    assert.deepEqual(failures, [], `push preview text below AA:\n  ${failures.join("\n  ")}`);
+  });
 
   test("body text clears AA on every surface it sits on", () => {
     const failures = [];
