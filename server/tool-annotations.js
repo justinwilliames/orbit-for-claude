@@ -75,6 +75,7 @@ export const LOCAL_WRITE = new Set([
   "orbit_learn_email_template",
   "orbit_modify_email_template",
   "orbit_reconcile_image_urls",
+  "orbit_review_creative",
   "orbit_save_logo_file",
   "orbit_scaffold_brain_program",
   "orbit_setup_stripo",

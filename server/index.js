@@ -82,6 +82,8 @@ import { attachQualityReport } from "./content-gate.js";
 import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { annotationsFor } from "./tool-annotations.js";
+import { registerOrbitWidgets, widgetMeta, writeWidgetArtifact } from "./ui/register.js";
+import { REVIEW_GALLERY_URI } from "./ui/widgets/review-gallery.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -943,6 +945,7 @@ function registerResources() {
   // directly. Loaded from data/courses-export.json, refreshed at
   // build time from yourorbit.team/api/courses/export.
   const coursesStatus = registerCourseResources(server);
+  const widgetsStatus = registerOrbitWidgets(server);
   if (coursesStatus.registered) {
     process.stderr.write(
       `[Orbit] Registered ${coursesStatus.courseCount} course resources from export ${coursesStatus.generatedAt}.\n`
@@ -1306,6 +1309,85 @@ function registerTools() {
   // provider and errors loudly if it is missing. The getter form keeps handlers
   // reading the live config, never a snapshot captured before bootstrap.
   setEspRuntimeConfig(() => runtimeConfig);
+
+  registerToolSafe(
+    "orbit_review_creative",
+    {
+      title: "Review Creative",
+      description:
+        "Open an interactive review console for a set of lifecycle creatives — email, in-app messages, or push. Renders each one at the size it actually ships at, with per-item approve / needs-changes verdicts and notes. Verdicts can be sent straight back into the conversation, or copied out. Pass artifact_path to also write a standalone shareable copy for someone outside this chat.",
+      inputSchema: {
+        programme: z.string().max(MAX_SHORT_STRING).optional(),
+        review_id: z.string().max(MAX_SHORT_STRING).optional(),
+        artifact_path: z.string().max(MAX_PATH_STRING).optional(),
+        items: z
+          .array(
+            z.object({
+              id: z.string().max(MAX_SHORT_STRING),
+              name: z.string().max(MAX_SHORT_STRING),
+              channel: z.enum(["email", "iam", "in_app", "push"]).optional(),
+              group: z.string().max(MAX_SHORT_STRING).optional(),
+              subtitle: z.string().max(MAX_SHORT_STRING).optional(),
+              html: z.string().max(MAX_LONG_STRING).optional(),
+              push: z
+                .object({
+                  title: z.string().max(MAX_SHORT_STRING).optional(),
+                  body: z.string().max(MAX_MEDIUM_STRING).optional(),
+                  app: z.string().max(MAX_SHORT_STRING).optional()
+                })
+                .optional(),
+              meta: z.record(z.string().max(MAX_SHORT_STRING), z.string().max(MAX_MEDIUM_STRING)).optional()
+            })
+          )
+          .min(1)
+          .max(MAX_LONG_ARRAY)
+      },
+      _meta: widgetMeta(REVIEW_GALLERY_URI)
+    },
+    async ({ programme, review_id, artifact_path, items }) => {
+      const payload = {
+        programme: programme ?? "Creative review",
+        reviewId: review_id ?? programme ?? "review",
+        items
+      };
+
+      let artifact = null;
+      if (artifact_path) {
+        artifact = writeWidgetArtifact({
+          uri: REVIEW_GALLERY_URI,
+          data: payload,
+          outPath: artifact_path
+        });
+      }
+
+      const byChannel = items.reduce((acc, item) => {
+        const key = item.channel ?? "email";
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      const summary = [
+        `Review console open: ${payload.programme}`,
+        `${items.length} creative(s) — ` +
+          Object.entries(byChannel)
+            .map(([channel, count]) => `${count} ${channel}`)
+            .join(", "),
+        artifact ? `Standalone copy written to ${artifact}` : null,
+        "",
+        "Approve or flag each one in the console, then send the review back here."
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      // structuredContent is what the widget reads; the text block is
+      // the fallback for hosts that don't forward it, and what the model
+      // sees when no widget renders at all.
+      return {
+        content: [{ type: "text", text: summary }],
+        structuredContent: payload
+      };
+    }
+  );
 
   registerToolSafe(
     "orbit_list_skills",

@@ -587,6 +587,10 @@
       "description": "One-shot pre-send email QA gate \u2014 runs accessibility, dark-mode, and Gmail-clipping checks in a single call and returns a combined pass/warn/fail verdict."
     },
     {
+      "name": "orbit_review_creative",
+      "description": "Open an interactive review console for a set of lifecycle creatives \u2014 email, in-app messages, or push. Renders each at the size it ships at, with per-item approve / needs-changes verdicts and notes that can be sent back into the conversation or copied out. Pass artifact_path to also write a standalone shareable copy."
+    },
+    {
       "name": "orbit_render_email_preview",
       "description": "Produce desktop, mobile, and dark-mode preview HTML artifacts from arbitrary email HTML."
     },
