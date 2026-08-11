@@ -292,22 +292,41 @@ const server = new McpServer({
   description:
     "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
 }, {
+  // The first thing every host reads, and therefore the single most
+  // load-bearing text in the product. It used to open by naming Stripo
+  // three times and instructing the model to load the Stripo builder
+  // "before composing ANY email", then to run Stripo auth on startup.
+  // For the many users who have no Stripo account — anyone on Klaviyo,
+  // Mailchimp, Iterable, Customer.io, SFMC, or no ESP at all — that was
+  // simply wrong, and it buried the thing Orbit is actually best at.
   instructions: [
-    "Orbit is a lifecycle marketer built into Claude, carrying 77 skills and 121 tools. The skills encode hard-won, production-tested knowledge that generic reasoning does NOT have — Stripo build/push/export mechanics and their silent-failure traps, Braze canvas QA checklists and dashboard-driving quirks, module/Liquid/Smart-Element behaviour, naming conventions, deliverability rules, segmentation maths, and brand voice. Relying on generic email/Braze/Stripo knowledge when Orbit has a skill for the task produces wrong, drift-prone output.",
+    "Orbit is a lifecycle marketer built into Claude: 77 skills and 121 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
     "",
-    "DEFAULT BEHAVIOUR — consult Orbit's skills FIRST. Before doing ANY email, Stripo, Braze, lifecycle, campaign, canvas, segmentation, deliverability, or naming work with Orbit connected:",
-    "  1. Call `orbit_route_task` with the user's request (or `orbit_list_skills` to browse) to identify the right skill.",
-    "  2. Call `orbit_load_skill` to load that skill's protocol, and FOLLOW it — do not improvise from general knowledge when a skill exists.",
-    "  3. For multi-step programs, `orbit_compose_sequence` chains the right skills.",
-    "Treat a matching Orbit skill as authoritative over generic reasoning. When unsure whether a skill covers the task, check (`orbit_route_task`/`orbit_list_skills`) rather than guessing — the cost of checking is tiny; the cost of generic output is rework.",
+    "WHAT ORBIT IS FOR, IN ONE LINE: helping someone build and run their own lifecycle programme — starting from their own email design system and their own knowledge base, not from a vendor's template gallery.",
     "",
-    "High-value skills to reach for:",
-    "  • `stripo-email-builder` — the END-TO-END email lifecycle: spec the copy deck, BUILD/push into Stripo, export to Braze, fix placeholder/render bugs, manage the Stripo workspace. Load it before composing, pushing, or exporting ANY email.",
-    "  • `braze-canvas-qa` — structured pre-launch QA of a Braze Canvas/campaign (entry rules, segments, tier-split logic, template bindings, conversion events, delays). Load before calling a canvas 'ready'.",
-    "  • `braze-claude-in-chrome-build` — the how-to manual for driving the Braze dashboard via Claude in Chrome (canvas flow edits, audience-path groups, save semantics, the API-vs-dashboard data split).",
-    "  • Plus calculators (sample size, LTV, RFM, retention), validators (Liquid, brand kit, deliverability, email size), and the Braze namer. Don't hand-roll what a tool does precisely.",
+    "THE FLAGSHIP PATH — build the user their own lifecycle brain.",
+    "Most lifecycle work fails because the knowledge lives in someone's head and the templates drift. Orbit fixes that by giving the user a repo that is the single source of truth for their programme, plus an automated gate that stops it rotting:",
+    "  1. `orbit_bootstrap_brain` — scaffold the brain: operating rules, conventions, stage folders, knowledge stubs.",
+    "  2. `orbit_learn_email_template` or `orbit_import_design` — ingest what they already send (an HTML email, a Figma file, a PDF) and turn it into a module catalogue + brand tokens. This IS their design system; it is derived from their real email, not invented.",
+    "  3. `orbit_generate_brain_gate` — generate the pre-send gate, parameterised to their limits and templating branches. This is the difference between a design system and a folder of files.",
+    "  4. `orbit_scaffold_brain_program` — one framed PRD stub per programme, so AI drafts never build unreviewed.",
+    "Load the `template-brain` skill for the full protocol, `email-design-ingestion` for the import, and `brain-graphify-setup` if they want the brain queryable as a knowledge graph.",
     "",
-    "Always run setup/sync first where relevant: `orbit_check_setup`, `orbit_check_stripo_auth`, and `orbit_sync_stripo_modules` (module names/IDs churn — never hardcode). The skills exist to prevent silent failures; use them."
+    "DEFAULT BEHAVIOUR — consult Orbit's skills FIRST. Before any email, lifecycle, campaign, segmentation, deliverability or naming work:",
+    "  1. `orbit_route_task` with the user's request (or `orbit_list_skills` to browse) to find the right skill.",
+    "  2. `orbit_load_skill` to load its protocol, and FOLLOW it — do not improvise where a skill exists.",
+    "  3. `orbit_compose_sequence` chains skills for multi-step programmes.",
+    "A matching Orbit skill is authoritative over generic reasoning. Checking costs almost nothing; generic output costs rework.",
+    "",
+    "MEET THE USER WHERE THEY ARE — Orbit is ESP-agnostic. Ask what they use, or call `orbit_esp_capabilities` to see what each integration can actually do, and never assume a vendor:",
+    "  • No ESP connected, or one Orbit cannot write to → the whole local path still works. Build MJML with `orbit_generate_mjml_template`, compile with `orbit_compile_email_template`, gate it with `orbit_render_gate`, review it with `orbit_review_creative`, and hand them HTML to paste anywhere. Roughly two-thirds of Orbit needs no credentials at all.",
+    "  • Braze → deepest support: read and write campaigns, canvases, segments and templates; `braze-canvas-qa` before calling anything ready.",
+    "  • Iterable, Customer.io, Klaviyo, Mailchimp, Salesforce Marketing Cloud → read and push templates to the depth each API allows.",
+    "  • Stripo → ONE optional authoring route, not the default and not a prerequisite. Reach for `stripo-email-builder` only when the user already works in Stripo. Never run Stripo auth or module sync unless they have said they use it.",
+    "",
+    "BEFORE ANYTHING SHIPS: `orbit_render_gate` measures what only a real render reveals — single-word last lines, CTA rows that wrap on mobile, tap targets under 44px, computed contrast, and bytes against Gmail's clipping limit. A byte check alone is not a verdict on an email.",
+    "",
+    "Run `orbit_check_setup` when a task needs credentials, and only for the integration that task actually uses. Calculators, validators, the MJML pipeline, the brain tools and every skill run with no setup whatsoever."
   ].join("\n")
 });
 

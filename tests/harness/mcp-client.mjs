@@ -115,7 +115,11 @@ export async function spawnMcpClient({
   }
 
   // Perform the MCP initialize handshake. Required before any other call.
-  await send("initialize", {
+  // The result is kept: it carries serverInfo and the `instructions`
+  // string every host reads, which suite 33 asserts the shape of. It was
+  // previously discarded, so nothing could test the most-read text in
+  // the product.
+  const initializeResult = await send("initialize", {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: {},
     clientInfo: { name: "orbit-test-harness", version: "1.0.0" }
@@ -219,6 +223,9 @@ export async function spawnMcpClient({
   }
 
   return {
+    initializeResult,
+    serverInfo: initializeResult?.serverInfo ?? null,
+    instructions: initializeResult?.instructions ?? "",
     send,
     notify,
     listTools,
