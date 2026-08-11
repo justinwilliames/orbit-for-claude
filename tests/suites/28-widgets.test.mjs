@@ -141,7 +141,9 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     const structured = res.structuredContent;
     assert.ok(structured, "render gate returned no structuredContent for its widget");
     assert.equal(structured.html, html, "widget payload must carry the exact html under test");
-    assert.equal(structured.pre_render.verdict, "pass");
+    assert.equal(structured.pre_render.size_verdict, "pass");
+    assert.equal(structured.pre_render.verdict, undefined,
+      "a byte check must not present itself as a render verdict");
     assert.equal(structured.pre_render.bytes, Buffer.byteLength(html, "utf8"));
     // The measured findings deliberately do NOT appear here — they cannot
     // exist until a browser has laid the email out. The text block has to

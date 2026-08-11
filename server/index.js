@@ -5617,11 +5617,17 @@ function registerTools() {
         content: [{ type: "text", text: summary }],
         structuredContent: {
           ...payload,
+          // `size_verdict`, never `verdict`. This is a BYTE check made
+          // before anything is laid out — it says the email will not be
+          // clipped by Gmail, and nothing whatsoever about how it renders.
+          // Named `verdict`, it was the last word the model heard about an
+          // email on the artifact path or a bridge-less host, and "pass"
+          // reads as "this email is fine".
           pre_render: {
             bytes,
             kilobytes: Number((bytes / 1024).toFixed(1)),
             gmail_limit_bytes: GMAIL_CLIP_BYTES,
-            verdict: sizeVerdict
+            size_verdict: sizeVerdict
           }
         }
       };

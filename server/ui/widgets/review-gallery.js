@@ -181,9 +181,16 @@ body { height: 100vh; overflow: hidden; }
 .notes:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .sent { font-size: 11.5px; color: var(--ok-strong); }
 
+/* Narrow host pane: STACK the rail, never hide it.
+   Hiding it took navigation, progress, and the only readout of the
+   reviewer's own verdicts with it — leaving them stranded on whichever
+   item happened to be current when the breakpoint crossed. Same
+   treatment its sibling diagram-view already uses. */
 @media (max-width: 860px) {
-  .wrap { grid-template-columns: 1fr; }
-  .rail { display: none; }
+  .wrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 38vh; }
+  .stagewrap { padding: 12px; }
+  .frame--email { width: 100%; max-width: 640px; }
 }
 `;
 
@@ -194,6 +201,7 @@ ${WIDGET_PRELUDE}
 // so the creatives arrive from the host as a tool result, not baked
 // into the HTML. window.ORBIT_BOOTSTRAP is only the fallback path used
 // by the render tests and by any host that doesn't push results.
+const VERDICT_LABEL = { approved: "approved", changes: "needs changes", pending: "not yet reviewed" };
 let items = [];
 let programme = "Creative review";
 let storeKey = "orbit:review";
@@ -252,8 +260,14 @@ function renderRail() {
     for (const it of list) {
       const v = verdicts[it.id]?.verdict || "pending";
       html +=
-        '<button class="item" data-id="' + esc(it.id) + '" aria-current="' + (it.id === currentId) + '">' +
-        '<span class="dot" data-v="' + v + '"></span>' +
+        // The verdict rides in the button's accessible name, not in the
+        // dot's colour. The dot is an 8px unlabelled span — to a screen
+        // reader it is nothing at all, which would make the review state
+        // colour-only. That is the exact defect Orbit's own accessibility
+        // lint fails customers for.
+        '<button class="item" data-id="' + esc(it.id) + '" aria-current="' + (it.id === currentId) + '"' +
+        ' aria-label="' + esc(it.name) + " — " + VERDICT_LABEL[v] + '">' +
+        '<span class="dot" data-v="' + v + '" aria-hidden="true"></span>' +
         '<span class="item-text"><span class="item-name">' + esc(it.name) + "</span>" +
         '<span class="item-sub">' + esc(it.subtitle || it.channel || "") + "</span></span></button>";
     }

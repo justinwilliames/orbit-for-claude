@@ -28,7 +28,7 @@
  *     documents this and acts on a campaign id.
  *
  * Every network entry point calls assertActivatedForIntegration("mailchimp")
- * (design §3 / activation.js) — the locked one-liner.
+ * (design §3) — the locked one-liner.
  */
 
 import { safeParseJson } from "../utils.js";
