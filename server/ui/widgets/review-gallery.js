@@ -29,6 +29,67 @@
 
 import { buildWidgetHtml, WIDGET_PRELUDE, escapeHtml } from "../shell.js";
 
+/**
+ * The verdict-binding rules, as plain source.
+ *
+ * These two functions decide whether a stored approval still applies,
+ * which is the difference between a review console and a machine that
+ * launders old approvals onto new creative. Every other line of widget
+ * JS lives inside a template literal that nothing can execute, so it is
+ * checked by string matching at best; this is lifted out so the test
+ * suite can run THE SHIPPED SOURCE against real inputs rather than
+ * asserting that some characters appear in a document.
+ *
+ * Kept as a source string rather than an imported function because the
+ * widget has no module loader — the shell inlines everything.
+ */
+export const VERDICT_BINDING_JS = `
+// Bind a verdict to the bytes it was given for.
+//
+// The store is keyed on programme + item id, and nothing else. Re-open a
+// review after the creative changed and the previous run's approvals
+// were restored verbatim: progress bar green, rail dots green, and
+// "[approved]" reported back to Claude for creative nobody had looked
+// at. An approval is a statement about a specific artifact, so it has to
+// carry a fingerprint of that artifact or it means nothing.
+//
+// FNV-1a rather than SubtleCrypto: this must be synchronous (it runs
+// inside adoptData's render path) and it is not a security boundary —
+// it only has to change when the creative changes.
+function contentHash(it) {
+  const p = it.push || {};
+  const src = String(it.html || "") + "\\u0000" + String(p.title || "") + "\\u0000" +
+    String(p.body || "") + "\\u0000" + String(it.name || "");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < src.length; i += 1) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+// Any stored verdict whose fingerprint no longer matches — including one
+// saved before fingerprints existed, which cannot be proven to match —
+// drops back to pending. Notes are kept: the reviewer's words are still
+// worth reading, it is the VERDICT that has expired.
+function reconcileStoredVerdicts(items, stored) {
+  const next = {};
+  for (const key of Object.keys(stored || {})) next[key] = stored[key];
+  for (const it of items) {
+    const prev = next[it.id];
+    if (!prev) continue;
+    if (prev.hash === contentHash(it)) continue;
+    next[it.id] = {
+      notes: prev.notes || "",
+      verdict: "pending",
+      staleFrom: prev.verdict && prev.verdict !== "pending" ? prev.verdict : null,
+      hash: null
+    };
+  }
+  return next;
+}
+`.trim();
+
 const CSS = `
 body { height: 100vh; overflow: hidden; }
 .wrap { display: grid; grid-template-columns: var(--rail-w) 1fr; height: 100vh; }
@@ -99,6 +160,11 @@ body { height: 100vh; overflow: hidden; }
 /* ---- verdict bar --------------------------------------------------- */
 .verdict { border-top: 1px solid var(--rule); background: var(--card); padding: 11px 18px; }
 .verdict-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.stale-note {
+  margin-bottom: 8px; font-size: 11.5px; color: var(--warn-strong, var(--ink));
+  border-left: 3px solid var(--warn, var(--rule)); padding: 5px 0 5px 9px;
+}
+.stale-note[hidden] { display: none; }
 .notes {
   margin-top: 9px; width: 100%; min-height: 46px; resize: vertical;
   font: inherit; font-size: 12.5px; color: var(--ink);
@@ -125,12 +191,16 @@ let items = [];
 let programme = "Creative review";
 let storeKey = "orbit:review";
 
+${VERDICT_BINDING_JS}
+
 function adoptData(data) {
   if (!data || !Array.isArray(data.items)) return false;
   items = data.items;
   programme = data.programme || "Creative review";
   storeKey = "orbit:review:" + (data.reviewId || programme);
   try { verdicts = JSON.parse(localStorage.getItem(storeKey) || "{}"); } catch { verdicts = {}; }
+  verdicts = reconcileStoredVerdicts(items, verdicts);
+  save();
   currentId = items[0]?.id ?? null;
   $("#rail-heading").textContent = programme;
   renderRail();
@@ -243,12 +313,23 @@ function renderVerdict() {
     btn.setAttribute("aria-pressed", String(btn.dataset.verdict === (v.verdict || "pending")));
   }
   $("#notes").value = v.notes || "";
+  // Say why an approval vanished, rather than letting it look like the
+  // store was lost.
+  const note = $("#stale-note");
+  if (note) {
+    note.hidden = !v.staleFrom;
+    note.textContent = v.staleFrom
+      ? "This creative changed since you marked it \\u201c" + v.staleFrom + "\\u201d — the verdict was reset. Your notes are kept."
+      : "";
+  }
 }
 
 function setVerdict(verdict) {
   const it = current();
   if (!it) return;
-  verdicts[it.id] = { ...(verdicts[it.id] || {}), verdict };
+  // Stamp the fingerprint of what was actually on screen when the call
+  // was made. Without it the verdict outlives its creative.
+  verdicts[it.id] = { ...(verdicts[it.id] || {}), verdict, hash: contentHash(it), staleFrom: null };
   save(); renderRail(); renderVerdict();
 }
 
@@ -304,12 +385,6 @@ function reviewText() {
     approved + " approved, " + changes + " need changes, " +
     (items.length - approved - changes) + " still pending.\\n\\n" + lines.join("\\n")
   );
-}
-
-function flash(msg) {
-  const el = $("#sent");
-  el.textContent = msg;
-  setTimeout(() => { el.textContent = ""; }, 4000);
 }
 
 function sendReview() {
@@ -383,12 +458,13 @@ const BODY = `
     </div>
 
     <footer class="verdict">
+      <div class="stale-note" id="stale-note" role="status" aria-live="polite" hidden></div>
       <div class="verdict-row">
         <button class="o-btn" data-verdict="approved">Approve</button>
         <button class="o-btn" data-verdict="changes">Needs changes</button>
         <button class="o-btn" data-verdict="pending">Pending</button>
         <span class="spacer"></span>
-        <span class="sent" id="sent"></span>
+        <span class="sent" id="sent" role="status" aria-live="polite"></span>
         <button class="o-btn" id="copy">Copy review</button>
         <button class="o-btn o-btn--primary" id="send">Send review to Claude</button>
       </div>
@@ -399,13 +475,14 @@ const BODY = `
 `;
 
 /** Build the review gallery document for a set of creatives. */
-export function renderReviewGallery(data) {
+export function renderReviewGallery(data, options) {
   return buildWidgetHtml({
     title: `Orbit — ${data?.programme || "Creative review"}`,
     body: BODY,
     css: CSS,
     js: JS,
     data,
+    bridge: options?.bridge !== false,
   });
 }
 

@@ -230,12 +230,6 @@ function reportText() {
   return lines.join("\\n");
 }
 
-function flash(msg) {
-  var el = $("#sent");
-  el.textContent = msg;
-  setTimeout(function () { el.textContent = ""; }, 4000);
-}
-
 async function copyReport() {
   try {
     await navigator.clipboard.writeText(reportText());
@@ -285,7 +279,7 @@ const BODY = `
   </header>
   <div class="body o-scroll" id="list"></div>
   <footer class="foot">
-    <span class="sent" id="sent"></span>
+    <span class="sent" id="sent" role="status" aria-live="polite"></span>
     <span class="spacer"></span>
     <button class="o-btn" id="copy">Copy report</button>
   </footer>
@@ -293,13 +287,14 @@ const BODY = `
 `;
 
 /** Build the QA report document for an orbit_qa_email result. */
-export function renderQaReport(data) {
+export function renderQaReport(data, options) {
   return buildWidgetHtml({
     title: "Orbit — pre-send QA",
     body: BODY,
     css: CSS,
     js: JS,
     data,
+    bridge: options?.bridge !== false,
   });
 }
 

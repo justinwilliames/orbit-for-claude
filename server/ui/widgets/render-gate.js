@@ -149,6 +149,7 @@ var source = null;         // { label, html, max_height_px }
 var findings = [];
 var targets = new Map();   // finding id -> { el, viewport }
 var abstained = [];        // checks deliberately NOT run, with the reason
+var images = { total: 0, broken: 0, remote: 0 }; // what actually loaded
 var metrics = {};          // per-viewport rendered geometry
 var activeId = null;
 var viewport = "desktop";
@@ -292,6 +293,34 @@ function effectiveBg(el, win) {
   return { color: base, imageBehind: imageBehind };
 }
 
+/**
+ * How many <img> in the rendered document actually resolved.
+ *
+ * naturalWidth is 0 for an image that failed, was blocked, or has not
+ * decoded — the same signal an email client's "images off" state
+ * produces. Read from the first readable viewport: both frames render
+ * the same srcdoc, so the image set is identical.
+ *
+ * Also the honest place to note that a preview FETCHES those images: a
+ * remote image in an email is frequently a tracking pixel, so opening
+ * this gate registers as an open on whatever the sender counts.
+ */
+function countImages(readable) {
+  var out = { total: 0, broken: 0, remote: 0 };
+  if (!readable.length) return out;
+  var doc = frameDoc(readable[0].id);
+  if (!doc) return out;
+  var imgs = doc.querySelectorAll("img");
+  out.total = imgs.length;
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i];
+    if (!img.complete || img.naturalWidth === 0) out.broken += 1;
+    var src = img.getAttribute("src") || "";
+    if (/^https?:/i.test(src)) out.remote += 1;
+  }
+  return out;
+}
+
 // ---- measurement -----------------------------------------------------
 function measureAll() {
   findings = [];
@@ -336,16 +365,36 @@ function measureAll() {
     );
   });
 
+  // Email layout IS images. Everything below that reads a rectangle —
+  // height, CTA wrap, tap targets, horizontal overflow — is a statement
+  // about a laid-out document, and a document whose images collapsed to
+  // 0x0 is not the document that ships. Measuring it anyway and calling
+  // the result PASS is worse than measuring nothing, because it is a
+  // pass nobody earned. So: count what actually loaded first, and if any
+  // image didn't, abstain from the geometry checks by name rather than
+  // reporting numbers that are fiction.
+  images = countImages(readable);
+  var geometryUnreliable = images.total > 0 && images.broken > 0;
+  if (geometryUnreliable) {
+    abstained.push(
+      images.broken + " of " + images.total + " image(s) did not load in this host \\u2014 " +
+      "height, horizontal overflow, CTA wrap and tap-target checks are not valid against a " +
+      "collapsed layout and were not run. Check the image URLs, or re-run where they resolve."
+    );
+  }
+
   checkSize();
-  checkOverflow(readable);
+  if (!geometryUnreliable) checkOverflow(readable);
   readable.forEach(function (vp) {
     var doc = frameDoc(vp.id);
     checkWidows(doc, vp);
     checkContrast(doc, vp);
-    if (vp.id === "mobile") checkTapTargets(doc, vp);
+    if (vp.id === "mobile" && !geometryUnreliable) checkTapTargets(doc, vp);
   });
-  checkCtaWrap(readable);
-  checkHeight(readable);
+  if (!geometryUnreliable) {
+    checkCtaWrap(readable);
+    checkHeight(readable);
+  }
 
   var order = { fail: 0, warn: 1, info: 2 };
   findings.sort(function (a, b) { return order[a.severity] - order[b.severity]; });
@@ -772,6 +821,13 @@ function renderHead() {
     var bytes = new TextEncoder().encode(source.html).length;
     parts.push("<span><b>" + (bytes / 1024).toFixed(1) + " KB</b> of 102 KB</span>");
   }
+  // Say what the geometry was measured against. A gate that reports
+  // heights without saying whether the images were there is asking to be
+  // believed on faith.
+  if (images.total > 0) {
+    parts.push("<span><b>" + (images.total - images.broken) + "/" + images.total +
+      "</b> images loaded" + (images.remote > 0 ? " (" + images.remote + " remote)" : "") + "</span>");
+  }
   $("#head-meta").innerHTML = parts.join("");
 }
 
@@ -884,12 +940,6 @@ function reportText() {
   return lines.join("\\n");
 }
 
-function flash(msg) {
-  var el = $("#sent");
-  el.textContent = msg;
-  setTimeout(function () { el.textContent = ""; }, 4000);
-}
-
 // Sent automatically the first time a measurement pass completes, and
 // on demand after that. The findings only exist inside this frame — if
 // they never travel back, the model is still working from the string
@@ -971,7 +1021,7 @@ const BODY = `
     </div>
     <div class="rail-list o-scroll" id="rail-list"></div>
     <div class="rail-foot">
-      <span class="sent" id="sent"></span>
+      <span class="sent" id="sent" role="status" aria-live="polite"></span>
       <span class="spacer"></span>
       <button class="o-btn" id="copy">Copy report</button>
       <button class="o-btn o-btn--primary" id="send">Send to Claude</button>
@@ -981,13 +1031,14 @@ const BODY = `
 `;
 
 /** Build the render-gate document for a piece of email HTML. */
-export function renderRenderGate(data) {
+export function renderRenderGate(data, options) {
   return buildWidgetHtml({
     title: `Orbit — render gate${data?.label ? ` — ${data.label}` : ""}`,
     body: BODY,
     css: CSS,
     js: JS,
     data,
+    bridge: options?.bridge !== false,
   });
 }
 

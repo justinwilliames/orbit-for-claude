@@ -124,12 +124,19 @@ export function widgetMeta(resourceUri) {
  * Returns the absolute path written. Callers pass a user-supplied path,
  * so it is resolved against the workspace by the caller — this function
  * does not decide where a user's files live.
+ *
+ * `bridge: false` is not an option here, it is the definition of an
+ * artifact: the file is opened top-level, so the ext-apps host bridge
+ * can never connect from it. Inlining it anyway made ~320KB of the
+ * ~386KB written per call dead weight — 89% of every artifact — which a
+ * render-fix-render QA loop turned into megabytes in the user's
+ * workspace.
  */
 export function writeWidgetArtifact({ uri, data, outPath }) {
   const widget = ORBIT_WIDGETS.find((w) => w.uri === uri);
   if (!widget) throw new Error(`Unknown Orbit widget: ${uri}`);
   const absolute = resolve(outPath);
   mkdirSync(dirname(absolute), { recursive: true });
-  writeFileSync(absolute, widget.render(data), "utf8");
+  writeFileSync(absolute, widget.render(data, { bridge: false }), "utf8");
   return absolute;
 }

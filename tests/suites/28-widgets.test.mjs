@@ -29,6 +29,7 @@ import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
 import { ORBIT_WIDGETS } from "../../server/ui/register.js";
+import { VERDICT_BINDING_JS } from "../../server/ui/widgets/review-gallery.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
@@ -168,5 +169,96 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     // Provenance the flow never draws must stay out of the second copy.
     assert.equal(spec.source_data, undefined);
     assert.equal(spec.route, undefined);
+  });
+});
+
+/**
+ * The two properties every widget document must hold regardless of who
+ * wrote it, both of which were missed on all five at once because they
+ * were copied from each other rather than from a shared shell.
+ */
+describe("Every widget — shared document properties", () => {
+  test("the action-confirmation flash is announced to a screen reader", () => {
+    for (const widget of ORBIT_WIDGETS) {
+      const html = widget.render(null);
+      assert.match(
+        html,
+        /id="sent"[^>]*role="status"[^>]*aria-live="polite"/,
+        `${widget.uri} writes its only action feedback into a span nothing announces`
+      );
+    }
+  });
+
+  test("the standalone artifact does not carry the host bridge it cannot use", () => {
+    for (const widget of ORBIT_WIDGETS) {
+      const embedded = widget.render(null);
+      const artifact = widget.render(null, { bridge: false });
+      assert.ok(
+        artifact.length < 80_000,
+        `${widget.uri} artifact is ${artifact.length} bytes — the bridge is still inlined`
+      );
+      assert.ok(
+        artifact.length < embedded.length,
+        `${widget.uri} artifact is not smaller than the embedded document`
+      );
+      assert.match(artifact, /window\.OrbitApp = null/, `${widget.uri} artifact still expects a host`);
+    }
+  });
+});
+
+/**
+ * Behavioural coverage of the one widget rule that can silently corrupt
+ * a decision.
+ *
+ * Everything else in this file asserts that a document was emitted and
+ * contains certain characters. That is the right test for "did the
+ * plumbing get wired", and the wrong test for "does the logic do the
+ * thing" — 3,000 lines of widget JS live inside template literals that
+ * no test runner can execute, so string matching is all a normal suite
+ * can reach.
+ *
+ * The verdict-binding rules are lifted out of that literal precisely so
+ * they CAN be run. They decide whether a stored approval still applies
+ * to the creative on screen, and the shipped behaviour before this was:
+ * change the HTML, re-open the review, get the old approvals back with a
+ * green progress bar and "[approved]" reported to Claude for creative
+ * nobody had looked at.
+ */
+describe("Review gallery — a verdict is bound to the creative it judged", () => {
+  /** Evaluate the SHIPPED source, not a re-implementation of it. */
+  const { contentHash, reconcileStoredVerdicts } = new Function(
+    `${VERDICT_BINDING_JS}\nreturn { contentHash, reconcileStoredVerdicts };`
+  )();
+
+  const item = (html) => ({ id: "welcome-1", name: "Welcome 1", html });
+
+  test("the fingerprint changes when the creative changes", () => {
+    const a = contentHash(item("<p>Version one</p>"));
+    const b = contentHash(item("<p>Version two</p>"));
+    assert.notEqual(a, b, "two different creatives fingerprinted the same");
+    assert.equal(a, contentHash(item("<p>Version one</p>")), "fingerprint is not stable");
+  });
+
+  test("an approval survives re-opening the SAME creative", () => {
+    const it = item("<p>Version one</p>");
+    const stored = { "welcome-1": { verdict: "approved", notes: "ship it", hash: contentHash(it) } };
+    const next = reconcileStoredVerdicts([it], stored);
+    assert.equal(next["welcome-1"].verdict, "approved");
+    assert.equal(next["welcome-1"].notes, "ship it");
+  });
+
+  test("an approval does NOT survive the creative changing underneath it", () => {
+    const approved = item("<p>Version one</p>");
+    const stored = { "welcome-1": { verdict: "approved", notes: "ship it", hash: contentHash(approved) } };
+    const next = reconcileStoredVerdicts([item("<p>Version two</p>")], stored);
+    assert.equal(next["welcome-1"].verdict, "pending", "a stale approval was restored onto new creative");
+    assert.equal(next["welcome-1"].staleFrom, "approved", "the reviewer is not told why the verdict vanished");
+    assert.equal(next["welcome-1"].notes, "ship it", "the reviewer's notes were thrown away");
+  });
+
+  test("a verdict stored before fingerprints existed is treated as unproven", () => {
+    const stored = { "welcome-1": { verdict: "approved", notes: "" } };
+    const next = reconcileStoredVerdicts([item("<p>Version one</p>")], stored);
+    assert.equal(next["welcome-1"].verdict, "pending");
   });
 });

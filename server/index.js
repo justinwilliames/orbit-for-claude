@@ -1264,6 +1264,13 @@ function registerPrompts() {
  * Orbit already creates and owns ~/Orbit/outputs on first run, so there
  * is a correct answer here and no reason to make the model guess it.
  *
+ * Stable per-label filename, deliberately NOT timestamped. The normal
+ * shape of this work is render, fix, render again — and a timestamp
+ * turned that loop into a pile of near-identical files in a directory
+ * nothing prunes. Overwriting matches what the user means by "the
+ * review": the current one. A caller who wants to keep a specific
+ * version passes artifact_path.
+ *
  * @param {string} kind  short slug for the widget family (e.g. "review")
  * @param {string} label human label to slugify into the filename
  */
@@ -1276,8 +1283,7 @@ function defaultWidgetArtifactPath(kind, label) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 48) || kind;
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  return path.join(outputsDir, "shareable", `${kind}-${slug}-${stamp}.html`);
+  return path.join(outputsDir, "shareable", `${kind}-${slug}.html`);
 }
 
 // --- First-run auto-bootstrap and setup gate ---
@@ -1345,7 +1351,7 @@ function registerTools() {
     {
       title: "Review Creative",
       description:
-        "Open an interactive review console for a set of lifecycle creatives — email, in-app messages, or push. Renders each one at the size it actually ships at, with per-item approve / needs-changes verdicts and notes. Verdicts can be sent straight back into the conversation, or copied out. A standalone shareable copy is ALWAYS written to the Orbit workspace and its path returned — hand that file to a stakeholder who has no Orbit and it still works. Pass artifact_path to choose where it lands.",
+        "Open an interactive review console for a set of lifecycle creatives — email, in-app messages, or push. Renders each one at the size it actually ships at, with per-item approve / needs-changes verdicts and notes. Verdicts can be sent straight back into the conversation, or copied out. A standalone shareable copy is ALWAYS written to the Orbit workspace and its path returned — hand that file to a stakeholder who has no Orbit and it still works. Pass artifact_path to choose where it lands. Pass a stable review_id to keep one review's verdicts separate from another's when two reviews share a programme name; verdicts are also fingerprinted against the creative, so re-opening a review after the HTML changed resets that item to pending rather than restoring a stale approval.",
       inputSchema: {
         programme: z.string().max(MAX_SHORT_STRING).optional(),
         review_id: z.string().max(MAX_SHORT_STRING).optional(),

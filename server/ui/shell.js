@@ -126,12 +126,19 @@ export function safeJsonForScript(value) {
  *                              bridge is available as `window.OrbitApp`
  * @param {object} [spec.data]  bootstrap data, exposed as
  *                              `window.ORBIT_BOOTSTRAP`
+ * @param {boolean} [spec.bridge=true]
+ *   Inline the ext-apps host bridge. True for the `ui://` resource a
+ *   host renders. FALSE for the standalone artifact: that file is
+ *   top-level by definition, the bridge can never connect from it, and
+ *   at ~320KB it was 89% of every artifact written — a normal
+ *   render-fix-render loop was depositing megabytes of dead code in the
+ *   user's workspace.
  * @returns {string} a complete HTML document
  */
-export function buildWidgetHtml({ title, body, css = "", js = "", data = null }) {
-  loadBridge();
+export function buildWidgetHtml({ title, body, css = "", js = "", data = null, bridge = true }) {
+  if (bridge) loadBridge();
 
-  const bridgeBlock = bridgeSource
+  const bridgeBlock = bridge && bridgeSource
     ? `<script type="module">
 ${bridgeSource}
 // Expose the bridge to the widget module below. Widgets never import;
@@ -141,7 +148,10 @@ window.dispatchEvent(new Event("orbit:bridge-ready"));
 </script>`
     : `<script>
 window.OrbitApp = null;
-window.ORBIT_BRIDGE_ERROR = ${safeJsonForScript(bridgeError)};
+// Only a MISSING bridge is a fault worth reporting in-widget. A
+// deliberately bridge-less artifact has no host to talk to by design,
+// so it stays quiet and just promotes Copy.
+window.ORBIT_BRIDGE_ERROR = ${bridge ? safeJsonForScript(bridgeError) : "null"};
 window.dispatchEvent(new Event("orbit:bridge-ready"));
 </script>`;
 
@@ -215,6 +225,28 @@ if (orbitEmbedded && window.OrbitApp?.App) {
 }
 function orbitNotifyHost(text) {
   try { app?.sendMessage?.({ content: [{ type: "text", text }] }); } catch {}
+}
+
+// The one action-confirmation channel every widget has.
+//
+// This lived five times over, copied identically into each widget, and
+// every copy wrote into a plain <span> — so a screen-reader user got no
+// notification at all when Copy succeeded, when Send failed, or when the
+// host channel had degraded. Those are precisely the messages that carry
+// the outcome of the only actions a widget offers.
+//
+// Defining it once here means the next widget inherits the live region
+// instead of re-copying a silent span, and the attributes are stamped on
+// at call time so a widget whose markup forgets them is still announced.
+function flash(msg) {
+  const el = document.getElementById("sent");
+  if (!el) return;
+  if (el.getAttribute("role") !== "status") {
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+  }
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ""; }, 4000);
 }
 
 // Degrade honestly when the host channel isn't there.

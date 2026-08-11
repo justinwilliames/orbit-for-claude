@@ -268,12 +268,6 @@ function summaryText() {
   return lines.join("\\n");
 }
 
-function flash(msg) {
-  var el = $("#sent");
-  el.textContent = msg;
-  setTimeout(function () { el.textContent = ""; }, 4000);
-}
-
 async function copyText(text, label) {
   try {
     await navigator.clipboard.writeText(text);
@@ -339,7 +333,7 @@ const BODY = `
     <div class="rail-head"><h2>Step detail</h2></div>
     <div class="rail-body o-scroll" id="rail-body"></div>
     <div class="rail-foot">
-      <span class="sent" id="sent"></span>
+      <span class="sent" id="sent" role="status" aria-live="polite"></span>
       <span class="spacer"></span>
       <button class="o-btn" id="copy-mermaid">Copy Mermaid</button>
       <button class="o-btn" id="copy-summary">Copy summary</button>
@@ -349,7 +343,7 @@ const BODY = `
 `;
 
 /** Build the lifecycle flow document for a diagram spec. */
-export function renderDiagramView(data) {
+export function renderDiagramView(data, options) {
   const spec = data?.spec ?? data;
   return buildWidgetHtml({
     title: `Orbit — ${spec?.title || "lifecycle flow"}`,
@@ -357,6 +351,7 @@ export function renderDiagramView(data) {
     css: CSS,
     js: JS,
     data,
+    bridge: options?.bridge !== false,
   });
 }
 
