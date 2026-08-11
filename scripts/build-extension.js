@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { build } from "esbuild";
 
 const ROOT_DIR = process.cwd();
@@ -21,6 +22,18 @@ if (pkgVersion !== manifestVersion) {
 // Rebuild the skills manifest before packaging so the bundle is never stale.
 console.log("Rebuilding skills manifest...");
 execSync("node server/build-skill-manifest.js", { cwd: ROOT_DIR, stdio: "inherit" });
+
+// Project the server's tool annotations into manifest.json. The manifest
+// is what a Connectors Directory reviewer and the install dialog read, so
+// it cannot be allowed to disagree with the running server about which
+// tools write to production. Exit 1 means it was stale and has been
+// rewritten — fine locally, and the drift test catches the commit.
+console.log("Syncing manifest tool annotations...");
+try {
+  execSync("node scripts/sync-manifest-annotations.mjs", { cwd: ROOT_DIR, stdio: "inherit" });
+} catch {
+  console.log("manifest.json annotations were stale and have been rewritten — commit the change.");
+}
 
 // Refresh the guide library export from get.yourorbit.team so the
 // bundled MCP resources reflect the latest published guides. The
@@ -91,7 +104,19 @@ for (const relativePath of COPY_PATHS) {
 
 // Packages that use dynamic require/require.resolve internally and cannot be
 // flat-bundled into ESM.  They are copied into node_modules instead.
+//
+// @modelcontextprotocol/ext-apps is external for a different reason: it is
+// not required at import time but READ FROM DISK at runtime.
+// server/ui/shell.js inlines the self-contained `app-with-deps` browser
+// build into every widget document via import.meta.resolve, which esbuild
+// does not follow and therefore does not bundle. Left out of this list the
+// package simply isn't in the .mcpb, import.meta.resolve throws
+// ERR_MODULE_NOT_FOUND, and every widget silently degrades to
+// window.OrbitApp = null on every machine except one with the repo's own
+// node_modules above it on disk. The BRIDGE_ENTRY assertion below is what
+// keeps that from regressing.
 const EXTERNAL_PACKAGES = [
+  "@modelcontextprotocol/ext-apps",
   "mjml", "mjml-core", "mjml-migrate", "mjml-parser-xml", "mjml-preset-core",
   "mjml-validator", "mjml-accordion", "mjml-body", "mjml-button", "mjml-carousel",
   "mjml-column", "mjml-divider", "mjml-group", "mjml-head", "mjml-head-attributes",
@@ -174,6 +199,29 @@ fs.copyFileSync(
 const bundledEntry = path.join(BUNDLE_SERVER_DIR, "index.js");
 if (!fs.existsSync(bundledEntry)) {
   process.stderr.write(`Build sanity check failed: expected ${bundledEntry} to exist.\n`);
+  process.exit(1);
+}
+
+// Sanity check — the MCP Apps host bridge must be IN the bundle.
+//
+// This one is worth an explicit assertion because its failure mode is
+// invisible: on a developer's machine Node walks up out of .mcpb-build and
+// finds the repo's own node_modules, so widgets look perfectly healthy
+// right up until someone else installs the .mcpb.
+// Resolved the same way shell.js resolves it — by specifier, from inside
+// the bundle — rather than by a hard-coded dist path that the package can
+// reshuffle between minor versions.
+const BRIDGE_SPECIFIER = "@modelcontextprotocol/ext-apps/app-with-deps";
+let bridgeEntry = null;
+try {
+  bridgeEntry = createRequire(path.join(BUILD_DIR, "noop.js")).resolve(BRIDGE_SPECIFIER);
+} catch { /* handled below */ }
+if (!bridgeEntry || !fs.existsSync(bridgeEntry)) {
+  process.stderr.write(
+    `Build sanity check failed: MCP Apps bridge missing from the bundle.\n` +
+    `Could not resolve ${BRIDGE_SPECIFIER} from ${BUILD_DIR}.\n` +
+    `Without it every widget renders with window.OrbitApp = null on every install.\n`
+  );
   process.exit(1);
 }
 

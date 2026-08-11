@@ -216,6 +216,71 @@ if (orbitEmbedded && window.OrbitApp?.App) {
 function orbitNotifyHost(text) {
   try { app?.sendMessage?.({ content: [{ type: "text", text }] }); } catch {}
 }
+
+// Degrade honestly when the host channel isn't there.
+//
+// Being embedded with no bridge is a genuine fault — the inlined client
+// failed to load, or the host declined the handshake — and the symptom
+// used to be a "Send to Claude" button that did nothing at all: no flash,
+// no disabled state, no explanation. window.ORBIT_BRIDGE_ERROR was
+// written by the shell and read by nobody. So: say what happened, demote
+// the send button, and promote Copy, which still works everywhere.
+//
+// Standalone (the shareable artifact, or the file opened from disk) is
+// NOT a fault — there is no host by design — so it gets the same button
+// treatment without the error notice.
+(function orbitDegradeWithoutHost() {
+  if (app) return;
+  const apply = () => {
+    const send = document.getElementById("send");
+    if (send) {
+      send.disabled = true;
+      send.classList.remove("o-btn--primary");
+      send.title = orbitEmbedded
+        ? "The host channel didn't connect — use Copy instead."
+        : "No host to send to in a standalone copy — use Copy instead.";
+      const copy = document.getElementById("copy");
+      if (copy) copy.classList.add("o-btn--primary");
+    }
+    if (!orbitEmbedded || !window.ORBIT_BRIDGE_ERROR) return;
+    const note = document.createElement("div");
+    note.className = "o-bridge-note";
+    note.textContent =
+      "Host channel unavailable — findings can be copied but not sent back to Claude.";
+    document.body.appendChild(note);
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", apply, { once: true });
+  } else {
+    apply();
+  }
+})();
+
+// Sign the standalone copy.
+//
+// A shared artifact is the only object Orbit produces that reaches
+// someone who does not have Orbit installed — and it carried the product
+// name in a <title> tag and nowhere else: no link, no footer, nothing
+// that survives a screenshot. That is a K-factor of zero by omission, on
+// the one surface that leaves the building. Standalone only: inside the
+// host the viewer already knows what they are looking at, and the
+// chrome would just be noise.
+(function orbitSignStandalone() {
+  if (orbitEmbedded) return;
+  const apply = () => {
+    const row = document.createElement("div");
+    row.className = "o-made-with";
+    row.innerHTML =
+      'Made with <a href="https://yourorbit.team" target="_blank" rel="noopener">Orbit</a>' +
+      ' \\u2014 a free lifecycle marketer, built into Claude.';
+    document.body.appendChild(row);
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", apply, { once: true });
+  } else {
+    apply();
+  }
+})();
 `.trim();
 
 /** True when the ext-apps bridge was found and inlined. For tests. */

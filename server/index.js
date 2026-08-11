@@ -79,7 +79,7 @@ import {
   generateLiquidSnippet
 } from "./calculators.js";
 import { attachQualityReport } from "./content-gate.js";
-import { trackSessionStart, trackSkillLoad, trackToolCall } from "./telemetry.js";
+import { trackSessionStart, trackSkillLoad, trackToolCall, trackToolError } from "./telemetry.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { annotationsFor } from "./tool-annotations.js";
 import { registerOrbitWidgets, widgetMeta, writeWidgetArtifact } from "./ui/register.js";
@@ -215,7 +215,7 @@ import {
   suggestEmailComponentMap,
   updateEmailComponentMap
 } from "./design-import.js";
-import { ensureHomeWorkspaceDirs } from "./home-workspace.js";
+import { ensureHomeWorkspaceDirs, resolveOrbitHomeRoot } from "./home-workspace.js";
 import { titleCase } from "./utils.js";
 import { ensureDir, loadRuntimeConfig, resolveOutputDir, resolveUserOutputDir } from "./config.js";
 import {
@@ -1254,6 +1254,31 @@ function registerPrompts() {
   );
 }
 
+/**
+ * Where a widget's shareable copy goes when the caller didn't name a path.
+ *
+ * Previously the standalone artifact was written only when the model
+ * happened to invent a filesystem path, which meant the one Orbit output
+ * that can reach someone without Orbit installed usually never existed.
+ * Orbit already creates and owns ~/Orbit/outputs on first run, so there
+ * is a correct answer here and no reason to make the model guess it.
+ *
+ * @param {string} kind  short slug for the widget family (e.g. "review")
+ * @param {string} label human label to slugify into the filename
+ */
+function defaultWidgetArtifactPath(kind, label) {
+  const outputsDir =
+    runtimeConfig.homeWorkspace?.paths?.outputsDir ??
+    path.join(resolveOrbitHomeRoot(), "outputs");
+  const slug = String(label ?? kind)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48) || kind;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return path.join(outputsDir, "shareable", `${kind}-${slug}-${stamp}.html`);
+}
+
 // --- First-run auto-bootstrap and setup gate ---
 // Silently create ~/Orbit on the very first tool call if it doesn't exist.
 // Also checks whether basic brand kit setup is done before operational tools.
@@ -1319,7 +1344,7 @@ function registerTools() {
     {
       title: "Review Creative",
       description:
-        "Open an interactive review console for a set of lifecycle creatives — email, in-app messages, or push. Renders each one at the size it actually ships at, with per-item approve / needs-changes verdicts and notes. Verdicts can be sent straight back into the conversation, or copied out. Pass artifact_path to also write a standalone shareable copy for someone outside this chat.",
+        "Open an interactive review console for a set of lifecycle creatives — email, in-app messages, or push. Renders each one at the size it actually ships at, with per-item approve / needs-changes verdicts and notes. Verdicts can be sent straight back into the conversation, or copied out. A standalone shareable copy is ALWAYS written to the Orbit workspace and its path returned — hand that file to a stakeholder who has no Orbit and it still works. Pass artifact_path to choose where it lands.",
       inputSchema: {
         programme: z.string().max(MAX_SHORT_STRING).optional(),
         review_id: z.string().max(MAX_SHORT_STRING).optional(),
@@ -1355,14 +1380,12 @@ function registerTools() {
         items
       };
 
-      let artifact = null;
-      if (artifact_path) {
-        artifact = writeWidgetArtifact({
-          uri: REVIEW_GALLERY_URI,
-          data: payload,
-          outPath: artifact_path
-        });
-      }
+      // Always write the shareable copy — see defaultWidgetArtifactPath.
+      const artifact = writeWidgetArtifact({
+        uri: REVIEW_GALLERY_URI,
+        data: payload,
+        outPath: artifact_path ?? defaultWidgetArtifactPath("review", payload.programme)
+      });
 
       const byChannel = items.reduce((acc, item) => {
         const key = item.channel ?? "email";
@@ -1376,7 +1399,7 @@ function registerTools() {
           Object.entries(byChannel)
             .map(([channel, count]) => `${count} ${channel}`)
             .join(", "),
-        artifact ? `Standalone copy written to ${artifact}` : null,
+        `Shareable copy written to ${artifact} — open it in a browser or send the file to anyone; it works without Orbit installed.`,
         "",
         "Approve or flag each one in the console, then send the review back here."
       ]
@@ -5544,7 +5567,7 @@ function registerTools() {
           .string()
           .max(MAX_PATH_STRING)
           .optional()
-          .describe("Also write a standalone copy of the gate to this path — the fallback when a host sandboxes the widget into an opaque origin.")
+          .describe("Where to write the standalone copy of the gate. One is always written — to the Orbit workspace by default; this only changes the destination.")
       },
       _meta: widgetMeta(RENDER_GATE_URI)
     },
@@ -5555,14 +5578,12 @@ function registerTools() {
         max_height_px: maxHeightPx ?? null
       };
 
-      let artifact = null;
-      if (artifactPath) {
-        artifact = writeWidgetArtifact({
-          uri: RENDER_GATE_URI,
-          data: payload,
-          outPath: artifactPath
-        });
-      }
+      // Always write the shareable copy — see defaultWidgetArtifactPath.
+      const artifact = writeWidgetArtifact({
+        uri: RENDER_GATE_URI,
+        data: payload,
+        outPath: artifactPath ?? defaultWidgetArtifactPath("render-gate", payload.label)
+      });
 
       // The only check that does not need a render: message size is
       // exact from the bytes, and Gmail clips on bytes, never on pixel
@@ -5576,7 +5597,7 @@ function registerTools() {
       const summary = [
         `Render gate open: ${payload.label}`,
         `Size (measured here, no render needed): ${(bytes / 1024).toFixed(1)} KB of Gmail's 102 KB limit — ${sizeVerdict}.`,
-        artifact ? `Standalone copy written to ${artifact}` : null,
+        `Shareable copy written to ${artifact} — open it in a browser or send the file to anyone; it works without Orbit installed.`,
         "",
         "The widget is now laying this out at 640px and 390px. It measures widows, CTA row wrap, tap-target size, computed contrast and rendered height, then sends the findings back into this conversation with the px values behind each one. Wait for that message before judging the render.",
         "Checks it will NOT perform, deliberately: client-specific rendering (Outlook's Word engine, Yahoo), image loading from blocked hosts, and any pixel-height verdict without max_height_px."
@@ -5962,12 +5983,16 @@ function withToolErrorHandling(toolName, handler) {
     const startedAt = Date.now();
     const timeoutMs = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
 
-    // Fire telemetry for every tool call — opt-in via ORBIT_TELEMETRY.
+    // Fire telemetry for every session — opt-out via ORBIT_TELEMETRY.
     // Silent no-op if disabled. Never awaited — telemetry can't block
-    // the tool. Also fires session_start on the first tool call if
-    // it hasn't already fired (idempotent in the module).
+    // the tool. Idempotent in the module, so calling it per tool call is
+    // safe; it only leaves the process once.
+    //
+    // trackToolCall does NOT fire here. It used to, which made every
+    // event an ATTEMPT and left no way to distinguish an install where
+    // Orbit works from one where every call throws. It now fires next to
+    // trackToolError once the handler has settled.
     trackSessionStart({ version: ORBIT_VERSION }).catch(() => {});
-    trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
 
     // Orbit is free and ungated: every tool runs for every user. No
     // licence check, no call-home, no key. The only gate a tool can hit
@@ -6074,6 +6099,7 @@ function withToolErrorHandling(toolName, handler) {
         duration_ms: Date.now() - startedAt,
         bytes: finalBytes, original_bytes: originalBytes, truncated
       });
+      trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
       return result;
     } catch (err) {
       const message = err?.message ?? String(err);
@@ -6154,6 +6180,12 @@ function withToolErrorHandling(toolName, handler) {
         tool: toolName, args_hash: hashArgs(args), outcome: code,
         duration_ms: Date.now() - startedAt, error: message
       });
+      // Count the call AND its failure class. `code` is the closed
+      // vocabulary computed above — never the message, which can carry an
+      // upstream credential. Without this pair the only failure record is
+      // a stderr line in a log nobody reads.
+      trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
+      trackToolError({ slug: toolName, errorClass: code, version: ORBIT_VERSION }).catch(() => {});
       return makeJsonToolResponse(payload);
     }
   };

@@ -894,10 +894,14 @@ function flash(msg) {
 // on demand after that. The findings only exist inside this frame — if
 // they never travel back, the model is still working from the string
 // lint, which is the problem this tool was built to fix.
+// The prelude already disables #send when there is no host channel, but
+// a connect() that fails AFTER the prelude ran leaves a live button with
+// nowhere to send. Say so rather than swallowing the click — the silent
+// early return this replaces made the loudest control in the product do
+// nothing at all, on every machine but the author's.
 function sendReport() {
-  if (!app) return;
   orbitNotifyHost(reportText());
-  flash("Findings sent to Claude.");
+  flash(app ? "Findings sent to Claude." : "No host channel — use Copy report instead.");
 }
 
 async function copyReport() {

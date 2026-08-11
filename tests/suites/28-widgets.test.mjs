@@ -29,6 +29,7 @@ import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
 import { ORBIT_WIDGETS } from "../../server/ui/register.js";
+import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 
@@ -77,6 +78,30 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     const uris = new Set(resources.map((r) => r.uri));
     const missing = Object.values(TOOL_WIDGETS).filter((uri) => !uris.has(uri));
     assert.deepEqual(missing, [], `tools point at unregistered widget resources: ${missing.join(", ")}`);
+  });
+
+  test("the host bridge is found and inlined — a widget with no bridge is a dead widget", () => {
+    // shell.js resolves @modelcontextprotocol/ext-apps/app-with-deps at
+    // RUNTIME. esbuild doesn't follow import.meta.resolve, so unless the
+    // package is in scripts/build-extension.js's EXTERNAL_PACKAGES it is
+    // absent from the .mcpb and every widget ships with
+    // window.OrbitApp = null. This assertion only proves the resolution
+    // works from the repo; the build-time assertion in
+    // scripts/build-extension.js is what proves it inside the bundle.
+    assert.equal(
+      bridgeAvailable(),
+      true,
+      `ext-apps bridge did not load: ${bridgeLoadError()}`
+    );
+  });
+
+  test("a widget document actually carries the bridge, not the null fallback", () => {
+    const html = ORBIT_WIDGETS[0].render(null);
+    assert.ok(
+      html.includes("window.__orbitBridge"),
+      "widget shipped the degraded fallback — window.OrbitApp would be null in the host"
+    );
+    assert.ok(!/window\.OrbitApp\s*=\s*null/.test(html), "widget shipped the null-bridge fallback");
   });
 
   test("every widget renders with no data — that is how the static resource is built", () => {

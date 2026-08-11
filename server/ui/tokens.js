@@ -25,6 +25,19 @@
  * furniture themes freely, the creative is always judged on light
  * ground.
  *
+ * ---- THE STATUS PILLS MUST CLEAR AA ----------------------------------
+ * .o-pill renders at 11px, so WCAG's 4.5:1 normal-text floor applies —
+ * the large-text 3:1 concession does not. That is not a stylistic
+ * preference here: these pills are the verdict chrome on the render gate
+ * and the QA report, tools whose entire job is telling a marketer their
+ * email fails contrast. Four of them failed their own bar in light mode
+ * (WARN 2.90:1, PASS 3.40:1, brand 3.49:1 in dark, pending 4.07:1)
+ * because the tokens were picked as brand hues rather than as text on a
+ * wash. `--*-strong` and `--brand-ink` are now the TEXT colours and are
+ * chosen against their wash; `--*` and `--*-soft` remain the fill hues.
+ * tests/suites/29-widget-contrast.test.mjs runs every pill pair in both
+ * palettes through the AA formula — change a colour here and it tells you.
+ *
  * ---- FONTS -----------------------------------------------------------
  * The widget CSP is deny-by-default and blocks font CDNs, so the site's
  * webfonts (Bricolage Grotesque / Inter / JetBrains Mono) cannot be
@@ -56,7 +69,7 @@ export const ORBIT_TOKENS_CSS = `
   color-scheme: light;
   --ink: #14161f;
   --ink-2: #414658;
-  --ink-3: #6c7387;
+  --ink-3: #616879;
   --paper: #f6f7fa;
   --card: #ffffff;
   --rule: #e2e5ec;
@@ -68,14 +81,15 @@ export const ORBIT_TOKENS_CSS = `
   --brand-soft: #818CF8;
   --brand-wash: #eef0fe;
   --brand-line: #c3c8fb;
+  --brand-ink: #4F46E5;
 
   --active: #F59E0B;
-  --active-strong: #D97706;
+  --active-strong: #B45309;
   --active-wash: #fdf3e3;
   --active-line: #f0cf95;
 
   --ok: #10B981;
-  --ok-strong: #059669;
+  --ok-strong: #047857;
   --ok-wash: #e6f7f1;
   --ok-line: #97dcc4;
 
@@ -105,6 +119,7 @@ export const ORBIT_TOKENS_CSS = `
     --brand-soft: #a5adfb;
     --brand-wash: #1e2140;
     --brand-line: #3c4176;
+    --brand-ink: #a5adfb;
 
     --active: #F59E0B;
     --active-strong: #fbbf24;
@@ -132,7 +147,7 @@ export const ORBIT_TOKENS_CSS = `
   --paper: #101219; --card: #171a24; --rule: #2a2e3c; --sunk: #1d2029;
   --shadow: rgba(0, 0, 0, .38);
   --brand: #818CF8; --brand-strong: #6366F1; --brand-soft: #a5adfb;
-  --brand-wash: #1e2140; --brand-line: #3c4176;
+  --brand-wash: #1e2140; --brand-line: #3c4176; --brand-ink: #a5adfb;
   --active: #F59E0B; --active-strong: #fbbf24;
   --active-wash: #33260d; --active-line: #6b5117;
   --ok: #34d399; --ok-strong: #10B981; --ok-wash: #10281f; --ok-line: #1d5843;
@@ -142,14 +157,14 @@ export const ORBIT_TOKENS_CSS = `
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --ink: #14161f; --ink-2: #414658; --ink-3: #6c7387;
+  --ink: #14161f; --ink-2: #414658; --ink-3: #616879;
   --paper: #f6f7fa; --card: #ffffff; --rule: #e2e5ec; --sunk: #eceef3;
   --shadow: rgba(20, 22, 31, .09);
   --brand: #6366F1; --brand-strong: #4F46E5; --brand-soft: #818CF8;
-  --brand-wash: #eef0fe; --brand-line: #c3c8fb;
-  --active: #F59E0B; --active-strong: #D97706;
+  --brand-wash: #eef0fe; --brand-line: #c3c8fb; --brand-ink: #4F46E5;
+  --active: #F59E0B; --active-strong: #B45309;
   --active-wash: #fdf3e3; --active-line: #f0cf95;
-  --ok: #10B981; --ok-strong: #059669; --ok-wash: #e6f7f1; --ok-line: #97dcc4;
+  --ok: #10B981; --ok-strong: #047857; --ok-wash: #e6f7f1; --ok-line: #97dcc4;
   --warn: #b3402e; --warn-wash: #fbe9e6; --warn-line: #e0aca2;
   --pending: #b6bcc9; --scrim: rgba(20, 22, 31, .42);
 }
@@ -194,7 +209,7 @@ a { color: var(--brand-strong); }
 .o-pill--ok      { background: var(--ok-wash);     color: var(--ok-strong);     border-color: var(--ok-line); }
 .o-pill--warn    { background: var(--warn-wash);   color: var(--warn);          border-color: var(--warn-line); }
 .o-pill--active  { background: var(--active-wash); color: var(--active-strong); border-color: var(--active-line); }
-.o-pill--brand   { background: var(--brand-wash);  color: var(--brand-strong);  border-color: var(--brand-line); }
+.o-pill--brand   { background: var(--brand-wash);  color: var(--brand-ink);     border-color: var(--brand-line); }
 .o-pill--pending { background: var(--sunk);        color: var(--ink-3);         border-color: var(--rule); }
 
 .o-btn {
@@ -214,6 +229,19 @@ a { color: var(--brand-strong); }
 }
 .o-btn--primary:hover { background: var(--brand); border-color: var(--brand); color: #fff; }
 .o-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.o-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.o-btn[disabled]:hover { border-color: var(--rule); color: var(--ink); }
+
+/* Injected by the shell's prelude when the host bridge failed to connect.
+   Fixed to the bottom edge so it is visible in any widget layout without
+   the widget having to reserve a slot for it. */
+.o-bridge-note {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  padding: 6px 12px;
+  font-size: 11px; line-height: 1.4;
+  color: var(--warn); background: var(--warn-wash);
+  border-top: 1px solid var(--warn-line);
+}
 
 /* The always-light review canvas — see tokens.js header. */
 .o-stage {
@@ -221,6 +249,17 @@ a { color: var(--brand-strong); }
   border: 1px solid var(--stage-edge);
   border-radius: var(--radius);
 }
+
+/* Injected by the shell's prelude on the standalone path only — the
+   shared copy is the only Orbit surface a non-user ever sees. */
+.o-made-with {
+  padding: 10px 14px;
+  font-size: 11px; color: var(--ink-3);
+  border-top: 1px solid var(--rule); background: var(--paper);
+  text-align: center;
+}
+.o-made-with a { color: var(--brand-ink); text-decoration: none; font-weight: 600; }
+.o-made-with a:hover { text-decoration: underline; }
 
 .o-empty { color: var(--ink-3); font-size: 13px; padding: 28px 16px; text-align: center; }
 .o-scroll { overflow: auto; }
