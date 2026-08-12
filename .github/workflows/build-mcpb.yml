@@ -27,6 +27,12 @@ jobs:
     # tracks for auto-update, and a clean public download in its own right.
     permissions:
       contents: write
+      # OIDC. GitHub mints a short-lived token proving this workflow runs
+      # in this repo, which is what authorises publishing under the
+      # io.github.justinwilliames/* namespace. No stored secret exists to
+      # expire silently — which is exactly how the previous registry
+      # token died, unnoticed, leaving the registry stale for weeks.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -138,24 +144,52 @@ jobs:
       # a missing token degrades to "the registry is stale," not a failed
       # release.
       - name: Stamp and publish the MCP registry entry
-        env:
-          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
         run: |
+          set -euo pipefail
           node scripts/build-server-json.mjs \
             orbit-lifecycle-marketing-system-for-claude.mcpb
           cat server.json
-          set -euo pipefail
-          if [ -z "$MCP_REGISTRY_TOKEN" ]; then
-            echo "::error::MCP_REGISTRY_TOKEN not set — the registry entry cannot be published, so the registry would keep serving the previous version's checksum against this release's asset. Set the secret and re-run."
-            exit 1
-          fi
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz" \
             | tar -xz mcp-publisher
+          # OIDC, not a PAT. Two reasons the previous form could not work:
+          # `publish` takes no --token flag at all (it silently ignores
+          # one and publishes unauthenticated), and the secret it depended
+          # on had already expired once without anyone noticing.
+          # `login github-oidc` needs no stored credential.
+          ./mcp-publisher login github-oidc
           # No `|| echo` here. A swallowed publish failure is exactly the
           # bug this step was written to fix, relocated into YAML where it
           # is harder to notice.
-          ./mcp-publisher publish --token "$MCP_REGISTRY_TOKEN"
+          ./mcp-publisher publish
           echo "Registry entry published — reading it back."
+
+      # Retire the pre-rename entry, pointing at its successor.
+      #
+      # io.github.justinwilliames/orbit-for-claude still serves v0.27.7 —
+      # the PAID, licence-gated build, against a pricing page that no
+      # longer exists. Renaming alone would leave that live forever:
+      # a new name creates a new entry, it does not move the old one.
+      # Anyone who already found Orbit by the old name keeps installing a
+      # build that demands a key.
+      #
+      # Idempotent and non-fatal: once deprecated it stays deprecated, and
+      # a failure here must not fail a release whose artifact is already
+      # published and correct.
+      - name: Deprecate the pre-rename registry entry
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          LEGACY="io.github.justinwilliames/orbit-for-claude"
+          CURRENT=$(node -p "require('./server.json').name")
+          if [ "$LEGACY" = "$CURRENT" ]; then
+            echo "Current name is the legacy name — nothing to retire."
+            exit 0
+          fi
+          ./mcp-publisher status \
+            --status deprecated \
+            --all-versions \
+            --message "Renamed to ${CURRENT}. This entry serves an old, licence-gated build; Orbit is now free with no key. Install ${CURRENT} instead." \
+            "$LEGACY" || echo "::warning::Could not deprecate ${LEGACY} — it may already be deprecated, or never have been published under this account."
 
       # Read the LIVE registry entry back and assert it matches what we
       # just stamped. A 2xx from the publisher is a claim; this is the

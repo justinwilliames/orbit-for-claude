@@ -25,6 +25,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -44,6 +45,44 @@ if (!fs.existsSync(assetPath)) {
 }
 
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
+
+// Refuse to hash a bundle that isn't the version we're stamping.
+//
+// This script reads the version from manifest.json and the bytes from
+// whatever path it was handed. Nothing tied the two together, so running
+// it against a stale .mcpb lying in the repo root stamped v0.28.1 with
+// the checksum of a July build — a server.json that looks completely
+// correct and describes a file that no longer exists at that URL. An
+// installer honouring the checksum then refuses the download, on the one
+// channel built for strangers.
+//
+// The .mcpb is a zip; its manifest.json carries its real version. Read
+// it and compare. `unzip -p` keeps this dependency-free.
+let bundledVersion = null;
+try {
+  const raw = execFileSync("unzip", ["-p", assetPath, "manifest.json"], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  bundledVersion = JSON.parse(raw).version ?? null;
+} catch (err) {
+  process.stderr.write(
+    `Could not read manifest.json out of ${assetPath}: ${err?.message ?? err}\n` +
+    "Refusing to stamp a checksum for a bundle whose version cannot be confirmed.\n"
+  );
+  process.exit(1);
+}
+
+if (bundledVersion !== version) {
+  process.stderr.write(
+    `Version mismatch: manifest.json says ${version}, but ${path.basename(assetPath)} ` +
+    `contains ${bundledVersion}.\n` +
+    "This would publish a registry entry pointing at the vVERSION URL with the WRONG file's " +
+    "checksum. Rebuild the bundle (npm run pack) before stamping.\n"
+  );
+  process.exit(1);
+}
+
 const sha256 = createHash("sha256").update(fs.readFileSync(assetPath)).digest("hex");
 
 const template = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "server.json"), "utf8"));

@@ -1,6 +1,6 @@
 {
   "name": "orbit-claude-extension",
-  "version": "0.28.1",
+  "version": "0.28.2",
   "private": true,
   "type": "module",
   "description": "Orbit - Lifecycle Marketing System for Claude, packaged as a local Claude-first MCP extension.",
@@ -15,7 +15,7 @@
     "pack": "npm run build:extension && npx @anthropic-ai/mcpb pack .mcpb-build orbit-lifecycle-marketing-system-for-claude.mcpb",
     "sync:manifest": "node scripts/sync-manifest-annotations.mjs"
   },
-  "//overrides": "Force patched TRANSITIVE deps pulled in by the mjml / hono trees. These carry high-severity advisories and gate the release workflow's `npm audit --omit=dev --audit-level=high`. Every pin stays INSIDE the existing major version, so mjml 5.1.0 is untouched \u2014 do NOT let `npm audit fix --force` bump mjml itself, which moved mjml2html to async at 5.1.0 and broke the compiler once already. A caret range here is not a pin; the lockfile is \u2014 commit package-lock.json with every change. Re-check with `npm audit --omit=dev --audit-level=high` and `npm run smoke`.",
+  "//overrides": "Force patched TRANSITIVE deps pulled in by the mjml / hono trees. These carry high-severity advisories and gate the release workflow's `npm audit --omit=dev --audit-level=high`. Every pin stays INSIDE the existing major version, so mjml 5.1.0 is untouched — do NOT let `npm audit fix --force` bump mjml itself, which moved mjml2html to async at 5.1.0 and broke the compiler once already. A caret range here is not a pin; the lockfile is — commit package-lock.json with every change. Re-check with `npm audit --omit=dev --audit-level=high` and `npm run smoke`.",
   "overrides": {
     "brace-expansion": "^5.0.9",
     "fast-uri": "^3.1.5",
