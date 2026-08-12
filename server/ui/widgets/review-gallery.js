@@ -117,9 +117,13 @@ body { height: 100vh; overflow: hidden; }
 .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--pending); }
 .dot[data-v="approved"] { background: var(--ok); }
 .dot[data-v="changes"] { background: var(--warn); }
-.item-text { min-width: 0; }
-.item-name { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
-.item-sub { font-size: 11px; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Both are spans, so they need display:block or the subtitle runs on
+   from the name — "Day 0 — WelcomeSubject: Welcome aboard". Every DOM
+   assertion passed while this shipped, because the text was all present
+   and correct; it only shows up when you look at it. */
+.item-text { min-width: 0; display: flex; flex-direction: column; }
+.item-name { display: block; font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+.item-sub { display: block; font-size: 11px; color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- main pane ---------------------------------------------------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

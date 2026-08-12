@@ -15,7 +15,9 @@ Install the extension, then paste this into Claude. It needs no credentials of a
 
 Orbit renders it at 640px and 390px in a real engine and measures what only a render reveals: single-word last lines, CTA rows that wrap, tap targets under 44px, computed contrast, byte size against Gmail's clipping limit. That grey paragraph fails contrast and that button is under the 44px tap minimum — neither is visible in the source.
 
-<!-- SCREENSHOT: the render gate widget in Claude Desktop, 640px and 390px previews side by side, with the contrast and tap-target failures flagged -->
+![The Orbit render gate: the email on the left at 640px, findings on the right — four contrast failures with their measured ratios, a widow, and three tap targets under 44px](docs/images/render-gate.png)
+
+Those are the real findings from the snippet above. Note the second one: `4.47:1 — #ffffff on #6366f1 at 13px`. That is Orbit's own brand indigo, missing AA by three hundredths. The gate does not make exceptions for the people who wrote it.
 
 Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 90 long-form guides bundled inside the extension, offline, no account.
 
@@ -27,14 +29,26 @@ Orbit's flagship path isn't writing one email. It's giving the programme somewhe
 
 Most lifecycle work rots for two reasons: the knowledge lives in one person's head, and the templates drift inside the ESP — the platform that actually sends. The repo is the source. The ESP is a derived output.
 
-<!-- SCREENSHOT: a bootstrapped brain repo open in an editor — stage folders, a prd.md stub, and the generated gate script -->
+`orbit_bootstrap_brain` on a fresh path produces exactly this — 14 files, no placeholders:
+
+```
+README.md              # the four rules: git canonical, graph derived,
+CONVENTIONS.md         # comprehension != enforcement, ESP derived
+knowledge/
+  decisions-log.md     # every standing ruling, dated
+  workflow-learnings.md
+  verified-claims.md   # figures with receipts, or they don't ship
+programs/
+  onboarding/  engagement/  retention/
+templates/  build/  assets/  reviews/  reference/
+```
 
 ## What you get with no credentials at all
 
 Roughly two-thirds of the tool surface needs nothing beyond the install:
 
 - **A render gate and a review gallery.** Interactive MCP App widgets that render creatives at the size they ship at, with per-item approve / needs-changes verdicts. Every review also writes a standalone HTML file you can hand to a stakeholder who has no Orbit — it works on its own.
-  <!-- SCREENSHOT: the review gallery widget with several creatives rendered at ship size and one marked needs-changes -->
+  ![The Orbit review gallery: a rail of creatives grouped by lifecycle stage, an email rendered on a light stage, and approve / needs-changes / pending controls with a notes field](docs/images/review-gallery.png)
 - **Calculators** — sample size, significance, RFM, cohort retention, LTV/payback, replenishment, growth forecasting.
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
