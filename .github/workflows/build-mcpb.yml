@@ -192,11 +192,38 @@ jobs:
             echo "Current name is the legacy name — nothing to retire."
             exit 0
           fi
-          ./mcp-publisher status \
-            --status deprecated \
-            --all-versions \
-            --message "Renamed to ${CURRENT}. This entry serves an old, licence-gated build; Orbit is now free with no key. Install ${CURRENT} instead." \
-            "$LEGACY" || echo "::warning::Could not deprecate ${LEGACY} — it may already be deprecated, or never have been published under this account."
+          # `status` PROMPTS ("Continue? [y/N]") and there is no --yes flag.
+          # In CI stdin is empty, so it reads EOF and dies — and because
+          # the fallback below is an echo, the step went GREEN while the
+          # old entry stayed active. Feed it the confirmation.
+          if echo y | ./mcp-publisher status \
+              --status deprecated \
+              --all-versions \
+              --message "Renamed to ${CURRENT}. This entry serves an old, licence-gated build; Orbit is now free with no key. Install ${CURRENT} instead." \
+              "$LEGACY"; then
+            echo "Deprecated ${LEGACY}."
+          else
+            # Say what actually happened. The previous wording guessed
+            # ("may already be deprecated") and was wrong — it had failed
+            # on an interactive prompt, and the guess sent the next reader
+            # looking in the wrong place.
+            echo "::warning::Could not deprecate ${LEGACY}. Check the log above for the publisher's own error before assuming it is already retired."
+          fi
+
+          # Read it back. A status change is a claim until the registry
+          # agrees — and this exact step reported success once while
+          # changing nothing at all.
+          LEGACY_STATUS=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=${LEGACY##*/}" \
+            | node -e "
+              let d = {}; try { d = JSON.parse(require('fs').readFileSync(0, 'utf8')); } catch {}
+              const hits = (d.servers || []).filter(s => (s.server?.name ?? s.name) === process.argv[1]);
+              const statuses = hits.map(s => (s._meta?.['io.modelcontextprotocol.registry/official']?.status) ?? '?');
+              console.log(statuses.join(',') || 'not-found');
+            " "$LEGACY" || echo "readback-failed")
+          echo "Legacy entry status now: ${LEGACY_STATUS}"
+          case "$LEGACY_STATUS" in
+            *active*) echo "::warning::${LEGACY} is STILL active — it keeps serving the old licence-gated build to anyone who finds it by the old name." ;;
+          esac
 
       # Read the LIVE registry entry back and assert it matches what we
       # just stamped. A 2xx from the publisher is a claim; this is the
