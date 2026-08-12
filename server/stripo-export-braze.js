@@ -337,8 +337,10 @@ function coerceTemplateMap(input) {
  * duplicate on every re-run. This is what makes the default behaviour
  * "overwrite the previous template", not "pile up copies".
  *
- * Braze's /templates/email/list paginates (100 per page); brazePaginateList
- * walks it. Names are matched EXACTLY (Braze allows duplicate names, so when
+ * Braze's /templates/email/list paginates by `limit`/`offset` (100 per page by
+ * default, 1000 max) and returns no continuation token at all, so it needs
+ * brazePaginateList's `walkOffset` mode — the cursor/next_page mode stops
+ * after one page here and reads like a complete library. Names are matched EXACTLY (Braze allows duplicate names, so when
  * two templates share a name we keep the first id and flag the name as a
  * duplicate — the tool can warn rather than silently picking one and leaving
  * an orphan).
@@ -351,6 +353,7 @@ async function fetchBrazeTemplateNameMap({ config }) {
     endpoint: "/templates/email/list",
     params: {},
     itemsKey: "templates",
+    walkOffset: true,
     maxPages: 50,
   });
   const byName = new Map();

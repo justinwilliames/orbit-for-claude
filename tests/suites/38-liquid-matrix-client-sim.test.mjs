@@ -78,6 +78,27 @@ const DIRECT_DIALECT_EMAIL = `<!DOCTYPE html>
 </body>
 </html>`;
 
+/**
+ * The BRACED dialect — the binding wrapped in `{{ }}` INSIDE the tag, which is
+ * what a drag-and-drop export produces. Step 1 of the resolver substitutes an
+ * unset custom attribute to the empty string, so on the unset state this
+ * condition reaches the evaluator with no left operand at all.
+ */
+const BRACED_DIALECT_EMAIL = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <div class="module-hero"><h1>Your plan</h1><p>${FILLER.repeat(4)}</p></div>
+  {% if {{custom_attribute.\${plan}}} == 'free' %}
+    <div class="module-free"><p>Upgrade any time from your account page. ${FILLER}</p></div>
+  {% elsif {{custom_attribute.\${plan}}} == 'pro' %}
+    <div class="module-pro"><p>Your Pro plan renews next month. ${FILLER}</p></div>
+  {% else %}
+    <div class="module-generic"><p>Pick the plan that fits. ${FILLER}</p></div>
+  {% endif %}
+  <div class="module-footer"><p>Manage preferences or unsubscribe at any time.</p></div>
+</body>
+</html>`;
+
 /** A flag read directly by a condition and never printed. */
 const BRANCH_ONLY_FLAG_EMAIL = `<!DOCTYPE html>
 <html lang="en">
@@ -352,6 +373,28 @@ describe("Liquid state matrix + client simulation", () => {
     });
     assert.equal(parsed.verdict, "pass", JSON.stringify(parsed.findings));
     assert.equal(parsed.arms.registered, parsed.arms.taken, "the else arm must still be reachable");
+  });
+
+  test("the state where the attribute is UNSET reaches the else arm", async () => {
+    // An unset custom attribute substitutes to "", so the condition arrives
+    // as `== 'free'` with no left operand. That matched no comparison, fell
+    // through to the truthiness fallback and read the condition TEXT as a
+    // non-empty string — so every comparison was true for the unset
+    // population, the first arm was taken in every state, and the `{% else %}`
+    // most of a real list actually receives was reported dead at severity
+    // fail. The empty string must be an ordinary axis value, not a state the
+    // matrix silently measures as something else.
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html: BRACED_DIALECT_EMAIL,
+      variables_json: JSON.stringify({ plan: ["free", "pro", ""] }),
+    });
+    assert.equal(parsed.status, "ok");
+    assert.deepEqual(
+      parsed.findings.filter((f) => f.check === "dead_arm"),
+      [],
+      "the else arm the unset population receives was called unreachable"
+    );
+    assert.equal(parsed.arms.registered, parsed.arms.taken, "an arm was never taken");
   });
 
   test("a dead arm names the condition the AUTHOR wrote, not the substituted one", async () => {

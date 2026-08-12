@@ -109,6 +109,10 @@ function buildGateScript({ clipKb, mobileWidth, containerWidth, masterName }) {
 # A templating-bearing email must be RESOLVED off one shared variable map and
 # each branch gated separately — resolve every branch, never strip. Compile and
 # resolve upstream of this script, then run the gate once per resolved branch.
+# Orbit's \`orbit_liquid_state_matrix\` tool does that resolution: it enumerates
+# every personalisation state of the compiled file and hands back one rendered
+# document per state. This script has no templating engine of its own and will
+# happily pass a document whose branches were never varied.
 #
 # Usage: build/gate.sh <compiled-email.html>
 

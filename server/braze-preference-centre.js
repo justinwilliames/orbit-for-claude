@@ -107,7 +107,7 @@ export async function auditPreferenceCentre({
           ? `${failing.length} preference centre(s) would fail Gmail/Yahoo bulk-sender or GDPR consent checks.`
           : skipped.length > 0
             ? `No failures among the ${rows.length - skipped.length} audited, but ${skipped.length} were not audited — see each row's reason.`
-            : "Every preference centre clears the markup checks this tool can run."
+            : "Every preference centre clears the checks this tool could run. Each row names which legs ran — a leg that did not run is not a pass."
     },
     centres: rows
   };
@@ -197,10 +197,15 @@ async function auditOneCentre({ config, centre, testExternalId }) {
     row.live_page_leg = await runLivePageLeg({ config, id, testExternalId, row });
   }
 
+  // The live page is the page a subscriber actually lands on, and it is the
+  // only leg that can see a password gate or a missing one-click POST. Left
+  // out of this list it was fetched, audited, found failing — and the row
+  // still reported non-failing, with the summary counting zero failures.
   row.verdict = worstVerdict([
     markup.verdict,
     row.consent.verdict,
-    row.confirmation_page?.verdict
+    row.confirmation_page?.verdict,
+    row.live_page?.verdict
   ]);
   return row;
 }

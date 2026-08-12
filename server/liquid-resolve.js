@@ -16,10 +16,12 @@
  * now land in `trace.unknownFilters` / `trace.unknownTags` so a caller can
  * fail loud instead of measuring junk.
  *
- * `server/liquid-state-matrix.js` is the caller that does. The generated brain
- * gate imports this too, which closes the dangling "resolve every branch,
- * never strip — compile and resolve upstream of this script" pointer in
- * server/brain/gate-generator.js: this IS the upstream.
+ * `server/liquid-state-matrix.js` is the caller that does — and it is the ONLY
+ * one. The generated brain gate does not import this: it is a bash script in
+ * the user's own repo, with no Orbit source and no node_modules to import
+ * from. Its "resolve every branch, never strip — compile and resolve upstream
+ * of this script" line points at `orbit_liquid_state_matrix`, the tool that
+ * wraps this module; it is not a claim that the generated file calls it.
  *
  * Personalisation dialects understood, keyed on the BINDING rather than on any
  * naming convention:
@@ -144,6 +146,20 @@ export function evalCond(expr, env) {
   if (ors.length > 1) return ors.some((c) => evalCond(c, env));
   const ands = splitTop(src, "and");
   if (ands.length > 1) return ands.every((c) => evalCond(c, env));
+
+  // A condition with NO LEFT OPERAND. Step 1 of resolveLiquid substitutes an
+  // unset custom attribute to the empty string, so
+  // `{% if {{custom_attribute.${plan}}} == 'free' %}` arrives here as
+  // `== 'free'` — which matches no comparison regex below, falls to the
+  // truthiness fallback, and reads the whole condition text as a non-empty
+  // string. Every comparison then returned TRUE for the unset population, so
+  // the FIRST arm of every branch was taken, the `{% else %}` was reported
+  // dead, and the state that most of a real list is actually in was measured
+  // as though it were the first arm's value. Restore the operand Liquid
+  // itself would compare — nil, which compares as the empty string.
+  if (/^(?:==|!=|>=|<=|>|<)\s*\S/.test(src) || /^contains\s+\S/.test(src)) {
+    return evalCond(`'' ${src}`, env);
+  }
 
   // `>=`/`<=` before `>`/`<`, or the two-char operators split wrong and the
   // right-hand side keeps a stray `=`.

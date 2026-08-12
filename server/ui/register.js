@@ -38,6 +38,9 @@ import { renderDiagramView, DIAGRAM_VIEW_URI } from "./widgets/diagram-view.js";
 import { renderClientMatrix, CLIENT_MATRIX_URI } from "./widgets/client-matrix.js";
 import { renderCohortCurve, COHORT_CURVE_URI } from "./widgets/cohort-curve.js";
 import { renderDesignSystem, DESIGN_SYSTEM_URI } from "./widgets/design-system.js";
+import { renderSendCalendar, SEND_CALENDAR_URI } from "./widgets/send-calendar.js";
+import { renderAbReadout, AB_READOUT_URI } from "./widgets/ab-readout.js";
+import { renderRfmMap, RFM_MAP_URI } from "./widgets/rfm-map.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -101,6 +104,27 @@ export const ORBIT_WIDGETS = [
     description:
       "A learned template as a design system: the module spine in source order, the brand palette as swatches, a type and button specimen drawn with the user's own tokens, and the WCAG contrast of the four token pairs that actually meet on the page.",
     render: renderDesignSystem,
+  },
+  {
+    uri: SEND_CALENDAR_URI,
+    name: "Orbit send calendar",
+    description:
+      "The forward send schedule as a day-by-hour grid, with the quiet window shaded, disallowed days hatched, every policy finding anchored to the send, day or tag it concerns — and any send whose local clock could not be resolved named under the grid rather than plotted at a guessed hour.",
+    render: renderSendCalendar,
+  },
+  {
+    uri: AB_READOUT_URI,
+    name: "Orbit A/B read-out",
+    description:
+      "A finished A/B test drawn as the confidence interval against the no-difference line, so whether the result clears zero is a glance rather than an arithmetic exercise — with the tool's own verdict printed, and any disagreement between the pooled test and the unpooled interval stated in words.",
+    render: renderAbReadout,
+  },
+  {
+    uri: RFM_MAP_URI,
+    name: "Orbit RFM segment map",
+    description:
+      "Named RFM segments placed by recency and frequency with bubble area carrying revenue, plus revenue share against list share on one scale so the concentration of value is unmissable.",
+    render: renderRfmMap,
   },
 ];
 

@@ -215,6 +215,12 @@ export async function brazeUploadAsset({ config, fileBuffer, fileName, contentTy
  *     `/events/list` and `/segments/list` are 0-indexed `?page=` endpoints
  *     that advertise no continuation at all. You walk the pages until one
  *     comes back empty. Pass `walkPages: true` for those.
+ *   · NOTHING in the response, and no `page` param either -> `/templates/email/list`
+ *     and `/content_blocks/list` take `limit` (default 100, max 1000) and
+ *     `offset`. You walk the offset until a page comes back short. Pass
+ *     `walkOffset: true` for those. A bare call returns the first 100 and is
+ *     indistinguishable from a complete read — which is how a collision check
+ *     came to green-light a duplicate of a template that already existed.
  *
  * The third case is the dangerous one: a single un-paginated call to a
  * walk-pages endpoint returns page 0 and looks exactly like a complete read.
@@ -226,12 +232,30 @@ export async function brazeUploadAsset({ config, fileBuffer, fileName, contentTy
  * surface that in their response rather than silently returning partial
  * results.
  */
-export async function brazePaginateList({ config, endpoint, params = {}, itemsKey, maxPages = 10, walkPages = false }) {
+export async function brazePaginateList({ config, endpoint, params = {}, itemsKey, maxPages = 10, walkPages = false, walkOffset = false, pageSize = 1000 }) {
   const allItems = [];
   let nextToken = null;
   let nextTokenKey = null; // "page" or "cursor"
   let truncated = false;
   let pagesFetched = 0;
+
+  if (walkOffset) {
+    const limit = Number(params.limit) > 0 ? Number(params.limit) : pageSize;
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await brazeGet({
+        config,
+        endpoint,
+        params: { ...params, limit, offset: page * limit }
+      });
+      const items = response[itemsKey] ?? [];
+      pagesFetched = page + 1;
+      allItems.push(...items);
+      // A SHORT page is the only end-of-list signal these endpoints give.
+      if (items.length < limit) return { items: allItems, truncated: false, pages_fetched: pagesFetched };
+      if (page === maxPages - 1) truncated = true;
+    }
+    return { items: allItems, truncated, pages_fetched: pagesFetched };
+  }
 
   if (walkPages) {
     for (let page = 0; page < maxPages; page += 1) {

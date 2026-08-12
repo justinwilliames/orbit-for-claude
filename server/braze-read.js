@@ -132,6 +132,22 @@ export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
     .filter((r) => r.error)
     .map((r) => r.error);
 
+  // A page walk that hit its cap is the same class of statement as a fetch
+  // error: the number below is a floor, not a total. safeList has reported
+  // `truncated` since the pagination fix and nothing read it, so a capped
+  // read shipped as `status: "ok"` with a workspace total that was short.
+  const truncatedSteps = [
+    ["canvases", canvases],
+    ["campaigns", campaigns],
+    ["segments", segments],
+    ["content_blocks", contentBlocks],
+    ["email_templates", templates],
+    ["custom_events", events],
+    ["custom_attributes", customAttributes]
+  ]
+    .filter(([, r]) => r.truncated)
+    .map(([name]) => name);
+
   const canvasItems = canvases.items;
   const campaignItems = campaigns.items;
   const segmentItems = segments.items;
@@ -161,25 +177,40 @@ export async function auditBrazeInstance({ config, resumeState, shouldYield }) {
     warnings.push(`${namingIssues.length} items have inconsistent naming conventions.`);
   }
 
+  if (truncatedSteps.length > 0) {
+    warnings.push(
+      `Page cap reached on: ${truncatedSteps.join(", ")}. Those totals are a FLOOR, not a count — ` +
+      "the workspace holds at least this many. Anything below derived from them (naming issues, " +
+      "orphan detection) was computed on a subset."
+    );
+  }
+
+  // A total nobody could complete is labelled at the number itself, so a
+  // reader cannot pick the figure out of the summary without the caveat.
+  const complete = (name) => !truncatedSteps.includes(name);
+
   return {
-    status: fetchErrors.length > 0 ? "partial" : "ok",
+    status: fetchErrors.length > 0 || truncatedSteps.length > 0 ? "partial" : "ok",
     audit: {
       timestamp: state.startedAt,
+      truncated_reads: truncatedSteps,
       summary: {
-        canvases: { total: canvasItems.length, ...canvasBreakdown },
-        campaigns: { total: campaignItems.length, ...campaignBreakdown },
-        segments: { total: segmentItems.length },
-        content_blocks: { total: contentBlockItems.length },
-        email_templates: { total: templateItems.length },
+        canvases: { total: canvasItems.length, complete: complete("canvases"), ...canvasBreakdown },
+        campaigns: { total: campaignItems.length, complete: complete("campaigns"), ...campaignBreakdown },
+        segments: { total: segmentItems.length, complete: complete("segments") },
+        content_blocks: { total: contentBlockItems.length, complete: complete("content_blocks") },
+        email_templates: { total: templateItems.length, complete: complete("email_templates") },
         custom_events: {
           total: eventItems.length,
+          complete: complete("custom_events"),
           names: eventItems.map((e) => e.name).filter(Boolean)
         },
         custom_attributes: {
           total: attributeItems.length,
+          complete: complete("custom_attributes"),
           names: attributeItems.map((a) => a.name).filter(Boolean)
         },
-        standard_attributes: { total: BRAZE_STANDARD_ATTRIBUTES.length, names: BRAZE_STANDARD_ATTRIBUTES }
+        standard_attributes: { total: BRAZE_STANDARD_ATTRIBUTES.length, complete: true, names: BRAZE_STANDARD_ATTRIBUTES }
       },
       naming_issues: namingIssues.slice(0, 20),
       canvases: canvasItems.map((c) => ({
@@ -702,6 +733,21 @@ export async function checkTemplateCollision({ config, templateName }) {
   );
 
   if (!existing) {
+    // "no_collision" is the green light to CREATE. It must never be said off
+    // a partial read: the whole point of this tool is to stop a duplicate,
+    // and a name that sits past the last page read is exactly the name that
+    // duplicates. A capped walk is an unknown, not an absence.
+    if (templates.truncated) {
+      return {
+        status: "not_found_in_partial_list",
+        template_name: templateName,
+        templates_read: templates.items.length,
+        message:
+          `Read ${templates.items.length} template(s) before hitting the page cap and did not find ` +
+          `"${templateName}" among them. That is NOT a clear name — the rest of the library was ` +
+          "not read. Narrow the search in the Braze dashboard, or raise the page cap, before creating."
+      };
+    }
     return { status: "no_collision", template_name: templateName };
   }
 
@@ -765,6 +811,16 @@ const WALK_PAGES_ENDPOINTS = new Set([
   "/events/list"
 ]);
 
+/**
+ * The `limit` / `offset` list endpoints. Same failure as the `?page=` set
+ * above and one step worse: they cap at 100 per call by DEFAULT, so a bare
+ * call returns a round number that looks like a complete small workspace.
+ */
+const WALK_OFFSET_ENDPOINTS = new Set([
+  "/templates/email/list",
+  "/content_blocks/list"
+]);
+
 async function safeList(config, endpoint, itemsKey, { maxPages = 20 } = {}) {
   try {
     if (WALK_PAGES_ENDPOINTS.has(endpoint)) {
@@ -773,6 +829,16 @@ async function safeList(config, endpoint, itemsKey, { maxPages = 20 } = {}) {
         endpoint,
         itemsKey,
         walkPages: true,
+        maxPages
+      });
+      return { items, truncated, error: null, authFailed: false };
+    }
+    if (WALK_OFFSET_ENDPOINTS.has(endpoint)) {
+      const { items, truncated } = await brazePaginateList({
+        config,
+        endpoint,
+        itemsKey,
+        walkOffset: true,
         maxPages
       });
       return { items, truncated, error: null, authFailed: false };

@@ -403,7 +403,7 @@
     },
     {
       "name": "orbit_audit_send_calendar",
-      "description": "Build a forward send calendar from Braze's scheduled broadcasts and audit it against quiet hours, allowed days, tag density and naming convention."
+      "description": "Build a forward send calendar from Braze's scheduled broadcasts and audit it against quiet hours, allowed days, tag density and naming convention. Drawn in a widget as a day-by-hour grid with the quiet window shaded and every finding anchored to its send, day or tag."
     },
     {
       "name": "orbit_validate_braze_data",
@@ -579,7 +579,7 @@
     },
     {
       "name": "orbit_rfm_score",
-      "description": "Score a customer list on RFM quintiles and classify each user into a named segment (Champions, Loyal, At Risk, Hibernating, …) with per-segment revenue share and recommended actions."
+      "description": "Score a customer list on RFM quintiles and classify each user into a named segment (Champions, Loyal, At Risk, Hibernating, …) with per-segment revenue share and recommended actions. Drawn in a widget as the segment map plus revenue share against list share."
     },
     {
       "name": "orbit_cohort_retention",
@@ -647,7 +647,7 @@
     },
     {
       "name": "orbit_parse_test_readout",
-      "description": "Turn A/B test counts into a written read-out with significance, 95% CI on rate difference, verdict (winner/loser/inconclusive), and ship-or-not recommendation."
+      "description": "Turn A/B test counts into a written read-out with significance, 95% CI on rate difference, verdict (winner/loser/inconclusive), and ship-or-not recommendation. Drawn in a widget as the interval against the no-difference line."
     },
     {
       "name": "orbit_get_stripo_email",

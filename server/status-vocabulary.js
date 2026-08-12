@@ -91,6 +91,11 @@ export const PROMPTED_STATUSES = new Set([
   "needs_discovery",
   "needs_platform_confirmation",
   "no_strong_match",       // the router looked and found nothing close — an honest answer
+  // Read N templates, hit the page cap, and cannot say whether the
+  // name exists past it. Not FAILED — nothing broke. Not DELIVERED —
+  // there is no answer. The user has to narrow the search or accept
+  // the cap, which is what PROMPTED means.
+  "not_found_in_partial_list",
 ]);
 
 /**

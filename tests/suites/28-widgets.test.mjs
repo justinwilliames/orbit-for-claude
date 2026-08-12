@@ -37,6 +37,9 @@ import { GATE_VERDICT_JS } from "../../server/ui/widgets/render-gate.js";
 import { CLIENT_FIDELITY_JS } from "../../server/ui/widgets/client-matrix.js";
 import { COHORT_CELL_JS } from "../../server/ui/widgets/cohort-curve.js";
 import { TOKEN_CONTRAST_JS } from "../../server/ui/widgets/design-system.js";
+import { CALENDAR_ANCHOR_JS } from "../../server/ui/widgets/send-calendar.js";
+import { READOUT_INTERVAL_JS } from "../../server/ui/widgets/ab-readout.js";
+import { RFM_PLOT_JS } from "../../server/ui/widgets/rfm-map.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
@@ -51,7 +54,10 @@ const TOOL_WIDGETS = {
   orbit_lifecycle_diagram: "ui://orbit/lifecycle-flow.html",
   orbit_client_sim: "ui://orbit/client-matrix.html",
   orbit_cohort_retention: "ui://orbit/cohort-retention.html",
-  orbit_learn_email_template: "ui://orbit/design-system.html"
+  orbit_learn_email_template: "ui://orbit/design-system.html",
+  orbit_audit_send_calendar: "ui://orbit/send-calendar.html",
+  orbit_parse_test_readout: "ui://orbit/ab-readout.html",
+  orbit_rfm_score: "ui://orbit/rfm-map.html"
 };
 
 let client = null;
@@ -303,6 +309,87 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     assert.equal(structured.library_entry, undefined);
     assert.equal(structured.mirrored_files, undefined);
   });
+
+  test("orbit_audit_send_calendar hands its widget the clock the CHECKS used, not a raw timestamp", async () => {
+    const res = await client.callTool("orbit_audit_send_calendar", {});
+    const structured = res.structuredContent;
+    assert.ok(structured, "send calendar returned no structuredContent for its widget");
+    assert.ok(Array.isArray(structured.calendar) && structured.calendar.length > 0);
+
+    const sends = structured.calendar.flatMap((d) => d.sends);
+    const byName = new Map(sends.map((s) => [s.name, s]));
+
+    // The whole reason the wall clock is precomputed: the fixture's
+    // offsets are +10:00 and -05:00, so a widget re-parsing the ISO
+    // string with getUTCHours() would draw 00:00 for a 10:00 send. The
+    // hour drawn must be the hour the quiet-hours check was run against.
+    const tenAm = byName.get("campaign_email_promotional_all_2026-03-16");
+    assert.equal(tenAm.wall_clock.hour, 10, "the drawn hour is not the local hour the audit read");
+    assert.equal(tenAm.delivery, "point");
+
+    // A spread schedule has no single moment, and the tool refuses to
+    // run quiet hours on it. The payload must say so as a fact, not
+    // leave a widget to pattern-match schedule_type strings.
+    const spread = byName.get("canvas_email_onboarding_new_2026-03-16");
+    assert.equal(spread.delivery, "spread");
+
+    assert.ok(Array.isArray(structured.findings));
+    assert.ok(Array.isArray(structured.caveats) && structured.caveats.length > 0,
+      "the overlap caveat must survive into the picture — a grid looks more complete than it is");
+    // Bookkeeping the grid never draws stays out of the second copy.
+    assert.equal(structured.timestamp, undefined);
+    assert.equal(structured.overlap_basis, undefined);
+  });
+
+  test("orbit_parse_test_readout hands its widget the denominators the rates came from", async () => {
+    const res = await client.callTool("orbit_parse_test_readout", {
+      test_name: "Subject line — urgency",
+      control_visitors: 4200,
+      control_conversions: 210,
+      variant_visitors: 4180,
+      variant_conversions: 268
+    });
+    const structured = res.structuredContent;
+    assert.ok(structured, "test readout returned no structuredContent for its widget");
+    assert.ok(["winner", "loser", "inconclusive"].includes(structured.verdict));
+    assert.equal(typeof structured.stats.ci_low_pct, "number");
+    assert.equal(typeof structured.stats.ci_high_pct, "number");
+    // A rate with no denominator is the one number an A/B chart must
+    // never show alone — the tool's own payload reports rates only.
+    assert.equal(structured.control.visitors, 4200);
+    assert.equal(structured.variant.conversions, 268);
+    // The narrative is prose the chart does not draw.
+    assert.equal(structured.narrative, undefined);
+    assert.equal(structured.orbit_attribution, undefined);
+  });
+
+  test("orbit_rfm_score hands its widget the segments, and not the ten-row sample", async () => {
+    const users = [];
+    for (let i = 0; i < 60; i++) {
+      users.push({
+        id: `u${i}`,
+        last_order_date: `2026-0${(i % 8) + 1}-0${(i % 9) + 1}`,
+        order_count: (i % 11) + 1,
+        lifetime_revenue: (i % 13) * 40
+      });
+    }
+    const res = await client.callTool("orbit_rfm_score", {
+      users_json: JSON.stringify(users),
+      reference_date: "2026-08-12T00:00:00Z"
+    });
+    const structured = res.structuredContent;
+    assert.ok(structured, "rfm score returned no structuredContent for its widget");
+    assert.ok(Array.isArray(structured.segments) && structured.segments.length > 0);
+    for (const s of structured.segments) {
+      assert.equal(typeof s.avg_recency_days, "number", `${s.segment} has no recency to place it by`);
+      assert.equal(typeof s.avg_frequency, "number", `${s.segment} has no frequency to place it by`);
+    }
+    // scored_sample is TEN users out of the whole list. Drawn on a map
+    // beside per-segment aggregates it reads as the population.
+    assert.equal(structured.scored_sample, undefined);
+    assert.equal(structured.output_files, undefined);
+    assert.equal(structured.orbit_attribution, undefined);
+  });
 });
 
 /**
@@ -428,10 +515,192 @@ describe("Design system — a token pair nobody could measure is not a pass", ()
   });
 
   test("three-digit hex and rgb() both parse; anything else abstains", () => {
-    assert.deepEqual(parseHexColor("#fff"), { r: 255, g: 255, b: 255 });
-    assert.deepEqual(parseHexColor("rgb(16, 24, 40)"), { r: 16, g: 24, b: 40 });
+    // Every parse carries an alpha channel. Contrast maths needs it: a
+    // semi-transparent foreground over a wash composites to a different
+    // colour than the token declares, and assuming opacity is how a
+    // widget reports a comfortable ratio for text nobody can read.
+    assert.deepEqual(parseHexColor("#fff"), { r: 255, g: 255, b: 255, a: 1 });
+    assert.deepEqual(parseHexColor("rgb(16, 24, 40)"), { r: 16, g: 24, b: 40, a: 1 });
+    // Alpha is genuinely read, not defaulted — assert a non-1 value or
+    // this test passes on a parser that ignores the channel entirely.
+    assert.deepEqual(parseHexColor("rgba(16, 24, 40, 0.5)"), { r: 16, g: 24, b: 40, a: 0.5 });
     assert.equal(parseHexColor("transparent"), null);
     assert.equal(parseHexColor("var(--brand)"), null);
+    // Known and deliberate limitation: the space-separated modern form
+    // is not parsed, so it abstains. Abstaining is the designed failure
+    // mode — a null here means the widget says "not measured" instead of
+    // inventing a ratio.
+    assert.equal(parseHexColor("rgb(16 24 40 / 50%)"), null);
+  });
+});
+
+describe("Send calendar — nothing is drawn at a time nobody read", () => {
+  const { anchorOf, findingsForSend, sendPlacement, quietBands, unaccountedSends } = new Function(
+    `${CALENDAR_ANCHOR_JS}\nreturn { anchorOf, findingsForSend, sendPlacement, quietBands, unaccountedSends };`
+  )();
+
+  test("the tool overloads one field with three kinds of target, and each is anchored", () => {
+    assert.equal(anchorOf({ check: "quiet_hours", send: "campaign_a" }).kind, "send");
+    assert.equal(anchorOf({ check: "mixed_delivery_semantics", send: "2026-03-16" }).kind, "day");
+    assert.equal(anchorOf({ check: "tag_density", send: "Promotional" }).kind, "tag");
+  });
+
+  test("a check this widget has never heard of is unanchored, never dropped", () => {
+    const a = anchorOf({ check: "some_future_check", send: "whatever" });
+    assert.equal(a.kind, "other");
+    assert.equal(a.key, "whatever");
+  });
+
+  test("a tag finding never lands on a send that happens to share its name", () => {
+    // "Promotional" is a tag AND could be a campaign name. Matching on
+    // the `send` field alone would pin a density finding to a send.
+    const findings = [
+      { check: "tag_density", send: "Promotional", severity: "high" },
+      { check: "quiet_hours", send: "Promotional", severity: "high" }
+    ];
+    const hit = findingsForSend(findings, "Promotional");
+    assert.equal(hit.length, 1);
+    assert.equal(hit[0].check, "quiet_hours");
+  });
+
+  test("a send with a server-read wall clock is placed at that hour", () => {
+    const p = sendPlacement({ wall_clock: { hour: 23, minute: 30, basis: "UTC" }, delivery: "point" });
+    assert.equal(p.kind, "point");
+    assert.equal(p.hour, 23);
+    assert.equal(p.minute, 30);
+  });
+
+  test("a spread send is never given a single hour, even when it has one", () => {
+    // local_time_zones carries a nominal next_send_time. Plotting it
+    // would re-assert the precision the tool explicitly declined.
+    const p = sendPlacement({
+      delivery: "spread",
+      schedule_type: "local_time_zones",
+      wall_clock: { hour: 9, minute: 0 }
+    });
+    assert.equal(p.kind, "spread");
+    assert.match(p.reason, /no single send time/);
+  });
+
+  test("a send with no readable clock is named, not placed at midnight", () => {
+    const p = sendPlacement({ delivery: "point", wall_clock: null });
+    assert.equal(p.kind, "unplaceable");
+    assert.notEqual(p.hour, 0);
+    assert.match(p.reason, /not placed/);
+  });
+
+  test("a send the calendar array never carried is disclosed, not silently absent", () => {
+    // A broadcast with no parseable next_send_time has no local date, so
+    // the tool cannot file it under any day and it never reaches
+    // calendar[]. The header still counts it. Before this the grid showed
+    // ten of eleven scheduled sends and looked complete.
+    const gap = unaccountedSends(11, 10, [
+      { check: "no_send_time", send: "unscheduled draft blast" },
+      { check: "quiet_hours", send: "august sale blast" }
+    ]);
+    assert.equal(gap.missing, 1);
+    assert.deepEqual(gap.named, ["unscheduled draft blast"]);
+  });
+
+  test("a grid that drew everything claims no gap", () => {
+    assert.equal(unaccountedSends(10, 10, []).missing, 0);
+    assert.equal(unaccountedSends(undefined, 10, []).missing, 0);
+  });
+
+  test("quiet hours that wrap midnight are two bands, not one negative one", () => {
+    assert.deepEqual(quietBands({ start: 21, end: 8 }), [{ from: 21, to: 24 }, { from: 0, to: 8 }]);
+    assert.deepEqual(quietBands({ start: 1, end: 6 }), [{ from: 1, to: 6 }]);
+    assert.deepEqual(quietBands({ start: 8, end: 8 }), []);
+  });
+});
+
+describe("A/B read-out — the drawing never overrules the test", () => {
+  const { intervalPosition, readoutAgreement } = new Function(
+    `${READOUT_INTERVAL_JS}\nreturn { intervalPosition, readoutAgreement };`
+  )();
+
+  test("an interval that contains zero has not excluded no-difference", () => {
+    assert.equal(intervalPosition(-0.4, 1.8).kind, "crosses_zero");
+    assert.equal(intervalPosition(0.2, 1.8).kind, "above");
+    assert.equal(intervalPosition(-1.8, -0.2).kind, "below");
+  });
+
+  test("an interval whose bound is exactly zero still contains it", () => {
+    assert.equal(intervalPosition(0, 1.8).kind, "crosses_zero");
+    assert.equal(intervalPosition(-1.8, 0).kind, "crosses_zero");
+  });
+
+  test("verdict and interval agreeing produces no notice", () => {
+    const a = readoutAgreement("winner", 0.4, 1.9);
+    assert.equal(a.agrees, true);
+    assert.equal(a.note, null);
+  });
+
+  test("a pooled 'winner' over an interval that spans zero is STATED, not hidden", () => {
+    // The two estimators differ. Near the threshold they disagree, and
+    // the failure mode is a green Ship pill above a bar straddling the
+    // no-difference line with nothing acknowledging it.
+    const a = readoutAgreement("winner", -0.05, 2.1);
+    assert.equal(a.agrees, false);
+    assert.match(a.note, /spans zero/);
+    assert.match(a.note, /pooled/);
+  });
+
+  test("an unusable interval is never reported as agreement by accident", () => {
+    const a = readoutAgreement("winner", null, undefined);
+    assert.equal(a.position.kind, "unknown");
+    assert.equal(a.agrees, true, "an unknown interval cannot contradict anything");
+    assert.equal(a.note, null);
+  });
+});
+
+describe("RFM map — a real segment never renders as nothing", () => {
+  const { rfmPlot } = new Function(`${RFM_PLOT_JS}\nreturn { rfmPlot };`)();
+
+  const seg = (name, rec, freq, rev) => ({
+    segment: name,
+    avg_recency_days: rec,
+    avg_frequency: freq,
+    revenue: rev,
+    user_count: 10
+  });
+
+  test("recency is inverted — the most recent segment sits on the right", () => {
+    const p = rfmPlot([seg("Champions", 5, 9, 900), seg("Lost", 400, 1, 10)]);
+    const champ = p.points.find((x) => x.segment === "Champions");
+    const lost = p.points.find((x) => x.segment === "Lost");
+    assert.equal(champ.x, 1);
+    assert.equal(lost.x, 0);
+  });
+
+  test("a zero-revenue segment is drawn at the floor, not at zero radius", () => {
+    const p = rfmPlot([seg("Champions", 5, 9, 900), seg("Lost", 400, 1, 0)]);
+    const lost = p.points.find((x) => x.segment === "Lost");
+    assert.ok(lost.r > 0, "a real segment was rendered as nothing");
+    assert.equal(lost.floored, true, "the floor is not disclosed, so it reads as a measured size");
+  });
+
+  test("area carries revenue — a quarter of the money is half the radius", () => {
+    const p = rfmPlot([seg("Big", 5, 9, 1000), seg("Small", 30, 4, 250)]);
+    const big = p.points.find((x) => x.segment === "Big");
+    const small = p.points.find((x) => x.segment === "Small");
+    assert.equal(big.r, 1);
+    assert.ok(Math.abs(small.r - 0.5) < 1e-9, `radius ${small.r} is not sqrt-scaled`);
+  });
+
+  test("one segment, or several sharing a value, centres rather than dividing by zero", () => {
+    const one = rfmPlot([seg("Only", 30, 3, 100)]);
+    assert.equal(one.points.length, 1);
+    assert.equal(one.points[0].x, 0.5);
+    assert.equal(one.points[0].y, 0.5);
+    assert.ok(Number.isFinite(one.points[0].r));
+  });
+
+  test("a segment that cannot be placed is named, never silently skipped", () => {
+    const p = rfmPlot([seg("Champions", 5, 9, 900), { segment: "Broken", revenue: 50 }]);
+    assert.equal(p.points.length, 1);
+    assert.equal(p.excluded.length, 1);
+    assert.equal(p.excluded[0].segment, "Broken");
   });
 });
 

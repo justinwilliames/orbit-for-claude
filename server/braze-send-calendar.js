@@ -409,6 +409,20 @@ function buildCalendarReport({ state, windowDays, quietHours, allowedDays, maxSe
           state: r.state,
           next_send_time: r.next_send_time,
           schedule_type: r.schedule_type,
+          // The wall clock the CHECKS above were run against, carried
+          // alongside the raw timestamp rather than left to be re-derived.
+          // Anything reading next_send_time itself — a widget, a
+          // spreadsheet, a second script — reimplements the offset/Intl
+          // logic in wallClock() and drifts from it, and then the picture
+          // says 09:00 while the quiet-hours finding underneath it says
+          // 23:00. Null when no local clock was readable, which is the
+          // same condition that made the check abstain.
+          wall_clock: wallClock(r.next_send_time, workspaceTimezone),
+          // Whether this send HAS a single moment at all. A spread
+          // schedule does not, which is why no quiet-hours verdict was
+          // issued for it, and anything drawing a calendar needs that as
+          // a fact rather than as a schedule_type string to pattern-match.
+          delivery: SPREAD_SCHEDULES.has(r.schedule_type) ? "spread" : "point",
           notes: r.notes
         }))
       })),

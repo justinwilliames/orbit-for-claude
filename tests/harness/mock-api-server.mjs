@@ -47,6 +47,20 @@ const PAGED_LIST_ROUTES = {
   "/events/list": "events"
 };
 
+/**
+ * The `limit` / `offset` list endpoints. Braze caps these at 100 per call by
+ * DEFAULT, so an un-paginated read of a 250-template library returns a round
+ * 100 and reads like a complete small workspace. A mock that ignores the
+ * parameters cannot tell the two apart either.
+ */
+const OFFSET_LIST_ROUTES = {
+  "/templates/email/list": "templates",
+  "/content_blocks/list": "content_blocks"
+};
+
+/** Braze's own default page size for the limit/offset endpoints. */
+const OFFSET_DEFAULT_LIMIT = 100;
+
 export async function startMockApiServer() {
   const responses = new Map(); // method + path pattern -> handler
   const requests = [];
@@ -181,6 +195,13 @@ export async function startMockApiServer() {
     if (pagedKey && handler && typeof handler === "object" && Array.isArray(handler[pagedKey])) {
       const page = Math.max(0, Number(url.searchParams.get("page") ?? 0) || 0);
       handler = { ...handler, [pagedKey]: handler[pagedKey].slice(page * pageSize, (page + 1) * pageSize) };
+    }
+
+    const offsetKey = OFFSET_LIST_ROUTES[url.pathname];
+    if (offsetKey && handler && typeof handler === "object" && Array.isArray(handler[offsetKey])) {
+      const limit = Math.max(1, Number(url.searchParams.get("limit")) || OFFSET_DEFAULT_LIMIT);
+      const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+      handler = { ...handler, [offsetKey]: handler[offsetKey].slice(offset, offset + limit) };
     }
 
     // Handler may be an object (use as body, 200) or { status, body, headers }

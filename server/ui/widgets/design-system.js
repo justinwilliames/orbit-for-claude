@@ -46,11 +46,24 @@ import { buildWidgetHtml, WIDGET_PRELUDE } from "../shell.js";
  *
  * Two properties matter and both were easy to get wrong: an unparseable
  * or missing token must produce "unmeasured" rather than a default, and
- * the AA threshold applied must be the one for the text size in play
- * (a button label is normal text; nothing here qualifies for the 3:1
- * large-text concession, so 4.5 is the floor throughout).
+ * the AA threshold applied must be the one for the text size in play.
+ * Most pairs here are normal text at 4.5:1 — a button label, body copy,
+ * an inline link. The heading is NOT: the specimen renders it at 22px /
+ * 700, which is WCAG large text (>=18.66px bold), so it is graded at
+ * 3:1. Grading it at 4.5 failed brand headings that meet the standard,
+ * in the one accessibility check this widget exists to run.
+ *
+ * Alpha is the other trap. `extractBrandTokens` reads these straight out
+ * of inline `color:` declarations, so an rgba() token arrives here
+ * intact — and reading three of its four channels measures a 8%-opacity
+ * white as if it were solid, returning the same ratio for a token that
+ * renders near-invisible. A translucent colour ABSTAINS: compositing it
+ * needs the stacking context underneath, which the extractor never saw.
  */
 export const TOKEN_CONTRAST_JS = `
+var AA_NORMAL = 4.5;   // WCAG 2.1 AA, normal text
+var AA_LARGE = 3;      // WCAG 2.1 AA, large text (>=24px, or >=18.66px bold)
+
 function parseHexColor(value) {
   var s = String(value == null ? "" : value).trim().toLowerCase();
   var m = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
@@ -60,12 +73,19 @@ function parseHexColor(value) {
     return {
       r: parseInt(h.slice(0, 2), 16),
       g: parseInt(h.slice(2, 4), 16),
-      b: parseInt(h.slice(4, 6), 16)
+      b: parseInt(h.slice(4, 6), 16),
+      a: 1
     };
   }
-  var rgb = s.match(/^rgba?\\(\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)/);
+  var rgb = s.match(/^rgba?\\(\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*(?:[,\\/]\\s*([0-9.]+%?)\\s*)?\\)/);
   if (rgb) {
-    var c = { r: parseFloat(rgb[1]), g: parseFloat(rgb[2]), b: parseFloat(rgb[3]) };
+    var c = { r: parseFloat(rgb[1]), g: parseFloat(rgb[2]), b: parseFloat(rgb[3]), a: 1 };
+    if (rgb[4] != null) {
+      var raw = String(rgb[4]);
+      var alpha = raw.slice(-1) === "%" ? parseFloat(raw) / 100 : parseFloat(raw);
+      if (!isFinite(alpha) || alpha < 0 || alpha > 1) return null;
+      c.a = alpha;
+    }
     if ([c.r, c.g, c.b].every(function (n) { return isFinite(n) && n >= 0 && n <= 255; })) return c;
   }
   return null;

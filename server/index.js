@@ -93,6 +93,9 @@ import { DIAGRAM_VIEW_URI } from "./ui/widgets/diagram-view.js";
 import { CLIENT_MATRIX_URI } from "./ui/widgets/client-matrix.js";
 import { COHORT_CURVE_URI } from "./ui/widgets/cohort-curve.js";
 import { DESIGN_SYSTEM_URI } from "./ui/widgets/design-system.js";
+import { SEND_CALENDAR_URI } from "./ui/widgets/send-calendar.js";
+import { AB_READOUT_URI } from "./ui/widgets/ab-readout.js";
+import { RFM_MAP_URI } from "./ui/widgets/rfm-map.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -3671,7 +3674,9 @@ function registerTools() {
         "sends, non-conformant names, quiet hours, disallowed days, tag density, and days that MIX local_time_zones " +
         "with intelligent_delivery so a nominal 9am lands across a 24-hour spread. Braze exposes no target segment on " +
         "either details endpoint, so collision is proxied through tags and naming only — the output says so. An empty " +
-        "schedule reports 'nothing scheduled', never 'calendar clean'.",
+        "schedule reports 'nothing scheduled', never 'calendar clean'. Drawn in a widget as a day-by-hour grid with " +
+        "the quiet window shaded, and a send whose local clock could not be resolved named under the grid rather " +
+        "than plotted at a guessed hour.",
       inputSchema: {
         window_days: z.number().int().min(1).max(MAX_DAYS).optional().describe("How far forward to look (default: 14)"),
         quiet_hours_start: z.number().int().min(0).max(23).optional().describe("Start of the quiet window, 0-23 (default: 21)"),
@@ -3680,7 +3685,8 @@ function registerTools() {
         max_sends_per_tag: z.number().int().min(1).max(100).optional().describe("Tag density limit across the window (default: 3)"),
         workspace_timezone: z.string().min(1).max(64).optional().describe("IANA zone for your workspace, e.g. Australia/Brisbane. Only needed if Braze normalises next_send_time to UTC — by default the offset Braze returns is used as the workspace clock."),
         enrich: z.boolean().optional().describe("Pull details for channel and draft/archived state (default: true)")
-      }
+      },
+      _meta: widgetMeta(SEND_CALENDAR_URI)
     },
     async (args) => {
       const toolName = "orbit_audit_send_calendar";
@@ -3724,7 +3730,19 @@ function registerTools() {
       }
 
       if (resume?.token) completeCheckpoint(resume.token);
-      return makeJsonToolResponse(result);
+      if (result?.status !== "ok") return makeJsonToolResponse(result);
+      // Everything the grid draws. The caveats ride along deliberately:
+      // this calendar cannot see audience overlap, and a picture that
+      // looks complete is exactly where that limit needs restating.
+      return makeJsonToolResponse(result, {
+        window: result.window,
+        policy: result.policy,
+        summary: result.summary,
+        calendar: result.calendar,
+        findings: result.findings,
+        caveats: result.caveats,
+        verdict: result.verdict ?? null
+      });
     }
   );
 
@@ -5449,12 +5467,13 @@ function registerTools() {
     {
       title: "RFM Segmentation Score",
       description:
-        "Score a customer list on Recency / Frequency / Monetary quintiles and assign each user to a named RFM segment (Champions, Loyal Customers, At Risk, Hibernating, Lost, etc.). Returns per-segment revenue share, user counts, average recency, and a recommended action per segment.",
+        "Score a customer list on Recency / Frequency / Monetary quintiles and assign each user to a named RFM segment (Champions, Loyal Customers, At Risk, Hibernating, Lost, etc.). Returns per-segment revenue share, user counts, average recency, and a recommended action per segment, drawn in a widget as the segment map plus revenue share against list share.",
       inputSchema: {
         users_json: z.string().min(1).describe("JSON array of users: [{ id?, email?, last_order_date, order_count, lifetime_revenue }, …]."),
         reference_date: z.string().optional().describe("ISO date to score recency against. Defaults to today."),
         output_dir: z.string().optional().describe("Optional directory to write the scored CSV + segment JSON.")
-      }
+      },
+      _meta: widgetMeta(RFM_MAP_URI)
     },
     async ({ users_json: usersJson, reference_date: referenceDate, output_dir: outputDir }) => {
       const { value: users, error } = parseToolJson(usersJson, "users_json", []);
@@ -5470,7 +5489,17 @@ function registerTools() {
         });
       }
       const result = scoreRfm({ users, referenceDate, outputDir: resolvedOutputDir });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // What the map and the share bars draw, and nothing else. The
+      // ten-row scored sample, the CSV paths and the attribution block
+      // are not drawable, and the sample in particular would be read as
+      // if it were the population.
+      return makeJsonToolResponse(result, {
+        user_count: result.user_count,
+        total_revenue: result.total_revenue,
+        reference_date: result.reference_date,
+        segments: result.segments
+      });
     }
   );
 
@@ -6042,7 +6071,7 @@ function registerTools() {
     {
       title: "Parse A/B Test Readout",
       description:
-        "Take a completed A/B test's numbers (control + variant visitors & conversions) and produce a written read-out: significance z/p, 95% CI on absolute-rate difference, plain-language verdict (winner / loser / inconclusive), and a ship/do-not-ship recommendation. Wraps the existing significance math with narrative framing.",
+        "Take a completed A/B test's numbers (control + variant visitors & conversions) and produce a written read-out: significance z/p, 95% CI on absolute-rate difference, plain-language verdict (winner / loser / inconclusive), and a ship/do-not-ship recommendation. Wraps the existing significance math with narrative framing, and draws the interval against the no-difference line in a widget so whether the result clears zero is a glance rather than an arithmetic exercise.",
       inputSchema: {
         test_name: z.string().optional().describe("Short name for the test (appears in the narrative header)."),
         hypothesis: z.string().optional().describe("The hypothesis under test, in plain language."),
@@ -6053,7 +6082,8 @@ function registerTools() {
         confidence_level: z.number().optional().describe("Confidence level (0.95 default, 0.99 for stricter)."),
         primary_metric: z.string().optional().describe('Plain-language name of the primary metric (default "conversion rate").'),
         guardrail_metrics_json: z.string().optional().describe("Optional JSON array of guardrail metric names to remind the user to verify before shipping.")
-      }
+      },
+      _meta: widgetMeta(AB_READOUT_URI)
     },
     async ({
       test_name: testName,
@@ -6079,7 +6109,21 @@ function registerTools() {
         primaryMetric: primaryMetric ?? "conversion rate",
         guardrailMetrics
       });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // The chart draws the interval against zero, so it needs the raw
+      // counts the rates were measured from — the tool's own payload
+      // reports rates only, and a rate with no denominator is the one
+      // number an A/B chart must never present on its own.
+      return makeJsonToolResponse(result, {
+        test_name: result.test_name,
+        hypothesis: hypothesis ?? null,
+        primary_metric: primaryMetric ?? "conversion rate",
+        verdict: result.verdict,
+        stats: result.stats,
+        control: { visitors: controlVisitors, conversions: controlConversions },
+        variant: { visitors: variantVisitors, conversions: variantConversions },
+        recommendation: result.recommendation
+      });
     }
   );
 
