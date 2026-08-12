@@ -180,6 +180,21 @@ export function evalCond(expr, env) {
     return eqm[2] === "==" ? eq : !eq;
   }
 
+  // `contains` — substring on a string, membership on an array. Left
+  // unmodelled it fell through to the truthiness fallback below, where the
+  // WHOLE condition text is an unbound identifier and therefore a non-empty
+  // string, so `x contains 'y'` read TRUE in every state: the arm rendered
+  // unconditionally and any arm after it was reported dead.
+  const has = src.match(/^(.+?)\s+contains\s+(.+)$/);
+  if (has) {
+    const haystack = parseVal(has[1], env);
+    if (haystack === undefined || haystack === null || haystack === false) return false;
+    const needle = String(parseVal(has[2], env));
+    return Array.isArray(haystack)
+      ? haystack.map(String).includes(needle)
+      : String(haystack).includes(needle);
+  }
+
   return truthy(parseVal(src, env));
 }
 
@@ -275,6 +290,7 @@ function evalIf(toks, i, env, trace, negate) {
   const blockId = toks[i].id;
   const CLOSER = negate ? "endunless" : "endif";
   let condTag = toks[i].v;
+  let condId = toks[i].id;
   let start = i + 1;
   let depth = 0;
   let j = i + 1;
@@ -288,12 +304,13 @@ function evalIf(toks, i, env, trace, negate) {
     else if (verb === "endif" || verb === "endunless" || verb === "endcapture") {
       if (depth > 0) depth--;
       else if (verb === CLOSER) {
-        clauses.push({ condTag, start, end: j });
+        clauses.push({ condTag, condId, start, end: j });
         break;
       }
     } else if (!negate && depth === 0 && (verb === "elsif" || verb === "else")) {
-      clauses.push({ condTag, start, end: j });
+      clauses.push({ condTag, condId, start, end: j });
       condTag = toks[j].v;
+      condId = toks[j].id;
       start = j + 1;
     }
   }
@@ -301,10 +318,20 @@ function evalIf(toks, i, env, trace, negate) {
 
   // Register EVERY arm, taken or not. The matrix later asserts each was taken
   // in at least one state; an arm taken in none is dead by construction.
+  // Register EVERY arm under BOTH spellings: the text the author wrote, and
+  // the text this state resolved it to. First-write-wins freezes whichever
+  // state ran first, so reporting only the resolved form names a condition
+  // that does not exist in the user's template and would have read
+  // differently had the states run in another order.
   if (trace) {
     clauses.forEach((c, k) => {
       const key = `${blockId}#${k}`;
-      if (!trace.arms.has(key)) trace.arms.set(key, c.condTag.trim());
+      if (trace.arms.has(key)) return;
+      const source = trace.sourceTags?.get(c.condId);
+      trace.arms.set(key, {
+        source: (source ?? c.condTag).trim(),
+        resolved: c.condTag.trim(),
+      });
     });
   }
 
@@ -332,14 +359,35 @@ export function personalisationTokens(src) {
   const add = (dialect, name, token) => {
     if (!found.has(name)) found.set(name, { dialect, name, token });
   };
-  for (const m of String(src).matchAll(/\{\{\s*custom_attribute\.\$\{(\w+)\}\s*\}\}/g)) {
+  // `[^{}]*` rather than `\s*`: the FILTERED form
+  // `{{custom_attribute.${x} | default: 'there'}}` is the one Braze's docs and
+  // Orbit's own skill tell people to always write, and matching only the bare
+  // form meant the most common shape in the wild was not a token at all — so
+  // it never became an axis and the resolver laundered it into placeholder text.
+  for (const m of String(src).matchAll(/\{\{\s*custom_attribute\.\$\{(\w+)\}[^{}]*\}\}/g)) {
     add("braze_custom_attribute", m[1], m[0]);
   }
-  for (const m of String(src).matchAll(/\{\{\s*\$\{(\w+)\}[^}]*\}\}/g)) {
+  for (const m of String(src).matchAll(/\{\{\s*\$\{(\w+)\}[^{}]*\}\}/g)) {
     add("braze_personalisation", m[1], m[0]);
   }
-  for (const m of String(src).matchAll(/\{\{\s*(?:person|event|organization)\.(\w+)\s*\}\}/g)) {
+  for (const m of String(src).matchAll(/\{\{\s*campaign\.\$\{(\w+)\}[^{}]*\}\}/g)) {
+    add("braze_campaign", m[1], m[0]);
+  }
+  for (const m of String(src).matchAll(/\{\{\s*(?:person|event|organization)\.(\w+)[^{}]*\}\}/g)) {
     add("klaviyo_property", m[1], m[0]);
+  }
+
+  // Bindings that appear ONLY inside a {% %} tag — an attribute the template
+  // branches on but never prints. Keying discovery on output tokens alone made
+  // those templates report "no personalisation binding drives a conditional",
+  // which reads as a clean bill of health for the exact shape the matrix
+  // exists to enumerate. Scanned second so a braced form still wins the name.
+  for (const tag of String(src).matchAll(/\{%([\s\S]*?)%\}/g)) {
+    const body = tag[1];
+    for (const m of body.matchAll(/custom_attribute\.\$\{(\w+)\}/g)) add("braze_custom_attribute", m[1], m[0]);
+    for (const m of body.matchAll(/campaign\.\$\{(\w+)\}/g)) add("braze_campaign", m[1], m[0]);
+    for (const m of body.matchAll(/(?<![.\w])\$\{(\w+)\}/g)) add("braze_personalisation", m[1], m[0]);
+    for (const m of body.matchAll(/(?<![.\w])(?:person|event|organization)\.(\w+)\b/g)) add("klaviyo_property", m[1], m[0]);
   }
   return [...found.values()];
 }
@@ -351,6 +399,12 @@ export function newTrace() {
     taken: new Set(),
     unknownFilters: new Set(),
     unknownTags: new Set(),
+    // Outputs the step-3 catch-all had to swallow. Without this an output
+    // shape the resolver does not model is laundered into the fallback word
+    // and counted as body copy — invisible to residualLiquid, which runs on
+    // the already-scrubbed string, and to personalisationTokens, so it never
+    // becomes an axis either.
+    unknownOutputs: new Set(),
   };
 }
 
@@ -370,25 +424,104 @@ export function resolveLiquid(html, opts = {}) {
   const bound = (name) =>
     Object.prototype.hasOwnProperty.call(attrs, name) ? String(attrs[name]) : null;
 
+  // Run a trailing filter chain over an already-substituted token value.
+  // `{{custom_attribute.${first_name} | default: 'there'}}` is the form the
+  // Braze docs — and Orbit's own skills — tell people to ALWAYS write, and
+  // before this the filtered form matched none of the substitution patterns,
+  // so it fell to the step-3 catch-all and became the fallback word.
+  const piped = (raw, chain) => {
+    if (!chain) return raw;
+    const { value, unknown } = applyFilters(`__token__${chain}`, { __token__: raw });
+    if (unknown && trace) trace.unknownFilters.add(unknown);
+    return String(value);
+  };
+
   let out = String(html);
 
   // 1. Personalisation tokens -> plain text, BEFORE the interpreter, so the
   //    template's own {% assign %}/{% capture %} guards read real values.
-  out = out.replace(/\{\{\s*custom_attribute\.\$\{(\w+)\}\s*\}\}/g, (m, n) => bound(n) ?? "");
-  out = out.replace(/\{\{\s*\$\{(\w+)\}[^}]*\}\}/g, (m, n) => bound(n) ?? fallback);
-  out = out.replace(/\{\{\s*(?:person|event|organization)\.(\w+)\s*\}\}/g, (m, n) => bound(n) ?? fallback);
-  out = out.replace(/\{\{\s*campaign\.\$\{(\w+)\}\s*\}\}/g, (m, n) => bound(n) ?? fallback);
-  out = out.replace(/\{\{\s*content_blocks\.\$\{([a-z0-9_-]+)\}\s*\}\}/gi, (m, n) => bound(n) ?? "");
+  const CHAIN = "((?:\\|[^{}]*)?)";
+  const sub = (re, resolve) => {
+    out = out.replace(re, (m, n, chain) => piped(resolve(n), chain ?? ""));
+  };
+  sub(new RegExp(`\\{\\{\\s*custom_attribute\\.\\$\\{(\\w+)\\}\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? "");
+  sub(new RegExp(`\\{\\{\\s*\\$\\{(\\w+)\\}\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
+  sub(new RegExp(`\\{\\{\\s*(?:person|event|organization)\\.(\\w+)\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
+  sub(new RegExp(`\\{\\{\\s*campaign\\.\\$\\{(\\w+)\\}\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
+  sub(new RegExp(`\\{\\{\\s*content_blocks\\.\\$\\{([a-z0-9_-]+)\\}\\s*${CHAIN}\\}\\}`, "gi"), (n) => bound(n) ?? "");
 
-  // 2. The interpreter proper.
-  out = evalBlock(tokenize(out), 0, {}, null, trace).out;
+  // 2. The interpreter proper, over an env SEEDED from attrs.
+  //
+  //    Step 1 only rewrites `{{ … }}` OUTPUT tokens. A condition written in
+  //    the direct dialect — `{% if custom_attribute.${is_vip} %}`, the form
+  //    Orbit's own Braze skill teaches — carries no braces, so it reached the
+  //    interpreter with an empty env, parseVal handed back the binding text
+  //    itself, and every guarded module rendered in every "state". Seed the
+  //    value under each spelling a condition can name it by, so a condition
+  //    reads exactly what the output token resolved to.
+  const env = seedEnv(attrs);
+  // The arm labels the matrix reports come out of evalIf, which only sees the
+  // POST-substitution condition — so a dead arm was named `if true == 'FREE'`
+  // for a template that says `{% if {{custom_attribute.${planType}}} == 'FREE' %}`,
+  // a string that returns zero grep hits in the user's own file. Step 1 does
+  // not add or remove tags, so tag ordinals are identical in both streams and
+  // the original text can be recovered by id.
+  if (trace && !trace.sourceTags) {
+    trace.sourceTags = new Map();
+    for (const tok of tokenize(String(html))) {
+      if (tok.t === "tag") trace.sourceTags.set(tok.id, tok.v);
+    }
+  }
+  out = evalBlock(tokenize(out), 0, env, null, trace).out;
 
   // 3. Catch-all — nothing escapes to the DOM. An unresolved token is a long
   //    unbreakable string, and a render gate downstream would measure it as
-  //    genuine overflow rather than as the bug it is.
-  out = out.replace(/\{%[\s\S]*?%\}/g, "");
-  out = out.replace(/\{\{[\s\S]*?\}\}/g, fallback);
+  //    genuine overflow rather than as the bug it is. But swallowing it
+  //    silently is how an unmodelled output becomes body copy, so record what
+  //    was swallowed: this, not a grep of the scrubbed output, is the only
+  //    honest measure of "nothing raw escaped".
+  out = out.replace(/\{%[\s\S]*?%\}/g, (m) => {
+    if (trace) trace.unknownTags.add(m.replace(/^\{%\s*|\s*%\}$/g, "").split(/\s+/)[0] || "(empty)");
+    return "";
+  });
+  out = out.replace(/\{\{[\s\S]*?\}\}/g, (m) => {
+    if (trace) trace.unknownOutputs.add(m.trim());
+    return fallback;
+  });
   return out;
+}
+
+/**
+ * The attribute map, under every spelling a Liquid condition can name it by.
+ *
+ * `parseVal` looks names up by exact string, so `custom_attribute.${plan}`,
+ * `${plan}`, `person.plan` and bare `plan` each need their own key.
+ *
+ * The one coercion: the exact string "false" becomes the boolean. Liquid
+ * truthiness says a non-empty string is truthy, so a JS "false" would make
+ * `{% if custom_attribute.${is_vip} %}` render the VIP module in the state the
+ * caller is enumerating as OFF — the two states come out identical and the
+ * branch is reported as covered without ever having been varied. Every other
+ * value stays a string, so `== 'false'` still compares equal (String(false)).
+ */
+function seedEnv(attrs) {
+  const env = {};
+  for (const [name, value] of Object.entries(attrs)) {
+    const v = String(value) === "false" ? false : String(value);
+    for (const key of [
+      name,
+      `custom_attribute.\${${name}}`,
+      `\${${name}}`,
+      `campaign.\${${name}}`,
+      `content_blocks.\${${name}}`,
+      `person.${name}`,
+      `event.${name}`,
+      `organization.${name}`,
+    ]) {
+      env[key] = v;
+    }
+  }
+  return env;
 }
 
 /** Count residual Liquid. A correct render leaves none. */

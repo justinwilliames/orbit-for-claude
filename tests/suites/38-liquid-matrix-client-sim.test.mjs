@@ -55,6 +55,43 @@ const GOOD_EMAIL = `<!DOCTYPE html>
 </body>
 </html>`;
 
+/**
+ * The DIRECT Braze dialect — a condition that reads the binding with no
+ * `{{ }}` around it, which is the form Orbit's own braze-documentation-expert
+ * skill teaches. `plan_type` is compared against string literals and is never
+ * printed anywhere, so it exercises two blind spots at once: an attribute that
+ * only ever appears inside a tag, and a value set the tool has to derive from
+ * the comparisons rather than assume is boolean.
+ */
+const DIRECT_DIALECT_EMAIL = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <div class="module-hero"><h1>Your account</h1><p>${FILLER.repeat(4)}</p></div>
+  {% if custom_attribute.\${plan_type} == 'trial' %}
+    <div class="module-trial"><p>Fourteen days left on your trial. ${FILLER}</p></div>
+  {% elsif custom_attribute.\${plan_type} == 'pro' %}
+    <div class="module-pro"><p>Your Pro plan renews next month. ${FILLER}</p></div>
+  {% else %}
+    <div class="module-generic"><p>Pick the plan that fits. ${FILLER}</p></div>
+  {% endif %}
+  <div class="module-footer"><p>Manage preferences or unsubscribe at any time.</p></div>
+</body>
+</html>`;
+
+/** A flag read directly by a condition and never printed. */
+const BRANCH_ONLY_FLAG_EMAIL = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <div class="module-hero"><h1>This month</h1><p>${FILLER.repeat(4)}</p></div>
+  {% if custom_attribute.\${is_vip} %}
+    <div class="module-vip"><p>Your concierge line is open seven days. ${FILLER}</p></div>
+  {% else %}
+    <div class="module-standard"><p>Support answers within one business day. ${FILLER}</p></div>
+  {% endif %}
+  <div class="module-footer"><p>Manage preferences or unsubscribe at any time.</p></div>
+</body>
+</html>`;
+
 const VARIABLES = JSON.stringify({
   loyalty_tier: ["gold", "silver"],
   has_open_order: ["true", "false"],
@@ -192,6 +229,24 @@ describe("Liquid state matrix + client simulation", () => {
     assert.ok(residual.length > 0, "an unresolved token reaching a recipient must fail");
   });
 
+  test("an output shape the resolver does not model is reported, not laundered", async () => {
+    // The honest version of the check above. A WELL-FORMED token the resolver
+    // has no binding for used to be rewritten to the fallback word by the
+    // catch-all and counted as body copy — invisible to a residual grep, which
+    // runs on the already-scrubbed string. Nothing malformed here.
+    const seeded = GOOD_EMAIL.replace(
+      "<p>Manage preferences or unsubscribe at any time.</p>",
+      "<p>Manage preferences at {{ account.settings.url }}.</p>"
+    );
+    assert.notEqual(seeded, GOOD_EMAIL, "the seed must apply");
+
+    const { parsed } = await matrix(seeded);
+    const swallowed = parsed.findings.filter((f) => f.check === "unmodelled_output");
+    assert.equal(swallowed.length, 1, `expected the swallowed output to be named: ${JSON.stringify(parsed.findings)}`);
+    assert.match(swallowed[0].message, /account\.settings\.url/);
+    assert.equal(parsed.verdict, "fail");
+  });
+
   test("a state that collapses the email fails", async () => {
     const seeded = GOOD_EMAIL.replace(`<p>${FILLER.repeat(4)}</p>`, "<p>Hi.</p>");
     assert.notEqual(seeded, GOOD_EMAIL, "the seed must apply");
@@ -221,6 +276,101 @@ describe("Liquid state matrix + client simulation", () => {
     const g = parsed.findings.filter((f) => f.invariant === "G");
     assert.equal(g.length, 1, `expected one spelling disagreement, got ${JSON.stringify(parsed.findings)}`);
     assert.equal(g[0].axis, "has_open_order");
+  });
+
+  // ── binding: the condition has to read what the token resolved to ─
+
+  test("a condition in the DIRECT dialect actually binds, with no variables supplied", async () => {
+    // No variables_json at all. Before this the interpreter started with an
+    // empty env, `custom_attribute.${plan_type}` parsed as its own text, every
+    // arm compared it against a literal and lost, and the tool reported all
+    // three arms dead at severity fail.
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html: DIRECT_DIALECT_EMAIL,
+    });
+    assert.equal(parsed.status, "ok");
+    const axis = parsed.axes.find((a) => a.name === "plan_type");
+    assert.ok(axis, `plan_type was not discovered: ${JSON.stringify(parsed.axes)}`);
+    assert.equal(axis.values_source, "harvested", "the value set must come from the comparisons");
+    assert.deepEqual(axis.values.slice(0, 2), ["trial", "pro"]);
+    assert.equal(parsed.arms.registered, parsed.arms.taken, "an arm was reported unreachable");
+    assert.deepEqual(
+      parsed.findings.filter((f) => f.check === "dead_arm"),
+      [],
+      "a live arm was called dead by construction"
+    );
+    assert.equal(parsed.verdict, "pass");
+  });
+
+  test("an attribute that is only ever branched on, never printed, is still an axis", async () => {
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html: BRANCH_ONLY_FLAG_EMAIL,
+    });
+    assert.equal(parsed.verdict, "pass", JSON.stringify(parsed.findings));
+    assert.deepEqual(parsed.axes.map((a) => a.name), ["is_vip"]);
+    assert.equal(parsed.states_rendered, 2);
+    assert.equal(parsed.arms.taken, 2, "both arms of the flag must be exercised");
+  });
+
+  test("an arm testing a value no axis was given is a WARNING, not a dead arm", async () => {
+    // A condition reading TWO attributes is the case the literal harvester
+    // deliberately skips — with two bindings in one clause there is no way to
+    // tell which literal belongs to which without a real parser. So
+    // "enterprise" never reaches plan_type's value set and this arm cannot be
+    // taken. Nothing here proves the template wrong; it proves the run never
+    // fed it a value that could take it, and those are different sentences.
+    const seeded = DIRECT_DIALECT_EMAIL.replace(
+      "{% if custom_attribute.${plan_type} == 'trial' %}",
+      "{% if custom_attribute.${plan_type} == 'enterprise' and custom_attribute.${is_vip} %}\n" +
+      '    <div class="module-enterprise"><p>Your account manager is on call.</p></div>\n' +
+      "  {% elsif custom_attribute.${plan_type} == 'trial' %}"
+    );
+    assert.notEqual(seeded, DIRECT_DIALECT_EMAIL, "the seed must apply");
+
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html: seeded,
+    });
+    const untested = parsed.findings.filter((f) => f.check === "arm_untested");
+    assert.equal(untested.length, 1, `expected one untested arm: ${JSON.stringify(parsed.findings)}`);
+    assert.equal(untested[0].severity, "warn");
+    assert.match(untested[0].message, /enterprise/);
+    assert.deepEqual(parsed.findings.filter((f) => f.check === "dead_arm"), []);
+  });
+
+  test("`contains` is evaluated, not read as a truthy string", async () => {
+    // Unmodelled, the whole condition parsed as one unbound identifier — a
+    // non-empty string, therefore truthy in every state — so the arm rendered
+    // unconditionally and the arm after it was reported dead.
+    const seeded = DIRECT_DIALECT_EMAIL.replace(
+      "{% elsif custom_attribute.${plan_type} == 'pro' %}",
+      "{% elsif custom_attribute.${plan_type} contains 'pro' %}"
+    );
+    assert.notEqual(seeded, DIRECT_DIALECT_EMAIL, "the seed must apply");
+
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html: seeded,
+    });
+    assert.equal(parsed.verdict, "pass", JSON.stringify(parsed.findings));
+    assert.equal(parsed.arms.registered, parsed.arms.taken, "the else arm must still be reachable");
+  });
+
+  test("a dead arm names the condition the AUTHOR wrote, not the substituted one", async () => {
+    const seeded = DIRECT_DIALECT_EMAIL.replace(
+      "{% if custom_attribute.${plan_type} == 'trial' %}",
+      "{% if custom_attribute.${plan_type} == 'trial' and 'x' == 'y' %}"
+    );
+    assert.notEqual(seeded, DIRECT_DIALECT_EMAIL, "the seed must apply");
+
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html: seeded,
+    });
+    const dead = parsed.findings.filter((f) => f.check === "dead_arm");
+    assert.equal(dead.length, 1, JSON.stringify(parsed.findings));
+    assert.match(
+      dead[0].message,
+      /custom_attribute\.\$\{plan_type\}/,
+      "the finding must quote a string that exists in the user's template"
+    );
   });
 
   // ── abstentions ──────────────────────────────────────────────────
@@ -290,6 +440,30 @@ describe("Liquid state matrix + client simulation", () => {
     // render gate run on it alone reports nothing at all.
     const full = parsed.variants.find((v) => v.class === "full");
     assert.equal(full.style_blocks_dropped, 0);
+  });
+
+  test("a SUSPECTED killer does not delete CSS from the default gmailish view", async () => {
+    // The poison table carries a confidence field and purityChecks honours it
+    // — confirmed is a fail, suspected is a warn. The emitted document has to
+    // draw the same line, or the view the tool tells you to treat as the
+    // delivered document is missing real CSS on an unproven hunch.
+    const suspectedOnly = `<!DOCTYPE html><html><head>
+<style>@font-face{font-family:Demo;src:url(demo.woff2)} .wrap{max-width:600px}</style>
+</head><body><p>Hello.</p></body></html>`;
+
+    const { parsed } = await client.callToolJson("orbit_client_sim", {
+      html: suspectedOnly,
+      classes: ["full", "gmailish", "gmailish_worstcase"],
+    });
+    const by = Object.fromEntries(parsed.variants.map((v) => [v.class, v]));
+    assert.equal(by.gmailish.style_blocks_dropped, 0, "a suspected killer deleted real CSS");
+    assert.equal(by.gmailish.html, by.full.html, "gmailish must be byte-identical to full here");
+    assert.equal(by.gmailish_worstcase.style_blocks_dropped, 1, "the speculative view must still drop it");
+    // The purity finding still fires — the construct is worth a test send,
+    // it just does not get to rewrite the document on suspicion.
+    const poison = parsed.purity_findings.filter((f) => f.check === "block_atomic_poison");
+    assert.equal(poison.length, 1);
+    assert.equal(poison[0].severity, "warn");
   });
 
   test("an <a> directly wrapping a <table> is the inliner's dead-anchor hoist", async () => {

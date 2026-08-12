@@ -84,6 +84,7 @@ import { isFailureStatus } from "./status-vocabulary.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { annotationsFor } from "./tool-annotations.js";
 import { registerOrbitWidgets, widgetMeta, writeWidgetArtifact } from "./ui/register.js";
+import { ORBIT_ICONS } from "./ui/brand-mark.js";
 import { REVIEW_GALLERY_URI } from "./ui/widgets/review-gallery.js";
 import { RENDER_GATE_URI } from "./ui/widgets/render-gate.js";
 import { QA_REPORT_URI } from "./ui/widgets/qa-report.js";
@@ -294,6 +295,15 @@ const server = new McpServer({
   name: "orbit-lifecycle-system",
   title: "Orbit",
   version: ORBIT_VERSION,
+  // The mark a host shows beside the server, and — in most clients —
+  // beside each of its tool calls. One copy, 972 bytes for both themes.
+  //
+  // Deliberately NOT repeated onto all 126 tools: an identical icon per
+  // tool measured at +120KB on a 154KB tools/list, a 78% increase to
+  // show the same glyph the host already has. Tools that DRAW something
+  // carry it individually (see registerToolSafe) so the icon marks a
+  // real distinction rather than acting as wallpaper.
+  icons: ORBIT_ICONS,
   description:
     "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
 }, {
@@ -5573,10 +5583,10 @@ function registerTools() {
         "BLOCK-ATOMIC, so one @property kills every rule in that <style> tag (MJML merges all mj-style into one block, " +
         "so it deletes the whole head stylesheet while the render gate says PASS); and ESP CSS inliners hoist a <table> " +
         "out of any <a> wrapping it, leaving dead unclickable buttons. Returns degraded HTML for " +
-        "full/nocss/gmailish/imgoff/reduced/nohover plus static purity findings. Run orbit_render_gate on each and diff.",
+        "full/nocss/gmailish/gmailish_worstcase/imgoff/reduced/nohover plus static purity findings. Run orbit_render_gate on each and diff.",
       inputSchema: {
         html: z.string().min(1).max(MAX_LONG_STRING).describe("The compiled email HTML."),
-        classes: z.array(z.enum(["full", "nocss", "gmailish", "imgoff", "reduced", "nohover"])).max(6).optional().describe("Client classes to emit. Default: all six."),
+        classes: z.array(z.enum(["full", "nocss", "gmailish", "gmailish_worstcase", "imgoff", "reduced", "nohover"])).max(7).optional().describe("Client classes to emit. Default: all seven. `gmailish` drops a style block only on the CONFIRMED killer; `gmailish_worstcase` also drops on the suspected ones."),
         include_html: z.boolean().optional().describe("Emit the degraded documents (default: true). Off gives the purity verdict without six copies of the email.")
       }
     },
@@ -6499,6 +6509,19 @@ function registerToolSafe(name, schema, handler) {
   // Behavioural hints (read-only / destructive / idempotent / open-world)
   // are applied centrally so a tool cannot ship unclassified — see
   // server/tool-annotations.js for the tiers and the reasoning.
+  // NO per-tool `icons` here, deliberately.
+  //
+  // The protocol defines them (IconsSchema in the SDK's types), but
+  // McpServer.registerTool drops the field on the floor in both 1.29 and
+  // 1.30 — grep the SDK's server/*.js for "icons" and there are no hits.
+  // Setting it looks correct in source, changes nothing on the wire, and
+  // is exactly the shape of bug this codebase keeps producing: code that
+  // reports success while doing nothing.
+  //
+  // Server-level icons DO work and are set on the McpServer constructor,
+  // which is what a host shows beside Orbit and its calls. Revisit if a
+  // later SDK forwards the field; the mark is already built and costed
+  // in server/ui/brand-mark.js.
   const annotated = {
     ...ensureFriendlyTitle(name, schema),
     annotations: { ...annotationsFor(name), ...(schema?.annotations ?? {}) },

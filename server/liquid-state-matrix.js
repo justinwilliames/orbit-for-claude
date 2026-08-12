@@ -56,6 +56,12 @@ const TRUTHY_SPELLINGS = ["true", "True", "TRUE", "1", " true "];
 /** Minimum rendered characters before a state counts as collapsed. */
 const BODY_FLOOR = 400;
 
+/** Cap on comparison literals promoted into one axis's value set. */
+const MAX_HARVESTED_VALUES = 5;
+
+/** Values that mean an attribute is being used as an on/off flag. */
+const FLAG_SPELLINGS = new Set(["true", "false", "True", "False", "TRUE", "FALSE", "1", "0", ""]);
+
 /**
  * Run the matrix.
  *
@@ -104,19 +110,27 @@ export function liquidStateMatrix({
     };
   }
 
-  if (axes.length > maxAxes) {
+  // The cap is on STATES, not axes. Axis value sets are derived from the
+  // literals each attribute is compared against, so three axes can be a
+  // larger sweep than six booleans, and counting axes would let the expensive
+  // case through while blocking the cheap one.
+  const stateCount = axes.reduce((n, a) => n * Math.max(1, a.values.length), 1);
+  const stateCap = 2 ** maxAxes;
+  if (axes.length > maxAxes || stateCount > stateCap) {
     // Sampling would produce a confident verdict on a fraction of the space
     // and call it coverage. Abstain and name the number instead.
     return {
       status: "needs_inputs",
       verdict: "too_many_axes",
-      axes: axes.map((a) => a.name),
+      axes: axes.map((a) => ({ name: a.name, values: a.values })),
+      states_required: stateCount,
+      states_cap: stateCap,
       message:
-        `${axes.length} personalisation axes means 2^${axes.length} states, above the ` +
-        `max_axes cap of ${maxAxes}. Nothing was checked — a partial sweep reported ` +
-        "as coverage is the failure this tool exists to catch. Either raise max_axes " +
-        "deliberately, or pin the axes you are not testing by passing them in " +
-        "`variables` with a single value each.",
+        `${axes.length} personalisation axes across their discovered value sets means ` +
+        `${stateCount} states, above the cap of ${stateCap} implied by max_axes=${maxAxes}. ` +
+        "Nothing was checked — a partial sweep reported as coverage is the failure this " +
+        "tool exists to catch. Either raise max_axes deliberately, or pin the axes you " +
+        "are not testing by passing them in `variables` with a single value each.",
     };
   }
 
@@ -133,6 +147,12 @@ export function liquidStateMatrix({
     const blocks = blockSet(rendered, blockRe);
 
     // A — residual Liquid.
+    //
+    // This can only fire on Liquid the TOKENIZER could not reach: an
+    // unterminated tag, a token one brace short. Anything syntactically whole
+    // is scrubbed by resolveLiquid's catch-all before it gets here, which is
+    // why the honest half of invariant A is the swallowed-output check below
+    // rather than a grep of an already-scrubbed string.
     if (residual > 0) {
       findings.push({
         invariant: "A",
@@ -172,6 +192,27 @@ export function liquidStateMatrix({
         "failure rather than a silent best-effort render.",
     });
   }
+  // A/B — outputs the resolver could not model. Before this they were
+  // rewritten to the fallback word and counted as body copy: invisible to
+  // residualLiquid (which reads the scrubbed string), invisible to
+  // personalisationTokens, and therefore never an axis. An output nobody
+  // modelled is an unmeasured branch exactly like an unmodelled tag.
+  if (trace.unknownOutputs.size > 0) {
+    const shown = [...trace.unknownOutputs].slice(0, 6);
+    findings.push({
+      invariant: "B",
+      check: "unmodelled_output",
+      severity: "fail",
+      message:
+        `Unmodelled output token(s): ${shown.join(", ")}` +
+        (trace.unknownOutputs.size > shown.length ? ` (+${trace.unknownOutputs.size - shown.length} more)` : "") +
+        ". Each was rewritten to placeholder text before the checks ran, so it " +
+        "counted as body copy, never became an axis, and whatever it would " +
+        "resolve to at send time was never varied. Either it is a binding " +
+        "shape this resolver does not know, or it is a genuinely unbound " +
+        "token your recipients would see raw.",
+    });
+  }
   if (trace.unknownTags.size > 0) {
     findings.push({
       invariant: "B",
@@ -185,19 +226,51 @@ export function liquidStateMatrix({
     });
   }
 
-  // H — dead arms.
-  for (const [key, condition] of trace.arms) {
-    if (!trace.taken.has(key)) {
+  // H — dead arms, and the arms this run simply never had a value for.
+  //
+  // These are different sentences and collapsing them was the bug. Default
+  // axis values are ["true","false"], so an arm comparing an attribute to a
+  // string literal — `== 'FREE'` — was never taken by construction of the
+  // VALUE SET, not of the template, and got reported at severity fail with
+  // "the copy inside it will never be sent to anyone". discoverAxes now
+  // harvests those literals, so the residual case is an arm testing something
+  // outside anything we enumerated: a warning to supply values, not a defect.
+  const tested = new Set();
+  for (const axis of axes) for (const v of axis.values) tested.add(String(v));
+  // Only an axis whose values this tool GUESSED can excuse an untaken arm. A
+  // caller who passed `variables` declared the space they want checked, and
+  // an arm unreachable inside it is dead inside it.
+  const guessed = axes.filter((a) => a.values_source !== "supplied");
+  for (const [key, arm] of trace.arms) {
+    if (trace.taken.has(key)) continue;
+    const untried = untriedLiterals(arm, guessed).filter((lit) => !tested.has(lit));
+    const label = arm.source === arm.resolved
+      ? `\`${arm.source}\``
+      : `\`${arm.source}\` (resolved to \`${arm.resolved}\` under this value set)`;
+    if (untried.length > 0) {
       findings.push({
         invariant: "H",
-        check: "dead_arm",
-        severity: "fail",
+        check: "arm_untested",
+        severity: "warn",
         arm: key,
         message:
-          `Conditional arm \`${condition}\` was taken in NONE of the ${states.length} states. ` +
-          "It is unreachable by construction — the copy inside it will never be sent to anyone.",
+          `Conditional arm ${label} was taken in none of the ${states.length} states, but it ` +
+          `tests ${untried.map((l) => JSON.stringify(l)).join(", ")}, which no axis was given. ` +
+          "This run did not prove the arm dead — it never fed it a value that could take it. " +
+          "Pass the real value set in `variables` and re-run before believing either answer.",
       });
+      continue;
     }
+    findings.push({
+      invariant: "H",
+      check: "dead_arm",
+      severity: "fail",
+      arm: key,
+      message:
+        `Conditional arm ${label} was taken in NONE of the ${states.length} states, across every ` +
+        "value it tests. It is unreachable by construction — the copy inside it will never be " +
+        "sent to anyone.",
+    });
   }
 
   // C2 — strict proper subsets, on MUTUALLY EXCLUSIVE axes only.
@@ -226,6 +299,10 @@ export function liquidStateMatrix({
       name: a.name,
       dialect: a.dialect,
       values: a.values,
+      // Where the values came from matters as much as what they are: a
+      // "boolean_default" axis on a template that compares strings is the
+      // tool guessing, and the reader should supply `variables` instead.
+      values_source: a.values_source,
       exclusive: a.exclusive,
     })),
     states_rendered: states.length,
@@ -295,6 +372,9 @@ export function discoverAxes(html, variables) {
   //     said both populations get something. Invariant C2 needs that
   //     distinction and nothing else can supply it.
   const exclusive = new Set();
+  // Value literals harvested per attribute. An axis's default value set is
+  // what its own conditions compare against, not a hardcoded pair of booleans.
+  const harvested = new Map();
   const toks = tokenize(html);
   for (let i = 0; i < toks.length; i += 1) {
     const tok = toks[i];
@@ -303,13 +383,19 @@ export function discoverAxes(html, variables) {
     if (verb !== "if" && verb !== "unless" && verb !== "elsif") continue;
     const condition = tok.v.replace(/^(if|unless|elsif)\s+/, "");
 
-    const reads = new Set();
-    const direct = tokenNameIn(condition, byName);
-    if (direct) reads.add(direct);
+    const reads = new Set(tokenNamesIn(condition, byName));
     for (const [varName, attr] of boundVars) {
       if (new RegExp(`\\b${varName}\\b`).test(condition)) reads.add(attr);
     }
     for (const name of reads) branching.add(name);
+
+    // Only harvest when the condition reads exactly one attribute — with two,
+    // there is no way to tell which literal belongs to which without a parser.
+    if (reads.size === 1) {
+      const [name] = [...reads];
+      if (!harvested.has(name)) harvested.set(name, new Set());
+      for (const lit of literalsIn(condition)) harvested.get(name).add(lit);
+    }
 
     if (reads.size > 0 && verb !== "elsif" && hasElseArm(toks, i)) {
       for (const name of reads) exclusive.add(name);
@@ -326,17 +412,73 @@ export function discoverAxes(html, variables) {
 
   return [...branching].sort().map((name) => {
     const explicit = Array.isArray(supplied[name]) && supplied[name].length > 0;
+    // The literals this attribute is actually compared against, plus "" for
+    // the unset population that falls through to the else arm. Capped so one
+    // heavily-switched attribute cannot silently explode the cartesian.
+    const found = [...(harvested.get(name) ?? [])].slice(0, MAX_HARVESTED_VALUES);
+    // An attribute compared only against flag spellings IS a flag, whether or
+    // not a literal was harvested — so it keeps the boolean pair and stays
+    // eligible for invariant G. Anything else gets the values the template
+    // actually names, plus "" for the unset population that falls through.
+    const flagLike = found.every((v) => FLAG_SPELLINGS.has(v));
     return {
       name,
       dialect: byName.get(name)?.dialect ?? "supplied",
-      values: explicit ? supplied[name].map(String) : ["true", "false"],
+      values: explicit ? supplied[name].map(String) : flagLike ? ["true", "false"] : [...found, ""],
+      values_source: explicit ? "supplied" : flagLike ? "boolean_flag" : "harvested",
       exclusive: exclusive.has(name),
       // Invariant G only makes sense on a flag. Feeding "true"/"True"/"1" to
       // an axis the caller has told us holds gold/silver/bronze tests nothing
       // and reports a disagreement that is just the tool misreading the type.
-      boolean_like: !explicit,
+      boolean_like: !explicit && flagLike,
     };
   });
+}
+
+/**
+ * The literals an untaken arm tests AGAINST AN AXIS, ignoring the rest.
+ *
+ * The distinction is what keeps `{% if x and 'a' == 'b' %}` a genuine dead
+ * arm: a comparison between two constants is decidable without varying
+ * anything, so it can never be the value set's fault. Only a clause that
+ * names an axis can excuse the arm.
+ */
+function untriedLiterals(arm, axes) {
+  if (axes.length === 0) return [];
+  const out = new Set();
+  for (const text of [arm.source, arm.resolved]) {
+    for (const clause of String(text).split(/\s+(?:and|or)\s+/)) {
+      if (!axes.some((a) => new RegExp(`\\b${a.name}\\b`).test(clause))) continue;
+      for (const lit of literalsIn(clause)) out.add(lit);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Every value a condition compares against, as strings.
+ *
+ * This is what turns the default ["true","false"] axis from a value space into
+ * a source of phantom dead arms: an arm reading `== 'FREE'` cannot be taken by
+ * a run that only ever fed the attribute "true" and "false", and reporting
+ * that as "unreachable by construction" is a confident sentence about the
+ * template built entirely out of the tool's own defaults.
+ *
+ * Numeric comparands come back with their neighbours so BOTH sides of a
+ * `> 0` / `>= 5` are reachable — one value is a comparison, two are a branch.
+ */
+export function literalsIn(condition) {
+  const out = new Set();
+  for (const m of String(condition).matchAll(/(?:==|!=|contains)\s*(?:'([^']*)'|"([^"]*)")/g)) {
+    out.add(m[1] ?? m[2]);
+  }
+  for (const m of String(condition).matchAll(/(?:>=|<=|>|<|==|!=)\s*(-?\d+)\b/g)) {
+    const n = Number(m[1]);
+    out.add(String(n));
+    out.add(String(n + 1));
+    out.add(String(n - 1));
+  }
+  return [...out];
 }
 
 /** Does the `if`/`unless` block opening at `i` carry an else/elsif at depth 0? */
@@ -358,16 +500,28 @@ function hasElseArm(toks, i) {
   return false;
 }
 
-/** The first personalisation name referenced anywhere in `text`. */
-function tokenNameIn(text, byName) {
+/**
+ * EVERY personalisation name referenced in `text`.
+ *
+ * Returning only the first was a quiet coverage hole: `{% if a and b %}` made
+ * `a` an axis and left `b` unvaried, so half the condition was never exercised
+ * and the run still reported full branch coverage.
+ */
+function tokenNamesIn(text, byName) {
+  const out = [];
   for (const [name, token] of byName) {
-    if (String(text).includes(token.token)) return name;
+    if (String(text).includes(token.token)) { out.push(name); continue; }
     // A token can appear with different whitespace than the one we captured.
     if (new RegExp(`\\$\\{${name}\\}|\\b(?:person|event|organization)\\.${name}\\b`).test(text)) {
-      return name;
+      out.push(name);
     }
   }
-  return null;
+  return out;
+}
+
+/** The first personalisation name referenced anywhere in `text`. */
+function tokenNameIn(text, byName) {
+  return tokenNamesIn(text, byName)[0] ?? null;
 }
 
 /** Full cartesian product across the axes. */

@@ -171,9 +171,14 @@ body { height: 100vh; overflow: hidden; }
 /* ---- verdict bar --------------------------------------------------- */
 .verdict { border-top: 1px solid var(--rule); background: var(--card); padding: 11px 18px; }
 .verdict-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* --warn, not a -strong variant: warn is the one severity hue with no
+   -strong text token declared, so var(--warn-strong, …) silently fell
+   back to body-copy grey and the stale notice shipped with a coloured
+   bar and uncoloured text. Every other warn-text usage in the widget set
+   reads --warn directly. */
 .stale-note {
-  margin-bottom: 8px; font-size: 11.5px; color: var(--warn-strong, var(--ink));
-  border-left: 3px solid var(--warn, var(--rule)); padding: 5px 0 5px 9px;
+  margin-bottom: 8px; font-size: 11.5px; color: var(--warn);
+  border-left: 3px solid var(--warn); padding: 5px 0 5px 9px;
 }
 .stale-note[hidden] { display: none; }
 .notes {

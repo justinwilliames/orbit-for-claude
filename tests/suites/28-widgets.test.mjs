@@ -33,6 +33,7 @@ import { startMockApiServer } from "../harness/mock-api-server.mjs";
 import { makeTempWorkspace } from "../harness/fixtures.mjs";
 import { ORBIT_WIDGETS } from "../../server/ui/register.js";
 import { VERDICT_BINDING_JS } from "../../server/ui/widgets/review-gallery.js";
+import { GATE_VERDICT_JS } from "../../server/ui/widgets/render-gate.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
@@ -291,5 +292,40 @@ describe("Review gallery — a verdict is bound to the creative it judged", () =
     const stored = { "welcome-1": { verdict: "approved", notes: "" } };
     const next = reconcileStoredVerdicts([item("<p>Version one</p>")], stored);
     assert.equal(next["welcome-1"].verdict, "pending");
+  });
+});
+
+/**
+ * The render gate's headline pill, run as shipped source.
+ *
+ * The gate abstains from four geometry checks when an image fails to
+ * load, because a collapsed layout produces numbers that are fiction. A
+ * skipped check emits no finding, so before this the pill read a bold
+ * green PASS off an empty findings list while four of six check
+ * categories had never run.
+ */
+describe("Render gate — the pill cannot be greener than the measurement", () => {
+  const { gateVerdict } = new Function(`${GATE_VERDICT_JS}\nreturn { gateVerdict };`)();
+
+  const f = (severity) => ({ severity });
+
+  test("everything measured and clean is a PASS", () => {
+    assert.equal(gateVerdict([], []), "pass");
+  });
+
+  test("a fail outranks everything", () => {
+    assert.equal(gateVerdict([f("fail"), f("warn")], ["images"]), "fail");
+  });
+
+  test("clean findings with an abstention is REVIEW, not PASS", () => {
+    assert.equal(
+      gateVerdict([], ["2 of 3 image(s) did not load"]),
+      "warn",
+      "a pass was reported for checks that never ran"
+    );
+  });
+
+  test("info-only findings still pass when nothing abstained", () => {
+    assert.equal(gateVerdict([f("info")], []), "pass");
   });
 });

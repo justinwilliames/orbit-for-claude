@@ -38,6 +38,36 @@
 
 import { buildWidgetHtml, WIDGET_PRELUDE } from "../shell.js";
 
+/**
+ * The headline-verdict rule, as plain source.
+ *
+ * Lifted out of the widget literal for the same reason the review
+ * gallery lifts its verdict binding out: this is the one line of the
+ * report a reviewer actually scans, and nothing that lives inside a
+ * template literal can be executed by a test.
+ *
+ * The rule it encodes is rule 2 of this file, applied to the pill: a
+ * check that abstained produced no finding, so an empty findings list is
+ * silence, not a pass. PASS is reserved for a run where everything ran.
+ */
+export const GATE_VERDICT_JS = `
+function gateCounts(findings) {
+  var c = { fail: 0, warn: 0, info: 0 };
+  findings.forEach(function (f) { c[f.severity]++; });
+  return c;
+}
+function gateVerdict(findings, abstained) {
+  var c = gateCounts(findings);
+  if (c.fail > 0) return "fail";
+  if (c.warn > 0) return "warn";
+  // Clean findings + abstentions is REVIEW, never PASS. A skipped check
+  // cannot fail, so reporting green off its silence is exactly the
+  // unearned pass the abstention was added to prevent, one layer up.
+  if (abstained && abstained.length > 0) return "warn";
+  return "pass";
+}
+`;
+
 const CSS = `
 body { height: 100vh; overflow: hidden; }
 .wrap { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
@@ -121,6 +151,7 @@ body { height: 100vh; overflow: hidden; }
 
 const JS = `
 ${WIDGET_PRELUDE}
+${GATE_VERDICT_JS}
 
 // ---- constants the checks are judged against ------------------------
 // Every one of these is a published threshold, not a house preference,
@@ -791,15 +822,8 @@ function checkContrast(doc, vp) {
 }
 
 // ---- rendering -------------------------------------------------------
-function counts() {
-  var c = { fail: 0, warn: 0, info: 0 };
-  findings.forEach(function (f) { c[f.severity]++; });
-  return c;
-}
-function verdict() {
-  var c = counts();
-  return c.fail > 0 ? "fail" : c.warn > 0 ? "warn" : "pass";
-}
+function counts() { return gateCounts(findings); }
+function verdict() { return gateVerdict(findings, abstained); }
 
 function renderHead() {
   var v = verdict();
@@ -810,7 +834,12 @@ function renderHead() {
   $("#tallies").innerHTML =
     '<span class="o-pill" data-sev="fail">' + c.fail + " fail</span>" +
     '<span class="o-pill" data-sev="warn">' + c.warn + " warn</span>" +
-    '<span class="o-pill o-pill--pending">' + c.info + " info</span>";
+    '<span class="o-pill o-pill--pending">' + c.info + " info</span>" +
+    // Without this the pill can read REVIEW next to 0 fail / 0 warn and
+    // the only explanation is 11px grey at the bottom of the rail.
+    (abstained.length > 0
+      ? '<span class="o-pill" data-sev="warn">' + abstained.length + " not measured</span>"
+      : "");
   var parts = [];
   VIEWPORTS.forEach(function (vp) {
     if (metrics[vp.id]) {

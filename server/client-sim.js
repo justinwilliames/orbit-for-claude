@@ -60,7 +60,7 @@ const VERIFIED_SAFE = [
   "!important inside a media rule",
 ];
 
-const CLASS_NAMES = ["full", "nocss", "gmailish", "imgoff", "reduced", "nohover"];
+const CLASS_NAMES = ["full", "nocss", "gmailish", "gmailish_worstcase", "imgoff", "reduced", "nohover"];
 
 /**
  * Emit the degraded documents plus the static purity findings.
@@ -126,7 +126,10 @@ export function clientSim({ html, classes, include_html: includeHtml = true } = 
       "Run orbit_render_gate on each emitted `html` and DIFF the results. A " +
       "finding that appears under `gmailish` or `nocss` but not under `full` " +
       "is a fallback path nobody has ever exercised. Measuring only `full` is " +
-      "measuring a document your recipients will not receive.",
+      "measuring a document your recipients will not receive. " +
+      "`gmailish_worstcase` is the speculative view — it drops blocks on " +
+      "constructs nobody has isolated, so a finding that appears ONLY there is " +
+      "a reason to run a real test send, not a defect to fix on faith.",
   };
 }
 
@@ -136,8 +139,14 @@ const WHAT_IT_MODELS = {
     "Every <style> stripped. Models the clipped Gmail tail and any client that " +
     "drops head styles outright. Inline styles only.",
   gmailish:
-    "Gmail webmail's sanitizer: any <style> block containing a poison construct " +
-    "dies WHOLE, the rest survive, and interaction media features never apply.",
+    "Gmail webmail's sanitizer, as OBSERVED: a <style> block containing a " +
+    "construct confirmed to kill a block dies WHOLE, the rest survive, and " +
+    "interaction media features never apply.",
+  gmailish_worstcase:
+    "The same sanitizer if every SUSPECTED killer in the poison table also " +
+    "kills a block. Speculative by construction — none of those constructs has " +
+    "been isolated. Diff it against `gmailish` to see what is riding on an " +
+    "unproven assumption; do not treat it as transport truth.",
   imgoff: "Images blocked. The bgcolor-and-alt world most recipients see first.",
   reduced: "prefers-reduced-motion: reduce.",
   nohover: "A hover-incapable client. Every rest state must be complete on its own.",
@@ -147,6 +156,7 @@ const RENDER_HINTS = {
   full: {},
   nocss: {},
   gmailish: { honour_interaction_media: false },
+  gmailish_worstcase: { honour_interaction_media: false },
   imgoff: { block_images: true },
   reduced: { media_features: [{ name: "prefers-reduced-motion", value: "reduce" }] },
   nohover: { never_hover: true },
@@ -176,11 +186,20 @@ function degrade(name, html, blocks) {
       dropped: blocks.length,
     };
   }
-  if (name === "gmailish") {
+  if (name === "gmailish" || name === "gmailish_worstcase") {
+    // purityChecks already grades these two confidence tiers apart — confirmed
+    // is a fail, suspected is a warn. The emitted document has to honour the
+    // same line, or the default `gmailish` view deletes real CSS on a hunch
+    // and the next_step below tells the reader to treat that diff as transport
+    // truth. `gmailish` = what we have watched die. `gmailish_worstcase` =
+    // what MIGHT die, labelled as speculation.
+    const speculative = name === "gmailish_worstcase";
     let kept = 0;
     let dropped = 0;
     const out = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, (block) => {
-      const dies = POISON.some((p) => p.pattern.test(block));
+      const dies = POISON.some(
+        (p) => (speculative || p.confidence === "confirmed") && p.pattern.test(block)
+      );
       if (dies) {
         dropped += 1;
         return "";
