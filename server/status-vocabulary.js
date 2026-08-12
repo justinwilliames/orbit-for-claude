@@ -128,6 +128,12 @@ export const FAILED_STATUSES = new Set([
   "slot_values_invalid",
   "unsupported",
   "unsupported_platform",
+  // The read Orbit needed did not come back, so NOTHING was checked. A
+  // FAILURE, never a delivered empty result — the audits that emit it
+  // (conversion events, preference centre, send calendar) would otherwise
+  // have a clean-looking way to report that they examined nothing at all,
+  // which is the exact success-while-wrong shape they were written against.
+  "unavailable",
   // Asked for something that isn't there.
   "file_not_found",
   "file_too_large",

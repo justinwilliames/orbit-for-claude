@@ -394,6 +394,18 @@
       "description": "Inventory all Braze Content Blocks with duplicate detection, stale block identification, and optional content analysis (Liquid fallback checks, broken images, HTTP URLs)."
     },
     {
+      "name": "orbit_audit_conversion_events",
+      "description": "Join every Braze campaign's conversion configuration against the events the workspace actually records — catches conversion rates that are a structurally guaranteed 0%."
+    },
+    {
+      "name": "orbit_audit_preference_centre",
+      "description": "Pull a Braze-hosted preference centre's own markup and lint it for Gmail/Yahoo bulk-sender compliance and GDPR consent."
+    },
+    {
+      "name": "orbit_audit_send_calendar",
+      "description": "Build a forward send calendar from Braze's scheduled broadcasts and audit it against quiet hours, allowed days, tag density and naming convention."
+    },
+    {
       "name": "orbit_validate_braze_data",
       "description": "Check whether custom events and custom attributes referenced in an Orbit message"
     },
@@ -558,6 +570,10 @@
       "description": "Scan an HTML email for colour pairs that invert into invisible or low-contrast text in Apple Mail / Outlook dark mode."
     },
     {
+      "name": "orbit_client_sim",
+      "description": "Emit the email as each client class actually assembles it — Gmail's block-atomic style sanitizer, blocked images, no head CSS — so the render gate measures the delivered document."
+    },
+    {
       "name": "orbit_accessibility_lint",
       "description": "WCAG AA lint on email HTML — alt-text coverage, contrast ratios, semantic heading order, link-text quality, html lang, layout-table role=presentation."
     },
@@ -580,6 +596,10 @@
     {
       "name": "orbit_validate_liquid",
       "description": "Syntax + fallback check on Braze Liquid — tag balance, default-filter coverage, unknown-attribute detection against a supplied inventory."
+    },
+    {
+      "name": "orbit_liquid_state_matrix",
+      "description": "Render every personalisation state of an email and assert no arm is unreachable, no state collapses, and no state silently drops a module."
     },
     {
       "name": "orbit_compose_sms",

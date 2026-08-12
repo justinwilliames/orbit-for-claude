@@ -68,6 +68,14 @@ export async function startMockApiServer() {
     setResponse("GET", "/canvas/data_series", loadFixture("braze", "canvas-data-series"));
     setResponse("GET", "/canvas/data_summary", loadFixture("braze", "canvas-data-summary"));
     setResponse("GET", "/campaigns/data_series", loadFixture("braze", "campaign-data-series"));
+    setResponse("GET", "/events/data_series", loadFixture("braze", "events-data-series"));
+    setResponse("GET", "/messages/scheduled_broadcasts", loadFixture("braze", "scheduled-broadcasts"));
+    setResponse("GET", "/preference_center/v1/list", loadFixture("braze", "preference-centre-list"));
+    // Per-centre details are keyed by the id in the path. Both ids from the
+    // list fixture are stubbed so the default audit walks a compliant centre
+    // and a non-compliant one without any test-side setup.
+    setResponse("GET", "/preference_center/v1/pc-compliant", loadFixture("braze", "preference-centre-compliant"));
+    setResponse("GET", "/preference_center/v1/pc-legacy", loadFixture("braze", "preference-centre-legacy"));
     setResponse("GET", "/users/export/ids", { users: [] });
 
     // --- Braze write endpoints

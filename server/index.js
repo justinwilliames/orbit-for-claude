@@ -125,6 +125,11 @@ import {
   exportUserById,
   readBrazeSegment
 } from "./braze-read.js";
+import { auditConversionEvents } from "./braze-conversion-audit.js";
+import { auditPreferenceCentre } from "./braze-preference-centre.js";
+import { auditSendCalendar } from "./braze-send-calendar.js";
+import { liquidStateMatrix } from "./liquid-state-matrix.js";
+import { clientSim } from "./client-sim.js";
 import {
   fetchBrazeTemplate,
   listBrazeTemplates,
@@ -3561,6 +3566,154 @@ function registerTools() {
   );
 
   registerToolSafe(
+    "orbit_audit_conversion_events",
+    {
+      title: "Audit Braze Conversion Events",
+      description:
+        "Join every Braze campaign's conversion configuration against the events the workspace actually records. " +
+        "A renamed, typo'd or never-instrumented conversion event gives a campaign a structurally guaranteed 0% " +
+        "that reads to a marketer as a creative failure. Flags: no conversion behaviour at all; an event absent from " +
+        "the workspace; an event that exists but never fired; a window shorter than the send cadence; sends with no " +
+        "conversions on an event that fires elsewhere. A failed read abstains and names the campaign rather than " +
+        "reporting zero. Campaigns only — /canvas/details carries no conversion behaviours. Resumable.",
+      inputSchema: {
+        days: z.number().int().min(MIN_DAYS).max(MAX_DAYS).optional().describe("Lookback window for event occurrence counts (default: 30)"),
+        cadence_days: z.number().int().min(0).max(MAX_DAYS).optional().describe("Send cadence in days. A conversion window shorter than this is flagged. 0 (default) disables."),
+        campaign_ids: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_MEDIUM_ARRAY).optional().describe("Restrict the audit to these campaign IDs."),
+        max_campaigns: z.number().int().min(1).max(500).optional().describe("Cap on detail lookups (default: 50)")
+      }
+    },
+    async (args) => {
+      const toolName = "orbit_audit_conversion_events";
+      const TOOL_BUDGET_MS = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+      const startedAt = Date.now();
+      const shouldYield = () => Date.now() - startedAt > TOOL_BUDGET_MS * 0.8;
+
+      const resume = loadResumeState(args);
+      const result = await auditConversionEvents({
+        config: runtimeConfig,
+        days: args.days ?? 30,
+        cadence_days: args.cadence_days ?? 0,
+        campaign_ids: args.campaign_ids,
+        max_campaigns: args.max_campaigns ?? 50,
+        resumeState: resume?.state ?? null,
+        shouldYield
+      });
+
+      if (result?.status === "continuation_required") {
+        let token;
+        if (resume?.token) {
+          updateCheckpoint(resume.token, result.resume_state);
+          token = resume.token;
+        } else {
+          token = saveResumeState(toolName, args, result.resume_state);
+        }
+        return makeJsonToolResponse({
+          status: "partial",
+          message: "Conversion audit paused mid-way to stay inside the context limit. Call orbit_continue_job with the token below to finish.",
+          continuation_token: token,
+          progress: result.conversion_audit_partial,
+          continue_hint:
+            `Tell the user: "I've joined ${result.conversion_audit_partial.audited} of ${result.conversion_audit_partial.total} campaigns against the event stream — shall I continue?" ` +
+            `If they agree, call orbit_continue_job with continuation_token "${token}" to resume. Previous work is preserved.`
+        });
+      }
+
+      if (resume?.token) completeCheckpoint(resume.token);
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_audit_preference_centre",
+    {
+      title: "Audit Braze Preference Centre",
+      description:
+        "Pull a Braze-hosted preference centre's own markup and lint it for Gmail/Yahoo bulk-sender compliance and " +
+        "GDPR consent — no URL to find, no live fetch, no test user. A legacy centre reports its live-page leg as " +
+        "unavailable rather than as a pass, and a centre that is not active is labelled rather than silently audited.",
+      inputSchema: {
+        preference_center_id: z.string().max(MAX_SHORT_STRING).optional().describe("Audit one centre by preference_center_api_id. Omit for all of them."),
+        test_external_id: z.string().max(MAX_SHORT_STRING).optional().describe("A test user's external ID. Adds the live-page leg: Braze generates that user's URL and the page is fetched and audited."),
+        max_centres: z.number().int().min(1).max(100).optional().describe("Cap on centres audited (default: 20)")
+      }
+    },
+    async ({ preference_center_id: centreId, test_external_id: testExternalId, max_centres: maxCentres }) => {
+      const result = await auditPreferenceCentre({
+        config: runtimeConfig,
+        preference_center_id: centreId,
+        test_external_id: testExternalId,
+        max_centres: maxCentres ?? 20
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_audit_send_calendar",
+    {
+      title: "Audit Braze Send Calendar",
+      description:
+        "Build a forward send calendar from Braze's scheduled broadcasts and audit it against send policy: untagged " +
+        "sends, non-conformant names, quiet hours, disallowed days, tag density, and days that MIX local_time_zones " +
+        "with intelligent_delivery so a nominal 9am lands across a 24-hour spread. Braze exposes no target segment on " +
+        "either details endpoint, so collision is proxied through tags and naming only — the output says so. An empty " +
+        "schedule reports 'nothing scheduled', never 'calendar clean'.",
+      inputSchema: {
+        window_days: z.number().int().min(1).max(MAX_DAYS).optional().describe("How far forward to look (default: 14)"),
+        quiet_hours_start: z.number().int().min(0).max(23).optional().describe("Start of the quiet window, 0-23 (default: 21)"),
+        quiet_hours_end: z.number().int().min(0).max(23).optional().describe("End of the quiet window, 0-23 (default: 8)"),
+        allowed_days: z.array(z.enum(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])).max(7).optional().describe("Days a send is allowed on (default: all seven)"),
+        max_sends_per_tag: z.number().int().min(1).max(100).optional().describe("Tag density limit across the window (default: 3)"),
+        enrich: z.boolean().optional().describe("Pull details for channel and draft/archived state (default: true)")
+      }
+    },
+    async (args) => {
+      const toolName = "orbit_audit_send_calendar";
+      const TOOL_BUDGET_MS = PER_TOOL_TIMEOUT_MS[toolName] ?? DEFAULT_TOOL_TIMEOUT_MS;
+      const startedAt = Date.now();
+      const shouldYield = () => Date.now() - startedAt > TOOL_BUDGET_MS * 0.8;
+
+      const resume = loadResumeState(args);
+      const result = await auditSendCalendar({
+        config: runtimeConfig,
+        window_days: args.window_days ?? 14,
+        quiet_hours: {
+          start: args.quiet_hours_start ?? 21,
+          end: args.quiet_hours_end ?? 8
+        },
+        allowed_days: args.allowed_days ?? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        max_sends_per_tag: args.max_sends_per_tag ?? 3,
+        enrich: args.enrich ?? true,
+        resumeState: resume?.state ?? null,
+        shouldYield
+      });
+
+      if (result?.status === "continuation_required") {
+        let token;
+        if (resume?.token) {
+          updateCheckpoint(resume.token, result.resume_state);
+          token = resume.token;
+        } else {
+          token = saveResumeState(toolName, args, result.resume_state);
+        }
+        return makeJsonToolResponse({
+          status: "partial",
+          message: "Send-calendar audit paused mid-way to stay inside the context limit. Call orbit_continue_job with the token below to finish.",
+          continuation_token: token,
+          progress: result.calendar_partial,
+          continue_hint:
+            `Tell the user: "I've read ${result.calendar_partial.enriched} of ${result.calendar_partial.total} scheduled sends — shall I continue?" ` +
+            `If they agree, call orbit_continue_job with continuation_token "${token}" to resume. Previous work is preserved.`
+        });
+      }
+
+      if (resume?.token) completeCheckpoint(resume.token);
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
     "orbit_check_deliverability",
     {
       title: "Check Email Deliverability",
@@ -5372,6 +5525,63 @@ function registerTools() {
     },
     async ({ url }) => {
       const result = await auditUnsubscribe({ url });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_liquid_state_matrix",
+    {
+      title: "Liquid Branch Coverage (every personalisation state)",
+      description:
+        "Liquid branch coverage: render EVERY personalisation state of an email, not just the one the sample data held. " +
+        "A personalised email is not one email, it is 2^n emails, and most gates check one. Derives the axes from the " +
+        "template itself (Braze custom attributes, Klaviyo properties, Liquid globals) and asserts: no Liquid escapes to " +
+        "the DOM; an unmodelled filter or tag FAILS rather than rendering junk; no state collapses; no state drops blocks " +
+        "where an else/elsif arm meant to swap them; every conditional arm is reachable. Plus spelling agreement — " +
+        "\"true\"/\"True\"/\"1\" must give one branch decision, not two. No credentials, no browser. " +
+        "self_test:true seeds known defects into your own template and asserts each check fires.",
+      inputSchema: {
+        html: z.string().min(1).max(MAX_LONG_STRING).describe("Compiled email HTML with its Liquid STILL IN PLACE — a resolved render has no branches to enumerate."),
+        variables_json: z.string().optional().describe('JSON object of explicit axis values, e.g. {"loyalty_tier":["gold","silver"]}. Unlisted axes get ["true","false"]; a listed axis is treated as non-boolean and skips the spelling check.'),
+        max_axes: z.number().int().min(1).max(16).optional().describe("Cap on discovered axes (default: 12). Above it the tool ABSTAINS rather than sampling a fraction and calling it coverage."),
+        block_selector: z.string().max(MAX_SHORT_STRING).optional().describe("Regex for the block-class detector, for an imported design. Default: (?:module|block|section)-[a-z0-9-]+"),
+        self_test: z.boolean().optional().describe("Run the negative test: seed known defects into this template and assert each one FAILS, and the control passes.")
+      }
+    },
+    async ({ html, variables_json: variablesJson, max_axes: maxAxes, block_selector: blockSelector, self_test: selfTest }) => {
+      const { value: variables, error } = parseToolJson(variablesJson, "variables_json", undefined);
+      if (error) return error;
+      const result = liquidStateMatrix({
+        html,
+        variables,
+        max_axes: maxAxes ?? 12,
+        block_selector: blockSelector,
+        self_test: selfTest ?? false
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_client_sim",
+    {
+      title: "Degraded-Client Simulation",
+      description:
+        "\"My email breaks in Gmail\" — emit the email as each client actually assembles it, so the render gate measures " +
+        "the DELIVERED document. Two transport facts no source-reading check can see: Gmail's style sanitizer is " +
+        "BLOCK-ATOMIC, so one @property kills every rule in that <style> tag (MJML merges all mj-style into one block, " +
+        "so it deletes the whole head stylesheet while the render gate says PASS); and ESP CSS inliners hoist a <table> " +
+        "out of any <a> wrapping it, leaving dead unclickable buttons. Returns degraded HTML for " +
+        "full/nocss/gmailish/imgoff/reduced/nohover plus static purity findings. Run orbit_render_gate on each and diff.",
+      inputSchema: {
+        html: z.string().min(1).max(MAX_LONG_STRING).describe("The compiled email HTML."),
+        classes: z.array(z.enum(["full", "nocss", "gmailish", "imgoff", "reduced", "nohover"])).max(6).optional().describe("Client classes to emit. Default: all six."),
+        include_html: z.boolean().optional().describe("Emit the degraded documents (default: true). Off gives the purity verdict without six copies of the email.")
+      }
+    },
+    async ({ html, classes, include_html: includeHtml }) => {
+      const result = clientSim({ html, classes, include_html: includeHtml ?? true });
       return makeJsonToolResponse(result);
     }
   );

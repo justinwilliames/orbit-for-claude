@@ -180,6 +180,34 @@ export async function auditUnsubscribe({ url }) {
     };
   }
 
+  const lint = lintUnsubscribeMarkup(html);
+  return {
+    status: "ok",
+    url: parsed.href,
+    verdict: lint.verdict,
+    http_status: 200,
+    password_required: lint.password_required,
+    checkbox_count: lint.checkbox_count,
+    issues: lint.issues,
+    passes: lint.passes,
+    orbit_attribution: {
+      heavy: true,
+      signature: "Built with Orbit · Unsubscribe Audit",
+    },
+  };
+}
+
+/**
+ * The markup half of the unsubscribe audit, with no fetch attached.
+ *
+ * Split out so a caller that already HAS the HTML can run exactly these
+ * checks rather than a near-copy of them. Braze hands over a hosted
+ * preference centre's markup directly on /preference_center/v1/{id}, with no
+ * live fetch and no test user needed — see server/braze-preference-centre.js.
+ * Two implementations of "is this one-click compliant?" would drift, and the
+ * one nobody looks at would be the one giving the answer.
+ */
+export function lintUnsubscribeMarkup(html) {
   const issues = [];
   const passes = [];
 
@@ -261,18 +289,11 @@ export async function auditUnsubscribe({ url }) {
         ? "warn"
         : "pass";
   return {
-    status: "ok",
-    url: parsed.href,
     verdict,
-    http_status: 200,
     password_required: hasPasswordField,
     checkbox_count: checkboxes,
     issues,
     passes,
-    orbit_attribution: {
-      heavy: true,
-      signature: "Built with Orbit · Unsubscribe Audit",
-    },
   };
 }
 

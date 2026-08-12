@@ -1,0 +1,7 @@
+{
+  "name": "ACME legacy centre",
+  "preference_center_api_id": "pc-legacy",
+  "state": "active",
+  "preference_center_page_html": "<!DOCTYPE html>\n<html>\n<head><title>Sign in to manage email</title></head>\n<body>\n  <h1>Sign in to change your email settings</h1>\n  <form action=\"https://example.com/login\" method=\"post\">\n    <input type=\"email\" name=\"email\">\n    <input type=\"password\" name=\"password\">\n    <button type=\"submit\">Sign in</button>\n  </form>\n</body>\n</html>",
+  "confirmation_page_html": ""
+}

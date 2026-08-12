@@ -1,0 +1,17 @@
+{
+  "message": "success",
+  "preference_centers": [
+    {
+      "name": "ACME marketing preferences",
+      "preference_center_api_id": "pc-compliant",
+      "created_at": "2026-01-10T00:00:00Z",
+      "updated_at": "2026-03-01T00:00:00Z"
+    },
+    {
+      "name": "ACME legacy centre",
+      "preference_center_api_id": "pc-legacy",
+      "created_at": "2024-06-01T00:00:00Z",
+      "updated_at": "2024-06-01T00:00:00Z"
+    }
+  ]
+}

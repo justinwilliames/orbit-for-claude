@@ -1,0 +1,29 @@
+{
+  "message": "success",
+  "scheduled_broadcasts": [
+    {
+      "name": "campaign_email_promotional_all_2026-03-16",
+      "id": "campaign-001",
+      "type": "Campaign",
+      "tags": ["Promotional"],
+      "next_send_time": "2026-03-16T10:00:00+00:00",
+      "schedule_type": "time_based"
+    },
+    {
+      "name": "untitled broadcast",
+      "id": "campaign-002",
+      "type": "Campaign",
+      "tags": [],
+      "next_send_time": "2026-03-16T23:30:00+00:00",
+      "schedule_type": "time_based"
+    },
+    {
+      "name": "canvas_email_onboarding_new_2026-03-16",
+      "id": "canvas-001",
+      "type": "Canvas",
+      "tags": ["Onboarding"],
+      "next_send_time": "2026-03-16T09:00:00+00:00",
+      "schedule_type": "local_time_zones"
+    }
+  ]
+}

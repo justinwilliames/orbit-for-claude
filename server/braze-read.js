@@ -1052,3 +1052,15 @@ export async function readBrazeSegment({ config, segmentId }) {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Shared with sibling read-only audit modules.
+//
+// `server/braze-conversion-audit.js` and `server/braze-send-calendar.js`
+// follow this file's shape and must classify errors identically — an audit
+// that reports "no conversions" when the truth is "Braze returned 429" is
+// the exact confident-wrong-answer this codebase keeps having to fix. Rather
+// than copy three near-identical helpers into each module, they are exported
+// from their one home here.
+// ---------------------------------------------------------------------------
+export { safeList, classifyBrazeError, authFailedResponse };

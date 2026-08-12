@@ -1,0 +1,10 @@
+{
+  "name": "ACME marketing preferences",
+  "preference_center_api_id": "pc-compliant",
+  "state": "active",
+  "preference_center_page_html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head><title>ACME email preferences</title></head>\n<body>\n  <h1>Choose what ACME sends you</h1>\n  <p>You are subscribed as {{email}}. ACME Supply Co, 40 Harbour Street, Wellington.</p>\n  <form action=\"https://example.com/preferences/save?u=abc123\" method=\"post\">\n    <label><input type=\"checkbox\" name=\"product_updates\"> Product updates</label>\n    <label><input type=\"checkbox\" name=\"newsletter\"> Monthly newsletter</label>\n    <label><input type=\"checkbox\" name=\"promotional\"> Promotional offers</label>\n    <p>You can withdraw consent at any time \u2014 use unsubscribe below.</p>\n    <button type=\"submit\">Save preferences</button>\n  </form>\n  <form action=\"https://example.com/unsubscribe?u=abc123\" method=\"post\">\n    <button type=\"submit\">Unsubscribe from everything</button>\n  </form>\n</body>\n</html>",
+  "confirmation_page_html": "<!DOCTYPE html>\n<html lang=\"en\"><body><p>Your ACME preferences are saved. ACME Supply Co, 40 Harbour Street, Wellington. Unsubscribe at any time.</p></body></html>",
+  "preference_center_options": {
+    "meta-viewport-content": "width=device-width"
+  }
+}

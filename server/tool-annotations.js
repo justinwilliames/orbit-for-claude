@@ -143,6 +143,13 @@ export const LOCAL_WRITE_NETWORKED = new Set([
 export const READ_ONLY_NETWORKED = new Set([
   "orbit_audit_braze_instance",
   "orbit_audit_content_blocks",
+  // Reads /campaigns/list, /campaigns/details, /events/list and the two
+  // data_series endpoints. Joins them; writes nothing anywhere.
+  "orbit_audit_conversion_events",
+  // Reads the preference-centre list + details. The optional live-page leg
+  // GETs the subscriber's own page and never submits its form.
+  "orbit_audit_preference_centre",
+  "orbit_audit_send_calendar",
   "orbit_audit_stripo_modules",
   "orbit_audit_unsubscribe_page",
   "orbit_braze_performance",
@@ -198,6 +205,8 @@ export const READ_ONLY_LOCAL = new Set([
   "orbit_check_email_size",
   "orbit_check_push_copy",
   "orbit_check_setup",
+  // Pure string transforms of HTML the caller supplied. No fetch, no browser.
+  "orbit_client_sim",
   "orbit_cohort_retention",
   "orbit_compose_sequence",
   "orbit_compose_sms",
@@ -210,6 +219,8 @@ export const READ_ONLY_LOCAL = new Set([
   "orbit_generate_template_variations",
   "orbit_get_template",
   "orbit_liquid_snippet",
+  // Enumerates 2^n renders of a string in memory. Nothing leaves the process.
+  "orbit_liquid_state_matrix",
   "orbit_list_growth_forecast",
   "orbit_list_skills",
   "orbit_load_skill",

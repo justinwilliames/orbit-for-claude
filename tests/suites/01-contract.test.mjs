@@ -280,11 +280,31 @@ const CRASH_CHECK_EXEMPT = new Set([]);
 const SHAPED_RESPONSE_FLOOR = 45;
 
 /**
- * Ceiling on the serialised tools/list payload. Currently ~142KB / 121
- * tools; 150,000 leaves room for a handful of additions before someone
- * has to justify the next one.
+ * Ceiling on the serialised tools/list payload.
+ *
+ * Was 150,000 against 121 tools at ~142KB. Raised to 156,000 for the five
+ * tools added in the second review round, and this is the justification the
+ * old budget's failure message asked for:
+ *
+ *   orbit_audit_conversion_events   joins conversion config to the event
+ *                                   stream — nothing in Braze's UI or its own
+ *                                   MCP does, and the answer is a screenshot.
+ *   orbit_audit_preference_centre   reaches a surface Orbit already had two
+ *                                   linters for and no way to fetch.
+ *   orbit_audit_send_calendar       forward governance drift, invisible
+ *                                   everywhere else.
+ *   orbit_liquid_state_matrix       "Liquid branch coverage" is one of the six
+ *                                   differentiators the server instructions
+ *                                   name, and no tool did it.
+ *   orbit_client_sim                "my email breaks in Gmail" is the universal
+ *                                   complaint and Orbit had no answer beyond a
+ *                                   byte count.
+ *
+ * Their prose was trimmed to roughly the fleet average before the number was
+ * moved; the remainder is five schemas, not verbosity. The budget's job is
+ * unchanged — stop the number moving SILENTLY. Tool 127 is still a decision.
  */
-const TOOLS_LIST_BYTE_BUDGET = 150_000;
+const TOOLS_LIST_BYTE_BUDGET = 156_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.
