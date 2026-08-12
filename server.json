@@ -3,7 +3,7 @@
   "name": "io.github.justinwilliames/braze-lifecycle-mcp",
   "title": "Orbit",
   "description": "Lifecycle marketing in Claude: Braze, email QA, deliverability, segmentation. Free, no key.",
-  "version": "0.28.5",
+  "version": "0.29.0",
   "websiteUrl": "https://yourorbit.team",
   "packages": [
     {
