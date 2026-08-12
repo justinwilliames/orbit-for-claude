@@ -35,6 +35,9 @@ import { renderRenderGate, RENDER_GATE_URI } from "./widgets/render-gate.js";
 import { renderQaReport, QA_REPORT_URI } from "./widgets/qa-report.js";
 import { renderAuditReport, AUDIT_REPORT_URI } from "./widgets/audit-report.js";
 import { renderDiagramView, DIAGRAM_VIEW_URI } from "./widgets/diagram-view.js";
+import { renderClientMatrix, CLIENT_MATRIX_URI } from "./widgets/client-matrix.js";
+import { renderCohortCurve, COHORT_CURVE_URI } from "./widgets/cohort-curve.js";
+import { renderDesignSystem, DESIGN_SYSTEM_URI } from "./widgets/design-system.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -77,6 +80,27 @@ export const ORBIT_WIDGETS = [
     description:
       "A lifecycle diagram spec as a walkable flow — edge labels on the connectors, branch exits where they leave the trunk, per-step detail, and the Mermaid source one button away.",
     render: renderDiagramView,
+  },
+  {
+    uri: CLIENT_MATRIX_URI,
+    name: "Orbit degraded-client comparison",
+    description:
+      "The email as each client class actually assembles it, baseline against degraded, side by side — with the style blocks each one drops, the measured height delta, and an explicit statement of which classes are rendered and which differ only by a condition a frame cannot be forced into.",
+    render: renderClientMatrix,
+  },
+  {
+    uri: COHORT_CURVE_URI,
+    name: "Orbit cohort retention",
+    description:
+      "The aggregate retention curve plus the cohort-by-period grid, where a cohort too young to have reached a period is drawn as an explicit no-data cell rather than a zero.",
+    render: renderCohortCurve,
+  },
+  {
+    uri: DESIGN_SYSTEM_URI,
+    name: "Orbit design system sheet",
+    description:
+      "A learned template as a design system: the module spine in source order, the brand palette as swatches, a type and button specimen drawn with the user's own tokens, and the WCAG contrast of the four token pairs that actually meet on the page.",
+    render: renderDesignSystem,
   },
 ];
 

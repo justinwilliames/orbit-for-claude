@@ -547,7 +547,7 @@
     },
     {
       "name": "orbit_learn_email_template",
-      "description": "Parse an HTML email template (Stripo-aware) into modules + brand tokens and save to Orbit's library so future conversations can reference it. Use this the first time a user pastes an email template. [Safety: writes files in your local Orbit workspace.]"
+      "description": "Parse an HTML email template (Stripo-aware) into modules + brand tokens and save to Orbit's library so future conversations can reference it, then show it back as a design-system sheet: module spine, palette, specimen, and the contrast of the token pairs that meet on the page. Use this the first time a user pastes an email template. [Safety: writes files in your local Orbit workspace.]"
     },
     {
       "name": "orbit_build_email_from_template",
@@ -571,7 +571,7 @@
     },
     {
       "name": "orbit_client_sim",
-      "description": "Emit the email as each client class actually assembles it — Gmail's block-atomic style sanitizer, blocked images, no head CSS — so the render gate measures the delivered document."
+      "description": "Emit the email as each client class actually assembles it — Gmail's block-atomic style sanitizer, blocked images, no head CSS — and show the baseline against any class side by side, so the render gate measures the delivered document."
     },
     {
       "name": "orbit_accessibility_lint",
@@ -583,7 +583,7 @@
     },
     {
       "name": "orbit_cohort_retention",
-      "description": "Build retention curves from enrollment + revenue-event data. Returns per-cohort period-over-period retention% plus an aggregate curve."
+      "description": "Build retention curves from enrollment + revenue-event data, drawn as the aggregate curve plus the cohort triangle. Returns per-cohort period-over-period retention% plus an aggregate curve."
     },
     {
       "name": "orbit_score_preheader",

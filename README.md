@@ -49,7 +49,9 @@ Roughly two-thirds of the tool surface needs nothing beyond the install:
 
 - **A render gate and a review gallery.** Interactive MCP App widgets that render creatives at the size they ship at, with per-item approve / needs-changes verdicts. Every review also writes a standalone HTML file you can hand to a stakeholder who has no Orbit — it works on its own.
   ![The Orbit review gallery: a rail of creatives grouped by lifecycle stage, an email rendered on a light stage, and approve / needs-changes / pending controls with a notes field](docs/images/review-gallery.png)
-- **Calculators** — sample size, significance, RFM, cohort retention, LTV/payback, replenishment, growth forecasting.
+- **Your own email, as each client actually assembles it.** Side by side: the document you authored against the one Gmail builds after its sanitizer has been through it, with the style blocks it dropped and the measured height delta. Each pane says whether it is a real render or the baseline with a condition named but untested — it never shows you a picture of something nobody measured.
+- **Calculators that draw.** Cohort retention comes back as the curve and the triangle, with periods a cohort has not lived through drawn as no-data rather than as zero. Plus sample size, significance, RFM, LTV/payback, replenishment, growth forecasting.
+- **Your design system, on one sheet.** Paste an email you already send and Orbit reads back the module spine, the palette, a type-and-button specimen drawn with your own tokens, and the WCAG contrast of the four pairs that actually meet on the page.
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
 - **The skill library** — 77 protocols Claude loads and follows, on lifecycle design, deliverability, Braze mechanics, Stripo mechanics, experimentation, copy, and brand.

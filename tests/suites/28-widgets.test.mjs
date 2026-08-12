@@ -34,6 +34,9 @@ import { makeTempWorkspace } from "../harness/fixtures.mjs";
 import { ORBIT_WIDGETS } from "../../server/ui/register.js";
 import { VERDICT_BINDING_JS } from "../../server/ui/widgets/review-gallery.js";
 import { GATE_VERDICT_JS } from "../../server/ui/widgets/render-gate.js";
+import { CLIENT_FIDELITY_JS } from "../../server/ui/widgets/client-matrix.js";
+import { COHORT_CELL_JS } from "../../server/ui/widgets/cohort-curve.js";
+import { TOKEN_CONTRAST_JS } from "../../server/ui/widgets/design-system.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
@@ -45,7 +48,10 @@ const TOOL_WIDGETS = {
   orbit_render_gate: "ui://orbit/render-gate.html",
   orbit_qa_email: "ui://orbit/qa-report.html",
   orbit_audit_braze_instance: "ui://orbit/audit-report.html",
-  orbit_lifecycle_diagram: "ui://orbit/lifecycle-flow.html"
+  orbit_lifecycle_diagram: "ui://orbit/lifecycle-flow.html",
+  orbit_client_sim: "ui://orbit/client-matrix.html",
+  orbit_cohort_retention: "ui://orbit/cohort-retention.html",
+  orbit_learn_email_template: "ui://orbit/design-system.html"
 };
 
 let client = null;
@@ -201,6 +207,231 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
         `"${type}" has a stripe colour but is missing from TYPED, so it renders with no label`
       );
     }
+  });
+
+  test("orbit_client_sim hands its widget each class ONCE, not seven copies of the email", async () => {
+    // A style block containing @property is the confirmed block killer,
+    // so `gmailish` genuinely diverges from the baseline here.
+    const html =
+      "<html><head><style>@property --x { syntax: '<color>'; inherits: false; initial-value: red; }" +
+      "p { color: #111 }</style></head><body><p>Ready to send.</p></body></html>";
+    const res = await client.callTool("orbit_client_sim", { html });
+    const structured = res.structuredContent;
+    assert.ok(structured, "client sim returned no structuredContent for its widget");
+
+    const byClass = new Map(structured.variants.map((v) => [v.class, v]));
+    // The baseline always carries its document — everything else is drawn
+    // against it.
+    assert.equal(typeof byClass.get("full").html, "string");
+    assert.equal(byClass.get("full").same_markup_as, null);
+
+    // A class whose markup genuinely differs carries its own document.
+    assert.equal(byClass.get("gmailish").same_markup_as, null, "gmailish diverged but was deduped away");
+    assert.equal(typeof byClass.get("gmailish").html, "string");
+
+    // A class that differs only by a RENDER condition names the baseline
+    // instead of repeating it. Without this the widget payload was a
+    // second full set of the email on top of the text block's.
+    for (const name of ["imgoff", "reduced", "nohover"]) {
+      assert.equal(byClass.get(name).same_markup_as, "full", `${name} duplicated the baseline document`);
+      assert.equal(byClass.get(name).html, null, `${name} shipped a redundant copy of the email`);
+    }
+
+    // The widget cannot draw the honest label without the hints.
+    assert.equal(byClass.get("imgoff").render_hints.block_images, true);
+    assert.ok(Array.isArray(structured.purity_findings));
+  });
+
+  test("orbit_cohort_retention hands its widget a triangle, not a rectangle", async () => {
+    const enrollments = [];
+    const events = [];
+    // Two cohorts a period apart, so the younger one MUST have fewer
+    // observed periods than the older one.
+    for (let i = 0; i < 20; i++) {
+      enrollments.push({ user_id: `a${i}`, enrolled_at: "2026-01-05T00:00:00Z" });
+      enrollments.push({ user_id: `b${i}`, enrolled_at: "2026-03-05T00:00:00Z" });
+      events.push({ user_id: `a${i}`, event_at: "2026-01-10T00:00:00Z", revenue: 10 });
+      events.push({ user_id: `b${i}`, event_at: "2026-03-10T00:00:00Z", revenue: 10 });
+    }
+    const res = await client.callTool("orbit_cohort_retention", {
+      enrollments_json: JSON.stringify(enrollments),
+      events_json: JSON.stringify(events),
+      reference_date: "2026-04-01T00:00:00Z"
+    });
+    const structured = res.structuredContent;
+    assert.ok(structured, "cohort retention returned no structuredContent for its widget");
+    assert.ok(Array.isArray(structured.cohorts) && structured.cohorts.length >= 2);
+    assert.ok(Array.isArray(structured.aggregate_curve), "widget payload has no curve to draw");
+    const lengths = structured.cohorts.map((c) => c.periods.length);
+    assert.ok(
+      Math.max(...lengths) > Math.min(...lengths),
+      "every cohort has the same number of periods — the unobserved edge the grid must draw is gone"
+    );
+    // Bookkeeping the grid never draws stays out of the second copy.
+    assert.equal(structured.output_files, undefined);
+    assert.equal(structured.orbit_attribution, undefined);
+  });
+
+  test("orbit_learn_email_template hands its widget the tokens and the module spine", async () => {
+    // Table markup, because that is what an email is and what the module
+    // parser splits on. A div-only fixture parses to zero modules and the
+    // tool correctly refuses to call that a learned design system.
+    const html =
+      '<html><body style="font-family: Helvetica, Arial, sans-serif">' +
+      '<div class="es-wrapper-color" style="background-color:#eef1f5">' +
+      '<table class="es-header" width="600"><tr><td>' +
+      '<h1 style="color:#101828">Hello</h1></td></tr></table>' +
+      '<table class="es-content" width="600"><tr><td>' +
+      '<p style="color:#475467">Body copy for the learner.</p>' +
+      '<a class="es-button" style="background:#F59E0B;color:#ffffff;border-radius:8px;padding:13px 26px">Go</a>' +
+      "</td></tr></table>" +
+      '<table class="es-footer" width="600"><tr><td>' +
+      '<p style="color:#475467">Unsubscribe</p></td></tr></table>' +
+      "</div></body></html>";
+    const res = await client.callTool("orbit_learn_email_template", {
+      html,
+      template_name: `widget-test-${Date.now()}`
+    });
+    const structured = res.structuredContent;
+    assert.ok(structured, "learn template returned no structuredContent for its widget");
+    assert.ok(structured.brand_tokens, "the sheet has no palette to draw");
+    assert.equal(structured.brand_tokens.primary_button_color, "#F59E0B");
+    assert.equal(structured.brand_tokens.primary_button_text_color, "#ffffff");
+    assert.ok(Array.isArray(structured.modules), "the sheet has no module spine to draw");
+    // The library record and the mirrored paths are not drawable and must
+    // not ride along in the widget copy.
+    assert.equal(structured.library_entry, undefined);
+    assert.equal(structured.mirrored_files, undefined);
+  });
+});
+
+/**
+ * The three rules the new widgets encode, run as SHIPPED source.
+ *
+ * Each one decides whether the reader is shown a measurement or an
+ * admission, which is the only class of widget bug that can corrupt a
+ * decision rather than merely look wrong.
+ */
+describe("Client matrix — a frame never claims to be a render it is not", () => {
+  const { clientFidelity } = new Function(`${CLIENT_FIDELITY_JS}\nreturn { clientFidelity };`)();
+
+  test("a class whose markup differs is the delivered document", () => {
+    const f = clientFidelity({ class: "nocss", same_markup_as: null, render_hints: {} });
+    assert.equal(f.kind, "markup");
+  });
+
+  test("blocked images are emulated, and say so", () => {
+    const f = clientFidelity({ class: "imgoff", same_markup_as: "full", render_hints: { block_images: true } });
+    assert.equal(f.kind, "emulated");
+    assert.match(f.note, /src is stripped/i);
+  });
+
+  test("a hover-incapable client is the rest state by construction", () => {
+    const f = clientFidelity({ class: "nohover", same_markup_as: "full", render_hints: { never_hover: true } });
+    assert.equal(f.kind, "by-design");
+  });
+
+  test("a user-agent condition we cannot force is labelled BASELINE, never as that client", () => {
+    const f = clientFidelity({
+      class: "reduced",
+      same_markup_as: "full",
+      render_hints: { media_features: [{ name: "prefers-reduced-motion", value: "reduce" }] }
+    });
+    assert.equal(f.kind, "caveat");
+    assert.equal(f.label, "baseline document");
+    assert.match(f.note, /prefers-reduced-motion: reduce/);
+  });
+
+  test("fidelity is decided by what the server observed, not by the class name", () => {
+    // gmailish on an email with no poison construct emits the baseline
+    // document. A hardcoded "gmailish always diverges" list would have
+    // drawn that as a distinct client render.
+    const f = clientFidelity({
+      class: "gmailish",
+      same_markup_as: "full",
+      render_hints: { honour_interaction_media: false }
+    });
+    assert.equal(f.kind, "caveat", "an undiverged gmailish was presented as a delivered document");
+  });
+});
+
+describe("Cohort grid — an unobserved period is not a zero", () => {
+  const { cohortCell, cohortSpan } = new Function(
+    `${COHORT_CELL_JS}\nreturn { cohortCell, cohortSpan };`
+  )();
+
+  const cohort = {
+    cohort: "2026-03-08",
+    size: 100,
+    periods: [
+      { period: 0, active: 100, retention_pct: 100, revenue: 900 },
+      { period: 1, active: 41, retention_pct: 41, revenue: 300 }
+    ]
+  };
+
+  test("an observed period returns its measured point", () => {
+    const c = cohortCell(cohort, 1);
+    assert.equal(c.state, "observed");
+    assert.equal(c.point.retention_pct, 41);
+  });
+
+  test("a period the cohort has not reached is unobserved, never 0%", () => {
+    const c = cohortCell(cohort, 5);
+    assert.equal(c.state, "unobserved");
+    assert.equal(c.point, null, "an unobserved cell handed back a point the tool never returned");
+  });
+
+  test("a measured 0% is observed — it is a real and different finding", () => {
+    const dead = { periods: [{ period: 3, active: 0, retention_pct: 0, revenue: 0 }] };
+    const c = cohortCell(dead, 3);
+    assert.equal(c.state, "observed");
+    assert.equal(c.point.retention_pct, 0);
+  });
+
+  test("lookup is by period NUMBER, not array index", () => {
+    // A cohort whose first observed period is not period 0 — index-based
+    // lookup would read period 4's row out of slot 0 and mislabel it.
+    const late = { periods: [{ period: 4, active: 7, retention_pct: 7, revenue: 0 }] };
+    assert.equal(cohortCell(late, 0).state, "unobserved");
+    assert.equal(cohortCell(late, 4).point.retention_pct, 7);
+  });
+
+  test("the grid spans only what was observed", () => {
+    assert.equal(cohortSpan([cohort, { periods: [{ period: 6 }] }]), 6);
+    assert.equal(cohortSpan([]), -1);
+  });
+});
+
+describe("Design system — a token pair nobody could measure is not a pass", () => {
+  const { tokenContrast, parseHexColor } = new Function(
+    `${TOKEN_CONTRAST_JS}\nreturn { tokenContrast, parseHexColor };`
+  )();
+
+  test("black on white is the textbook 21:1", () => {
+    assert.equal(tokenContrast("#000000", "#ffffff").ratio, 21);
+  });
+
+  test("white on the amber a real brand ships fails AA, with the number", () => {
+    const r = tokenContrast("#ffffff", "#F59E0B");
+    assert.equal(r.state, "fail");
+    assert.ok(r.ratio < 4.5 && r.ratio > 2, `unexpected ratio ${r.ratio}`);
+  });
+
+  test("a missing token is UNMEASURED — never assumed white", () => {
+    const r = tokenContrast("#475467", null);
+    assert.equal(r.state, "unmeasured");
+    assert.equal(r.ratio, null);
+    assert.match(r.reason, /background not extracted/);
+    // The trap: #475467 on an assumed white background is 7.6:1 and
+    // would have been reported as a comfortable pass.
+    assert.notEqual(r.state, "pass");
+  });
+
+  test("three-digit hex and rgb() both parse; anything else abstains", () => {
+    assert.deepEqual(parseHexColor("#fff"), { r: 255, g: 255, b: 255 });
+    assert.deepEqual(parseHexColor("rgb(16, 24, 40)"), { r: 16, g: 24, b: 40 });
+    assert.equal(parseHexColor("transparent"), null);
+    assert.equal(parseHexColor("var(--brand)"), null);
   });
 });
 

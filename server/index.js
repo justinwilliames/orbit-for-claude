@@ -90,6 +90,9 @@ import { RENDER_GATE_URI } from "./ui/widgets/render-gate.js";
 import { QA_REPORT_URI } from "./ui/widgets/qa-report.js";
 import { AUDIT_REPORT_URI } from "./ui/widgets/audit-report.js";
 import { DIAGRAM_VIEW_URI } from "./ui/widgets/diagram-view.js";
+import { CLIENT_MATRIX_URI } from "./ui/widgets/client-matrix.js";
+import { COHORT_CURVE_URI } from "./ui/widgets/cohort-curve.js";
+import { DESIGN_SYSTEM_URI } from "./ui/widgets/design-system.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -5264,17 +5267,29 @@ function registerTools() {
       description:
         "Parse an HTML email template into Stripo-native modules + brand tokens and save it to Orbit's library. " +
         "Use this the first time a user pastes an email template — Orbit will remember it and reference the modules in future conversations. " +
-        "Output preserves es-* / esd-* / MSO structure so the assembled HTML remains editable when pasted into Stripo.",
+        "Output preserves es-* / esd-* / MSO structure so the assembled HTML remains editable when pasted into Stripo, and renders as a design-system sheet: the module spine, the palette, a specimen drawn with their own tokens, and the contrast of the pairs that meet on the page.",
       inputSchema: {
         html: z.string().min(1).describe("The full HTML of the email template to learn."),
         template_name: z.string().optional().describe("Human-readable name for this template (default: 'master-template')."),
         output_dir: z.string().optional().describe("Optional directory to mirror the learned files into (in addition to the Orbit library)."),
         overwrite: z.boolean().optional().describe("Replace v1 of an existing template with this name. Default false — a repeat learn under the same name saves as a NEW version and leaves the old one intact.")
-      }
+      },
+      _meta: widgetMeta(DESIGN_SYSTEM_URI)
     },
     async ({ html, template_name: templateName, output_dir: outputDir, overwrite }) => {
       const result = learnEmailTemplate({ config: runtimeConfig, html, templateName, outputDir, overwrite });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // The sheet draws the spine, the palette and the specimen. The
+      // library record and the mirrored file paths are bookkeeping and
+      // stay in the text block only.
+      return makeJsonToolResponse(result, {
+        template_id: result.template_id,
+        slug: result.slug,
+        modules: result.modules,
+        brand_tokens: result.brand_tokens,
+        image_inventory: result.image_inventory,
+        liquid_variables: result.liquid_variables
+      });
     }
   );
 
@@ -5464,7 +5479,7 @@ function registerTools() {
     {
       title: "Cohort Retention Curve",
       description:
-        "Build retention curves from enrollment + revenue-event data. Returns per-cohort period-by-period retention% + revenue, plus an aggregate curve across all cohorts. Powers retention-economics conversations beyond the simple LTV calculator.",
+        "Build retention curves from enrollment + revenue-event data. Returns per-cohort period-by-period retention% + revenue, plus an aggregate curve across all cohorts, drawn in a widget as the curve and the cohort triangle. Powers retention-economics conversations beyond the simple LTV calculator.",
       inputSchema: {
         enrollments_json: z.string().min(1).describe("JSON array: [{ user_id, enrolled_at }, …]."),
         events_json: z.string().optional().describe("JSON array: [{ user_id, event_at, revenue? }, …]. Optional — without it, all retention numbers are 0."),
@@ -5472,7 +5487,8 @@ function registerTools() {
         periods_to_track: z.number().optional().describe("Number of periods to track (default: 12)."),
         reference_date: z.string().optional().describe("ISO date to anchor 'today' against. Defaults to now."),
         output_dir: z.string().optional().describe("Optional directory to write cohort JSON.")
-      }
+      },
+      _meta: widgetMeta(COHORT_CURVE_URI)
     },
     async ({
       enrollments_json: enrollmentsJson,
@@ -5504,7 +5520,16 @@ function registerTools() {
         referenceDate,
         outputDir: resolvedOutputDir
       });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // Everything the grid and the curve draw, and nothing else. The
+      // file paths and the attribution block are not drawable.
+      return makeJsonToolResponse(result, {
+        cohort_count: result.cohort_count,
+        period_days: result.period_days,
+        reference_date: result.reference_date,
+        aggregate_curve: result.aggregate_curve,
+        cohorts: result.cohorts
+      });
     }
   );
 
@@ -5585,16 +5610,56 @@ function registerTools() {
         "BLOCK-ATOMIC, so one @property kills every rule in that <style> tag (MJML merges all mj-style into one block, " +
         "so it deletes the whole head stylesheet while the render gate says PASS); and ESP CSS inliners hoist a <table> " +
         "out of any <a> wrapping it, leaving dead unclickable buttons. Returns degraded HTML for " +
-        "full/nocss/gmailish/gmailish_worstcase/imgoff/reduced/nohover plus static purity findings. Run orbit_render_gate on each and diff.",
+        "full/nocss/gmailish/gmailish_worstcase/imgoff/reduced/nohover plus static purity findings, and renders the baseline against any class side by side in a widget with the measured height delta. Run orbit_render_gate on each and diff.",
       inputSchema: {
         html: z.string().min(1).max(MAX_LONG_STRING).describe("The compiled email HTML."),
         classes: z.array(z.enum(["full", "nocss", "gmailish", "gmailish_worstcase", "imgoff", "reduced", "nohover"])).max(7).optional().describe("Client classes to emit. Default: all seven. `gmailish` drops a style block only on the CONFIRMED killer; `gmailish_worstcase` also drops on the suspected ones."),
         include_html: z.boolean().optional().describe("Emit the degraded documents (default: true). Off gives the purity verdict without six copies of the email.")
-      }
+      },
+      _meta: widgetMeta(CLIENT_MATRIX_URI)
     },
     async ({ html, classes, include_html: includeHtml }) => {
       const result = clientSim({ html, classes, include_html: includeHtml ?? true });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+
+      // The widget copy carries each class's document ONCE.
+      //
+      // Four of the seven classes differ from the baseline by a render
+      // CONDITION, not by markup — their emitted html is byte-identical
+      // to `full`. Shipping all seven strings twice (text block +
+      // structuredContent) turned a 90 KB email into ~1.2 MB of tool
+      // result, most of it the same bytes seven times over.
+      //
+      // `same_markup_as` is decided by COMPARING the strings, never by a
+      // hardcoded list of which classes "should" match: `gmailish` on an
+      // email with no poison construct emits the baseline document too,
+      // and a list would have called that a distinct render.
+      const baseline = (result.variants ?? []).find((v) => v.class === "full");
+      const widgetVariants = (result.variants ?? []).map((v) => {
+        const sameAsBaseline =
+          baseline != null &&
+          v.class !== "full" &&
+          typeof v.html === "string" &&
+          v.html === baseline.html;
+        return {
+          class: v.class,
+          what_it_models: v.what_it_models,
+          style_blocks_kept: v.style_blocks_kept,
+          style_blocks_dropped: v.style_blocks_dropped,
+          bytes: v.bytes,
+          render_hints: v.render_hints,
+          same_markup_as: sameAsBaseline ? "full" : null,
+          html: sameAsBaseline ? null : v.html
+        };
+      });
+
+      return makeJsonToolResponse(result, {
+        verdict: result.verdict,
+        style_blocks: result.style_blocks,
+        purity_findings: result.purity_findings,
+        summary: result.summary,
+        variants: widgetVariants
+      });
     }
   );
 
