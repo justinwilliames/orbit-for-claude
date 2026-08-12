@@ -2,9 +2,9 @@
 
 **A lifecycle marketer, built into Claude.** Free, open, no account, no key.
 
-Orbit is an MCP extension that gives Claude a senior lifecycle operator's playbook: 77 skills and 121 tools spanning Braze, Stripo, email and MJML, segmentation maths, deliverability, brand voice, Figma import, Notion export, and diagram generation. Ask Claude a lifecycle question and it answers like someone who has shipped the program, not like someone who has read about it.
+Orbit is an MCP extension that gives Claude a senior lifecycle operator's playbook: 77 skills and 121 tools spanning email and MJML, render QA, segmentation maths, deliverability, brand voice, Figma import, Notion export, diagram generation, and the sending layer itself — Braze, Stripo, Klaviyo, Iterable and the rest. Ask Claude a lifecycle question and it answers like someone who has shipped the program, not like someone who has read about it.
 
-Most "AI for marketing" tools hand you generic email advice. Orbit carries the production-tested mechanics generic reasoning doesn't have — the Stripo push trap that silently drops slot values, the Braze Canvas QA checklist, the Liquid fallback rules, the segmentation maths. That's the difference between a draft you can ship and a draft you have to redo. It was built by a lifecycle operator with ten-plus years in CRM seats at Linktree, Depop, Deliveroo, and Trainline — the protocols are the job, written down.
+Most "AI for marketing" tools hand you generic email advice. Orbit carries the production-tested mechanics generic reasoning doesn't have — what a real browser reveals that a linter cannot, the Liquid branch nobody test-rendered until it shipped blank, Gmail's clipping limit cutting an email off mid-template, the Braze Canvas QA checklist, the Stripo push trap that silently drops slot values. That's the difference between a draft you can ship and a draft you have to redo. It was built by a lifecycle operator with ten-plus years in CRM seats at Linktree, Depop, Deliveroo, and Trainline — the protocols are the job, written down.
 
 ## Try it in ninety seconds
 
@@ -15,13 +15,26 @@ Install the extension, then paste this into Claude. It needs no credentials of a
 
 Orbit renders it at 640px and 390px in a real engine and measures what only a render reveals: single-word last lines, CTA rows that wrap, tap targets under 44px, computed contrast, byte size against Gmail's clipping limit. That grey paragraph fails contrast and that button is under the 44px tap minimum — neither is visible in the source.
 
+<!-- SCREENSHOT: the render gate widget in Claude Desktop, 640px and 390px previews side by side, with the contrast and tap-target failures flagged -->
+
 Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 90 long-form guides bundled inside the extension, offline, no account.
+
+## Build your own lifecycle brain
+
+Orbit's flagship path isn't writing one email. It's giving the programme somewhere to live.
+
+`orbit_bootstrap_brain` scaffolds a git repo — operating rules, conventions, a folder per lifecycle stage — as the single source of truth for your programme. `orbit_learn_email_template` or `orbit_import_design` takes an email you already send (HTML, Figma, PDF) and turns it into a module catalogue plus brand tokens: a design system derived from your real email, not a vendor's template gallery. `orbit_generate_brain_gate` writes the pre-send gate, parameterised to your byte limits and templating branches — the difference between a design system and a folder of files. `orbit_scaffold_brain_program` frames a PRD stub — the one-page spec — for each programme, so AI drafts never build unreviewed.
+
+Most lifecycle work rots for two reasons: the knowledge lives in one person's head, and the templates drift inside the ESP — the platform that actually sends. The repo is the source. The ESP is a derived output.
+
+<!-- SCREENSHOT: a bootstrapped brain repo open in an editor — stage folders, a prd.md stub, and the generated gate script -->
 
 ## What you get with no credentials at all
 
 Roughly two-thirds of the tool surface needs nothing beyond the install:
 
 - **A render gate and a review gallery.** Interactive MCP App widgets that render creatives at the size they ship at, with per-item approve / needs-changes verdicts. Every review also writes a standalone HTML file you can hand to a stakeholder who has no Orbit — it works on its own.
+  <!-- SCREENSHOT: the review gallery widget with several creatives rendered at ship size and one marked needs-changes -->
 - **Calculators** — sample size, significance, RFM, cohort retention, LTV/payback, replenishment, growth forecasting.
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
