@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.justinwilliames/braze-lifecycle-mcp",
   "title": "Orbit",
-  "description": "A lifecycle marketer, built into Claude — 77 skills and 121 tools for Braze, Stripo, email, deliverability and segmentation. Free, no account.",
-  "version": "0.28.2",
+  "description": "Lifecycle marketing in Claude: Braze, email QA, deliverability, segmentation. Free, no key.",
+  "version": "0.28.3",
   "websiteUrl": "https://yourorbit.team",
   "packages": [
     {

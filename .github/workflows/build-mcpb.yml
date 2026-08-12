@@ -156,6 +156,13 @@ jobs:
           # one and publishes unauthenticated), and the secret it depended
           # on had already expired once without anyone noticing.
           # `login github-oidc` needs no stored credential.
+          # Validate BEFORE authenticating. The registry rejects on schema
+          # server-side anyway, but only after a full build, a package, an
+          # S3 upload and a GitHub Release have already happened — so a
+          # 100-character description limit failed the run at the last
+          # step with everything else already published. This is the same
+          # check, run against the file we just stamped, for free.
+          ./mcp-publisher validate server.json
           ./mcp-publisher login github-oidc
           # No `|| echo` here. A swallowed publish failure is exactly the
           # bug this step was written to fix, relocated into YAML where it
