@@ -68,6 +68,50 @@ function assertExists(root, relPaths) {
   }
 }
 
+/**
+ * Compile MJML to HTML the way a real user's build step does.
+ *
+ * Every generated-gate fixture below is REAL compiler output, never
+ * hand-written HTML. Hand-written markup puts `<a href="…">` on one line with
+ * double quotes, which is the exact shape both gates already handled — it is
+ * why `bash -n` and a tidy fixture passed a gate that had never once inspected
+ * an anchor a compiler emitted (MJML puts every attribute on its own line).
+ */
+function compileMjml(root, name, mjml) {
+  const src = path.join(root, `${name}.mjml`);
+  const out = path.join(root, `${name}.html`);
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(src, mjml, "utf8");
+  execFileSync(MJML_BIN, [src, "-o", out], { stdio: "pipe" });
+  return out;
+}
+
+const MJML_BIN = fileURLToPath(new URL("../../node_modules/.bin/mjml", import.meta.url));
+
+/** A compiled email whose visible copy quotes no figure and whose CTAs are clean. */
+const CLEAN_EMAIL = `<mjml>
+  <mj-head><mj-style>.c{background:#111111}@media only screen and (max-width:480px){.c{padding:12px}}</mj-style></mj-head>
+  <mj-body><mj-section><mj-column>
+    <mj-text>Your invoice is ready. Nothing here quotes a figure.</mj-text>
+    <mj-button href="https://acme.test/pay">Pay now</mj-button>
+    <mj-button href="https://acme.test/help">Get help</mj-button>
+  </mj-column></mj-section></mj-body>
+</mjml>`;
+
+/** Run a generated script, returning { code, stdout, stderr } without throwing. */
+function runScript(script, args) {
+  try {
+    const stdout = execFileSync("bash", [script, ...args], { encoding: "utf8", stdio: "pipe" });
+    return { code: 0, stdout, stderr: "" };
+  } catch (err) {
+    return {
+      code: err.status ?? 1,
+      stdout: err.stdout?.toString() ?? "",
+      stderr: err.stderr?.toString() ?? "",
+    };
+  }
+}
+
 /** Assert no "sophiie" (any case) appears in any file under `root`. */
 function assertNoSophiie(root) {
   for (const file of walkFiles(root)) {
@@ -187,7 +231,12 @@ describe("orbit_scaffold_brain_program — program scaffolder", () => {
   });
 });
 
-// ── 3. initVerifiedClaims + generateBrainGate → bash -n ───────────
+// ── 3. initVerifiedClaims + generateBrainGate — RUN the scripts ───
+//
+// `bash -n` is satisfied by a script that unconditionally echoes PASS and
+// exits 0, which is roughly what both of these used to be. Every test below
+// executes the generated script against real mjml2html output and asserts on
+// the exit code and the FAIL line.
 describe("orbit_init_verified_claims — verified-claims + check-claims.sh", () => {
   test("emits the claims file and an executable, syntactically-valid gate script", () => {
     const root = tmpRoot("claims");
@@ -206,22 +255,75 @@ describe("orbit_init_verified_claims — verified-claims + check-claims.sh", () 
     assert.match(claims, /drop the module/i);
   });
 
-  test("refuses to overwrite on a second run", () => {
+  test("the claims markdown is never overwritten; the script upgrades in place", () => {
     const root = tmpRoot("claims-idempotent");
-    const first = initVerifiedClaims({ path: root });
+    initVerifiedClaims({ path: root });
     const second = initVerifiedClaims({ path: root });
     assert.equal(second.created.length, 0);
-    assert.equal(second.skipped.length, first.created.length);
+    // The user's receipts are theirs — report-and-skip, forever.
+    assert.deepEqual(
+      second.skipped.map((p) => path.relative(root, p)),
+      ["knowledge/verified-claims.md"]
+    );
+    // The generated script is ours — same body, so nothing to do.
+    assert.deepEqual(
+      second.unchanged.map((p) => path.relative(root, p)),
+      ["build/check-claims.sh"]
+    );
+    assert.equal(second.hand_edited.length, 0);
+  });
+
+  test("the sign is right against real compiled emails, not just against a fixture", () => {
+    const root = tmpRoot("claims-sign");
+    initVerifiedClaims({ path: root });
+    const script = path.join(root, "build", "check-claims.sh");
+    const claims = path.join(root, "knowledge", "verified-claims.md");
+
+    // A real invoice email: hex colours, font-weight lists, media-query
+    // breakpoints and spacing px everywhere, and NO figure in the copy.
+    // Stripping tags without first stripping <style> turned #111111 into the
+    // claim "111111", and `tr -d ','` turned "300,400,500,700" into
+    // "300400500700" — so this gate used to fail every real email it saw.
+    const clean = compileMjml(root, "clean", CLEAN_EMAIL);
+    const pass = runScript(script, [clean, claims]);
+    assert.equal(pass.code, 0, `expected PASS, got:\n${pass.stdout}${pass.stderr}`);
+    assert.match(pass.stdout, /PASS/);
+
+    // The same email with one unreceipted figure planted in a text node.
+    const planted = path.join(root, "planted.html");
+    fs.writeFileSync(
+      planted,
+      fs.readFileSync(clean, "utf8").replace("Your invoice is ready.", "We serve 48,000 tradies."),
+      "utf8"
+    );
+    const fail = runScript(script, [planted, claims]);
+    assert.equal(fail.code, 1, "an unreceipted figure must block the build");
+    assert.match(fail.stderr, /48000/, "the violation names the figure, not a CSS artefact");
+
+    // And an absent document is rejected, not silently passed: an absence
+    // check on an empty file is the cleanest email that gate ever saw.
+    const empty = path.join(root, "empty.html");
+    fs.writeFileSync(empty, "", "utf8");
+    const absent = runScript(script, [empty, claims]);
+    assert.notEqual(absent.code, 0, "a zero-byte file must not pass");
+    assert.match(absent.stderr, /NOT CHECKED/);
   });
 });
 
 describe("orbit_generate_brain_gate — build/gate.sh", () => {
   test("emits an executable, syntactically-valid gate parameterised to inputs", () => {
     const root = tmpRoot("gate");
-    const res = generateBrainGate({ path: root, clip_kb: 80, mobile_width: 400, master_name: "lib" });
+    const res = generateBrainGate({
+      path: root,
+      clip_kb: 80,
+      mobile_width: 400,
+      container_width: 640,
+      master_name: "lib",
+    });
     assertExists(root, ["build/gate.sh"]);
     assert.equal(res.clip_kb, 80);
     assert.equal(res.mobile_width, 400);
+    assert.equal(res.container_width, 640);
     assert.equal(res.master_name, "lib");
 
     const script = path.join(root, "build", "gate.sh");
@@ -232,17 +334,122 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     // 80 KB → 81920 bytes clip threshold, and the params flowed through.
     assert.match(body, /CLIP_BYTES=81920/);
     assert.match(body, /MOBILE_WIDTH=400/);
+    assert.match(body, /CONTAINER_WIDTH=640/);
     assert.match(body, /MASTER_TOKEN="lib"/);
   });
 
-  test("defaults apply when inputs are omitted, and re-run refuses to overwrite", () => {
+  test("defaults apply when inputs are omitted", () => {
     const root = tmpRoot("gate-default");
     const first = generateBrainGate({ path: root });
     assert.equal(first.clip_kb, 102, "default Gmail clip");
     assert.equal(first.mobile_width, 375, "default mobile viewport");
+    assert.equal(first.container_width, 600, "default container width");
     const second = generateBrainGate({ path: root });
     assert.equal(second.created.length, 0);
-    assert.equal(second.skipped.length, first.created.length);
+    assert.deepEqual(second.unchanged.map((p) => path.relative(root, p)), ["build/gate.sh"]);
+  });
+
+  test("a regenerate with different parameters lands instead of silently no-opping", () => {
+    const root = tmpRoot("gate-upgrade");
+    generateBrainGate({ path: root, clip_kb: 102 });
+    const script = path.join(root, "build", "gate.sh");
+
+    const upgrade = generateBrainGate({ path: root, clip_kb: 80, container_width: 640 });
+    assert.equal(upgrade.upgraded.length, 1, "different parameters must rewrite the gate");
+    assert.match(fs.readFileSync(script, "utf8"), /CLIP_BYTES=81920/);
+    assert.match(fs.readFileSync(script, "utf8"), /CONTAINER_WIDTH=640/);
+
+    // An OLDER Orbit generation is upgraded in place, reporting from → to.
+    fs.writeFileSync(
+      script,
+      fs.readFileSync(script, "utf8").replace(/^# orbit-gate-generation: \d+$/m, "# orbit-gate-generation: 1"),
+      "utf8"
+    );
+    const bumped = generateBrainGate({ path: root, clip_kb: 80, container_width: 640 });
+    assert.equal(bumped.upgraded[0].from, 1);
+    assert.ok(bumped.upgraded[0].to > 1);
+
+    // No marker → a human wrote or edited it. Never clobbered, and named.
+    fs.writeFileSync(
+      script,
+      fs.readFileSync(script, "utf8").replace(/^# orbit-gate-generation: \d+\n/m, ""),
+      "utf8"
+    );
+    const handEdited = generateBrainGate({ path: root, clip_kb: 99 });
+    assert.deepEqual(handEdited.hand_edited.map((p) => path.relative(root, p)), ["build/gate.sh"]);
+    assert.equal(handEdited.upgraded.length, 0);
+    assert.doesNotMatch(fs.readFileSync(script, "utf8"), /CLIP_BYTES=101376/);
+  });
+
+  test("every check fires on real compiled output, and none of them fires on a clean email", () => {
+    const root = tmpRoot("gate-fixtures");
+    generateBrainGate({ path: root });
+    const script = path.join(root, "build", "gate.sh");
+
+    // Control: a correct email must be CLEAN. Measuring fixed widths against
+    // the 375px viewport instead of the container warned on 480 (the
+    // compiler's own breakpoint) and 600 (the body) — i.e. on every correct
+    // email, which is a warning nobody reads twice.
+    const clean = compileMjml(root, "clean", CLEAN_EMAIL);
+    const ok = runScript(script, [clean]);
+    assert.equal(ok.code, 0, `expected a clean PASS, got:\n${ok.stdout}${ok.stderr}`);
+    assert.doesNotMatch(ok.stdout, /FAIL|WARN/);
+
+    // Known-bad: two CTAs sharing a label but not a destination, plus a
+    // placeholder href. The gate used to pass both, because awk RS="<a "
+    // never matched output that puts each attribute on its own line.
+    const bad = compileMjml(
+      root,
+      "bad",
+      `<mjml><mj-body><mj-section><mj-column>
+        <mj-text>Your invoice is ready.</mj-text>
+        <mj-button href="https://acme.test/x">Book now</mj-button>
+        <mj-button href="https://acme.test/y">Book now</mj-button>
+        <mj-button href="#">Broken</mj-button>
+      </mj-column></mj-section></mj-body></mjml>`
+    );
+    const blocked = runScript(script, [bad]);
+    assert.equal(blocked.code, 1);
+    assert.match(blocked.stdout, /\[orphan-link\] FAIL/);
+    assert.match(blocked.stdout, /\[CTA-parity\] FAIL — label\(s\) point to multiple destinations: book now/);
+
+    // Same defects, single-quoted hrefs — a quoting style the old href="…"
+    // matcher could not see at all.
+    const single = path.join(root, "single.html");
+    fs.writeFileSync(
+      single,
+      fs.readFileSync(bad, "utf8").replace(/href="([^"]*)"/g, "href='$1'"),
+      "utf8"
+    );
+    const blockedSingle = runScript(script, [single]);
+    assert.equal(blockedSingle.code, 1, "single-quoted hrefs must be inspected too");
+    assert.match(blockedSingle.stdout, /\[CTA-parity\] FAIL/);
+
+    // An empty document passes every absence check for the wrong reason.
+    const empty = path.join(root, "empty.html");
+    fs.writeFileSync(empty, "", "utf8");
+    const absent = runScript(script, [empty]);
+    assert.notEqual(absent.code, 0);
+    assert.match(absent.stderr, /NOT CHECKED/);
+    assert.doesNotMatch(absent.stdout, /PASS/, "no check may report PASS on an unread document");
+  });
+
+  test("the master exemption matches the BASENAME, not any path component", () => {
+    const root = tmpRoot("gate-master");
+    generateBrainGate({ path: root, clip_kb: 1 }); // 1 KB clip → any real email trips it
+    const script = path.join(root, "build", "gate.sh");
+    const email = compileMjml(root, "clean", CLEAN_EMAIL);
+
+    const library = path.join(root, "master-library.html");
+    fs.copyFileSync(email, library);
+    assert.match(runScript(script, [library]).stdout, /\[byte-clip\] SKIP/);
+
+    // A "mastercard" campaign folder is not a module library. This exact
+    // substring-the-whole-path check exempted every send underneath it.
+    const send = path.join(root, "mastercard", "emails", "welcome.html");
+    fs.mkdirSync(path.dirname(send), { recursive: true });
+    fs.copyFileSync(email, send);
+    assert.match(runScript(script, [send]).stdout, /\[byte-clip\] FAIL/);
   });
 });
 

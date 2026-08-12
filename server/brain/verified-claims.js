@@ -25,14 +25,89 @@ import { resolveSafe } from "../path-safety.js";
 const PLACEHOLDER_BRAND = "ACME";
 
 /**
+ * Generation counter for the SCRIPTS these generators emit (gate.sh,
+ * check-claims.sh). Bump it whenever an emitted script body changes.
+ *
+ * Why it exists: both generators used to route through `writeSkip`, so
+ * regenerating over an existing brain was a silent no-op that reported
+ * `partial`. Nothing on disk said which generation it was, so a fixed gate
+ * could only ever reach people who had never run the tool. Every generated
+ * script now carries `# orbit-<kind>-generation: N`; an older marker is
+ * upgraded in place, a missing marker means a human edited it and we do not
+ * touch it.
+ */
+const SCRIPT_GENERATION = 2;
+
+/** The marker line stamped into every generated script, after the shebang. */
+function generationMarker(kind) {
+  return `# orbit-${kind}-generation: ${SCRIPT_GENERATION}`;
+}
+
+/** Read the generation stamped into an existing script; null if unmarked. */
+function readGeneration(body, kind) {
+  const match = body.match(new RegExp(`^# orbit-${kind}-generation:[ \\t]*(\\d+)[ \\t]*$`, "m"));
+  return match ? Number(match[1]) : null;
+}
+
+/**
  * Write `content` to `filePath` unless it already exists.
  * Records the outcome on `result` and returns true if written.
+ *
+ * For USER content (the claims markdown, PRD stubs) — never overwritten,
+ * because the user's edits are the point. Generated scripts use
+ * `writeGenerated` instead.
  */
 function writeSkip(filePath, content, result) {
   if (fs.existsSync(filePath)) {
     result.skipped.push(filePath);
     return false;
   }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, "utf8");
+  result.created.push(filePath);
+  return true;
+}
+
+/**
+ * Write a GENERATED script, upgrading an older generation in place.
+ *
+ * Four outcomes, each named on `result` rather than collapsed into "skipped":
+ *   created     — nothing was there.
+ *   upgraded    — an Orbit-generated script was rewritten ({path,from,to}).
+ *   unchanged   — byte-identical to what we would write now.
+ *   hand_edited — no marker, so a human wrote or edited it. Left alone.
+ *
+ * The rewrite triggers on CONTENT, not just on the generation number: a
+ * regenerate with a different clip_kb has to land, and reporting "already
+ * current" while leaving the old threshold on disk is the same silent no-op
+ * the marker exists to kill. The marker answers a different question —
+ * "did Orbit write this, or did a human?"
+ */
+function writeGenerated(filePath, body, result, kind) {
+  for (const key of ["created", "skipped", "upgraded", "unchanged", "hand_edited"]) {
+    if (!result[key]) result[key] = [];
+  }
+
+  const lines = body.split("\n");
+  lines.splice(lines[0].startsWith("#!") ? 1 : 0, 0, generationMarker(kind));
+  const content = lines.join("\n");
+
+  if (fs.existsSync(filePath)) {
+    const existing = fs.readFileSync(filePath, "utf8");
+    const found = readGeneration(existing, kind);
+    if (found === null) {
+      result.hand_edited.push(filePath);
+      return false;
+    }
+    if (existing === content) {
+      result.unchanged.push(filePath);
+      return false;
+    }
+    fs.writeFileSync(filePath, content, "utf8");
+    result.upgraded.push({ path: filePath, from: found, to: SCRIPT_GENERATION });
+    return true;
+  }
+
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
   result.created.push(filePath);
@@ -140,18 +215,85 @@ if [[ ! -f "\$CLAIMS_FILE" ]]; then
   exit 2
 fi
 
+# An absence check on an absent document passes for the wrong reason: a
+# zero-byte file quotes no unapproved figure, so the cleanest email this
+# gate ever saw was the one that never compiled. Reject the input instead.
+if (( \$(wc -c < "\$HTML_FILE" | tr -d ' ') < 512 )) || ! grep -qi '<body' "\$HTML_FILE"; then
+  echo "check-claims: NOT CHECKED — the file is empty or has no <body> — check whichever step wrote it (a failed compile, or a template that assembled zero modules)." >&2
+  exit 2
+fi
+
 # Numbers that are structural, not claims — safe to ignore. Extend for your
 # own template: years, common pixel/spacing values, colour hex digits, etc.
-IGNORE_RE='^(0|1|2|3|4|5|6|7|8|9|10|20|24|100|200|202[0-9]|203[0-9]|600|640)$'
+IGNORE_RE='^(0|1|2|3|4|5|6|7|8|9|10|20|24|100|200|202[0-9]|203[0-9]|600|640)\$'
 
-# The set of approved display forms, digits-only (commas/plus/% stripped) so
-# "12,000+" in the claims file matches "12000" extracted from the HTML.
-approved="$(grep -oE '[0-9][0-9,]*' "\$CLAIMS_FILE" | tr -d ',' | sort -u || true)"
+# ── extraction ────────────────────────────────────────────────────
+# Two rules earned the hard way, both of which made this gate fire on 100%
+# of real emails and on none of the broken ones:
+#
+#   1. Strip <style>/<script>/comments BEFORE stripping tags. A <style>
+#      block's CONTENTS are not tags, so a naive tag strip leaves every hex
+#      digit, media-query breakpoint and spacing value behind as a "claim".
+#   2. Never join across a comma. "font-weight:300,400,500,700" with its
+#      commas deleted becomes the number 300400500700, which appears
+#      nowhere on Earth. Only a properly grouped thousands number
+#      (1,234 / 12,000) collapses; anything else splits into its parts.
+#
+# Known limit: a number that only ever appears inside an HTML comment is not
+# checked. Comments are stripped because MSO conditionals carry layout px.
 
-# Every standalone integer in the rendered HTML (strip tags first so we do not
-# catch numbers inside attributes like width="600").
-rendered="$(sed -E 's/<[^>]*>/ /g' "\$HTML_FILE" \\
-  | grep -oE '[0-9][0-9,]*' | tr -d ',' | sort -u || true)"
+# Visible copy only: no <style>, no <script>, no comments, no tags.
+# NB: awk parameter names avoid every builtin (close, index, length, split...).
+# Naming one \`close\` is a syntax error on BSD awk only, and this gate would
+# then have compared an empty extraction and reported PASS.
+visible_text() {
+  awk '
+    function cut(s, openTok, shutTok,   out, i, j) {
+      out = ""
+      while ((i = index(tolower(s), openTok)) > 0) {
+        out = out substr(s, 1, i - 1) " "
+        s = substr(s, i + length(openTok))
+        j = index(tolower(s), shutTok)
+        if (j == 0) return out
+        s = substr(s, j + length(shutTok))
+      }
+      return out s
+    }
+    { gsub(/\\t/, " "); buf = buf \$0 " " }
+    END {
+      buf = cut(buf, "<style", "</style>")
+      buf = cut(buf, "<script", "</script>")
+      # Downlevel-revealed markers wrap content meant for NON-Outlook clients.
+      # Drop the markers, keep the copy between them.
+      gsub(/<!--\\[if[^>]*\\]><!-->/, " ", buf)
+      gsub(/<!--<!\\[endif\\]-->/, " ", buf)
+      buf = cut(buf, "<!--[if", "<![endif]-->")   # Outlook-only blocks
+      buf = cut(buf, "<!--", "-->")               # ordinary comments
+      gsub(/<[^>]*>/, " ", buf)
+      print buf
+    }
+  ' "\$1"
+}
+
+# Digit tokens, one per line, commas resolved per token — never across one.
+numbers() {
+  grep -oE '[0-9][0-9,]*[0-9]|[0-9]' \\
+    | awk '
+        /^[0-9][0-9]?[0-9]?(,[0-9][0-9][0-9])+\$/ { gsub(/,/, ""); print; next }
+        {
+          n = split(\$0, part, ",")
+          for (i = 1; i <= n; i++) if (part[i] != "") print part[i]
+        }
+      ' \\
+    | sort -u
+}
+
+# The set of approved display forms, digits-only, so "12,000+" in the claims
+# file matches "12000" extracted from the email.
+approved="\$(numbers < "\$CLAIMS_FILE" || true)"
+
+# Every standalone integer in the email's VISIBLE copy.
+rendered="\$(visible_text "\$HTML_FILE" | numbers || true)"
 
 violations=()
 while IFS= read -r n; do
@@ -189,16 +331,18 @@ function today() {
 export function initVerifiedClaims({ path: repoPath, company_name } = {}) {
   const root = resolveSafe(repoPath);
   const company = normaliseBrand(company_name);
-  const result = { root, created: [], skipped: [] };
+  const result = { root, created: [], skipped: [], upgraded: [], unchanged: [], hand_edited: [] };
 
+  // The claims markdown is the user's own receipts — never overwritten.
   writeSkip(
     path.join(root, "knowledge", "verified-claims.md"),
     buildVerifiedClaimsMarkdown(company),
     result
   );
 
+  // The script is ours — an older generation gets upgraded in place.
   const script = path.join(root, "build", "check-claims.sh");
-  if (writeSkip(script, buildCheckClaimsScript(), result)) {
+  if (writeGenerated(script, buildCheckClaimsScript(), result, "check-claims")) {
     fs.chmodSync(script, 0o755);
   }
 
@@ -210,4 +354,12 @@ function normaliseBrand(name) {
   return trimmed.length > 0 ? trimmed : PLACEHOLDER_BRAND;
 }
 
-export { writeSkip, PLACEHOLDER_BRAND, today };
+export {
+  writeSkip,
+  writeGenerated,
+  readGeneration,
+  generationMarker,
+  SCRIPT_GENERATION,
+  PLACEHOLDER_BRAND,
+  today,
+};

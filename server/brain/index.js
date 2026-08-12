@@ -16,6 +16,8 @@
  * generic ESP referred to as "your ESP" unless the caller names one.
  */
 
+import path from "node:path";
+
 import { z } from "zod";
 
 import { MAX_SHORT_STRING } from "../input-limits.js";
@@ -32,20 +34,54 @@ function brainResponse(payload) {
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
 }
 
-/** Wrap a synchronous generator call, mapping thrown errors to isError. */
+/**
+ * Wrap a synchronous generator call, mapping thrown errors to isError.
+ *
+ * The status has to distinguish four outcomes, because collapsing them into
+ * `partial` is how a regeneration with different parameters reported that it
+ * "shipped some of the work" while shipping none of it:
+ *
+ *   created / upgraded  → ok               the files on disk are current.
+ *   nothing to do       → up_to_date       byte-identical to what we'd write.
+ *   user content left   → partial          the pre-existing docs are theirs.
+ *   a hand-edited file  → needs_attention  we will not clobber it; the caller
+ *                                          has to decide, and is told which.
+ */
 function runGenerator(label, fn) {
   try {
     const result = fn();
     const created = result.created ?? [];
     const skipped = result.skipped ?? [];
+    const upgraded = result.upgraded ?? [];
+    const unchanged = result.unchanged ?? [];
+    const handEdited = result.hand_edited ?? [];
+
+    const parts = [`${created.length} file(s) created`];
+    if (upgraded.length > 0) {
+      parts.push(
+        `${upgraded.length} upgraded (${upgraded
+          .map((u) => `${path.basename(u.path)} gen ${u.from}→${u.to}`)
+          .join(", ")})`
+      );
+    }
+    if (unchanged.length > 0) parts.push(`${unchanged.length} already current`);
+    if (skipped.length > 0) parts.push(`${skipped.length} skipped (already existed — refused to overwrite)`);
+    if (handEdited.length > 0) {
+      parts.push(
+        `${handEdited.length} left alone because they carry no Orbit generation marker, so a human wrote or edited them: ` +
+          `${handEdited.join(", ")}. Delete or rename one to regenerate it`
+      );
+    }
+
+    let status = "ok";
+    if (handEdited.length > 0) status = "needs_attention";
+    else if (skipped.length > 0) status = "partial"; // user content left alone
+    else if (created.length === 0 && upgraded.length === 0) status = "up_to_date";
+
     return brainResponse({
-      status: skipped.length > 0 ? "partial" : "ok",
+      status,
       action: label,
-      summary:
-        `${created.length} file(s) created` +
-        (skipped.length > 0
-          ? `, ${skipped.length} skipped (already existed — refused to overwrite).`
-          : "."),
+      summary: `${parts.join(", ")}.`,
       ...result,
     });
   } catch (err) {
@@ -162,7 +198,7 @@ export const BRAIN_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Generate Brain Ship Gate",
       description:
-        "Emit build/gate.sh — the offline layout/structure ship gate — parameterised to your byte-clip limit, mobile viewport and master name. Covers byte-clip (bytes, master exempt), mobile (no fixed width past the viewport), orphan-link (no empty hrefs) and CTA-parity (one label → one destination). Honest scope: layout only; render/inbox truth stays with the render gate. Refuses to overwrite existing files.",
+        "Emit build/gate.sh — the offline layout/structure ship gate — parameterised to your byte-clip limit, container width and master name. Covers byte-clip (bytes, master exempt by basename), overflow (no fixed width past the container), orphan-link (no empty hrefs) and CTA-parity (one label → one destination), and rejects an empty / body-less file before measuring it. Honest scope: layout only; render/inbox truth stays with the render gate. Re-running upgrades an older Orbit-generated gate in place; a hand-edited one is left alone.",
       inputSchema: {
         path: z
           .string()
@@ -181,7 +217,14 @@ export const BRAIN_TOOL_DEFINITIONS = [
           .positive()
           .max(2_000)
           .optional()
-          .describe("Mobile viewport width in px. Defaults to 375."),
+          .describe("Mobile viewport width in px, reported for context. Defaults to 375."),
+        container_width: z
+          .number()
+          .int()
+          .positive()
+          .max(2_000)
+          .optional()
+          .describe("Declared email container width in px — the bar the overflow check measures against. Defaults to 600."),
         master_name: z
           .string()
           .max(MAX_SHORT_STRING)
