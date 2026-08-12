@@ -241,16 +241,24 @@ jobs:
             p.fileSha256 || '';
           ")
           echo "Expecting $NAME v$WANT_VERSION sha256=$WANT_SHA"
+          # Query the VERSIONS endpoint and match the exact version we
+          # stamped. The previous form searched ?search=$NAME and took the
+          # first hit — but search returns every version as its own entry,
+          # so it read 0.28.3 while 0.28.4 sat in the same response marked
+          # isLatest. That is a false negative on every future release: the
+          # registry was right and the check that guards it was wrong.
+          ENC=$(node -p "encodeURIComponent(process.argv[1])" "$NAME")
           for attempt in 1 2 3 4 5; do
-            BODY=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=$NAME" || echo '')
+            BODY=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers/${ENC}/versions" || echo '')
             GOT=$(node -e "
               let d = {}; try { d = JSON.parse(process.argv[1] || '{}'); } catch {}
-              const list = d.servers || [];
-              const hit = list.find(s => (s.name || s.server?.name) === process.argv[2]);
-              const srv = hit?.server ?? hit ?? {};
-              const pkg = (srv.packages || []).find(p => p.fileSha256) || {};
-              console.log((srv.version || '') + ' ' + (pkg.fileSha256 || ''));
-            " "$BODY" "$NAME")
+              const list = d.servers || d.versions || [];
+              const hit = list
+                .map((s) => s.server ?? s)
+                .find((s) => s.version === process.argv[2]);
+              const pkg = (hit?.packages || []).find((p) => p.fileSha256) || {};
+              console.log(hit ? (hit.version + ' ' + (pkg.fileSha256 || '')) : 'version-not-published');
+            " "$BODY" "$WANT_VERSION")
             if [ "$GOT" = "$WANT_VERSION $WANT_SHA" ]; then
               echo "Registry readback OK: $GOT"
               exit 0
