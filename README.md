@@ -69,9 +69,19 @@ Orbit degrades cleanly and tells you what's missing when a tool needs a credenti
 
 ## Install
 
-**Recommended — from the Claude extension directory.** Open Claude Desktop, go to the extension directory, find Orbit, install. Claude Desktop keeps it updated.
+**From the MCP registry.** Orbit's registry name is:
 
-**Manual.** Download the `.mcpb` from this repo's releases and double-click it. You update it yourself.
+```
+io.github.justinwilliames/braze-lifecycle-mcp
+```
+
+Registry search matches the *name*, not the description, which is why the name says what it does rather than what it is called. Any registry-aware client can install it from that identifier.
+
+> The older `io.github.justinwilliames/orbit-for-claude` entry is **deprecated** and its packages point at pre-0.28 builds that still carry the removed licence gate. If a client offers you that one, use the name above instead.
+
+**Manual.** Download the latest `.mcpb` from [this repo's releases](https://github.com/justinwilliames/orbit-for-claude/releases/latest) — v0.28.0 or newer — and double-click it. You update it yourself.
+
+**From the Claude extension directory.** Open Claude Desktop, go to the extension directory, find Orbit, install. Claude Desktop keeps it updated.
 
 Then, optionally: Claude Desktop → **Settings → Extensions → Orbit** → fill in credentials for whichever platforms you use. They stay local to your machine.
 

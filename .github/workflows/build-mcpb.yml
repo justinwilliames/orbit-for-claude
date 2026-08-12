@@ -18,6 +18,15 @@ on:
       - 'scripts/**'
       - '.github/workflows/**'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Build, test, package and validate server.json, then stop before
+          anything leaves the runner. Use this to debug the pipeline — five
+          public releases got cut in 39 minutes chasing one broken step, and
+          a version number spent debugging is spent forever.
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -80,16 +89,50 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building orbit-v$VERSION"
 
-      # Upload to the private Railway-backed Tigris bucket. Three
-      # objects per release:
+      # Everything a broken pipeline used to need a public version number to
+      # discover — the build, the tests, the package, and the schema shape
+      # the registry rejects on — happens above this line. Stop here.
+      - name: Dry run — validate server.json and stop
+        if: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          node scripts/build-server-json.mjs \
+            orbit-lifecycle-marketing-system-for-claude.mcpb
+          cat server.json
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+          ./mcp-publisher validate server.json
+          echo "Dry run OK. Nothing was uploaded, released, published or promoted."
+
+      # Upload to the private Railway-backed Tigris bucket.
+      #
+      # ORDERING, which cost two public version numbers to learn: this step
+      # and the GitHub Release below are IRREVERSIBLE, and they used to run
+      # before the registry publish and readback. Three of the last five runs
+      # went red after them, so v0.28.1 and v0.28.2 are public releases that
+      # were served as latest.mcpb and never reached the registry.
+      #
+      # What moved: the two "this is the current build" promotions —
+      # mcpb/latest.mcpb and the release's --latest flag — now happen AFTER
+      # the readback, in "Promote to latest". The immutable versioned objects
+      # still land here, because the registry entry stamps a checksum of a
+      # published asset and cannot be published against one that does not
+      # exist yet. A draft release does NOT work for the same reason: its
+      # /releases/download/ URL is not publicly resolvable, and
+      # build-server-json.mjs stamps that URL into an IMMUTABLE registry
+      # version — it would pin the registry to a permanent 404.
+      #
+      # Objects per release:
       #   - mcpb/orbit-v{version}.mcpb   — immutable versioned archive
-      #   - mcpb/latest.mcpb             — always-latest alias (the
-      #                                    one /api/mcpb-download serves)
+      #   - mcpb/latest.mcpb             — always-latest alias (the one
+      #                                    /api/mcpb-download serves), written
+      #                                    only after the readback passes
       #   - manifest.json                — proxied by
       #                                    /api/orbit/latest-version
       # The website only reads these via signed URLs — the bucket
       # itself is private, no public ingress.
       - name: Upload to MCPB bucket
+        if: ${{ !inputs.dry_run }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.ORBIT_MCPB_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.ORBIT_MCPB_S3_SECRET_ACCESS_KEY }}
@@ -102,21 +145,19 @@ jobs:
             orbit-lifecycle-marketing-system-for-claude.mcpb \
             "s3://$S3_BUCKET/mcpb/orbit-v$VERSION.mcpb" \
             --content-type application/zip
-          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
-            orbit-lifecycle-marketing-system-for-claude.mcpb \
-            "s3://$S3_BUCKET/mcpb/latest.mcpb" \
-            --content-type application/zip
-          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
-            manifest.json \
-            "s3://$S3_BUCKET/manifest.json" \
-            --content-type application/json
-          echo "Uploaded orbit-v$VERSION.mcpb, latest.mcpb, and manifest.json"
+          echo "Uploaded orbit-v$VERSION.mcpb (versioned only — latest.mcpb and manifest.json are promoted after the registry readback)"
 
       # Publish a tagged GitHub Release with the .mcpb attached. This is the
       # versioned, stable-URL artifact the Claude extension directory tracks
       # for auto-update, and a public download path in its own right. Skips
       # cleanly if a release for this version already exists (re-run safety).
+      #
+      # NOT --latest. The release must exist and be publicly resolvable for
+      # the registry to hash its URL, but marking it "latest" is the claim
+      # that it is the build people should get — and that claim is only
+      # earned once the readback below passes. "Promote to latest" sets it.
       - name: Publish GitHub Release
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.VERSION }}
@@ -129,7 +170,7 @@ jobs:
             gh release create "v$VERSION" \
               orbit-lifecycle-marketing-system-for-claude.mcpb \
               --title "Orbit v$VERSION" \
-              --latest \
+              --latest=false \
               --notes "Orbit MCPB v$VERSION. Free, no account and no key required. Install: download the .mcpb and double-click it (Claude Desktop replaces any older version in place)."
           fi
 
@@ -144,6 +185,7 @@ jobs:
       # a missing token degrades to "the registry is stale," not a failed
       # release.
       - name: Stamp and publish the MCP registry entry
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           node scripts/build-server-json.mjs \
@@ -183,6 +225,7 @@ jobs:
       # a failure here must not fail a release whose artifact is already
       # published and correct.
       - name: Deprecate the pre-rename registry entry
+        if: ${{ !inputs.dry_run }}
         continue-on-error: true
         run: |
           set -uo pipefail
@@ -231,6 +274,7 @@ jobs:
       # not match its own asset" stays undetectable until a stranger's
       # installer refuses the download.
       - name: Verify the published registry entry
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           NAME=$(node -p "require('./server.json').name")
@@ -269,6 +313,34 @@ jobs:
           echo "::error::Registry readback never matched the stamped server.json (wanted '$WANT_VERSION $WANT_SHA'). The registry is serving an entry that does not describe this release."
           exit 1
 
+      # Everything above can fail and leave the world consistent: the
+      # versioned objects and the un-flagged release are additive, and
+      # nothing yet points anyone at them. THIS step is where the release
+      # becomes the one strangers get, and it only runs once the registry
+      # has been read back and agreed.
+      - name: Promote to latest
+        if: ${{ !inputs.dry_run }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ORBIT_MCPB_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ORBIT_MCPB_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.ORBIT_MCPB_S3_REGION }}
+          S3_ENDPOINT: ${{ secrets.ORBIT_MCPB_S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.ORBIT_MCPB_S3_BUCKET }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+            orbit-lifecycle-marketing-system-for-claude.mcpb \
+            "s3://$S3_BUCKET/mcpb/latest.mcpb" \
+            --content-type application/zip
+          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+            manifest.json \
+            "s3://$S3_BUCKET/manifest.json" \
+            --content-type application/json
+          gh release edit "v$VERSION" --latest
+          echo "Promoted v$VERSION: latest.mcpb, manifest.json, and the GitHub Release's latest flag."
+
       # Notify the get-orbit website immediately that a new MCPB
       # version is live. Triggers the sync-mcpb-version workflow
       # there, which updates lib/orbit-version.ts + pushes → Railway
@@ -287,7 +359,7 @@ jobs:
       # If the secret isn't set, this step skips cleanly so the build
       # still succeeds; the daily cron will catch up.
       - name: Notify website of new release
-        if: ${{ success() }}
+        if: ${{ success() && !inputs.dry_run }}
         env:
           DISPATCH_TOKEN: ${{ secrets.ORBIT_WEBSITE_DISPATCH_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
