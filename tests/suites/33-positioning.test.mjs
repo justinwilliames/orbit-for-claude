@@ -22,6 +22,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
@@ -135,6 +136,25 @@ describe("Positioning guard — Orbit leads with the brain, not a vendor", () =>
       "template-brain",
       "template-brain is now over-matching — a plain welcome-flow build should not route to the brain"
     );
+  });
+
+  test("the extension card a human reads at the install decision says it is free", () => {
+    // manifest.json's description and long_description never changed CONTENT
+    // across the entire commit history — only unicode-escaping churn. They
+    // sold the pre-repositioning "martech operating system — Orbit
+    // Intelligence" framing, never said "free", and understated the guide
+    // library. That is the storefront, not an internal file.
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL("../../manifest.json", import.meta.url), "utf8")
+    );
+    const card = `${manifest.description} ${manifest.long_description}`;
+    assert.match(
+      manifest.description.slice(0, 160),
+      /free/i,
+      "the first 160 characters are what most install UIs show — the price belongs in them"
+    );
+    assert.doesNotMatch(card, /Orbit Intelligence/i, "retired framing is back in the storefront");
+    assert.match(card, /lifecycle brain/i, "the flagship path is not mentioned on the card");
   });
 
   test("more than one ESP is named, so the pitch is not single-vendor", () => {

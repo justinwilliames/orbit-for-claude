@@ -7,14 +7,21 @@
  * tools. Understating yourself by 41 tools on the surface a stranger
  * evaluates you from is a strange way to be discovered.
  *
- * Numbers come from the two files that cannot lie about them:
- * data/skills.manifest.json (generated from skills/) and manifest.json's
+ * Numbers come from the three files that cannot lie about them:
+ * data/skills.manifest.json (generated from skills/), manifest.json's
  * tools array (generated-adjacent, and diffed against the running server
- * by tests/suites/26-manifest-drift.test.mjs).
+ * by tests/suites/26-manifest-drift.test.mjs), and data/guides-export.json
+ * (fetched from the live guide library).
  *
- * Everything is rewritten between explicit markers so the prose around
- * each number stays hand-written. Exit 1 means something was stale and
- * has been rewritten.
+ * manifest.json is a TARGET as well as a source. It is the extension card
+ * a human reads at the install decision, it is the one inventory-bearing
+ * file this script never wrote to, and it duly sat at "80+ guides" against
+ * a true 90 while advertising a positioning the product had already
+ * dropped. A drift-prevention script that skips the storefront is not
+ * preventing the drift that costs anything.
+ *
+ * Everything is rewritten in place so the prose around each number stays
+ * hand-written. Exit 1 means something was stale and has been rewritten.
  */
 
 import fs from "node:fs";
@@ -27,33 +34,46 @@ const skills = JSON.parse(
   fs.readFileSync(path.join(ROOT_DIR, "data", "skills.manifest.json"), "utf8")
 );
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
+const guides = JSON.parse(
+  fs.readFileSync(path.join(ROOT_DIR, "data", "guides-export.json"), "utf8")
+);
 
 export const COUNTS = {
   skills: skills.length,
   tools: manifest.tools.length,
+  guides: Array.isArray(guides) ? guides.length : (guides.guides?.length ?? guides.count ?? 0),
 };
 
 /** The one inventory sentence, everywhere. */
 export const INVENTORY = `${COUNTS.skills} skills and ${COUNTS.tools} tools`;
 
+/** The one guide-library sentence, everywhere. */
+export const GUIDE_INVENTORY = `${COUNTS.guides} long-form practitioner guides`;
+
 /**
- * Files that carry the inventory sentence, and the pattern that finds it.
- *
- * The pattern deliberately matches ANY "<n> skills and <n> tools" so a
- * stale hand-edit is corrected rather than duplicated.
+ * The rewrites. Each pattern deliberately matches ANY count in that shape,
+ * so a stale hand-edit is corrected rather than duplicated.
  */
-const TARGETS = [
-  { file: "README.md", pattern: /\b\d+\+? skills and \d+\+? tools\b/g },
-  { file: "server.json", pattern: /\b\d+\+? skills and \d+\+? tools\b/g },
-  { file: "server/index.js", pattern: /\b\d+\+? skills and \d+\+? tools\b/g },
+const REWRITES = [
+  { pattern: /\b\d+\+? skills and \d+\+? tools\b/g, replacement: () => INVENTORY },
+  {
+    pattern: /\b\d+\+? (?:long-form )?practitioner guides\b/g,
+    replacement: () => GUIDE_INVENTORY,
+  },
 ];
+
+/** Files that state Orbit's own size. */
+const TARGETS = ["README.md", "server.json", "server/index.js", "manifest.json"];
 
 if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const stale = [];
-  for (const { file, pattern } of TARGETS) {
+  for (const file of TARGETS) {
     const full = path.join(ROOT_DIR, file);
     const raw = fs.readFileSync(full, "utf8");
-    const next = raw.replace(pattern, INVENTORY);
+    let next = raw;
+    for (const { pattern, replacement } of REWRITES) {
+      next = next.replace(pattern, replacement());
+    }
     if (next !== raw) {
       fs.writeFileSync(full, next);
       stale.push(file);
@@ -61,8 +81,12 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   }
 
   if (stale.length > 0) {
-    process.stdout.write(`Rewrote the inventory ("${INVENTORY}") in: ${stale.join(", ")}\n`);
+    process.stdout.write(
+      `Rewrote the inventory ("${INVENTORY}", "${GUIDE_INVENTORY}") in: ${stale.join(", ")}\n`
+    );
     process.exit(1);
   }
-  process.stdout.write(`Inventory already in sync everywhere ("${INVENTORY}").\n`);
+  process.stdout.write(
+    `Inventory already in sync everywhere ("${INVENTORY}", "${GUIDE_INVENTORY}").\n`
+  );
 }
