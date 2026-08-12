@@ -131,6 +131,64 @@ describe("Braze audit suite — conversion events, preference centre, send calen
     assert.ok(dead.length > 0, "zero occurrences over the window is a finding");
   });
 
+  test("an event on page 2 of the workspace is found, not accused of not existing", async () => {
+    // One request per list endpoint returns page 0 and looks exactly like a
+    // complete read. The audit then reported a live conversion event as
+    // absent — high severity, with a causal story — because page 0 did not
+    // contain it.
+    mock.setPageSize(2);
+    mock.setResponse("GET", "/events/list", {
+      events: ["first_event", "second_event", "third_event", "payment_succeeded"]
+    });
+    mock.setResponse("GET", "/campaigns/details", {
+      ...TWO_BEHAVIOURS,
+      conversion_behaviors: [
+        { type: "Performs Custom Event", window: 7, custom_event_name: "payment_succeeded" }
+      ]
+    });
+
+    const { parsed } = await client.callToolJson("orbit_audit_conversion_events", {});
+    assert.deepEqual(
+      parsed.campaigns.flatMap((c) => c.findings).filter((f) => f.check === "event_not_in_workspace"),
+      [],
+      "an event on the second page was reported as not existing"
+    );
+    assert.equal(parsed.scope.event_list_incomplete, false);
+
+    const pages = mock
+      .getRequests()
+      .filter((r) => r.path === "/events/list")
+      .map((r) => r.query.page);
+    assert.ok(pages.length > 1, `the event list was read as one page: ${JSON.stringify(pages)}`);
+  });
+
+  test("absence is not proved from a truncated list — it becomes a note, not a finding", async () => {
+    // Page cap reached with data still coming. Reporting "this event does not
+    // exist" off a partial read is the same unearned confidence the abstain
+    // rule already covers for a failed data_series call.
+    mock.setPageSize(1);
+    mock.setResponse("GET", "/events/list", {
+      events: Array.from({ length: 40 }, (_, i) => `event_${i}`)
+    });
+    mock.setResponse("GET", "/campaigns/details", {
+      ...TWO_BEHAVIOURS,
+      conversion_behaviors: [
+        { type: "Performs Custom Event", window: 7, custom_event_name: "not_on_any_page" }
+      ]
+    });
+
+    const { parsed } = await client.callToolJson("orbit_audit_conversion_events", {});
+    assert.equal(parsed.scope.event_list_incomplete, true, "a capped page walk must say so");
+    assert.deepEqual(
+      parsed.campaigns.flatMap((c) => c.findings).filter((f) => f.check === "event_not_in_workspace"),
+      []
+    );
+    assert.ok(
+      parsed.campaigns.flatMap((c) => c.notes).some((n) => /INCOMPLETE/.test(n)),
+      `expected a note explaining why absence was not asserted; got ${JSON.stringify(parsed.campaigns.map((c) => c.notes))}`
+    );
+  });
+
   test("a campaign with no conversion behaviour at all is unmeasurable", async () => {
     mock.setResponse("GET", "/campaigns/details", { ...TWO_BEHAVIOURS, conversion_behaviors: [] });
     const { parsed } = await client.callToolJson("orbit_audit_conversion_events", {});
@@ -263,6 +321,49 @@ describe("Braze audit suite — conversion events, preference centre, send calen
     const { parsed } = await client.callToolJson("orbit_audit_send_calendar", {});
     const mixed = parsed.findings.filter((f) => f.check === "mixed_delivery_semantics");
     assert.equal(mixed.length, 1, "all three fixture sends land on the same day, two schedule types");
+  });
+
+  test("the clock is the workspace's, not this process's — a 10:00 +10:00 send is not 00:00", async () => {
+    // Read with getUTCHours() the first fixture row lands at 00:00 on the
+    // 15th: a HIGH quiet-hours finding with an invented clock time, on the
+    // wrong calendar day, for a send scheduled mid-morning. The policy this
+    // tool states is recipient-local, so the arithmetic has to be too.
+    const { parsed } = await client.callToolJson("orbit_audit_send_calendar", {});
+
+    const morning = parsed.calendar
+      .flatMap((d) => d.sends.map((s) => ({ ...s, date: d.date })))
+      .find((s) => s.name === "campaign_email_promotional_all_2026-03-16");
+    assert.ok(morning, "the fixture carries the 10:00 +10:00 broadcast");
+    assert.equal(morning.date, "2026-03-16", "a local morning send was bucketed on the wrong day");
+
+    const quiet = parsed.findings.filter((f) => f.check === "quiet_hours");
+    assert.deepEqual(
+      quiet.map((f) => f.send),
+      ["untitled broadcast"],
+      "only the 23:30 local send is inside the quiet window"
+    );
+    assert.match(quiet[0].detail, /23:30/, "the finding must quote the local clock it judged");
+
+    // Every send in the fixture is on a Mon or Tue local, and all seven days
+    // are allowed, so the day check must be silent either way.
+    assert.deepEqual(parsed.findings.filter((f) => f.check === "disallowed_day"), []);
+    assert.match(parsed.policy.clock_basis, /offset Braze returned/);
+  });
+
+  test("an explicit workspace_timezone overrides the offset and is named in the output", async () => {
+    const { parsed } = await client.callToolJson("orbit_audit_send_calendar", {
+      workspace_timezone: "Australia/Brisbane"
+    });
+    // Brisbane IS +10:00, so the two rows Braze already returned at +10:00
+    // keep their verdict. The -05:00 row does not: 14:00 in New York is 05:00
+    // the next morning in Brisbane, inside the quiet window. That difference
+    // is the whole point of the argument — it converts the instant instead of
+    // trusting the offset each row happens to carry.
+    assert.deepEqual(
+      parsed.findings.filter((f) => f.check === "quiet_hours").map((f) => f.send).sort(),
+      ["campaign_email_promotional_all_2026-03-17", "untitled broadcast"]
+    );
+    assert.match(parsed.policy.clock_basis, /Australia\/Brisbane/);
   });
 
   test("a rejected key reports auth_failed rather than an empty calendar", async () => {

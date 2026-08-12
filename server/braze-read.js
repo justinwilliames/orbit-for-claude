@@ -751,10 +751,34 @@ export async function checkTemplateCollision({ config, templateName }) {
  * empty" from "credentials are rejected". Other errors are captured but
  * non-fatal: a missing endpoint won't blow up the whole audit.
  */
-async function safeList(config, endpoint, itemsKey) {
+/**
+ * The 0-indexed `?page=` list endpoints. None of them advertises a
+ * continuation token, so a single call returns page 0 and is indistinguishable
+ * from a complete read — which is how an audit came to accuse a live
+ * conversion event of not existing, and to report `truncated: false` after
+ * auditing 100 of 300 campaigns.
+ */
+const WALK_PAGES_ENDPOINTS = new Set([
+  "/campaigns/list",
+  "/canvas/list",
+  "/segments/list",
+  "/events/list"
+]);
+
+async function safeList(config, endpoint, itemsKey, { maxPages = 20 } = {}) {
   try {
+    if (WALK_PAGES_ENDPOINTS.has(endpoint)) {
+      const { items, truncated } = await brazePaginateList({
+        config,
+        endpoint,
+        itemsKey,
+        walkPages: true,
+        maxPages
+      });
+      return { items, truncated, error: null, authFailed: false };
+    }
     const response = await brazeGet({ config, endpoint });
-    return { items: response[itemsKey] ?? [], error: null, authFailed: false };
+    return { items: response[itemsKey] ?? [], truncated: false, error: null, authFailed: false };
   } catch (err) {
     return classifyBrazeError(err, endpoint);
   }

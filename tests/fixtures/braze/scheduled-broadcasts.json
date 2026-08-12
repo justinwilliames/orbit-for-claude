@@ -1,4 +1,5 @@
 {
+  "_comment": "Offsets are deliberately NOT +00:00. Braze returns next_send_time at the workspace's own offset, and +00:00 is the one value at which local and UTC arithmetic are indistinguishable — so a fixture written that way cannot tell a recipient-local quiet-hours check apart from a UTC one. These rows are +10:00 and -05:00.",
   "message": "success",
   "scheduled_broadcasts": [
     {
@@ -6,7 +7,7 @@
       "id": "campaign-001",
       "type": "Campaign",
       "tags": ["Promotional"],
-      "next_send_time": "2026-03-16T10:00:00+00:00",
+      "next_send_time": "2026-03-16T10:00:00+10:00",
       "schedule_type": "time_based"
     },
     {
@@ -14,7 +15,7 @@
       "id": "campaign-002",
       "type": "Campaign",
       "tags": [],
-      "next_send_time": "2026-03-16T23:30:00+00:00",
+      "next_send_time": "2026-03-16T23:30:00+10:00",
       "schedule_type": "time_based"
     },
     {
@@ -22,8 +23,16 @@
       "id": "canvas-001",
       "type": "Canvas",
       "tags": ["Onboarding"],
-      "next_send_time": "2026-03-16T09:00:00+00:00",
+      "next_send_time": "2026-03-16T09:00:00+10:00",
       "schedule_type": "local_time_zones"
+    },
+    {
+      "name": "campaign_email_promotional_all_2026-03-17",
+      "id": "campaign-003",
+      "type": "Campaign",
+      "tags": ["Promotional"],
+      "next_send_time": "2026-03-17T14:00:00-05:00",
+      "schedule_type": "time_based"
     }
   ]
 }

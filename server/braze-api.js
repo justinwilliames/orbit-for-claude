@@ -206,21 +206,46 @@ export async function brazeUploadAsset({ config, fileBuffer, fileName, contentTy
 }
 
 /**
- * Paginate through a Braze list endpoint. Handles both page-based and
- * cursor-based endpoints: if the response includes `next_page` we pass
- * it as `?page=`; if `next_cursor` we pass it as `?cursor=`.
+ * Paginate through a Braze list endpoint. Three shapes, because Braze has
+ * three:
+ *
+ *   · `next_cursor` in the response  -> passed back as `?cursor=`
+ *   · `next_page` in the response    -> passed back as `?page=`
+ *   · NOTHING in the response        -> `/campaigns/list`, `/canvas/list`,
+ *     `/events/list` and `/segments/list` are 0-indexed `?page=` endpoints
+ *     that advertise no continuation at all. You walk the pages until one
+ *     comes back empty. Pass `walkPages: true` for those.
+ *
+ * The third case is the dangerous one: a single un-paginated call to a
+ * walk-pages endpoint returns page 0 and looks exactly like a complete read.
+ * A conversion audit built on it accused a live event of not existing, and
+ * reported `truncated: false` after seeing a third of the workspace.
  *
  * Returns `{ items, truncated, pages_fetched }`. `truncated` is true when
  * `maxPages` was hit with more data still available, so callers can
  * surface that in their response rather than silently returning partial
  * results.
  */
-export async function brazePaginateList({ config, endpoint, params = {}, itemsKey, maxPages = 10 }) {
+export async function brazePaginateList({ config, endpoint, params = {}, itemsKey, maxPages = 10, walkPages = false }) {
   const allItems = [];
   let nextToken = null;
   let nextTokenKey = null; // "page" or "cursor"
   let truncated = false;
   let pagesFetched = 0;
+
+  if (walkPages) {
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await brazeGet({ config, endpoint, params: { ...params, page } });
+      const items = response[itemsKey] ?? [];
+      pagesFetched = page + 1;
+      allItems.push(...items);
+      if (items.length === 0) return { items: allItems, truncated: false, pages_fetched: pagesFetched };
+      // Last allowed page came back non-empty: there may well be more, and
+      // saying so is the difference between a partial read and a wrong one.
+      if (page === maxPages - 1) truncated = true;
+    }
+    return { items: allItems, truncated, pages_fetched: pagesFetched };
+  }
 
   for (let page = 1; page <= maxPages; page += 1) {
     const requestParams = { ...params };

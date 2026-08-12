@@ -30,7 +30,7 @@ const SPREAD_SCHEDULES = new Set(["local_time_zones", "intelligent_delivery"]);
 
 /** Conservative defaults; every one is caller-overridable. */
 const DEFAULTS = {
-  quiet_hours: { start: 21, end: 8 }, // 21:00–08:00 recipient-local
+  quiet_hours: { start: 21, end: 8 }, // 21:00–08:00 on the workspace's own clock
   allowed_days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
   max_sends_per_tag: 3, // per 7-day window
   window_days: 14
@@ -56,6 +56,7 @@ export async function auditSendCalendar({
   quiet_hours: quietHours = DEFAULTS.quiet_hours,
   allowed_days: allowedDays = DEFAULTS.allowed_days,
   max_sends_per_tag: maxSendsPerTag = DEFAULTS.max_sends_per_tag,
+  workspace_timezone: workspaceTimezone = null,
   enrich = true,
   max_enrich: maxEnrich = 40,
   resumeState,
@@ -152,7 +153,8 @@ export async function auditSendCalendar({
     windowDays,
     quietHours,
     allowedDays,
-    maxSendsPerTag
+    maxSendsPerTag,
+    workspaceTimezone
   });
 }
 
@@ -208,7 +210,7 @@ function deriveChannels(details) {
   return channels.size > 0 ? [...channels] : null;
 }
 
-function buildCalendarReport({ state, windowDays, quietHours, allowedDays, maxSendsPerTag }) {
+function buildCalendarReport({ state, windowDays, quietHours, allowedDays, maxSendsPerTag, workspaceTimezone = null }) {
   const rows = state.rows;
   const findings = [];
   const allowed = new Set(allowedDays);
@@ -275,32 +277,45 @@ function buildCalendarReport({ state, windowDays, quietHours, allowedDays, maxSe
           "nominal time would be meaningless. Not checked."
       );
     } else {
-      const hour = when.getUTCHours();
-      if (inQuietHours(hour, quietHours)) {
-        findings.push({
-          check: "quiet_hours",
-          severity: "high",
-          send: row.name,
-          detail:
-            `Scheduled at ${String(hour).padStart(2, "0")}:00, inside the ` +
-            `stated quiet window ${quietHours.start}:00–${quietHours.end}:00.`
-        });
-      }
-      const day = DAY_NAMES[when.getUTCDay()];
-      if (!allowed.has(day)) {
-        findings.push({
-          check: "disallowed_day",
-          severity: "medium",
-          send: row.name,
-          detail: `Scheduled on ${day}, which is not in the allowed send days.`
-        });
+      const wall = wallClock(row.next_send_time, workspaceTimezone);
+      if (!wall) {
+        // No wall clock means no honest quiet-hours answer. Abstain by name,
+        // the same treatment a spread schedule already gets above.
+        row.notes.push(
+          "next_send_time carries no readable local wall clock, so quiet " +
+            "hours and allowed days were not checked for this send."
+        );
+      } else {
+        if (inQuietHours(wall.hour, quietHours)) {
+          findings.push({
+            check: "quiet_hours",
+            severity: "high",
+            send: row.name,
+            detail:
+              `Scheduled at ${String(wall.hour).padStart(2, "0")}:` +
+              `${String(wall.minute).padStart(2, "0")} ${wall.basis}, inside the ` +
+              `stated quiet window ${quietHours.start}:00–${quietHours.end}:00.`
+          });
+        }
+        if (!allowed.has(wall.day)) {
+          findings.push({
+            check: "disallowed_day",
+            severity: "medium",
+            send: row.name,
+            detail: `Scheduled on ${wall.day} ${wall.basis}, which is not in the allowed send days.`
+          });
+        }
       }
     }
 
-    if (validWhen) {
-      const dayKey = when.toISOString().slice(0, 10);
-      if (!perDay.has(dayKey)) perDay.set(dayKey, []);
-      perDay.get(dayKey).push(row);
+    // Bucket the calendar on the LOCAL date too. Bucketing on the UTC date
+    // splits one working day across two calendar days for any workspace east
+    // or west of Greenwich, and then feeds that invented calendar to the
+    // mixed-delivery and busiest-day checks below.
+    const bucket = wallClock(row.next_send_time, workspaceTimezone);
+    if (bucket) {
+      if (!perDay.has(bucket.date)) perDay.set(bucket.date, []);
+      perDay.get(bucket.date).push(row);
     }
     for (const tag of row.tags) {
       perTag.set(tag, (perTag.get(tag) ?? 0) + 1);
@@ -358,7 +373,13 @@ function buildCalendarReport({ state, windowDays, quietHours, allowedDays, maxSe
     policy: {
       quiet_hours: quietHours,
       allowed_days: allowedDays,
-      max_sends_per_tag: maxSendsPerTag
+      max_sends_per_tag: maxSendsPerTag,
+      // Which clock every hour and day below was read on. Without this the
+      // reader cannot tell a real 03:00 send from a timezone artefact.
+      clock_basis: workspaceTimezone
+        ? `workspace_timezone ${workspaceTimezone} (converted through Intl)`
+        : "the offset Braze returned in next_send_time — pass workspace_timezone " +
+          "if your workspace normalises that field to UTC"
     },
     overlap_basis: "tags_and_naming",
     caveats,
@@ -392,6 +413,69 @@ function buildCalendarReport({ state, windowDays, quietHours, allowedDays, maxSe
         }))
       })),
     findings
+  };
+}
+
+/**
+ * The wall clock the SEND was scheduled at, never the one this process runs in.
+ *
+ * `next_send_time` comes back from Braze carrying an offset — the workspace's
+ * own, e.g. "2026-08-18T09:00:00+10:00". Reading it with getUTCHours() moves
+ * every send to Greenwich: a 09:00 Brisbane send became 23:00 the previous
+ * day, which is a HIGH quiet-hours finding with a fabricated clock time and
+ * the wrong calendar date, while a genuine 23:30 local violation (13:30 UTC)
+ * went unreported. Wrong in both directions on the same run, against a policy
+ * this file's own line 33 calls "recipient-local".
+ *
+ * So: read the wall clock straight out of the string Braze sent. A caller who
+ * knows better can pass an IANA `workspace_timezone` and the instant is
+ * converted through Intl instead — that is the only path that survives Braze
+ * normalising the field to Z.
+ */
+function wallClock(iso, timeZone) {
+  const raw = String(iso ?? "");
+  if (!raw) return null;
+
+  if (timeZone) {
+    const t = new Date(raw);
+    if (Number.isNaN(t.getTime())) return null;
+    let parts;
+    try {
+      parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone,
+        hour12: false,
+        weekday: "short",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).formatToParts(t);
+    } catch {
+      return null; // unknown IANA zone — abstain rather than guess
+    }
+    const get = (type) => parts.find((p) => p.type === type)?.value ?? "";
+    return {
+      hour: Number(get("hour")) % 24,
+      minute: Number(get("minute")),
+      day: get("weekday").slice(0, 3),
+      date: `${get("year")}-${get("month")}-${get("day")}`,
+      basis: `in ${timeZone}`
+    };
+  }
+
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, hh, mm] = m;
+  const offset = raw.slice(19).match(/^(Z|[+-]\d{2}:?\d{2})/)?.[1] ?? null;
+  return {
+    hour: Number(hh),
+    minute: Number(mm),
+    // getUTCDay on a date built from the same Y-M-D gives that calendar
+    // date's weekday, with no timezone arithmetic applied to it.
+    day: DAY_NAMES[new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d))).getUTCDay()],
+    date: `${y}-${mo}-${d}`,
+    basis: offset && offset !== "Z" ? `at the workspace offset ${offset}` : "UTC"
   };
 }
 

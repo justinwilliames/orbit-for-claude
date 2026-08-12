@@ -3675,6 +3675,7 @@ function registerTools() {
         quiet_hours_end: z.number().int().min(0).max(23).optional().describe("End of the quiet window, 0-23 (default: 8)"),
         allowed_days: z.array(z.enum(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])).max(7).optional().describe("Days a send is allowed on (default: all seven)"),
         max_sends_per_tag: z.number().int().min(1).max(100).optional().describe("Tag density limit across the window (default: 3)"),
+        workspace_timezone: z.string().min(1).max(64).optional().describe("IANA zone for your workspace, e.g. Australia/Brisbane. Only needed if Braze normalises next_send_time to UTC — by default the offset Braze returns is used as the workspace clock."),
         enrich: z.boolean().optional().describe("Pull details for channel and draft/archived state (default: true)")
       }
     },
@@ -3694,6 +3695,7 @@ function registerTools() {
         },
         allowed_days: args.allowed_days ?? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         max_sends_per_tag: args.max_sends_per_tag ?? 3,
+        workspace_timezone: args.workspace_timezone ?? null,
         enrich: args.enrich ?? true,
         resumeState: resume?.state ?? null,
         shouldYield

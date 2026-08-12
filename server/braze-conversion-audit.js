@@ -100,7 +100,11 @@ export async function auditConversionEvents({
       name: c.name,
       tags: c.tags ?? []
     }));
-    state.truncated = items.length > maxCampaigns;
+    // Truncated by EITHER the caller's cap or the paginator's. Comparing the
+    // returned length against maxCampaigns could only ever see the cap, so a
+    // partial list read reported `truncated: false` on a third of a workspace.
+    state.truncated = items.length > maxCampaigns || Boolean(listed.truncated);
+    state.campaignsListTruncated = Boolean(listed.truncated);
   }
 
   // ── Step 2: the workspace event vocabulary ───────────────────────
@@ -114,6 +118,7 @@ export async function auditConversionEvents({
       state.eventsListError = events.error;
     } else {
       state.knownEvents = events.items.map((e) => e.name ?? e).filter(Boolean);
+      state.eventsListTruncated = Boolean(events.truncated);
     }
   }
   const knownEvents = state.knownEvents === null ? null : new Set(state.knownEvents);
@@ -127,6 +132,7 @@ export async function auditConversionEvents({
       days,
       cadenceDays,
       knownEvents,
+      knownEventsPartial: Boolean(state.eventsListTruncated),
       eventsListError: state.eventsListError ?? null,
       eventCounts: state.eventCounts
     });
@@ -160,6 +166,7 @@ async function auditOneCampaign({
   days,
   cadenceDays,
   knownEvents,
+  knownEventsPartial = false,
   eventsListError,
   eventCounts
 }) {
@@ -246,6 +253,17 @@ async function auditOneCampaign({
         notes.push(
           `Could not verify "${name}" against the workspace event list ` +
             `(${eventsListError}). Existence NOT checked for this campaign.`
+        );
+      } else if (!knownEvents.has(name) && knownEventsPartial) {
+        // Absence cannot be proved from a partial list. This is the rule
+        // eventOccurrences already follows for a failed read, applied to the
+        // vocabulary: an event missing from a truncated page walk is a note,
+        // not a high-severity accusation with a causal story attached.
+        notes.push(
+          `"${name}" was not in the event list, but the event list read hit its ` +
+            "page cap and is INCOMPLETE. Absence is unprovable from a partial " +
+            "list, so this is not reported as a missing event. Raise the cap, or " +
+            "check the name in the dashboard."
         );
       } else if (!knownEvents.has(name)) {
         findings.push({
@@ -403,6 +421,8 @@ function buildReport({ state, days, cadenceDays }) {
     scope: {
       campaigns_audited: rows.length,
       truncated: Boolean(state.truncated),
+      campaign_list_incomplete: Boolean(state.campaignsListTruncated),
+      event_list_incomplete: Boolean(state.eventsListTruncated),
       canvases:
         "not audited — /canvas/details does not return conversion behaviours, " +
         "so a Canvas's conversion configuration cannot be read over the API"

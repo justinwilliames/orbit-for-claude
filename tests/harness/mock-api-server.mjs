@@ -33,9 +33,24 @@ export function loadFixture(vendor, name) {
  * env is a ready-to-merge object of environment variables that point
  * Orbit's external API clients at this mock instead of real endpoints.
  */
+/**
+ * The Braze list endpoints that are 0-indexed `?page=` walks with no
+ * continuation token in the response. A mock that ignores `page` and serves
+ * the whole array on every call cannot tell a paginated read apart from an
+ * un-paginated one — which is precisely how a single-page audit shipped
+ * reporting `truncated: false` over a third of a workspace.
+ */
+const PAGED_LIST_ROUTES = {
+  "/campaigns/list": "campaigns",
+  "/canvas/list": "canvases",
+  "/segments/list": "segments",
+  "/events/list": "events"
+};
+
 export async function startMockApiServer() {
   const responses = new Map(); // method + path pattern -> handler
   const requests = [];
+  let pageSize = 100; // Braze's own default for /campaigns/list
 
   function key(method, urlPath) {
     return `${method.toUpperCase()} ${urlPath}`;
@@ -159,6 +174,15 @@ export async function startMockApiServer() {
       return;
     }
 
+    // Page the walk-pages list endpoints the way Braze does: page 0 is the
+    // first slice, and a page past the end comes back with an empty array
+    // rather than a marker.
+    const pagedKey = PAGED_LIST_ROUTES[url.pathname];
+    if (pagedKey && handler && typeof handler === "object" && Array.isArray(handler[pagedKey])) {
+      const page = Math.max(0, Number(url.searchParams.get("page") ?? 0) || 0);
+      handler = { ...handler, [pagedKey]: handler[pagedKey].slice(page * pageSize, (page + 1) * pageSize) };
+    }
+
     // Handler may be an object (use as body, 200) or { status, body, headers }
     if (handler && typeof handler === "object" && ("status" in handler || "body" in handler)) {
       const status = handler.status ?? 200;
@@ -189,6 +213,8 @@ export async function startMockApiServer() {
 
   return {
     url: baseUrl,
+    /** Shrink the page size so a small fixture can exercise a real page walk. */
+    setPageSize(n) { pageSize = Math.max(1, Number(n) || 1); },
     env: {
       // Route Braze, Figma, and Gemini through the mock. Gemini's mock
       // is separate (the server module reads ORBIT_TEST_MOCK_IMAGES=1).
