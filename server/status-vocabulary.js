@@ -51,6 +51,11 @@ export const DELIVERED_STATUSES = new Set([
   "already_exists",
   "patched",
   "paths_resolved",
+  // `ready` was missing from this file until the day orbit_check_setup could
+  // first return it. It never could before: brand_header_render sat in
+  // DEFAULT_FEATURES and needs an API key, so a keyless install — the whole
+  // product — always came back needs_setup.
+  "ready",
   "ready_for_draft",
   "ready_for_workspace",
   "ready_with_assumptions",

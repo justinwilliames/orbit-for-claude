@@ -12,14 +12,33 @@ import { loadOrbitPreferences, saveCopyPreferences } from "./preferences.js";
 import { BRAND_LAYOUT_FAMILIES, PLATFORM_OPTIONS } from "./visual-specs.js";
 import { fileExists, isHexColor } from "./utils.js";
 
+/**
+ * The features an unasked `orbit_check_setup {}` reports on.
+ *
+ * Every one of these is credential-free, and that is the whole point.
+ * `brand_header_render` used to sit in this list; it is the only default
+ * feature needing an API key, so `requestedBlockers.length === 0` could never
+ * be true and the tool returned `needs_setup` on every install — including a
+ * fully-configured one, and including the free brain path that needs no
+ * credential at all. It is the first call a model makes in almost any
+ * session, so the answer was Claude walking a stranger through Google AI,
+ * Figma, Braze and Stripo before they had built anything: the wall
+ * /downloads tore down, rebuilt in the chat window.
+ *
+ * Credential-gated features are still reported — under
+ * `optional_integrations`, where a model can see them without reading the
+ * install as broken. Ask for one by name to have it gate the status.
+ */
 const DEFAULT_FEATURES = [
   "core",
   "lifecycle_diagrams",
   "brand_header_spec",
-  "brand_header_render",
   "email_production",
   "library"
 ];
+
+/** Reported alongside, never gating the top-level status unless requested. */
+const OPTIONAL_INTEGRATION_FEATURES = ["brand_header_render"];
 
 function buildLocalStorageNotice(config) {
   const workspaceRoot =
@@ -247,6 +266,14 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
     status: requestedBlockers.length === 0 ? "ready" : "needs_setup",
     bootstrap_required: bootstrapRequired,
     requested_features: requested,
+    // Named separately so a model does not read a missing API key as a broken
+    // install. Nothing here blocks the free path.
+    optional_integrations: Object.fromEntries(
+      OPTIONAL_INTEGRATION_FEATURES.filter((f) => !requested.includes(f)).map((f) => [
+        f,
+        featureReadiness[f]
+      ])
+    ),
     brand_kit_state: brandKit.operational_status,
     // Prominent local path guidance — always use these paths, never hardcode alternatives
     local_paths: {

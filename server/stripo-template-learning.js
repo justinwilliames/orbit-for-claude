@@ -21,7 +21,7 @@
 
 import path from "node:path";
 import { ensureDir, cleanString } from "./config.js";
-import { saveLibraryItem, loadLibraryItem } from "./template-library.js";
+import { saveLibraryItem, loadLibraryItem, listLibraryItems } from "./template-library.js";
 import { slugify, writeJson, writeText } from "./utils.js";
 
 // ---------------------------------------------------------------------------
@@ -44,11 +44,29 @@ const TABLE_CLOSE_PATTERN = /<\/table\s*>/gi;
 // Public: learnEmailTemplate
 // ---------------------------------------------------------------------------
 
+/**
+ * Next free version for a learned-template slug.
+ *
+ * templateName defaults to "master-template" for every call, and the library
+ * writes to module:<slug>:v1 unconditionally — so a second unnamed learn
+ * silently destroyed a working design system at the same id, still stamped
+ * v1, with no warning, no diff and no backup. Version instead.
+ */
+function nextTemplateVersion({ config, slug }) {
+  const existing = listLibraryItems({ config, itemType: "module" })?.items ?? [];
+  const versions = existing
+    .filter((item) => item.slug === slug)
+    .map((item) => Number(/^v(\d+)$/.exec(item.version ?? "")?.[1] ?? 0));
+  const highest = versions.length > 0 ? Math.max(...versions) : 0;
+  return { version: `v${highest + 1}`, previous: highest > 0 ? `module:${slug}:v${highest}` : null };
+}
+
 export function learnEmailTemplate({
   config,
   html,
   templateName,
   outputDir,
+  overwrite = false,
 }) {
   if (!html || typeof html !== "string" || html.trim().length === 0) {
     return {
@@ -62,6 +80,28 @@ export function learnEmailTemplate({
   const slug = slugify(name);
 
   const modules = parseIntoStripoModules(html);
+
+  // Step 2 of the flagship path. "This IS their design system" — so a
+  // design system with nothing in it is not a success, whatever the parser
+  // felt about it. Handed the string "Compile failed: mjml exited 1", this
+  // used to return status ok with zero modules, all ten brand tokens null,
+  // and a message inviting the next call; orbit_build_email_from_template
+  // then returned ok with a zero-byte html and told the user to paste it
+  // into their builder. Four green verdicts, one empty email.
+  if (modules.length === 0) {
+    return {
+      status: "needs_inputs",
+      missing: ["parseable_email_html"],
+      source_html_length: html.length,
+      message:
+        `Found no modules in the ${html.length}-character input, so there is nothing to learn. ` +
+        "Orbit splits an email on its structural rows — <table>, <tr>, and Stripo's es-*/esd-* " +
+        "wrappers. Nothing here matched, which usually means the input is a compiler error " +
+        "string, a fragment, or plain text rather than a compiled HTML email. Check whichever " +
+        "step produced it, then pass the full compiled document.",
+    };
+  }
+
   const brandTokens = extractBrandTokens(html, modules);
   const imageInventory = extractImageInventory(html, modules);
   const liquidVars = extractLiquidVariables(html);
@@ -90,12 +130,16 @@ export function learnEmailTemplate({
   // the template-library only registers a fixed set of types; adding
   // a new type would require touching that file. Tagging instead is
   // backwards-compatible and lets orbit_library.list surface these.
+  const { version, previous } = overwrite
+    ? { version: "v1", previous: null }
+    : nextTemplateVersion({ config, slug });
+
   const library = saveLibraryItem({
     config,
     libraryDir: undefined,
     itemType: "module",
     slug,
-    version: "v1",
+    version,
     title: name,
     tags: ["stripo_master_template"],
     status: "learned",
@@ -135,11 +179,16 @@ export function learnEmailTemplate({
     image_inventory: imageInventory,
     liquid_variables: liquidVars,
     library_entry: library.item,
+    previous_template_id: previous,
     mirrored_files: mirrored,
     message:
       `Learned "${name}" — ${modules.length} module(s), ` +
       `${imageInventory.length} image(s), ${liquidVars.length} Liquid variable(s). ` +
       `Saved to Orbit library as ${library.item.id}. ` +
+      (previous
+        ? `A template already existed at this name, so this is a new version — ${previous} is untouched. ` +
+          `Pass overwrite:true to replace v1 instead. `
+        : "") +
       `Reference this template_id in future orbit_build_email_from_template calls.`,
     orbit_attribution: {
       heavy: true,
@@ -181,6 +230,25 @@ export function buildEmailFromTemplate({
     brief: brief ?? "",
     imageOverrides: imageOverrides ?? {},
   });
+
+  // A zero-byte email is not an assembled email. This used to return ok with
+  // html:"" and a message telling the user to paste it into their builder —
+  // the last of four green verdicts on a chain that produced nothing.
+  if (!assembled.html || assembled.html.trim().length === 0) {
+    return {
+      status: "needs_inputs",
+      template_id: templateId,
+      missing: ["module_selection"],
+      modules_available: record.modules.length,
+      modules_selected: chosen.length,
+      message:
+        `Assembled 0 bytes from "${record.name}" (${chosen.length} of ${record.modules.length} ` +
+        "module(s) selected), so there is no email to return. Either the learned template holds " +
+        "no usable modules, or module_selection matched none of them. Re-run " +
+        "orbit_learn_email_template on the full compiled source, or pass module ids from the " +
+        "learn response.",
+    };
+  }
 
   // Optional file mirror.
   let written = null;

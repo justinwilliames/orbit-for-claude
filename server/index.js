@@ -5103,11 +5103,12 @@ function registerTools() {
       inputSchema: {
         html: z.string().min(1).describe("The full HTML of the email template to learn."),
         template_name: z.string().optional().describe("Human-readable name for this template (default: 'master-template')."),
-        output_dir: z.string().optional().describe("Optional directory to mirror the learned files into (in addition to the Orbit library).")
+        output_dir: z.string().optional().describe("Optional directory to mirror the learned files into (in addition to the Orbit library)."),
+        overwrite: z.boolean().optional().describe("Replace v1 of an existing template with this name. Default false — a repeat learn under the same name saves as a NEW version and leaves the old one intact.")
       }
     },
-    async ({ html, template_name: templateName, output_dir: outputDir }) => {
-      const result = learnEmailTemplate({ config: runtimeConfig, html, templateName, outputDir });
+    async ({ html, template_name: templateName, output_dir: outputDir, overwrite }) => {
+      const result = learnEmailTemplate({ config: runtimeConfig, html, templateName, outputDir, overwrite });
       return makeJsonToolResponse(result);
     }
   );
