@@ -141,6 +141,9 @@ export const LOCAL_WRITE_NETWORKED = new Set([
  * system Orbit doesn't control.
  */
 export const READ_ONLY_NETWORKED = new Set([
+  // Reads /purchases/revenue_series plus the two list endpoints and the
+  // two data_series endpoints. Joins them into a share; writes nothing.
+  "orbit_audit_attributed_revenue",
   "orbit_audit_braze_instance",
   "orbit_audit_content_blocks",
   // Reads /campaigns/list, /campaigns/details, /events/list and the two

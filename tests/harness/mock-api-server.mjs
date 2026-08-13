@@ -98,6 +98,11 @@ export async function startMockApiServer() {
     setResponse("GET", "/canvas/data_summary", loadFixture("braze", "canvas-data-summary"));
     setResponse("GET", "/campaigns/data_series", loadFixture("braze", "campaign-data-series"));
     setResponse("GET", "/events/data_series", loadFixture("braze", "events-data-series"));
+    // The denominator. Without it there is no share to report, only a
+    // pile of per-programme numbers that add up to whatever they add up
+    // to — which is the whole reason orbit_audit_attributed_revenue
+    // exists.
+    setResponse("GET", "/purchases/revenue_series", loadFixture("braze", "purchases-revenue-series"));
     setResponse("GET", "/messages/scheduled_broadcasts", loadFixture("braze", "scheduled-broadcasts"));
     setResponse("GET", "/preference_center/v1/list", loadFixture("braze", "preference-centre-list"));
     // Per-centre details are keyed by the id in the path. Both ids from the

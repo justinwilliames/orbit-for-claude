@@ -123,6 +123,7 @@ import {
   createBrazeCanvas
 } from "./braze-canvas.js";
 import { pullBrazePerformance } from "./braze-performance.js";
+import { auditAttributedRevenue } from "./braze-revenue.js";
 import {
   auditBrazeInstance,
   readBrazeCanvas as readBrazeCanvasDetails,
@@ -330,7 +331,7 @@ const server = new McpServer({
   // Mailchimp, Iterable, Customer.io, SFMC, or no ESP at all — that was
   // simply wrong, and it buried the thing Orbit is actually best at.
   instructions: [
-    "Orbit is a lifecycle marketer built into Claude: 79 skills and 126 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
+    "Orbit is a lifecycle marketer built into Claude: 79 skills and 127 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
     "",
     "WHAT ORBIT IS FOR, IN ONE LINE: helping someone build and run their own lifecycle programme — starting from their own email design system and their own knowledge base, not from a vendor's template gallery.",
     "",
@@ -3852,6 +3853,30 @@ function registerTools() {
       }
 
       if (resume?.token) completeCheckpoint(resume.token);
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_audit_attributed_revenue",
+    {
+      title: "Audit Attributed Revenue vs Actual",
+      description:
+        "Lifecycle's share of revenue: what your Braze programmes CLAIM to have earned against what the business actually earned in the same window. " +
+        "Attribution windows overlap, so when the per-programme sum exceeds the total this reports over-attribution rather than a share above 100%.",
+      inputSchema: {
+        days: z.number().optional().describe("Lookback in days, 1-100 (default: 30)."),
+        ending_at: z.string().optional().describe("ISO-8601 window anchor, shared by every leg. Legs that come back covering different windows are refused, not compared."),
+        max_programmes: z.number().optional().describe("Per-direction ceiling on series calls (default: 25).")
+      }
+    },
+    async ({ days, ending_at: endingAt, max_programmes: maxProgrammes }) => {
+      const result = await auditAttributedRevenue({
+        config: runtimeConfig,
+        days: days ?? 30,
+        endingAt,
+        maxProgrammes: maxProgrammes ?? 25
+      });
       return makeJsonToolResponse(result);
     }
   );
