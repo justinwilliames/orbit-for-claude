@@ -252,7 +252,9 @@ fi
 # itself and on the responsive breakpoint — i.e. on every correct email,
 # which is a warning nobody reads twice. Mobile reflow below the container
 # is the render gate's job, in a real emulated viewport.
-wide=\$(printf '%s' "\$FLAT" | grep -oiE 'width[:=]"?[[:space:]]*[0-9]+' \\
+# Both quote styles. The HTML-attribute form is the one form tables use, and
+# a single-quoted width='900' walked straight past a double-quote-only match.
+wide=\$(printf '%s' "\$FLAT" | grep -oiE "width[:=][\\"']?[[:space:]]*[0-9]+" \\
   | grep -oE '[0-9]+' | awk -v w="\$CONTAINER_WIDTH" '\$1 > w' | sort -nu | tail -5)
 if [[ -n "\$wide" ]]; then
   note "overflow" "FAIL — fixed widths past the \${CONTAINER_WIDTH}px container: \$(echo "\$wide" | tr '\\n' ' '). These push the email sideways in every client."

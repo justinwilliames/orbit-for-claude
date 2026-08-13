@@ -490,6 +490,39 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     assert.doesNotMatch(absent.stdout, /PASS/, "no check may report PASS on an unread document");
   });
 
+  test("overflow sees a fixed width in EITHER quoting style", () => {
+    const root = tmpRoot("gate-overflow-quotes");
+    generateBrainGate({ path: root });
+    const script = path.join(root, "build", "gate.sh");
+
+    // A table wider than the container, as an HTML attribute — the form real
+    // form tables use, and the form the double-quote-only matcher could not
+    // see. The inline-style form (style="width:900px") always matched, which
+    // is why every fixture passed and the attribute form shipped unchecked.
+    const wide = compileMjml(
+      root,
+      "wide",
+      `<mjml><mj-body><mj-section><mj-column>
+        <mj-text>Your invoice is ready.</mj-text>
+        <mj-raw><table width="900"><tr><td>too wide</td></tr></table></mj-raw>
+        <mj-button href="https://acme.test/pay">Pay now</mj-button>
+      </mj-column></mj-section></mj-body></mjml>`
+    );
+    const doubleQuoted = runScript(script, [wide]);
+    assert.equal(doubleQuoted.code, 1);
+    assert.match(doubleQuoted.stdout, /\[overflow\] FAIL — fixed widths past the 600px container: .*900/);
+
+    const single = path.join(root, "wide-single.html");
+    fs.writeFileSync(
+      single,
+      fs.readFileSync(wide, "utf8").replace(/width="(\d+)"/g, "width='$1'"),
+      "utf8"
+    );
+    const singleQuoted = runScript(script, [single]);
+    assert.equal(singleQuoted.code, 1, "single-quoted widths must be measured too");
+    assert.match(singleQuoted.stdout, /\[overflow\] FAIL — fixed widths past the 600px container: .*900/);
+  });
+
   test("the master exemption matches the BASENAME, not any path component", () => {
     const root = tmpRoot("gate-master");
     generateBrainGate({ path: root, clip_kb: 1 }); // 1 KB clip → any real email trips it

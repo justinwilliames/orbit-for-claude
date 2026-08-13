@@ -54,7 +54,9 @@ export async function checkOrbitVersion({ installedVersion }) {
       installed_version: installedVersion,
       suggested_next_steps: [
         "Check your internet connection.",
-        "Visit https://yourorbit.team/account/downloads to see the latest release."
+        // Plural, and ungated. /account/downloads 307s into the login wall.
+        "Visit https://yourorbit.team/downloads to see the latest release.",
+        "Or https://github.com/justinwilliames/orbit-for-claude/releases, which needs no account at all."
       ]
     };
   }
