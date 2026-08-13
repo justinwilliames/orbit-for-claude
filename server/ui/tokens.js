@@ -260,6 +260,11 @@ a { color: var(--brand-strong); }
 }
 .o-made-with a { color: var(--brand-ink); text-decoration: none; font-weight: 600; }
 .o-made-with a:hover { text-decoration: underline; }
+/* The signature carried the word and not the mark, on the one surface
+   that leaves the building — where the mark is the part that survives a
+   screenshot with the text cropped off. Inked in currentColor so it needs
+   no theme decision the row has not already made. */
+.o-made-with .o-mark { width: 14px; height: 14px; vertical-align: -3px; margin-right: 5px; color: var(--brand-ink); }
 
 .o-empty { color: var(--ink-3); font-size: 13px; padding: 28px 16px; text-align: center; }
 .o-scroll { overflow: auto; }

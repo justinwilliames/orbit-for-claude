@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 
+import { ORBIT_MARK_INLINE } from "./brand-mark.js";
 import { ORBIT_TOKENS_CSS, ORBIT_BASE_CSS } from "./tokens.js";
 
 /**
@@ -303,6 +304,7 @@ function flash(msg) {
     const row = document.createElement("div");
     row.className = "o-made-with";
     row.innerHTML =
+      '${ORBIT_MARK_INLINE.replace(/^<svg /, '<svg class="o-mark" aria-hidden="true" ')}' +
       'Made with <a href="https://yourorbit.team" target="_blank" rel="noopener">Orbit</a>' +
       ' \\u2014 a free lifecycle marketer, built into Claude.';
     document.body.appendChild(row);
