@@ -194,6 +194,49 @@ describe("Klaviyo flow audit — a step table with holes in it must show the hol
     assert.equal(first.drop_off_to_next_percent, null);
   });
 
+  test("an unmeasured message in the MIDDLE is not paired around", async () => {
+    // The hole moved: the previous test puts it on the LAST message, where
+    // the drop-off is null anyway because there is nothing after it. Put it
+    // in the middle of three and the pairing itself is on trial — skipping
+    // the unmeasured step pairs message 1 with message 3 and reports a
+    // TWO-hop loss as message 1's single next hop, drawn in the widget
+    // directly above the step it skipped.
+    const THREE = {
+      data: [
+        { id: "act-1", type: "flow-action", attributes: { action_type: "SEND_MESSAGE", status: "live" } },
+        { id: "act-4", type: "flow-action", attributes: { action_type: "SEND_MESSAGE", status: "live" } },
+        { id: "act-5", type: "flow-action", attributes: { action_type: "SEND_MESSAGE", status: "live" } },
+      ],
+    };
+    mock.setResponse("GET", `/flows/${FLOW_ID}/flow-actions`, THREE);
+    mock.setResponse("GET", "/flow-actions/act-5/flow-messages", flowMessage("msg-3", "Winback 3", "Truly last call", "Closing tonight"));
+    // msg-2, the middle one, deliberately has no row in the report.
+    mock.setResponse("POST", "/flow-values-reports", flowReport([
+      ["msg-1", { recipients: 1000, delivered: 1000, opens_unique: 300, clicks_unique: 50, bounced: 0, unsubscribes: 5 }],
+      ["msg-3", { recipients: 200, delivered: 200, opens_unique: 40, clicks_unique: 8, bounced: 0, unsubscribes: 1 }],
+    ]));
+
+    // A window of its own: reports are cached per (flow, window, metric).
+    const result = await audit({ window: "last_365_days" });
+    const [m1, m2, m3] = result.steps.filter((s) => s.message);
+    assert.equal(m2.stats, null, "the middle message must stay unmeasured");
+    assert.ok(result.unreadable.some((u) => /no row for message msg-2/.test(u.reason)));
+
+    // 1000 → 200 is 80%, but it spans two hops. Reporting it against msg-1
+    // names the wrong email as the leak.
+    assert.equal(
+      m1.drop_off_to_next_percent,
+      null,
+      `msg-1's next hop is unmeasured, so its drop-off is unknown — got ${m1.drop_off_to_next_percent}`
+    );
+    assert.equal(m2.drop_off_to_next_percent, null, "an unmeasured step has no drop-off of its own");
+    assert.equal(m3.drop_off_to_next_percent, null, "the last message has nothing to drop to");
+
+    // The measurable step keeps its own rates; the unmeasured one invents none.
+    assert.equal(m1.open_rate_percent, 30);
+    assert.equal(m2.open_rate_percent, undefined);
+  });
+
   test("no conversion metric returns the structure and refuses the numbers", async () => {
     // Klaviyo's values reports require a conversion_metric_id. The flow's
     // shape is still real and still worth reading; the statistics are not

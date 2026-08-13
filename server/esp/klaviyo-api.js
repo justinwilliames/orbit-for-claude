@@ -922,15 +922,25 @@ export const adapter = {
     //    steps, so a delay or a branch between them does not read as a step
     //    that lost everyone. Any pair where either side is unknown reports
     //    null — a drop computed against a missing number is not a drop.
-    const sent = steps.filter((s) => s.message && s.stats);
+    //    The pairing walks ALL message steps, including unmeasured ones.
+    //    Filtering them out here would close the gap and pair message 1 with
+    //    message 3, reporting a two-hop loss as message 1's next hop.
+    const sent = steps.filter((s) => s.message);
     for (let i = 0; i < sent.length; i++) {
       const cur = sent[i];
       const next = sent[i + 1];
-      cur.open_rate_percent = share(cur.stats.unique_opens, cur.stats.delivered);
-      cur.click_rate_percent = share(cur.stats.unique_clicks, cur.stats.delivered);
-      cur.unsub_rate_percent = share(cur.stats.unsubscribes, cur.stats.delivered);
+      if (cur.stats) {
+        cur.open_rate_percent = share(cur.stats.unique_opens, cur.stats.delivered);
+        cur.click_rate_percent = share(cur.stats.unique_clicks, cur.stats.delivered);
+        cur.unsub_rate_percent = share(cur.stats.unsubscribes, cur.stats.delivered);
+      }
       cur.drop_off_to_next_percent =
-        next && typeof cur.stats.delivered === "number" && typeof next.stats.delivered === "number" && cur.stats.delivered > 0
+        next &&
+        cur.stats &&
+        next.stats &&
+        typeof cur.stats.delivered === "number" &&
+        typeof next.stats.delivered === "number" &&
+        cur.stats.delivered > 0
           ? Math.round(((cur.stats.delivered - next.stats.delivered) / cur.stats.delivered) * 1000) / 10
           : null;
     }
