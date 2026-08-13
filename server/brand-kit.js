@@ -833,8 +833,15 @@ export function extractBrandGuidelineContext(guidelines) {
     sections["Messaging Dos And Don’ts"],
     260
   );
-  const emailHeaderRules = extractBulletItems(sections["Email Header Rules"]);
-  const approvedReferences = extractBulletItems(sections["Approved References"]);
+  // The scaffold's own "TBD: add explicit email-header rules…" was
+  // travelling downstream into the image prompt as if a human had
+  // written it. A placeholder is the absence of a rule.
+  const emailHeaderRules = extractBulletItems(sections["Email Header Rules"]).filter(
+    (line) => !isPlaceholderLine(line)
+  );
+  const approvedReferences = extractBulletItems(sections["Approved References"]).filter(
+    (line) => !isPlaceholderLine(line)
+  );
   const allGuidelineText = Object.values(sections).join("\n").toLowerCase();
 
   return {
@@ -1345,19 +1352,56 @@ function buildDosDontsSection({ brandDos, brandDonts }) {
   ].join("\n");
 }
 
-function extractRestrictionLines(text) {
-  const lines = extractBulletItems(text);
-  const directMatches = lines.filter((line) =>
-    /\b(do not|don't|avoid|never|no )\b/i.test(line)
-  );
-  if (directMatches.length > 0) {
-    return directMatches;
-  }
+/**
+ * Pull a section's prohibitions out.
+ *
+ * This used to keyword-sniff, and fall back to sniffing whole raw lines
+ * when no bullet matched. Two consequences, both live:
+ *
+ *   - orbit_write_brand_kit ALWAYS emits a "### Avoid" heading, and the
+ *     heading itself contains the word "avoid" — so the heading became
+ *     a brand restriction and was sent to the image model as a
+ *     forbidden treatment.
+ *   - a real don't phrased as a bare prohibition ("Stack more than two
+ *     adjectives in a headline.") contains none of the keywords, so the
+ *     user's actual rule was silently dropped.
+ *
+ * So: structure first. Every bullet under a Don't/Avoid/Never heading is
+ * a restriction regardless of its wording. Keyword-matched bullets
+ * elsewhere in the section still count. A line starting with `#` is a
+ * heading and is never a rule, and Orbit's own "TBD:" placeholders never
+ * travel downstream as if a human wrote them.
+ */
+const AVOID_HEADING = /^#{1,6}\s*(avoid|don'?ts?|do not|never)\b/i;
+const DO_HEADING = /^#{1,6}\s*(do|dos|always)\b/i;
+const RESTRICTION_KEYWORDS = /\b(do not|don't|avoid|never|no )\b/i;
 
-  return String(text ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => /\b(do not|don't|avoid|never|no )\b/i.test(line));
+function extractRestrictionLines(text) {
+  const out = [];
+  let underAvoid = false;
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("#")) {
+      // Headings set the context; they are never themselves a rule.
+      underAvoid = AVOID_HEADING.test(line) && !DO_HEADING.test(line);
+      continue;
+    }
+    const isBullet = /^[-*]\s+/.test(line);
+    const body = isBullet ? line.replace(/^[-*]\s+/, "").trim() : line;
+    if (!body || isPlaceholderLine(body)) continue;
+    if (underAvoid && isBullet) {
+      out.push(body);
+      continue;
+    }
+    if (RESTRICTION_KEYWORDS.test(body)) out.push(body);
+  }
+  return [...new Set(out)];
+}
+
+/** Orbit's own scaffold text, which is not the user's brand rule. */
+function isPlaceholderLine(line) {
+  return /^TBD[:\s-]/i.test(String(line ?? "").trim());
 }
 
 function extractBulletItems(text) {

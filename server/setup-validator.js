@@ -7,7 +7,7 @@ import {
   resolveOptionalPath,
   scanBrandKitFolder
 } from "./config.js";
-import { loadBrandGuidelines } from "./brand-kit.js";
+import { BRAND_GUIDELINE_SECTIONS, loadBrandGuidelines } from "./brand-kit.js";
 import { loadOrbitPreferences, saveCopyPreferences } from "./preferences.js";
 import { BRAND_LAYOUT_FAMILIES, PLATFORM_OPTIONS } from "./visual-specs.js";
 import { fileExists, isHexColor } from "./utils.js";
@@ -505,6 +505,21 @@ export function validateBrandKit({ config, brandKitDir }) {
     );
   }
 
+  // Typography. The intake path (brand-kit.js: `if (normalizedFonts.length
+  // === 0) missingInfo.push("fonts")`) has always treated fonts as
+  // required; the validator had twelve checks and none of them about
+  // type, so a kit with `fonts: []` reported "fully operational" and the
+  // two halves of the same product disagreed about what a brand kit is.
+  const brandFonts = parsedProfile?.fonts ?? [];
+  checks.push({
+    key: "fonts",
+    passed: brandFonts.length > 0,
+    detail: brandFonts
+  });
+  if (brandFonts.length === 0) {
+    missing.push("fonts");
+  }
+
   const invalidFamilies = (parsedProfile?.preferredHeaderFamilies ?? []).filter(
     (family) => !BRAND_LAYOUT_FAMILIES.includes(family)
   );
@@ -555,10 +570,33 @@ export function validateBrandKit({ config, brandKitDir }) {
     );
   }
 
+  // The ^TBD detector above was applied to exactly one of eleven
+  // sections — the copy one — so every VISUAL section could ship as the
+  // scaffold's own placeholder text and the kit still reported "fully
+  // operational". "Open Questions / TBD" is exempt: a placeholder is
+  // that section's normal resting state.
+  const placeholderSections = guidelines?.guidelinesPath
+    ? BRAND_GUIDELINE_SECTIONS.filter((title) => {
+        if (title === "Open Questions / TBD") return false;
+        const body = String(guidelines?.sections?.[title] ?? "").trim();
+        return body.length === 0 || /^TBD[:\s-]/i.test(body);
+      })
+    : [];
+  checks.push({
+    key: "guideline_sections_filled",
+    passed: placeholderSections.length === 0,
+    detail: placeholderSections
+  });
+  if (placeholderSections.length > 0) {
+    warnings.push(
+      `${placeholderSections.length} guideline section(s) are still Orbit's placeholder text: ${placeholderSections.join(", ")}. Orbit will not use a TBD as a brand rule.`
+    );
+  }
+
   const operationalStatus =
     missing.length > 0
       ? "incomplete"
-      : guidelines?.guidelinesPath
+      : guidelines?.guidelinesPath && placeholderSections.length === 0
         ? "full"
         : "profile_only";
 
@@ -577,10 +615,15 @@ export function validateBrandKit({ config, brandKitDir }) {
       missing.length === 0
         ? operationalStatus === "full"
           ? ["Brand kit is fully operational. Orbit can use the profile, assets, and guidelines by default."]
-          : [
-              "Brand kit is usable with the profile and assets that are present.",
-              "Add brand-guidelines.md or use Orbit's brand-kit draft tools to make the kit fully operational."
-            ]
+          : placeholderSections.length > 0
+            ? [
+                "Brand kit is usable, but not fully operational: some guideline sections are still Orbit's placeholder text.",
+                `Fill in: ${placeholderSections.join(", ")}.`
+              ]
+            : [
+                "Brand kit is usable with the profile and assets that are present.",
+                "Add brand-guidelines.md or use Orbit's brand-kit draft tools to make the kit fully operational."
+              ]
         : [
             "Fix the missing brand profile fields or files listed above.",
             "Use the starter-brand-kit template as the baseline structure."

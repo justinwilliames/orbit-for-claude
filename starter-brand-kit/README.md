@@ -24,6 +24,8 @@ your-brand-kit/
 - a `brand-profile.json`
 - a `brand-guidelines.md`
 - a simple brand color map
+- at least one brand font in `fonts` (typography is half of a brand, and
+  Orbit's intake has always required it)
 
 ## Notes
 
