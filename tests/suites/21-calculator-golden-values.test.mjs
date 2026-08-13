@@ -261,22 +261,19 @@ describe("scoreRfm — edge cases", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildCohortRetention — happy-path golden values", () => {
-  // IMPORTANT: buildCohortRetention buckets enrollments by 30-day epoch floors,
-  // not calendar months. Math.floor(epoch / cohortMs) × cohortMs determines the
-  // cohort start date. With PERIOD_DAYS=30:
+  // Buckets are anchored to the EARLIEST ENROLMENT in the input, not to the
+  // Unix epoch. Under the old epoch floor these same two enrolments landed
+  // in buckets labelled 2023-12-19 and 2024-01-18 — a January cohort filed
+  // under December, and a bare YYYY-MM-DD that read as a calendar month and
+  // was neither. The keys below are now the dates a reader can check:
   //
-  //   Jan 1 2024 → bucket start 2023-12-19 (epoch-floor of Jan 1 in 30-day chunks)
-  //   Feb 1 2024 → bucket start 2024-01-18 (epoch-floor of Feb 1)
-  //
-  // These are the actual cohort keys the implementation produces. Tests use the
-  // epoch-bucketed keys, not calendar dates, to avoid matching on implementation
-  // assumptions the API doesn't expose.
+  //   Jan 1 2024 → cohort 0, starting 2024-01-01 (the anchor)
+  //   Feb 1 2024 → cohort 1, starting 2024-01-31 (anchor + 30 days)
   const REF_DATE = "2024-03-15";
   const PERIOD_DAYS = 30;
 
-  // The cohort bucket keys for Jan 1 and Feb 1 enrollments with 30-day periods:
-  const COHORT_KEY_JAN = "2023-12-19"; // bucket containing 2024-01-01
-  const COHORT_KEY_FEB = "2024-01-18"; // bucket containing 2024-02-01
+  const COHORT_KEY_JAN = "2024-01-01"; // the anchor cohort
+  const COHORT_KEY_FEB = "2024-01-31"; // anchor + one 30-day period
 
   const enrollments = [
     { user_id: "j1", enrolled_at: "2024-01-01T00:00:00Z" },
@@ -384,13 +381,27 @@ describe("buildCohortRetention — happy-path golden values", () => {
       referenceDate: "2024-01-22T00:00:00Z",
     });
     const periods = result.cohorts[0].periods.map((p) => p.period);
-    assert.deepEqual(periods, [0, 1, 2, 3], "periods 0-2 are closed, 3 is one day in");
+    // 22 Jan is EXACTLY three 7-day periods after 1 Jan, which is what this
+    // test's own comment always said. It only read as "period 3 is one day
+    // in" because the epoch floor started the cohort six days before its
+    // only member enrolled. Anchored to the enrolment, the arithmetic and
+    // the comment finally agree.
+    assert.deepEqual(periods, [0, 1, 2], "periods 0-2 are closed, 3 has not opened");
+    assert.equal(result.cohorts[0].periods.find((p) => p.period === 2).complete, true);
+    assert.equal(result.cohorts[0].periods.find((p) => p.period === 3), undefined);
+  });
+
+  test("a window part-way through is emitted, incomplete, with its elapsed share", () => {
+    const result = buildCohortRetention({
+      enrollments: [{ user_id: "u1", enrolled_at: "2024-01-01T00:00:00Z" }],
+      events: [{ user_id: "u1", event_at: "2024-01-01T00:00:00Z" }],
+      periodDays: 7,
+      referenceDate: "2024-01-23T00:00:00Z", // one day into period 3
+    });
     const p3 = result.cohorts[0].periods.find((p) => p.period === 3);
+    assert.ok(p3, "a window one day in was not emitted at all");
     assert.equal(p3.complete, false, "a window one day into seven was reported as finished");
     assert.ok(p3.window_elapsed_pct > 0 && p3.window_elapsed_pct < 100);
-    assert.equal(result.cohorts[0].periods.find((p) => p.period === 2).complete, true);
-    // 22 Jan is exactly 3 periods after 1 Jan, so period 4 has not opened.
-    assert.equal(result.cohorts[0].periods.find((p) => p.period === 4), undefined);
   });
 
   test("an open window is kept out of the aggregate curve and counted separately", () => {
@@ -800,5 +811,213 @@ describe("calcReplenishment — golden values", () => {
   test("returns needs_inputs for zero dailyConsumptionUnits", () => {
     const result = calcReplenishment({ packUnits: 60, dailyConsumptionUnits: 0 });
     assert.equal(result.status, "needs_inputs");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// segmentation-math: rows that cannot be scored
+//
+// Both of these tools are pure maths with no API to blame, and both used to
+// `continue` past a row they could not read and return status ok. The
+// existing coverage tests the case where EVERY row is unreadable; the case
+// that actually happens — some rows readable, some not — had no test and no
+// field in the output. An empty last_order_date is what every CRM export
+// carries for a signup who has never bought.
+// ---------------------------------------------------------------------------
+
+describe("scoreRfm — a row it could not score is counted, never dropped in silence", () => {
+  const REF = "2024-06-01";
+  const buyer = (id, days, orders, revenue) => ({
+    id,
+    last_order_date: new Date(Date.UTC(2024, 5, 1) - days * 86_400_000).toISOString(),
+    order_count: orders,
+    lifetime_revenue: revenue,
+  });
+
+  test("partial input reports status partial, both counts, and the reason", () => {
+    const result = scoreRfm({
+      users: [
+        buyer("b1", 5, 12, 900),
+        buyer("b2", 40, 6, 400),
+        buyer("b3", 120, 2, 120),
+        { id: "s1", last_order_date: "", order_count: 0, lifetime_revenue: 0 },
+        { id: "s2", last_order_date: null, order_count: 0, lifetime_revenue: 0 },
+      ],
+      referenceDate: REF,
+    });
+    assert.equal(result.status, "partial");
+    assert.equal(result.input_rows, 5);
+    assert.equal(result.scored_rows, 3);
+    assert.equal(
+      result.skipped.reduce((sum, s) => sum + s.count, 0),
+      2
+    );
+    assert.match(result.message, /could not be scored/i);
+  });
+
+  test("a clean input is still ok, with an empty skipped list", () => {
+    const result = scoreRfm({
+      users: [buyer("b1", 5, 12, 900), buyer("b2", 40, 6, 400)],
+      referenceDate: REF,
+    });
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.skipped, []);
+    assert.equal(result.input_rows, result.scored_rows);
+  });
+
+  test("an unparseable order_count is rejected, not banded as a Champion", () => {
+    // Number("three") is NaN; every comparison against NaN is false, so it
+    // fell through bandByQuintile's whole chain to the final else and came
+    // out band 5 — Champions, highest-touch action — then poisoned that
+    // segment's avg_frequency to NaN, which the wire renders as null.
+    const result = scoreRfm({
+      users: [
+        { id: "a", last_order_date: "2024-05-20", order_count: "three", lifetime_revenue: 300 },
+        buyer("b", 30, 4, 200),
+        buyer("c", 90, 2, 100),
+      ],
+      referenceDate: REF,
+    });
+    assert.equal(result.status, "partial");
+    assert.ok(!result.scored_sample.some((r) => r.id === "a"), "the unreadable row was scored");
+    for (const segment of result.segments) {
+      assert.ok(
+        Number.isFinite(segment.avg_frequency),
+        `${segment.segment} carries a non-finite avg_frequency`
+      );
+      assert.ok(Number.isFinite(segment.avg_monetary));
+      assert.ok(Number.isFinite(segment.avg_recency_days));
+    }
+  });
+
+  test("no segment average survives the JSON wire as null", () => {
+    // The host only ever sees JSON. NaN serialises to null, and a null read
+    // as a number is a finite 0 — which is how a NaN average was drawn as
+    // the least-frequent segment on the map.
+    const result = JSON.parse(
+      JSON.stringify(
+        scoreRfm({
+          users: [
+            { id: "a", last_order_date: "2024-05-20", order_count: "three", lifetime_revenue: 300 },
+            { id: "b", last_order_date: "2024-05-01", order_count: 4, lifetime_revenue: "lots" },
+            buyer("c", 30, 4, 200),
+            buyer("d", 90, 2, 100),
+          ],
+          referenceDate: REF,
+        })
+      )
+    );
+    for (const segment of result.segments) {
+      for (const key of ["avg_frequency", "avg_monetary", "avg_recency_days"]) {
+        assert.notEqual(segment[key], null, `${segment.segment}.${key} crossed the wire as null`);
+      }
+    }
+  });
+});
+
+describe("buildCohortRetention — an input row that contributed nothing is named", () => {
+  const enrol = (id, iso) => ({ user_id: id, enrolled_at: iso });
+
+  test("an event whose user_id matched no enrolment is reported, not read as churn", () => {
+    const result = buildCohortRetention({
+      enrollments: [enrol("u1", "2024-01-01T00:00:00Z"), enrol("u2", "2024-01-02T00:00:00Z")],
+      events: [
+        { user_id: "u1", event_at: "2024-01-03T00:00:00Z", revenue: 10 },
+        { user_id: "ghost", event_at: "2024-01-03T00:00:00Z", revenue: 999 },
+      ],
+      periodDays: 7,
+      referenceDate: "2024-02-01T00:00:00Z",
+    });
+    assert.equal(result.status, "partial");
+    const unmatched = result.skipped.find((s) => /matched no enrolment/.test(s.reason));
+    assert.ok(unmatched, `no skipped reason named the unmatched event: ${JSON.stringify(result.skipped)}`);
+    assert.equal(unmatched.count, 1);
+  });
+
+  test("an unparseable enrolment date is counted, and the shares say so", () => {
+    const result = buildCohortRetention({
+      enrollments: [
+        enrol("u1", "2024-01-01T00:00:00Z"),
+        enrol("u2", "2024-01-02T00:00:00Z"),
+        enrol("u3", ""),
+        enrol("u4", "not-a-date"),
+      ],
+      events: [{ user_id: "u1", event_at: "2024-01-03T00:00:00Z" }],
+      periodDays: 7,
+      referenceDate: "2024-02-01T00:00:00Z",
+    });
+    assert.equal(result.status, "partial");
+    assert.equal(result.input_enrollments, 4);
+    assert.equal(result.bucketed_enrollments, 2);
+    assert.match(result.message, /contributed nothing/i);
+  });
+
+  test("a clean input is ok, with an empty skipped list", () => {
+    const result = buildCohortRetention({
+      enrollments: [enrol("u1", "2024-01-01T00:00:00Z")],
+      events: [{ user_id: "u1", event_at: "2024-01-03T00:00:00Z" }],
+      periodDays: 7,
+      referenceDate: "2024-02-01T00:00:00Z",
+    });
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.skipped, []);
+  });
+});
+
+describe("buildCohortRetention — the label is a date a reader can check", () => {
+  test("cohort buckets start at the earliest enrolment, not at a 1970 multiple", () => {
+    const result = buildCohortRetention({
+      enrollments: [
+        { user_id: "a", enrolled_at: "2026-07-01T00:00:00Z" },
+        { user_id: "b", enrolled_at: "2026-07-15T00:00:00Z" },
+        { user_id: "c", enrolled_at: "2026-07-31T00:00:00Z" },
+      ],
+      events: [],
+      periodDays: 30,
+      referenceDate: "2026-10-01T00:00:00Z",
+    });
+    // Epoch-floored, 1 July filed under a cohort labelled 2026-06-06 while
+    // 31 July and 1 August shared one.
+    assert.equal(result.cohort_anchor, "2026-07-01T00:00:00.000Z");
+    assert.equal(result.cohorts[0].cohort, "2026-07-01");
+    assert.equal(result.cohorts[0].cohort_start, "2026-07-01T00:00:00.000Z");
+    assert.equal(result.cohorts[0].cohort_end, "2026-07-31T00:00:00.000Z");
+  });
+
+  test("an explicit cohort_anchor wins, so weekly cohorts can start on a Monday", () => {
+    const result = buildCohortRetention({
+      enrollments: [
+        { user_id: "a", enrolled_at: "2026-08-05T00:00:00Z" }, // a Wednesday
+        { user_id: "b", enrolled_at: "2026-08-07T00:00:00Z" },
+      ],
+      events: [],
+      periodDays: 7,
+      cohortAnchor: "2026-08-03T00:00:00Z", // the Monday
+      referenceDate: "2026-09-01T00:00:00Z",
+    });
+    assert.equal(result.cohorts[0].cohort, "2026-08-03");
+    assert.equal(new Date(result.cohorts[0].cohort_start).getUTCDay(), 1, "not a Monday");
+  });
+
+  test("period 0 discloses how much of its window predates its own members", () => {
+    // The untreated head of the row whose tail was fixed in 7d141f3: P0's
+    // window opens at the cohort boundary, up to periodDays-1 days before
+    // anyone in it enrolled, and was emitted complete with elapsed 100%.
+    const result = buildCohortRetention({
+      enrollments: [
+        { user_id: "a", enrolled_at: "2026-07-01T00:00:00Z" },
+        { user_id: "late", enrolled_at: "2026-07-25T00:00:00Z" },
+      ],
+      events: [],
+      periodDays: 30,
+      referenceDate: "2026-10-01T00:00:00Z",
+    });
+    const p0 = result.cohorts[0].periods.find((p) => p.period === 0);
+    assert.ok(p0.member_exposure_pct < 100, "P0 claims full exposure for a late joiner");
+    assert.ok(p0.member_exposure_pct > 0);
+    // Only period 0 carries it — every later window is fully after the
+    // cohort's own start.
+    const p1 = result.cohorts[0].periods.find((p) => p.period === 1);
+    assert.equal(p1.member_exposure_pct, undefined);
   });
 });

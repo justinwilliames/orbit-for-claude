@@ -96,6 +96,8 @@ import { DESIGN_SYSTEM_URI } from "./ui/widgets/design-system.js";
 import { SEND_CALENDAR_URI } from "./ui/widgets/send-calendar.js";
 import { AB_READOUT_URI } from "./ui/widgets/ab-readout.js";
 import { RFM_MAP_URI } from "./ui/widgets/rfm-map.js";
+import { LIST_FORECAST_URI } from "./ui/widgets/list-forecast.js";
+import { STATE_MATRIX_URI } from "./ui/widgets/state-matrix.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -5494,7 +5496,12 @@ function registerTools() {
         });
       }
       const result = scoreRfm({ users, referenceDate, outputDir: resolvedOutputDir });
-      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // `partial` still has a full, drawable population — it just does not
+      // cover every input row. Withholding the widget there would hide the
+      // one result that most needs looking at.
+      if (result.status !== "ok" && result.status !== "partial") {
+        return makeJsonToolResponse(result);
+      }
       // What the map and the share bars draw, and nothing else. The
       // ten-row scored sample, the CSV paths and the attribution block
       // are not drawable, and the sample in particular would be read as
@@ -5503,6 +5510,12 @@ function registerTools() {
         user_count: result.user_count,
         total_revenue: result.total_revenue,
         reference_date: result.reference_date,
+        // The map draws shares. A share computed over 6 of 10 input rows
+        // is not a share of the population, and the widget has to be able
+        // to say so.
+        input_rows: result.input_rows,
+        scored_rows: result.scored_rows,
+        skipped: result.skipped,
         segments: result.segments
       });
     }
@@ -5520,6 +5533,7 @@ function registerTools() {
         period_days: z.number().optional().describe("Days per period (default: 30 — monthly cohorts)."),
         periods_to_track: z.number().optional().describe("Number of periods to track (default: 12)."),
         reference_date: z.string().optional().describe("ISO date to anchor 'today' against. Defaults to now."),
+        cohort_anchor: z.string().optional().describe("ISO date the cohort grid starts on — use it to make weekly cohorts start on a Monday, or monthly ones on the 1st. Defaults to the earliest enrolment in the input."),
         output_dir: z.string().optional().describe("Optional directory to write cohort JSON.")
       },
       _meta: widgetMeta(COHORT_CURVE_URI)
@@ -5530,6 +5544,7 @@ function registerTools() {
       period_days: periodDays,
       periods_to_track: periodsToTrack,
       reference_date: referenceDate,
+      cohort_anchor: cohortAnchor,
       output_dir: outputDir
     }) => {
       const { value: enrollments, error: e1 } = parseToolJson(enrollmentsJson, "enrollments_json", []);
@@ -5552,15 +5567,23 @@ function registerTools() {
         periodDays: periodDays ?? 30,
         periodsToTrack: periodsToTrack ?? 12,
         referenceDate,
+        cohortAnchor,
         outputDir: resolvedOutputDir
       });
-      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // See the note in orbit_rfm_score: `partial` is drawable.
+      if (result.status !== "ok" && result.status !== "partial") {
+        return makeJsonToolResponse(result);
+      }
       // Everything the grid and the curve draw, and nothing else. The
       // file paths and the attribution block are not drawable.
       return makeJsonToolResponse(result, {
         cohort_count: result.cohort_count,
         period_days: result.period_days,
+        cohort_anchor: result.cohort_anchor,
         reference_date: result.reference_date,
+        input_enrollments: result.input_enrollments,
+        bucketed_enrollments: result.bucketed_enrollments,
+        skipped: result.skipped,
         aggregate_curve: result.aggregate_curve,
         cohorts: result.cohorts
       });
@@ -5618,7 +5641,8 @@ function registerTools() {
         max_axes: z.number().int().min(1).max(16).optional().describe("Cap on discovered axes (default: 12). Above it the tool ABSTAINS rather than sampling a fraction and calling it coverage."),
         block_selector: z.string().max(MAX_SHORT_STRING).optional().describe("Regex for the block-class detector, for an imported design. Default: (?:module|block|section)-[a-z0-9-]+"),
         self_test: z.boolean().optional().describe("Run the negative test: seed known defects into this template and assert each one FAILS, and the control passes.")
-      }
+      },
+      _meta: widgetMeta(STATE_MATRIX_URI)
     },
     async ({ html, variables_json: variablesJson, max_axes: maxAxes, block_selector: blockSelector, self_test: selfTest }) => {
       const { value: variables, error } = parseToolJson(variablesJson, "variables_json", undefined);
@@ -5630,7 +5654,23 @@ function registerTools() {
         block_selector: blockSelector,
         self_test: selfTest ?? false
       });
-      return makeJsonToolResponse(result);
+      // The grid only exists for the enumerated run. A self_test, a
+      // needs_inputs, a no_branches template and an over-cap abstention
+      // all correctly have no states to draw, and shipping the widget
+      // payload anyway would give the host an empty grid to render.
+      if (result.status !== "ok" || !Array.isArray(result.states)) {
+        return makeJsonToolResponse(result);
+      }
+      return makeJsonToolResponse(result, {
+        verdict: result.verdict,
+        axes: result.axes,
+        states_rendered: result.states_rendered,
+        states: result.states,
+        block_catalogue: result.block_catalogue,
+        arms: result.arms,
+        findings: result.findings,
+        summary: result.summary
+      });
     }
   );
 
@@ -6000,14 +6040,15 @@ function registerTools() {
     {
       title: "List Growth Forecast",
       description:
-        "Project a subscriber list's 12-month trajectory from current size, monthly acquisition, monthly churn, and (optional) acquisition growth rate. Returns a month-by-month table plus break-even, halving, and steady-state-acquisition metrics. Use in planning conversations to quantify the list cost of inaction.",
+        "Project a subscriber list's 12-month trajectory from current size, monthly acquisition, monthly churn, and (optional) acquisition growth rate. Returns a month-by-month table plus break-even, halving, and steady-state-acquisition metrics, and draws it in a widget as the curve against today's size with the month churn overtakes acquisition marked. Use in planning conversations to quantify the list cost of inaction.",
       inputSchema: {
         current_list_size: z.number().describe("Current active subscribers."),
         monthly_acquisition: z.number().describe("New signups per month at the starting point."),
         monthly_churn_pct: z.number().describe("Monthly churn rate as a percentage (0-100)."),
         months: z.number().optional().describe("Horizon in months (default 12, max 60)."),
         acquisition_growth_pct: z.number().optional().describe("Monthly growth rate of acquisition, in percent (0-100, default 0).")
-      }
+      },
+      _meta: widgetMeta(LIST_FORECAST_URI)
     },
     async ({
       current_list_size: currentListSize,
@@ -6023,7 +6064,18 @@ function registerTools() {
         months: months ?? 12,
         acquisitionGrowthPct: acquisitionGrowthPct ?? 0
       });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // The widget copy carries only what the two charts draw. The
+      // attribution block and the prose message are not drawable and
+      // would just be a second copy of the text block.
+      return makeJsonToolResponse(result, {
+        inputs: result.inputs,
+        trajectory: result.trajectory,
+        end_state: result.end_state,
+        steady_state_acquisition_needed: result.steady_state_acquisition_needed,
+        halved_by_month: result.halved_by_month,
+        break_even_month: result.break_even_month
+      });
     }
   );
 

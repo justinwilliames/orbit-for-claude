@@ -40,6 +40,8 @@ import { TOKEN_CONTRAST_JS } from "../../server/ui/widgets/design-system.js";
 import { CALENDAR_ANCHOR_JS } from "../../server/ui/widgets/send-calendar.js";
 import { READOUT_INTERVAL_JS } from "../../server/ui/widgets/ab-readout.js";
 import { RFM_PLOT_JS } from "../../server/ui/widgets/rfm-map.js";
+import { FORECAST_MARKS_JS } from "../../server/ui/widgets/list-forecast.js";
+import { STATE_GRID_JS } from "../../server/ui/widgets/state-matrix.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
@@ -57,7 +59,9 @@ const TOOL_WIDGETS = {
   orbit_learn_email_template: "ui://orbit/design-system.html",
   orbit_audit_send_calendar: "ui://orbit/send-calendar.html",
   orbit_parse_test_readout: "ui://orbit/ab-readout.html",
-  orbit_rfm_score: "ui://orbit/rfm-map.html"
+  orbit_rfm_score: "ui://orbit/rfm-map.html",
+  orbit_list_growth_forecast: "ui://orbit/list-forecast.html",
+  orbit_liquid_state_matrix: "ui://orbit/state-matrix.html"
 };
 
 let client = null;
@@ -389,6 +393,101 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     assert.equal(structured.scored_sample, undefined);
     assert.equal(structured.output_files, undefined);
     assert.equal(structured.orbit_attribution, undefined);
+  });
+
+  test("orbit_list_growth_forecast hands its widget month 0 AND the milestones it found", async () => {
+    const res = await client.callTool("orbit_list_growth_forecast", {
+      current_list_size: 50000,
+      monthly_acquisition: 500,
+      monthly_churn_pct: 5,
+      months: 24
+    });
+    const structured = res.structuredContent;
+    assert.ok(structured, "list forecast returned no structuredContent for its widget");
+    assert.equal(structured.trajectory.length, 25, "the widget cannot draw a curve it has no points for");
+    // Month 0 must ride along — it is the reference line the whole chart
+    // is read against — and it must still carry its structural zeros so
+    // the widget can recognise and exclude it from the flows.
+    assert.equal(structured.trajectory[0].month, 0);
+    assert.equal(structured.trajectory[0].acquisition, 0);
+    assert.equal(structured.end_state.growing, false);
+    assert.equal(structured.break_even_month, 1);
+    assert.equal(typeof structured.halved_by_month, "number");
+    assert.equal(typeof structured.steady_state_acquisition_needed, "number");
+    // Prose and provenance the charts never draw stay out of the copy.
+    assert.equal(structured.message, undefined);
+    assert.equal(structured.orbit_attribution, undefined);
+  });
+
+  test("a forecast with no milestones hands the widget nulls, not zeros", async () => {
+    // A growing list has no break-even and never halves. Zero is a real
+    // month on this axis, so the difference decides whether the chart
+    // plants "half the list is gone" on today.
+    const res = await client.callTool("orbit_list_growth_forecast", {
+      current_list_size: 40000,
+      monthly_acquisition: 1200,
+      monthly_churn_pct: 2,
+      months: 12
+    });
+    const structured = res.structuredContent;
+    assert.equal(structured.end_state.growing, true);
+    assert.equal(structured.break_even_month, null);
+    assert.equal(structured.halved_by_month, null);
+  });
+
+  test("orbit_liquid_state_matrix hands its widget the per-state block sets it used to discard", async () => {
+    // An {% if %} whose else arm is a strict subset of its if arm: the
+    // C2 defect, and the one the grid exists to make visible.
+    const filler = "Enough visible copy to clear the collapse floor in every state. ".repeat(9);
+    const html =
+      "<html><body>" +
+      '<table class="module-header"><tr><td>Acme</td></tr></table>' +
+      "{% if custom_attribute.${is_trial} %}" +
+      `<table class="module-cta"><tr><td><p>Upgrade. ${filler}</p></td></tr></table>` +
+      `<table class="module-help"><tr><td><p>Setup call. ${filler}</p></td></tr></table>` +
+      "{% else %}" +
+      `<table class="module-cta"><tr><td><p>Manage plan. ${filler}</p></td></tr></table>` +
+      "{% endif %}" +
+      '<table class="module-footer"><tr><td>Unsubscribe</td></tr></table>' +
+      "</body></html>";
+    const res = await client.callTool("orbit_liquid_state_matrix", { html });
+    const structured = res.structuredContent;
+    assert.ok(structured, "state matrix returned no structuredContent for its widget");
+
+    assert.ok(Array.isArray(structured.block_catalogue) && structured.block_catalogue.length > 0,
+      "the grid has no columns to draw");
+    assert.ok(Array.isArray(structured.states) && structured.states.length > 0,
+      "the grid has no rows to draw");
+    assert.equal(structured.states.length, structured.states_rendered,
+      "this sweep is small enough to draw whole");
+
+    // Every index must resolve — an out-of-range index ticks the wrong
+    // module for a whole population, which is the exact class of error
+    // this tool exists to find.
+    for (const s of structured.states) {
+      for (const i of s.present) {
+        assert.ok(i >= 0 && i < structured.block_catalogue.length,
+          `state ${s.label} points at column ${i}, outside a ${structured.block_catalogue.length}-column catalogue`);
+      }
+    }
+
+    // The two arms of the planted branch must differ in the drawn data,
+    // not only in the prose finding.
+    const idx = structured.block_catalogue.indexOf("module-help");
+    assert.ok(idx >= 0, "module-help never made the catalogue");
+    const withHelp = structured.states.filter((s) => s.present.includes(idx));
+    assert.ok(withHelp.length > 0 && withHelp.length < structured.states.length,
+      "every state or no state receives module-help — the drop is invisible in the grid");
+    assert.equal(structured.verdict, "fail");
+  });
+
+  test("a self_test run ships no grid rather than an empty one", async () => {
+    const res = await client.callTool("orbit_liquid_state_matrix", {
+      html: '<html><body><table class="module-a"><tr><td>x</td></tr></table></body></html>',
+      self_test: true
+    });
+    assert.equal(res.structuredContent, undefined,
+      "a run with no enumerated states handed the host a grid with nothing in it");
   });
 });
 
@@ -760,6 +859,44 @@ describe("RFM map — a real segment never renders as nothing", () => {
     assert.equal(p.excluded.length, 1);
     assert.equal(p.excluded[0].segment, "Broken");
   });
+
+  /**
+   * The host never sees an in-process object — it sees whatever survived
+   * JSON.stringify. The fixture above passes a segment with the field
+   * ABSENT, which makes Number(undefined) NaN and fires the guard. NaN is
+   * what a poisoned average actually is in process, and the wire turns it
+   * into `null` — and Number(null) is a finite 0. So the one shape the
+   * transport can deliver was the one shape never tested, and it drew the
+   * segment holding half the revenue at the origin with the biggest bubble.
+   */
+  const viaWire = (value) => JSON.parse(JSON.stringify(value));
+
+  test("a NaN average arrives as null and is still unplottable", () => {
+    const poisoned = viaWire([
+      seg("Champions", 12, Number.NaN, 300),
+      seg("Loyal Customers", 30, 4, 200),
+      seg("Promising New", 60, 2, 100)
+    ]);
+    assert.equal(poisoned[0].avg_frequency, null, "the wire fixture is not actually null");
+    const p = rfmPlot(poisoned);
+    assert.deepEqual(
+      p.excluded.map((x) => x.segment),
+      ["Champions"],
+      "a segment with no computable frequency was plotted anyway"
+    );
+    assert.ok(!p.points.some((x) => x.segment === "Champions"));
+  });
+
+  test("an explicit null or empty-string average is unplottable, not zero", () => {
+    for (const bad of [null, "", undefined]) {
+      const p = rfmPlot([
+        { segment: "Bad", avg_recency_days: 10, avg_frequency: bad, revenue: 100 },
+        seg("Fine", 20, 5, 50)
+      ]);
+      assert.equal(p.excluded.length, 1, `avg_frequency ${JSON.stringify(bad)} was plotted`);
+      assert.equal(p.excluded[0].segment, "Bad");
+    }
+  });
 });
 
 /**
@@ -885,5 +1022,109 @@ describe("Render gate — the pill cannot be greener than the measurement", () =
 
   test("info-only findings still pass when nothing abstained", () => {
     assert.equal(gateVerdict([f("info")], []), "pass");
+  });
+});
+
+/**
+ * The forecast chart's two honest-drawing rules, run as shipped source.
+ *
+ * Both are the same shape as the cohort grid's unobserved cell: a value
+ * the tool returned as "this did not happen" being drawn as a value that
+ * did. Month 0's zeros are structural, and a null milestone is not
+ * month 0 — but Number(null) is, and 0 is a real position on the axis.
+ */
+describe("List forecast — the chart never draws a month the tool did not measure", () => {
+  const { flowMonths, forecastMarks } = new Function(
+    `${FORECAST_MARKS_JS}\nreturn { flowMonths, forecastMarks };`
+  )();
+
+  const traj = [
+    { month: 0, list_size: 1000, acquisition: 0, churn: 0, net: 0 },
+    { month: 1, list_size: 990, acquisition: 40, churn: 50, net: -10 },
+    { month: 2, list_size: 981, acquisition: 40, churn: 49, net: -9 }
+  ];
+
+  test("month 0 is excluded from the flows — its zeros are structural, not measured", () => {
+    const rows = flowMonths(traj);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows.map((r) => r.month), [1, 2]);
+  });
+
+  test("a null milestone draws no marker at all", () => {
+    const marks = forecastMarks({
+      inputs: { months: 12 }, break_even_month: null, halved_by_month: null
+    });
+    assert.deepEqual(marks, [], "a null milestone was planted somewhere on the axis");
+  });
+
+  test("a milestone the tool DID find is drawn, at its month", () => {
+    const marks = forecastMarks({
+      inputs: { months: 24 }, break_even_month: 1, halved_by_month: 20
+    });
+    assert.deepEqual(marks.map((m) => m.month), [1, 20]);
+    assert.match(marks[0].label, /churn/i);
+    assert.match(marks[1].label, /half/i);
+  });
+
+  test("a milestone outside the horizon is dropped rather than clamped to the edge", () => {
+    const marks = forecastMarks({
+      inputs: { months: 12 }, break_even_month: 0, halved_by_month: 40
+    });
+    assert.deepEqual(marks, []);
+  });
+});
+
+/**
+ * The state grid's two rules, run as shipped source.
+ *
+ * The payload is a shared catalogue plus per-state indices, which is the
+ * only shape that stays small in a tool whose premise is 2^n — and one
+ * off-by-one from ticking the wrong module for a whole population.
+ */
+describe("State matrix — the grid draws only columns the catalogue has", () => {
+  const { stateGrid } = new Function(`${STATE_GRID_JS}\nreturn { stateGrid };`)();
+
+  const base = {
+    block_catalogue: ["module-cta", "module-help"],
+    states_rendered: 2,
+    states: [
+      { label: "is_trial=true", chars: 900, present: [0, 1] },
+      { label: "none", chars: 700, present: [0] }
+    ],
+    findings: []
+  };
+
+  test("a present index resolves to its column, and an absent one stays absent", () => {
+    const g = stateGrid(base);
+    assert.deepEqual(g.rows.map((r) => r.count), [2, 1]);
+    assert.equal(g.rows[1].present[1], undefined, "a state was given a module it never receives");
+  });
+
+  test("an index outside the catalogue is dropped, not drawn", () => {
+    const g = stateGrid({
+      ...base,
+      states: [{ label: "broken", chars: 900, present: [0, 7, -1, null] }]
+    });
+    assert.equal(g.rows[0].count, 1, "an out-of-range column index was ticked anyway");
+  });
+
+  test("a capped sweep reports what it could not draw", () => {
+    const g = stateGrid({ ...base, states_rendered: 4096 });
+    assert.equal(g.total, 4096);
+    assert.equal(g.omitted, 4094, "a partial grid presented itself as the whole state space");
+  });
+
+  test("a payload with no total claims nothing was omitted rather than guessing", () => {
+    const g = stateGrid({ ...base, states_rendered: undefined });
+    assert.equal(g.omitted, 0);
+  });
+
+  test("a state named by a failing finding is marked failing, glyph and word", () => {
+    const g = stateGrid({
+      ...base,
+      findings: [{ severity: "fail", invariant: "C2", state: "none", message: "drops a module" }]
+    });
+    assert.equal(g.rows[1].severity, "fail");
+    assert.equal(g.rows[0].severity, "ok");
   });
 });

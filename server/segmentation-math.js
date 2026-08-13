@@ -42,12 +42,40 @@ export function scoreRfm({
   }
 
   // Normalise + compute raw RFM values.
+  //
+  // Two rules, both learned the hard way:
+  //
+  //  1. A row that cannot be scored is COUNTED, not silently dropped. An
+  //     empty last_order_date is what every CRM export carries for a
+  //     signup who has never bought, so `continue` here quietly rebased
+  //     user_share_pct onto the survivors and summed it to a confident
+  //     100%, with nothing in the output saying how many users were not
+  //     in the denominator.
+  //  2. A non-finite frequency or revenue is REJECTED, never coerced.
+  //     Number("three") is NaN; NaN falls through every comparison in
+  //     bandByQuintile's chain to its final else and bands as 5, which
+  //     classified the row as Champions with the highest-touch action,
+  //     then poisoned that segment's avg_frequency to NaN — which the
+  //     MCP JSON wire turns into null on the way to the widget.
   const rows = [];
+  const skipReasons = new Map();
+  const skip = (reason) => skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1);
   for (const u of users) {
     const last = u.last_order_date ? new Date(u.last_order_date) : null;
+    if (!last || Number.isNaN(last.getTime())) {
+      skip(u.last_order_date ? "last_order_date did not parse" : "last_order_date missing or empty");
+      continue;
+    }
     const freq = Number(u.order_count ?? 0);
+    if (!Number.isFinite(freq)) {
+      skip("order_count is not a finite number");
+      continue;
+    }
     const mon = Number(u.lifetime_revenue ?? 0);
-    if (!last || Number.isNaN(last.getTime())) continue;
+    if (!Number.isFinite(mon)) {
+      skip("lifetime_revenue is not a finite number");
+      continue;
+    }
     const recencyDays = Math.max(0, (refDate - last) / 86_400_000);
     rows.push({
       id: u.id ?? u.email ?? null,
@@ -56,10 +84,16 @@ export function scoreRfm({
       monetary: mon,
     });
   }
+  const skipped = [...skipReasons.entries()].map(([reason, count]) => ({ reason, count }));
+  const skippedTotal = skipped.reduce((sum, s) => sum + s.count, 0);
   if (rows.length === 0) {
     return {
       status: "error",
-      message: "No valid users after filtering (each needs a parseable last_order_date).",
+      input_rows: users.length,
+      scored_rows: 0,
+      skipped,
+      message:
+        "No valid users after filtering (each needs a parseable last_order_date and finite order_count / lifetime_revenue).",
     };
   }
 
@@ -135,15 +169,28 @@ export function scoreRfm({
     written = { scored_csv: scoredPath, segments_json: segPath };
   }
 
+  const skipNote = skippedTotal
+    ? ` ${skippedTotal} of ${users.length} input rows could not be scored and are NOT in these shares: ${skipped
+        .map((s) => `${s.count} × ${s.reason}`)
+        .join("; ")}.`
+    : "";
+
   return {
-    status: "ok",
+    // `partial` because the shares below are computed over the survivors.
+    // "Scored 6 users" over an input of 10 with status ok is the same
+    // absence-cannot-be-proved-from-an-incomplete-read failure braze-read.js
+    // was taught in 7fbc35f, in a pure-maths tool with no API to blame.
+    status: skippedTotal > 0 ? "partial" : "ok",
     user_count: rows.length,
+    input_rows: users.length,
+    scored_rows: rows.length,
+    skipped,
     reference_date: refDate.toISOString(),
     total_revenue: Math.round(totalRevenue * 100) / 100,
     segments: segmentList,
     scored_sample: rows.slice(0, 10),
     output_files: written,
-    message: `Scored ${rows.length} users across ${segmentList.length} RFM segments. Top revenue segment: "${segmentList[0]?.segment}" (${segmentList[0]?.revenue_share_pct}% of revenue).`,
+    message: `Scored ${rows.length} users across ${segmentList.length} RFM segments. Top revenue segment: "${segmentList[0]?.segment}" (${segmentList[0]?.revenue_share_pct}% of revenue).${skipNote}`,
     orbit_attribution: {
       heavy: true,
       signature: "Built with Orbit · RFM Scoring",
@@ -194,6 +241,17 @@ function bandByQuintile(values, { invert = false }) {
   const q4 = q(0.8);
   return values.map((v) => {
     const n = Number(v);
+    // Explicit, not a fall-through. Every comparison against NaN is
+    // false, so an unparseable value used to slide down the whole chain
+    // and land in the final `else` — the TOP band — which is how a row
+    // with an unreadable order_count came out as a Champion. Callers now
+    // reject non-finite values upstream; this throws so a future caller
+    // that forgets cannot ship a silent misclassification.
+    if (!Number.isFinite(n)) {
+      throw new TypeError(
+        `bandByQuintile received a non-finite value (${JSON.stringify(v)}); reject it before banding.`,
+      );
+    }
     let band;
     if (n <= q1) band = 1;
     else if (n <= q2) band = 2;
@@ -214,6 +272,7 @@ export function buildCohortRetention({
   periodDays = 30,
   periodsToTrack = 12,
   referenceDate,
+  cohortAnchor,
   outputDir,
 }) {
   if (!Array.isArray(enrollments) || enrollments.length === 0) {
@@ -226,20 +285,62 @@ export function buildCohortRetention({
   }
 
   const refDate = referenceDate ? new Date(referenceDate) : new Date();
+  const skipReasons = new Map();
+  const skip = (reason) => skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1);
 
-  // Group enrollments by cohort (bucketed at period boundaries). Use
-  // the cohort boundary that starts before or on enrolled_at.
   const cohortMs = periodDays * 86_400_000;
-  const cohortBuckets = new Map();
-  const userCohort = new Map();
+
+  // Parse every enrolment BEFORE bucketing, because the bucket grid is
+  // anchored to the earliest one.
+  const parsedEnrollments = [];
   for (const e of enrollments) {
     const t = new Date(e.enrolled_at);
-    if (Number.isNaN(t.getTime())) continue;
-    const cohortStart = new Date(Math.floor(t / cohortMs) * cohortMs);
+    if (Number.isNaN(t.getTime())) {
+      skip(e.enrolled_at ? "enrolled_at did not parse" : "enrolled_at missing or empty");
+      continue;
+    }
+    if (e.user_id === undefined || e.user_id === null || String(e.user_id) === "") {
+      skip("user_id missing");
+      continue;
+    }
+    parsedEnrollments.push({ userId: String(e.user_id), at: t.getTime() });
+  }
+  if (parsedEnrollments.length === 0) {
+    return {
+      status: "error",
+      input_enrollments: enrollments.length,
+      bucketed_enrollments: 0,
+      skipped: [...skipReasons.entries()].map(([reason, count]) => ({ reason, count })),
+      message: "No enrolment carried a parseable enrolled_at and a user_id.",
+    };
+  }
+
+  // Bucket boundaries were `Math.floor(t / cohortMs) * cohortMs` — anchored
+  // to the UNIX EPOCH. At periodDays 30 that puts the boundaries on
+  // multiples of 30 days from 1970-01-01, so a 1 July signup filed under a
+  // June cohort while 31 July and 1 August shared one; weekly cohorts ran
+  // Thursday to Wednesday. The bare YYYY-MM-DD label read as "the month
+  // this cohort started" and was neither.
+  //
+  // Anchored to the earliest enrolment in the input instead (or to an
+  // explicit cohort_anchor), so cohort 0 begins when the data does and
+  // every label means something a reader can check.
+  const anchorInput = cohortAnchor ? new Date(cohortAnchor) : null;
+  const anchorMs =
+    anchorInput && !Number.isNaN(anchorInput.getTime())
+      ? anchorInput.getTime()
+      : Math.min(...parsedEnrollments.map((e) => e.at));
+
+  const cohortBuckets = new Map();
+  const userCohort = new Map();
+  for (const { userId, at } of parsedEnrollments) {
+    const index = Math.floor((at - anchorMs) / cohortMs);
+    const cohortStart = new Date(anchorMs + index * cohortMs);
     const key = cohortStart.toISOString().slice(0, 10);
     if (!cohortBuckets.has(key)) cohortBuckets.set(key, new Set());
-    cohortBuckets.get(key).add(String(e.user_id));
-    userCohort.set(String(e.user_id), { cohortStart, key });
+    cohortBuckets.get(key).add(userId);
+    // The LAST enrolment wins on a duplicate user_id, same as before.
+    userCohort.set(userId, { cohortStart, key, enrolledAt: at });
   }
 
   // Walk events, mark which period each user was active in relative
@@ -249,11 +350,23 @@ export function buildCohortRetention({
   for (const ev of events ?? []) {
     const uid = String(ev.user_id);
     const cohort = userCohort.get(uid);
-    if (!cohort) continue;
+    if (!cohort) {
+      // Previously indistinguishable from an inactive user: the event
+      // vanished and the cohort simply looked less retained. This is the
+      // shape a join key mismatch takes, and it must be nameable.
+      skip("event user_id matched no enrolment");
+      continue;
+    }
     const t = new Date(ev.event_at);
-    if (Number.isNaN(t.getTime())) continue;
+    if (Number.isNaN(t.getTime())) {
+      skip(ev.event_at ? "event_at did not parse" : "event_at missing or empty");
+      continue;
+    }
     const periodIdx = Math.floor((t - cohort.cohortStart) / cohortMs);
-    if (periodIdx < 0 || periodIdx > periodsToTrack) continue;
+    if (periodIdx < 0 || periodIdx > periodsToTrack) {
+      skip("event falls outside the tracked periods");
+      continue;
+    }
     const key = `${cohort.key}|${periodIdx}`;
     if (!activeMap.has(key)) activeMap.set(key, new Set());
     activeMap.get(key).add(uid);
@@ -275,6 +388,17 @@ export function buildCohortRetention({
     // and a window still in progress is emitted with `complete: false` and
     // the share of it that has elapsed, so a reader can see the number is
     // a running total rather than a result.
+    const cohortEndMs = cohortStart.getTime() + cohortMs;
+    const memberExposure = [...members].map((uid) => {
+      const enrolledAt = userCohort.get(uid)?.enrolledAt ?? cohortStart.getTime();
+      return Math.max(0, Math.min(1, (cohortEndMs - enrolledAt) / cohortMs));
+    });
+    const memberExposurePct =
+      Math.round(
+        (memberExposure.reduce((sum, share) => sum + share, 0) / (memberExposure.length || 1)) *
+          1000,
+      ) / 10;
+
     const periods = [];
     for (let p = 0; p <= periodsToTrack; p++) {
       const elapsedMs = refDate - (cohortStart.getTime() + p * cohortMs);
@@ -288,10 +412,22 @@ export function buildCohortRetention({
         revenue: Math.round((revenueMap.get(key) ?? 0) * 100) / 100,
         complete: elapsedMs >= cohortMs,
         window_elapsed_pct: Math.round(Math.min(1, elapsedMs / cohortMs) * 1000) / 10,
+        // The untreated HEAD of the row whose tail 7d141f3 fixed. Period 0's
+        // window opens at the cohort boundary, which can be up to
+        // periodDays-1 days before anybody in it enrolled — so P0 was
+        // emitted complete:true, window_elapsed_pct:100 over a window most
+        // of which predates its own members. This is the share of the
+        // window the average member was actually enrolled for; anything
+        // below 100 means P0 is measuring less exposure than P1 onwards.
+        ...(p === 0 ? { member_exposure_pct: memberExposurePct } : {}),
       });
     }
     cohorts.push({
       cohort: cohortKey,
+      // The bare YYYY-MM-DD above reads as a calendar month or week and is
+      // neither. Both ends, explicitly, so nobody has to infer the grid.
+      cohort_start: cohortStart.toISOString(),
+      cohort_end: new Date(cohortStart.getTime() + cohortMs).toISOString(),
       size: members.size,
       periods,
     });
@@ -344,15 +480,30 @@ export function buildCohortRetention({
     written = { cohorts_json: cohortsPath, curve_json: curvePath };
   }
 
+  const skipped = [...skipReasons.entries()].map(([reason, count]) => ({ reason, count }));
+  const skippedTotal = skipped.reduce((sum, s) => sum + s.count, 0);
+  const skipNote = skippedTotal
+    ? ` ${skippedTotal} input row(s) contributed nothing and are NOT in these numbers: ${skipped
+        .map((s) => `${s.count} × ${s.reason}`)
+        .join("; ")}.`
+    : "";
+
   return {
-    status: "ok",
+    status: skippedTotal > 0 ? "partial" : "ok",
     cohort_count: cohorts.length,
     period_days: periodDays,
+    // The grid the labels are on. Without this a reader cannot tell a
+    // cohort boundary from a calendar boundary.
+    cohort_anchor: new Date(anchorMs).toISOString(),
+    input_enrollments: enrollments.length,
+    bucketed_enrollments: parsedEnrollments.length,
+    input_events: Array.isArray(events) ? events.length : 0,
+    skipped,
     reference_date: refDate.toISOString(),
     aggregate_curve: curve,
     cohorts,
     output_files: written,
-    message: `Built ${cohorts.length} cohort(s) over ${periodsToTrack} period(s) of ${periodDays} days each.`,
+    message: `Built ${cohorts.length} cohort(s) over ${periodsToTrack} period(s) of ${periodDays} days each, anchored to ${new Date(anchorMs).toISOString().slice(0, 10)}.${skipNote}`,
     orbit_attribution: {
       heavy: true,
       signature: "Built with Orbit · Cohort Retention",

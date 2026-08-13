@@ -54,17 +54,25 @@ function rfmPlot(segments) {
   var excluded = [];
   var usable = [];
 
+  // isFinite(Number(x)) alone is NOT the guard it looks like: Number(null)
+  // is 0, a perfectly finite number. NaN is exactly what the MCP JSON wire
+  // turns into null, so the one shape the host can actually deliver — a
+  // segment whose average could not be computed — sailed past this check
+  // and was plotted at the ORIGIN: least recent, least frequent, biggest
+  // bubble, excluded:[]. Reject the absent value before coercing it.
+  var unusable = function (v) {
+    return v === null || v === undefined || v === "" || !isFinite(Number(v));
+  };
+
   list.forEach(function (s) {
-    var rec = Number(s && s.avg_recency_days);
-    var freq = Number(s && s.avg_frequency);
-    if (!isFinite(rec) || !isFinite(freq)) {
+    if (unusable(s && s.avg_recency_days) || unusable(s && s.avg_frequency)) {
       excluded.push({
         segment: (s && s.segment) || "(unnamed)",
         reason: "no average recency or frequency returned for this segment"
       });
       return;
     }
-    usable.push({ s: s, rec: rec, freq: freq });
+    usable.push({ s: s, rec: Number(s.avg_recency_days), freq: Number(s.avg_frequency) });
   });
 
   if (usable.length === 0) return { points: points, excluded: excluded };
