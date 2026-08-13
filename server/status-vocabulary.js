@@ -96,6 +96,13 @@ export const PROMPTED_STATUSES = new Set([
   // there is no answer. The user has to narrow the search or accept
   // the cap, which is what PROMPTED means.
   "not_found_in_partial_list",
+  // A linter that read the document and could not resolve the thing it
+  // grades. Nothing broke and nothing is missing — the encoding defeats
+  // a regex parser, and the human can fix that by inlining the colours
+  // or simplifying the selectors. PROMPTED, because the next move is
+  // theirs. It exists so a check can decline to grade instead of
+  // returning the `pass` a zero-measurement run used to produce.
+  "not_measurable",
 ]);
 
 /**

@@ -64,6 +64,11 @@ body { height: 100vh; overflow: hidden; }
 .o-pill[data-sev="fail"] { background: var(--warn-wash); color: var(--warn); border-color: var(--warn-line); }
 .o-pill[data-sev="warn"] { background: var(--active-wash); color: var(--active-strong); border-color: var(--active-line); }
 .o-pill[data-sev="pass"] { background: var(--ok-wash); color: var(--ok-strong); border-color: var(--ok-line); }
+
+/* Before a result arrives there is no verdict to show. Every sibling
+   widget hides its verdict chrome until then; this one used to paint a
+   green PASS pill over the words "Waiting for a QA result". */
+body:not([data-ready]) .until-ready { display: none !important; }
 `;
 
 const JS = `
@@ -94,6 +99,7 @@ function dataFromToolResult(result) {
 function adopt(data) {
   if (!data || !data.verdict) return false;
   report = data;
+  document.body.setAttribute("data-ready", "1");
   render();
   return true;
 }
@@ -147,10 +153,12 @@ function render() {
   pill.dataset.sev = v;
   $("#summary").textContent = report.message || "";
 
+  var skipped = (report.not_measured || []).length;
   $("#tallies").innerHTML =
     '<span class="o-pill" data-sev="fail">' + (report.fail_count || 0) + " fail</span>" +
     '<span class="o-pill" data-sev="warn">' + (report.warn_count || 0) + " warn</span>" +
-    '<span class="o-pill" data-sev="pass">' + (report.pass_count || 0) + " pass</span>";
+    '<span class="o-pill" data-sev="pass">' + (report.pass_count || 0) + " pass</span>" +
+    (skipped > 0 ? '<span class="o-pill o-pill--pending">' + skipped + " not measured</span>" : "");
 
   // Filter set is derived from the findings actually present — offering
   // a "size" filter on a report with no size finding is a dead end.
@@ -164,11 +172,15 @@ function render() {
   }).join("");
 
   var b = report.breakdown || {};
+  // Every sub-check keeps its slot. A check that did not run renders as
+  // "not measured" with the reason — it used to vanish, so a skipped
+  // check and a crashed one both looked exactly like a report that only
+  // ever had two checks in it.
   var tiles = [
-    tile("Accessibility", b.accessibility && b.accessibility.verdict),
-    tile("Dark mode", b.dark_mode && b.dark_mode.verdict),
-    tile("Gmail size", b.size && b.size.verdict, b.size && b.size.message)
-  ].filter(Boolean);
+    tile("Accessibility", b.accessibility, "accessibility"),
+    tile("Dark mode", b.dark_mode, "dark_mode"),
+    tile("Gmail size", b.size, "size")
+  ];
   $("#checks").innerHTML = tiles.join("");
 
   var list = findings();
@@ -204,21 +216,47 @@ function render() {
   $("#list").innerHTML = html;
 }
 
-function tile(name, verdict, note) {
-  if (!verdict) return null;
+function abstentionReason(key) {
+  var list = report.not_measured || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].check === key) return list[i].reason || "";
+  }
+  return "";
+}
+
+// Four arms, not two. pass / warn / fail each get their own colour;
+// anything else — no verdict, "unknown", "not_measured" — is an
+// abstention and renders in the pending tone, never in the red that
+// means "this email failed".
+function tile(name, result, key) {
+  var verdict = result && result.verdict;
+  // Only the size check carries a note short enough to sit under a tile.
+  var note = (key === "size" && result && result.message) || "";
+  if (!verdict || verdict === "unknown" || (result && result.not_measured === true)) {
+    return '<div class="o-card check-tile"><h3>' + esc(name) + "</h3>" +
+      '<div class="v" style="color:var(--ink-3)">NOT MEASURED</div>' +
+      '<div class="f-rec">' + esc(abstentionReason(key) || (result && result.reason) || "This check did not run.") +
+      "</div></div>";
+  }
+  var colour = verdict === "pass" ? "ok-strong" : verdict === "warn" ? "active-strong" : "warn";
   return '<div class="o-card check-tile"><h3>' + esc(name) + '</h3>' +
-    '<div class="v" style="color:var(--' + (verdict === "pass" ? "ok-strong" : verdict === "warn" ? "active-strong" : "warn") + ')">' +
+    '<div class="v" style="color:var(--' + colour + ')">' +
     esc(verdict.toUpperCase()) + "</div>" +
     (note ? '<div class="f-rec">' + esc(note) + "</div>" : "") + "</div>";
 }
 
 function reportText() {
+  var skipped = report.not_measured || [];
   var lines = [
     "Email QA \\u2014 " + String(report.verdict).toUpperCase() + ": " + (report.message || ""),
     (report.fail_count || 0) + " fail, " + (report.warn_count || 0) + " warn, " +
-      (report.pass_count || 0) + " pass.",
+      (report.pass_count || 0) + " pass" +
+      (skipped.length ? ", " + skipped.length + " not measured" : "") + ".",
     ""
   ];
+  skipped.forEach(function (s) {
+    lines.push("- [not measured] " + (s.check || "") + ": " + (s.reason || ""));
+  });
   (report.combined_findings || []).forEach(function (f) {
     var evidence = [];
     if (f.fg && f.bg) evidence.push(f.fg + " on " + f.bg);
@@ -269,7 +307,7 @@ const BODY = `
   <header class="head">
     <div class="head-top">
       <h1>Pre-send QA</h1>
-      <span class="o-pill" id="verdict" data-sev="pass">—</span>
+      <span class="o-pill o-pill--pending until-ready" id="verdict">—</span>
       <span class="spacer"></span>
     </div>
     <div class="summary" id="summary"></div>

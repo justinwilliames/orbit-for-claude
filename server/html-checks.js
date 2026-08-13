@@ -9,6 +9,15 @@
 // Pure string / regex parsing — no headless browser, no DOM. Fast
 // enough to run on any email and deterministic enough to be a
 // defensible pre-send check.
+//
+// Both checks read a small <style>-block cascade as well as the inline
+// style="" / bgcolor="" attributes. That is not optional politeness:
+// Orbit mandates should_inline_css:false on every Braze push, MJML
+// emits class-based CSS before juice runs, and Stripo exports the same
+// — so the encoding Orbit tells people to ship was precisely the one
+// these linters could not see, and they answered "pass" over it.
+// Where the cascade cannot be resolved, the check abstains and says so
+// rather than returning a verdict it did not earn.
 
 // ---------------------------------------------------------------------------
 // Public: checkDarkModeRisk
@@ -28,7 +37,30 @@ export function checkDarkModeRisk({ html }) {
   // how colour actually renders in an email client, so any check
   // that only looks at `fg AND bg on the same element` misses the
   // vast majority of real contrast / invert issues.
-  const pairs = collectFgBgPairs(html);
+  const sheet = parseStyleSheet(html);
+  const pairs = collectFgBgPairs(html, sheet);
+
+  // A <style> block full of colour declarations that resolved onto
+  // nothing means this check read no colours at all. Reporting "pass"
+  // there is the false-negative that let 1.09:1 body copy through.
+  if (pairs.length === 0 && sheet.sawColourDeclaration) {
+    return {
+      status: "not_measurable",
+      verdict: "unknown",
+      not_measured: true,
+      reason: unresolvedReason(sheet),
+      has_dark_mode_media_query:
+        /@media[^{]*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/i.test(html),
+      findings: [],
+      warnings: [],
+      recommendation:
+        "Inline the colour declarations (or use simple .class / #id / tag selectors) and re-run, or check dark mode in a real client.",
+      orbit_attribution: {
+        heavy: true,
+        signature: "Built with Orbit · Dark Mode Check",
+      },
+    };
+  }
 
   for (const p of pairs) {
     // Light fg on light bg: inverters flip this to dark-on-dark,
@@ -56,7 +88,7 @@ export function checkDarkModeRisk({ html }) {
 
   // Bare near-white text with no discoverable background — partial
   // inverters can land white-on-white.
-  for (const bare of collectBareWhiteText(html)) {
+  for (const bare of collectBareWhiteText(html, sheet)) {
     warnings.push({
       tag: bare.tag,
       fg: colorToHex(bare.fg),
@@ -87,6 +119,8 @@ export function checkDarkModeRisk({ html }) {
     has_apple_dark_styles: hasAppleDarkStyles,
     invert_risk_count: findings.filter((f) => f.kind === "invert_risk").length,
     already_dark_count: findings.filter((f) => f.kind === "already_dark").length,
+    colour_pairs_measured: pairs.length,
+    unresolved_style_rules: sheet.unsupportedColourRules,
     findings,
     warnings,
     recommendation: hasDarkMediaQuery
@@ -196,7 +230,10 @@ export function accessibilityLint({ html }) {
   //    which misses the vast majority of real email contrast bugs
   //    (text in <p> / <td> inside a <table bgcolor="#fff">).
   const contrastIssues = [];
-  for (const p of collectFgBgPairs(html)) {
+  const notMeasured = [];
+  const sheet = parseStyleSheet(html);
+  const colourPairs = collectFgBgPairs(html, sheet);
+  for (const p of colourPairs) {
     const ratio = contrastRatio(p.fg, p.bg);
     if (ratio < 4.5) {
       contrastIssues.push({
@@ -215,8 +252,16 @@ export function accessibilityLint({ html }) {
       recommendation: "Darken the foreground or lighten the background until the ratio clears 4.5:1.",
       samples: contrastIssues.slice(0, 5),
     });
-  } else if (html.match(/color\s*:/i)) {
-    passes.push({ rule: "contrast-aa", message: "All foreground/background pairs pass WCAG AA (ancestor-resolved)." });
+  } else if (colourPairs.length > 0) {
+    passes.push({
+      rule: "contrast-aa",
+      message: `All ${colourPairs.length} foreground/background pair(s) pass WCAG AA (ancestor-resolved).`,
+    });
+  } else if (/color\s*:/i.test(html)) {
+    // The document declares colour and this lint resolved none of it.
+    // The old branch printed "all pairs pass" here, which is a claim
+    // about zero measurements.
+    notMeasured.push({ rule: "contrast-aa", reason: unresolvedReason(sheet) });
   }
 
   // 5. Lang attribute on <html>.
@@ -257,6 +302,8 @@ export function accessibilityLint({ html }) {
     warn_count: issues.filter((i) => i.severity === "warn").length,
     issues,
     passes,
+    not_measured: notMeasured,
+    colour_pairs_measured: colourPairs.length,
     orbit_attribution: {
       heavy: true,
       signature: "Built with Orbit · Accessibility Lint",
@@ -382,11 +429,130 @@ const SELF_CLOSING_TAGS = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
 ]);
 
+// ---------------------------------------------------------------------------
+// Internals: the <style>-block cascade
+// ---------------------------------------------------------------------------
+
+// Email CSS is not general CSS. The selector forms that actually appear
+// in a template are `.class`, `#id` and a bare tag name; anything with a
+// combinator, pseudo-class or attribute selector is rare and, more to
+// the point, cannot be resolved without a real DOM. Those are counted,
+// not guessed at, so a caller can abstain on the strength of the count.
+//
+// @media and other at-rules are deliberately excluded from the base
+// cascade — a dark-mode override is not what a light-mode client
+// renders, and folding one in would make the contrast number wrong in a
+// new direction.
+function parseStyleSheet(html) {
+  const rules = [];
+  let unsupportedColourRules = 0;
+  let sawColourDeclaration = false;
+  for (const block of String(html).matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+    const body = stripAtRules(block[1].replace(/\/\*[\s\S]*?\*\//g, ""));
+    for (const rule of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const decls = rule[2].trim();
+      if (!/(?:^|;|\s)(?:color|background|background-color)\s*:/i.test(decls)) continue;
+      sawColourDeclaration = true;
+      for (const raw of rule[1].split(",")) {
+        const sel = raw.trim();
+        let m;
+        if ((m = /^\.([A-Za-z0-9_-]+)$/.exec(sel))) rules.push({ kind: "class", key: m[1], decls });
+        else if ((m = /^#([A-Za-z0-9_-]+)$/.exec(sel))) rules.push({ kind: "id", key: m[1], decls });
+        else if ((m = /^([a-z][a-z0-9]*)$/i.exec(sel))) rules.push({ kind: "tag", key: m[1].toLowerCase(), decls });
+        else if (sel.length > 0) unsupportedColourRules += 1;
+      }
+    }
+  }
+  return { rules, unsupportedColourRules, sawColourDeclaration };
+}
+
+// Drop @media / @supports / @font-face blocks (and @import statements)
+// whole. Brace-counting rather than regex because @media nests.
+function stripAtRules(css) {
+  let out = "";
+  for (let i = 0; i < css.length; i += 1) {
+    if (css[i] !== "@") {
+      out += css[i];
+      continue;
+    }
+    let depth = 0;
+    let opened = false;
+    let j = i;
+    for (; j < css.length; j += 1) {
+      if (css[j] === "{") {
+        depth += 1;
+        opened = true;
+      } else if (css[j] === "}") {
+        depth -= 1;
+        if (opened && depth <= 0) {
+          j += 1;
+          break;
+        }
+      } else if (css[j] === ";" && !opened) {
+        j += 1;
+        break;
+      }
+    }
+    i = j - 1;
+  }
+  return out;
+}
+
+function sheetDeclsFor(sheet, kind, keys) {
+  const out = [];
+  for (const key of keys) {
+    const hits = sheet.rules.filter((r) => r.kind === kind && r.key === key);
+    // Later rules win in CSS; cssProp() takes the FIRST match in the
+    // string, so the string is assembled in reverse-source order.
+    for (let i = hits.length - 1; i >= 0; i -= 1) out.push(hits[i].decls);
+  }
+  return out;
+}
+
+// Build one stack frame, flattening the cascade into the single `style`
+// string the rest of this module already reads. Ordering IS the
+// cascade: inline beats #id beats .class beats a bare tag, because
+// cssProp() returns the first declaration it finds.
+function makeFrame(tagName, attrs, sheet) {
+  const inline = (attrs.match(/\bstyle\s*=\s*["']([^"']*)["']/i) || [])[1] ?? "";
+  const parts = [inline];
+  if (sheet && sheet.rules.length > 0) {
+    const idAttr = (attrs.match(/\bid\s*=\s*["']([^"']*)["']/i) || [])[1] ?? "";
+    const classAttr = (attrs.match(/\bclass\s*=\s*["']([^"']*)["']/i) || [])[1] ?? "";
+    parts.push(...sheetDeclsFor(sheet, "id", idAttr ? [idAttr.trim()] : []));
+    parts.push(...sheetDeclsFor(sheet, "class", classAttr.split(/\s+/).filter(Boolean)));
+    parts.push(...sheetDeclsFor(sheet, "tag", [tagName]));
+  }
+  return {
+    tag: tagName,
+    style: parts.filter(Boolean).join(";"),
+    bgcolorAttr: (attrs.match(/\bbgcolor\s*=\s*["']([^"']+)["']/i) || [])[1] ?? null,
+  };
+}
+
+function unresolvedReason(sheet) {
+  if (sheet && sheet.unsupportedColourRules > 0) {
+    return `No foreground/background pair could be resolved: ${sheet.unsupportedColourRules} colour rule(s) in <style> use selector forms this linter cannot resolve without a browser (combinators, pseudo-classes, attribute selectors).`;
+  }
+  return "No foreground/background pair could be resolved — the document declares colour but nothing bound to an element this linter could see.";
+}
+
+// The contents of <style> and <script> are not visible text. Left in,
+// the tag walker attributes a stylesheet's own declaration text to the
+// <style> element and pairs it against an inherited body colour.
+function stripNonRenderedText(html) {
+  return String(html)
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "<style></style>")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "<script></script>")
+    .replace(/<!--[\s\S]*?-->/g, "");
+}
+
 // Parse open/close tags in source order, keeping an ancestor stack.
 // Returns a list of { tag, style, bgcolor } entries with full
 // ancestry for each open tag that has text content (direct or
 // inherited).
-function collectFgBgPairs(html) {
+function collectFgBgPairs(rawHtml, sheet) {
+  const html = stripNonRenderedText(rawHtml);
   const pairs = [];
   const tagRegex = /<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi;
   const stack = [];
@@ -420,12 +586,7 @@ function collectFgBgPairs(html) {
     const isSelfClosing = /\/\s*>$/.test(raw);
     if (isSelfClosing) continue;
 
-    const frame = {
-      tag: tagName,
-      style: (m[2].match(/\bstyle\s*=\s*["']([^"']+)["']/i) || [])[1] ?? "",
-      bgcolorAttr: (m[2].match(/\bbgcolor\s*=\s*["']([^"']+)["']/i) || [])[1] ?? null,
-    };
-    stack.push(frame);
+    stack.push(makeFrame(tagName, m[2], sheet));
   }
   return pairs;
 }
@@ -464,7 +625,8 @@ function emitPairFor(frame, stack, pairs) {
 
 // Find near-white text with no discoverable background. Used by
 // dark-mode checker to flag partial-invert risks.
-function collectBareWhiteText(html) {
+function collectBareWhiteText(rawHtml, sheet) {
+  const html = stripNonRenderedText(rawHtml);
   const bare = [];
   const tagRegex = /<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi;
   const stack = [];
@@ -507,11 +669,7 @@ function collectBareWhiteText(html) {
     if (SELF_CLOSING_TAGS.has(tagName)) continue;
     const isSelfClosing = /\/\s*>$/.test(raw);
     if (isSelfClosing) continue;
-    stack.push({
-      tag: tagName,
-      style: (m[2].match(/\bstyle\s*=\s*["']([^"']+)["']/i) || [])[1] ?? "",
-      bgcolorAttr: (m[2].match(/\bbgcolor\s*=\s*["']([^"']+)["']/i) || [])[1] ?? null,
-    });
+    stack.push(makeFrame(tagName, m[2], sheet));
   }
   return bare;
 }
