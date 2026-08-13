@@ -165,6 +165,7 @@ export const READ_ONLY_NETWORKED = new Set([
   "orbit_check_version",
   "orbit_esp_read",
   "orbit_esp_templates",
+  "orbit_klaviyo_flow_audit",
   "orbit_export_braze_user_by_id",
   "orbit_export_stripo_email_html",
   "orbit_fetch_braze_template",

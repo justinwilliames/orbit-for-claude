@@ -597,6 +597,56 @@ export const ESP_TOOL_DEFINITIONS = [
   },
 
   {
+    name: "orbit_klaviyo_flow_audit",
+    inputSchema: {
+      title: "Klaviyo Flow Audit (read)",
+      description:
+        "Walk one Klaviyo FLOW step by step and join it to per-message performance — the leak table orbit_esp_read cannot produce (it returns a flow as name + status, and its performance leg needs a campaign_id). Per step: action type, delay, whether it branches, the message name/channel/subject/preview_text, then recipients → delivered → opens → clicks → unsubscribes, plus the delivered drop-off between consecutive MESSAGE steps. Feed each subject/preview_text into orbit_score_subject_line and orbit_score_preheader. Klaviyo only; other platforms return {unsupported}. Without a conversion_metric_id the structure still returns and every statistic is null — never zero-filled.",
+      inputSchema: {
+        platform: platformArg,
+        flow_id: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe("The Klaviyo flow id. Either this or flow_name is required."),
+        flow_name: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe(
+            "Look the flow up by name instead. An ambiguous name errors with the candidates rather than picking one."
+          ),
+        window: z
+          .union([z.number().int().min(1).max(365), z.string().max(MAX_SHORT_STRING)])
+          .optional()
+          .describe("Reporting window: days (number) or a Klaviyo timeframe key. Defaults to last_30_days."),
+        conversion_metric_id: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe(
+            "The conversion metric Klaviyo's flow-values report requires. Omit and Orbit resolves a default; if it cannot, the structure is returned with null statistics."
+          ),
+      },
+    },
+    handler: async ({ platform, flow_id, flow_name, window, conversion_metric_id } = {}) =>
+      runEspTool(async () => {
+        const config = getRuntimeConfig();
+        // Default to klaviyo rather than the configured platform: this tool
+        // is named for one ESP, so resolving to whatever else is configured
+        // would answer a question nobody asked.
+        const p = resolvePlatform(platform ?? "klaviyo", config);
+        return dispatch(p, "auditFlow", {
+          config,
+          flow_id,
+          flow_name,
+          window,
+          conversion_metric_id,
+        });
+      }),
+  },
+
+  {
     name: "orbit_esp_send_test",
     inputSchema: {
       title: "ESP Send Test",

@@ -312,8 +312,26 @@ const SHAPED_RESPONSE_FLOOR = 45;
  * tool saying the drawing exists, which is how the model knows to expect
  * one. Both clauses were cut roughly in half before this number was moved.
  * Deliberate, and small: no tool was added.
+ *
+ * 157_000 -> 159_000 (13 Aug 2026, +1_978 measured): a tool WAS added —
+ * orbit_klaviyo_flow_audit, tool 128. This is the first raise in this file
+ * that buys a new capability rather than absorbing an existing one, so it
+ * is the one that has to justify itself.
+ *
+ * The case: in Klaviyo, flows ARE lifecycle — welcome, abandoned cart,
+ * browse abandon, winback are all flows, not campaigns. Orbit could read
+ * a Braze Canvas step by step and was blind inside a Klaviyo flow:
+ * listCampaigns returned a flow as name + status, and getPerformance
+ * hard-required a campaign_id and only called campaign-values-reports.
+ * So for one of the two ESPs Orbit names in its own marketing, the thing
+ * the user actually runs could not be read at all. 1,978 bytes — 1.25% of
+ * the payload — is the price of the step-by-step leak table, and the
+ * description was cut by a third before this number moved.
+ *
+ * The remaining 693 bytes of headroom are NOT a licence. The next tool
+ * argues its own case here, in this comment, or it does not ship.
  */
-const TOOLS_LIST_BYTE_BUDGET = 157_000;
+const TOOLS_LIST_BYTE_BUDGET = 159_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

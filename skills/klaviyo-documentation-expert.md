@@ -5,9 +5,13 @@ description: >
   lists, templates, Django-style personalisation, catalog/feed integrations, or any
   Klaviyo configuration. Trigger on "how do I do X in Klaviyo?", "build this Flow", "write
   this Klaviyo template tag", "why isn't this segment populating?", "set up this metric",
-  or any Klaviyo-specific implementation question. This skill operates as a deep Klaviyo
-  platform expert — precise and implementable, and honest about which operations Orbit's
-  generic ESP tools can and cannot execute against Klaviyo.
+  or any Klaviyo-specific implementation question. ALSO trigger on reading a live flow's
+  performance step by step: "audit my Klaviyo flow", "why is my welcome flow leaking",
+  "where do people drop off in my abandoned cart flow", "which email in this flow is
+  underperforming", "show me the flow's step-by-step numbers", "compare the emails in my
+  winback flow". This skill operates as a deep Klaviyo platform expert — precise and
+  implementable, and honest about which operations Orbit's generic ESP tools can and
+  cannot execute against Klaviyo.
 ---
 
 # Klaviyo Documentation Expert
@@ -195,6 +199,29 @@ Orbit reaches Klaviyo through the generic ESP tool family (resolve `platform: "k
 - `orbit_esp_push_template` — create/update a template (native; server-side render available).
 - `orbit_esp_read` — campaigns (channel-filtered), flows, segments, lists; and performance via the Reporting API (**partial** — rate-limited, needs a conversion metric; metrics are cached).
 - `orbit_esp_capabilities` — the honest matrix for Klaviyo.
+- `orbit_klaviyo_flow_audit` — the one that reads INSIDE a flow. `orbit_esp_read` returns a
+  flow as name + status, and its performance leg requires a `campaign_id`, so the thing a
+  Klaviyo marketer actually runs was invisible. This walks the action chain
+  (`GET /api/flows/{id}/flow-actions` → `GET /api/flow-actions/{id}/flow-messages`), joins
+  it to a single `POST /api/flow-values-reports` grouped per message, and returns the leak
+  table: per step, the action type, the delay, whether it branches, the message
+  name/channel/subject/preview text, then recipients → delivered → opens → clicks →
+  unsubscribes, plus the delivered drop-off between **consecutive message steps** (so a
+  delay between two emails is never drawn as a step that lost everyone).
+
+**Use the copy it returns.** Every step carries `message.subject` and
+`message.preview_text`. Feed them straight into `orbit_score_subject_line`,
+`orbit_score_preheader`, and — with the rendered HTML — `orbit_qa_email`. Reading the
+leak table without scoring the copy at the leaking step stops one move short of the
+answer.
+
+**What the flow audit will NOT tell you.** The report needs a `conversion_metric_id`; if
+none is supplied or resolvable, the flow's *structure* still comes back and every
+statistic is `null` with `note` explaining why — never a zero. A message the report
+returned no row for gets `null` stats and an `unreadable` entry, not a step that
+"lost everyone". Branch predicates and delay settings live in an undocumented `settings`
+shape, so a delay that cannot be read reports `null` and a branch condition is left in
+`esp_raw` rather than paraphrased into a sentence nobody verified.
 
 **Honest gap — no test send.** Klaviyo exposes no public test-send endpoint for a template or campaign. `orbit_esp_send_test` returns `{unsupported}` with the nearest alternative: render the template server-side (`POST /api/templates/{id}/render`) and run Orbit's local render/QA gate (`orbit_render_email_preview` + `orbit_qa_email`) to verify the email before it ships.
 

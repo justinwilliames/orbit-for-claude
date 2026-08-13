@@ -37,7 +37,11 @@ const PLATFORM = "klaviyo";
 // when the §1.4 capability rows are re-verified against a newer revision.
 const KLAVIYO_REVISION = "2026-07-15";
 
-const BASE_URL = "https://a.klaviyo.com/api";
+// Overridable ONLY so the offline test harness can point the adapter at
+// tests/harness/mock-api-server.mjs, exactly as the Braze and Figma clients
+// already are. Production reads the default; nothing in the product surfaces
+// this as a setting.
+const BASE_URL = process.env.ORBIT_KLAVIYO_API_BASE_URL || "https://a.klaviyo.com/api";
 const KLAVIYO_BREAKER = getBreaker(PLATFORM);
 const KLAVIYO_API_TIMEOUT_MS = 20_000;
 
@@ -336,7 +340,12 @@ const DAILY_REPORT_CAP = 225;
 let _reportDay = null;
 let _reportCount = 0;
 
-function guardDailyReportCap() {
+// ONE budget across the whole values-report family, not one per endpoint.
+// The 225/day figure is the documented campaign-values ceiling; whether the
+// flow-values report carries its own separate allowance is not something this
+// adapter can verify, and assuming it does would be a guess that spends a
+// budget we cannot see. Sharing the counter is the conservative reading.
+function guardDailyReportCap(endpoint = "/campaign-values-reports") {
   const today = new Date().toISOString().slice(0, 10);
   if (_reportDay !== today) {
     _reportDay = today;
@@ -346,8 +355,8 @@ function guardDailyReportCap() {
     throw new EspApiError({
       code: "rate_limited",
       platform: PLATFORM,
-      endpoint: "/campaign-values-reports",
-      detail: `Klaviyo campaign-values report daily cap (${DAILY_REPORT_CAP}/day) reached for this process. Previously-fetched (campaign, window) results are still served from cache; fresh reports resume after the next UTC day boundary.`,
+      endpoint,
+      detail: `Klaviyo values-report daily budget (${DAILY_REPORT_CAP}/day, shared across campaign- and flow-values reports) is exhausted for this process. Previously-fetched windows are still served from cache; fresh reports resume after the next UTC day boundary.`,
     });
   }
   _reportCount += 1;
@@ -382,6 +391,101 @@ function mapWindowToTimeframe(window) {
   };
   return alias[w] ?? "last_30_days";
 }
+
+// ---------------------------------------------------------------------------
+// Flow audit — the inside of a flow, which listCampaigns cannot see
+// ---------------------------------------------------------------------------
+//
+// In Klaviyo, flows ARE lifecycle: welcome, abandoned cart, browse abandon,
+// winback. listCampaigns returns a flow as name + status and nothing else, and
+// getPerformance hard-requires a campaign_id and only calls
+// campaign-values-reports — so the whole inside of a flow was invisible.
+//
+// This walks the real structure (actions → messages) and joins it to
+// per-message performance, so the answer is a step-by-step leak table rather
+// than one flow-level number. Every message's subject and preview text come
+// back on the rows, which is what feeds them into orbit_score_subject_line,
+// orbit_score_preheader and orbit_qa_email.
+//
+// A hard cap on actions, because the walk costs one request per message-
+// bearing action and this adapter's rate limiter enforces a 1s gap.
+const FLOW_ACTION_CAP = 40;
+
+/** True for the action types that actually put a message in front of someone. */
+function isMessageAction(actionType) {
+  return typeof actionType === "string" && /SEND_MESSAGE|SEND_/i.test(actionType);
+}
+
+/**
+ * Seconds of delay carried by a DELAY action, or null.
+ *
+ * Klaviyo's flow-action `settings` shape is not part of the documented
+ * response contract, so the value is READ where it is present under one of
+ * the names it is known to use, and reported as null otherwise. A delay
+ * printed as 0 because a key was not found is a wrong fact about a flow;
+ * `null` plus the raw settings in esp_raw is the honest version.
+ */
+function readDelaySeconds(settings) {
+  if (!settings || typeof settings !== "object") return null;
+  for (const key of ["delay_seconds", "delay", "seconds", "duration_seconds"]) {
+    const v = settings[key];
+    if (typeof v === "number" && isFinite(v)) return v;
+  }
+  return null;
+}
+
+/** Human-readable delay, or null when the seconds could not be read. */
+function describeDelay(seconds) {
+  if (seconds == null) return null;
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86_400) return `${+(seconds / 3600).toFixed(1)}h`;
+  return `${+(seconds / 86_400).toFixed(1)}d`;
+}
+
+/**
+ * Per-message statistics out of a flow-values report, keyed by message id.
+ *
+ * Reads EVERY result row, not the first. A multi-row response read at index 0
+ * is the shape that has bitten this repo before, and a flow report is
+ * multi-row by construction — one row per message.
+ */
+function indexFlowStats(res) {
+  const results = res?.data?.attributes?.results ?? [];
+  const byMessage = new Map();
+  for (const row of results) {
+    const id = row?.groupings?.flow_message_id ?? row?.groupings?.flow_message ?? null;
+    if (id == null) continue;
+    const s = row?.statistics ?? {};
+    const pick = (k) => (typeof s[k] === "number" ? s[k] : null);
+    byMessage.set(String(id), {
+      // Never zero-filled. A missing statistic is null and named, because a
+      // fake 0 in a leak table reads as "this step lost everyone".
+      recipients: pick("recipients"),
+      delivered: pick("delivered"),
+      unique_opens: pick("opens_unique"),
+      unique_clicks: pick("clicks_unique"),
+      bounces: pick("bounced"),
+      unsubscribes: pick("unsubscribes"),
+    });
+  }
+  return byMessage;
+}
+
+/** Percentage of `part` in `whole`, or null when either is unknown. */
+function share(part, whole) {
+  if (typeof part !== "number" || typeof whole !== "number" || whole <= 0) return null;
+  return Math.round((part / whole) * 1000) / 10;
+}
+
+export const FLOW_AUDIT_STATISTICS = [
+  "recipients",
+  "delivered",
+  "opens_unique",
+  "clicks_unique",
+  "bounced",
+  "unsubscribes",
+];
 
 // ---------------------------------------------------------------------------
 // The adapter — frozen contract (design §2.1). sendTest is intentionally
@@ -634,5 +738,230 @@ export const adapter = {
     const normalized = normalizeMetrics(res, campaign_id, timeframeKey, statistics);
     writeReportCache(cacheKey, normalized);
     return normalized;
+  },
+
+  /**
+   * Walk one flow step by step and join it to per-message performance.
+   *
+   * Klaviyo-specific, deliberately OUTSIDE the frozen §2.1 contract — the
+   * registry's dispatch falls through to the adapter for an operation the
+   * capability matrix does not name, and every other platform's adapter
+   * omits this method, so they degrade to the same honest {unsupported}
+   * response the matrix would have produced.
+   */
+  async auditFlow({ config, flow_id, flow_name, window, conversion_metric_id }) {
+    if (!flow_id && !flow_name) {
+      throw new EspApiError({
+        code: "esp_error",
+        platform: PLATFORM,
+        detail: "Pass flow_id, or flow_name to look one up by name.",
+      });
+    }
+
+    // 1. Resolve the flow. Name lookup refuses on ambiguity rather than
+    //    picking one — auditing the wrong winback flow and saying so
+    //    confidently is worse than asking which one.
+    let resolvedId = flow_id ?? null;
+    let flowResource = null;
+    if (!resolvedId) {
+      const res = await klaviyoRequest({ config, method: "GET", path: "/flows" });
+      const all = Array.isArray(res?.data) ? res.data : [];
+      const needle = String(flow_name).trim().toLowerCase();
+      const exact = all.filter((f) => String(f?.attributes?.name ?? "").trim().toLowerCase() === needle);
+      const loose = exact.length ? exact : all.filter((f) => String(f?.attributes?.name ?? "").toLowerCase().includes(needle));
+      if (loose.length === 0) {
+        throw new EspApiError({
+          code: "not_found",
+          platform: PLATFORM,
+          endpoint: "/flows",
+          detail: `No flow matched "${flow_name}". Names seen: ${all.map((f) => f?.attributes?.name).filter(Boolean).join(", ") || "(none)"}.`,
+        });
+      }
+      if (loose.length > 1) {
+        throw new EspApiError({
+          code: "esp_error",
+          platform: PLATFORM,
+          endpoint: "/flows",
+          detail: `"${flow_name}" matched ${loose.length} flows (${loose.map((f) => `${f?.attributes?.name} [${f?.id}]`).join("; ")}). Pass flow_id to say which.`,
+        });
+      }
+      flowResource = loose[0];
+      resolvedId = flowResource.id;
+    } else {
+      const res = await klaviyoRequest({
+        config,
+        method: "GET",
+        path: `/flows/${encodeURIComponent(resolvedId)}`,
+      });
+      flowResource = res?.data ?? null;
+      if (!flowResource) {
+        throw new EspApiError({
+          code: "not_found",
+          platform: PLATFORM,
+          endpoint: `/flows/${resolvedId}`,
+          detail: "Flow not found.",
+        });
+      }
+    }
+
+    // 2. The action chain, in the order Klaviyo returns it.
+    const actionsRes = await klaviyoRequest({
+      config,
+      method: "GET",
+      path: `/flows/${encodeURIComponent(resolvedId)}/flow-actions`,
+    });
+    const allActions = Array.isArray(actionsRes?.data) ? actionsRes.data : [];
+    const actions = allActions.slice(0, FLOW_ACTION_CAP);
+    const actionsTruncated = allActions.length > FLOW_ACTION_CAP;
+
+    // 3. The messages behind each message-bearing action.
+    const steps = [];
+    const messageIds = [];
+    const unreadable = [];
+    for (const action of actions) {
+      const a = action?.attributes ?? {};
+      const actionType = a.action_type ?? null;
+      const step = {
+        action_id: action?.id ?? null,
+        action_type: actionType,
+        status: a.status ?? null,
+        delay_seconds: actionType === "DELAY" ? readDelaySeconds(a.settings) : null,
+        // The branch predicate lives in an undocumented `settings` shape.
+        // Reporting it as a sentence would mean inventing one, so the raw
+        // settings travel in esp_raw and this stays honest about what it is.
+        is_branch: /SPLIT|CONDITION/i.test(String(actionType ?? "")),
+        message: null,
+        stats: null,
+        esp_raw: action ?? null,
+      };
+      step.delay_human = describeDelay(step.delay_seconds);
+
+      if (isMessageAction(actionType)) {
+        try {
+          const msgRes = await klaviyoRequest({
+            config,
+            method: "GET",
+            path: `/flow-actions/${encodeURIComponent(action.id)}/flow-messages`,
+          });
+          const msg = (Array.isArray(msgRes?.data) ? msgRes.data : [])[0] ?? null;
+          if (msg) {
+            const ma = msg.attributes ?? {};
+            const content = ma.content ?? {};
+            step.message = {
+              id: msg.id ?? null,
+              name: ma.name ?? null,
+              channel: ma.channel ?? null,
+              // These two are the whole point of the join: they feed
+              // orbit_score_subject_line / orbit_score_preheader directly.
+              subject: content.subject ?? null,
+              preview_text: content.preview_text ?? null,
+              from_email: content.from_email ?? null,
+            };
+            if (msg.id != null) messageIds.push(String(msg.id));
+          }
+        } catch (err) {
+          // One unreadable message must not sink the whole audit, but it
+          // must not vanish either — a step drawn with no stats is
+          // indistinguishable from a step that sent nothing.
+          unreadable.push({
+            action_id: action?.id ?? null,
+            reason: err instanceof EspApiError ? (err.detail ?? err.message) : String(err?.message ?? err),
+          });
+        }
+      }
+      steps.push(step);
+    }
+
+    // 4. Performance, per message, in ONE report call.
+    const timeframeKey = mapWindowToTimeframe(window);
+    const metricId = await resolveConversionMetricId(config, conversion_metric_id);
+    let statsNote = null;
+    if (!metricId) {
+      statsNote =
+        "Klaviyo's flow-values report requires a conversion_metric_id, and none was supplied or resolvable. The flow's STRUCTURE below is real; every statistic is null because no report was run. Pass conversion_metric_id to fill them in.";
+    } else if (messageIds.length === 0) {
+      statsNote = "No message-bearing action in this flow returned a message id, so no report was requested.";
+    } else {
+      const cacheKey = `flow:${resolvedId}::${timeframeKey}::${metricId}`;
+      let byMessage = readReportCache(cacheKey);
+      if (!byMessage) {
+        guardDailyReportCap("/flow-values-reports");
+        const reportRes = await klaviyoRequest({
+          config,
+          method: "POST",
+          path: "/flow-values-reports",
+          body: {
+            data: {
+              type: "flow-values-report",
+              attributes: {
+                statistics: FLOW_AUDIT_STATISTICS,
+                timeframe: { key: timeframeKey },
+                conversion_metric_id: metricId,
+                filter: `equals(flow_id,'${resolvedId}')`,
+              },
+            },
+          },
+          idempotent: true,
+        });
+        byMessage = indexFlowStats(reportRes);
+        writeReportCache(cacheKey, byMessage);
+      }
+      for (const step of steps) {
+        if (step.message?.id == null) continue;
+        step.stats = byMessage.get(String(step.message.id)) ?? null;
+        if (!step.stats) {
+          unreadable.push({
+            action_id: step.action_id,
+            reason: `The flow-values report returned no row for message ${step.message.id}. Its statistics are unknown, not zero.`,
+          });
+        }
+      }
+    }
+
+    // 5. The leak table. Drop-off is measured between CONSECUTIVE MESSAGE
+    //    steps, so a delay or a branch between them does not read as a step
+    //    that lost everyone. Any pair where either side is unknown reports
+    //    null — a drop computed against a missing number is not a drop.
+    const sent = steps.filter((s) => s.message && s.stats);
+    for (let i = 0; i < sent.length; i++) {
+      const cur = sent[i];
+      const next = sent[i + 1];
+      cur.open_rate_percent = share(cur.stats.unique_opens, cur.stats.delivered);
+      cur.click_rate_percent = share(cur.stats.unique_clicks, cur.stats.delivered);
+      cur.unsub_rate_percent = share(cur.stats.unsubscribes, cur.stats.delivered);
+      cur.drop_off_to_next_percent =
+        next && typeof cur.stats.delivered === "number" && typeof next.stats.delivered === "number" && cur.stats.delivered > 0
+          ? Math.round(((cur.stats.delivered - next.stats.delivered) / cur.stats.delivered) * 1000) / 10
+          : null;
+    }
+
+    const fa = flowResource?.attributes ?? {};
+    return {
+      platform: PLATFORM,
+      flow_id: resolvedId,
+      name: fa.name ?? null,
+      status: fa.status ?? null,
+      trigger_type: fa.trigger_type ?? null,
+      window: timeframeKey,
+      conversion_metric_id: metricId ?? null,
+      step_count: steps.length,
+      message_count: steps.filter((s) => s.message).length,
+      steps,
+      unreadable,
+      actions_truncated: actionsTruncated,
+      // Says out loud what the caller is looking at when the numbers are
+      // absent, so an empty column is never read as a zero column.
+      note: [
+        statsNote,
+        actionsTruncated
+          ? `Only the first ${FLOW_ACTION_CAP} actions were walked; this flow has ${allActions.length}. The table below is a prefix, not the whole flow.`
+          : null,
+        unreadable.length > 0
+          ? `${unreadable.length} step(s) could not be read and carry null statistics rather than zeros.`
+          : null,
+        "Branch predicates and delay settings live in an undocumented `settings` shape; where a delay could not be read it is null, and every branch condition is left in esp_raw rather than paraphrased.",
+      ].filter(Boolean).join(" "),
+      esp_raw: flowResource ?? null,
+    };
   },
 };

@@ -53,6 +53,25 @@ describe("Tool annotation guard — every tool declares how it behaves", () => {
     if (mock) await mock.close();
   });
 
+  // The whole-payload byte budget lives in tests/suites/01-contract.test.mjs
+  // (TOOLS_LIST_BYTE_BUDGET), which already spawns the server for it and
+  // carries the reasoning about eager schema loading. This is the check it
+  // does NOT do: an average is not a distribution, and one enormous tool is
+  // a different problem from many ordinary ones.
+  test("no single tool eats an outsized share of the payload", () => {
+    // One 5.5k-token tool is a different problem from 128 average ones,
+    // and averages hide it. The heaviest tool today is ~22k chars.
+    const heavy = liveTools
+      .map((t) => ({ name: t.name, chars: JSON.stringify(t).length }))
+      .filter((t) => t.chars > 25_000)
+      .sort((a, b) => b.chars - a.chars);
+    assert.deepEqual(
+      heavy.map((t) => `${t.name} (${t.chars} chars)`),
+      [],
+      "a tool definition passed 25k chars — its description or inputSchema needs splitting or trimming"
+    );
+  });
+
   test("every registered tool carries a complete annotations block", () => {
     assert.ok(liveTools.length > 0, "server registered no tools — harness problem, not a real pass");
     const missing = [];

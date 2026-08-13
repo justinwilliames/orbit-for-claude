@@ -571,7 +571,7 @@
     },
     {
       "name": "orbit_dark_mode_check",
-      "description": "Scan an HTML email for colour pairs that invert into invisible or low-contrast text in Apple Mail / Outlook dark mode."
+      "description": "Scan an HTML email for colour pairs that invert into invisible or low-contrast text in Apple Mail / Outlook dark mode. Drawn in a widget as each pair painted as body copy at reading size next to what a full invert does to it, so a 1.09:1 pair is something you see rather than a number you trust."
     },
     {
       "name": "orbit_client_sim",
@@ -691,7 +691,7 @@
     },
     {
       "name": "orbit_esp_capabilities",
-      "description": "Return the honest capability matrix for one ESP or all of them — what each platform supports natively, what is partial (with the named constraint), and what its public API cannot do. Includes the reason and nearest alternative for every unsupported operation."
+      "description": "Return the honest capability matrix for one ESP or all of them — what each platform supports natively, what is partial (with the named constraint), and what its public API cannot do. Includes the reason and nearest alternative for every unsupported operation, and draws the whole grid at once with every cell carrying a glyph and a word rather than a colour."
     },
     {
       "name": "orbit_check_esp_auth",
@@ -708,6 +708,10 @@
     {
       "name": "orbit_esp_read",
       "description": "Read campaigns and flows, segments and lists, or performance metrics from any supported ESP, normalized with the untranslated payload attached. Stats an ESP cannot provide are left null and listed as unavailable, never zero-filled."
+    },
+    {
+      "name": "orbit_klaviyo_flow_audit",
+      "description": "Walk one Klaviyo flow step by step and join it to per-message performance: action type, delay, branch, subject and preview text, then recipients through delivered, opens, clicks and unsubscribes, plus the drop-off between consecutive message steps. Statistics that could not be read are null and named, never zero-filled."
     },
     {
       "name": "orbit_esp_send_test",
