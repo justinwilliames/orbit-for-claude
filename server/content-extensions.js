@@ -484,9 +484,42 @@ function isInsideTag(haystack, idx, openRe, closeRe) {
 // A superset of the GSM-7 default alphabet + extension table. Any
 // char outside this set forces Unicode (UCS-2) encoding which drops
 // segment length from 160 → 70.
-const GSM7 =
+// Exported so the SMS widget can mark the exact characters that forced
+// UCS-2 or cost two units, reading the SAME table composeSms counted
+// with. A second copy of this alphabet in the widget would drift from
+// this one and then the drawing would disagree with the segment count
+// printed above it.
+export const GSM7 =
   "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
-const GSM7_EXT = "|^€{}[~]\\";
+export const GSM7_EXT = "|^€{}[~]\\";
+
+/**
+ * Cost every character, then walk the greedy split a carrier actually bills.
+ *
+ * NOT ceil(units / 153). A two-unit GSM-7 extension character is never
+ * started in the last free unit of a segment — 3GPP TS 23.038 §6.2.1.1
+ * forbids splitting the ESC pair across a concatenated segment, so the
+ * character moves whole to the next one and the segment is billed full at
+ * 152 of its 153. The division cannot express that, and under-reported the
+ * bill by a whole segment whenever an extension character straddled a
+ * boundary. UCS-2 is unaffected (every code point costs one) but goes
+ * through the same walk so there is one implementation, not two.
+ */
+function smsSegmentWalk(text, isUnicode, single, multi) {
+  const costs = [...text].map((ch) => (!isUnicode && GSM7_EXT.includes(ch) ? 2 : 1));
+  const total = costs.reduce((n, c) => n + c, 0);
+  if (total <= single) return { total, segments: 1 };
+  let segments = 1;
+  let used = 0;
+  for (const cost of costs) {
+    if (used + cost > multi) {
+      segments += 1;
+      used = 0;
+    }
+    used += cost;
+  }
+  return { total, segments };
+}
 
 export function composeSms({
   body,
@@ -498,10 +531,18 @@ export function composeSms({
     return { status: "needs_inputs", missing: ["body"] };
   }
 
-  // Decide encoding.
+  // Compose FIRST, then decide the encoding on what will actually be sent.
+  // The compliance footer interpolates the caller's `brand`, so scanning
+  // only `body` kept a message whose brand name carries an accent on the
+  // 160/153 tariff while the carrier billed it on 70/67 — a 3x undercount,
+  // reported as "Single segment on GSM-7. Cheapest path."
+  const compliance = buildComplianceFooter({ region, includeStopLine, brand });
+  const footer = compliance.footer;
+  const full = footer ? `${body.trim()} ${footer}` : body.trim();
+
   let isUnicode = false;
   let extCharCount = 0;
-  for (const ch of body) {
+  for (const ch of full) {
     if (GSM7.includes(ch)) continue;
     if (GSM7_EXT.includes(ch)) {
       extCharCount += 1;
@@ -511,17 +552,12 @@ export function composeSms({
     break;
   }
 
-  const compliance = buildComplianceFooter({ region, includeStopLine, brand });
-  const footer = compliance.footer;
-  const full = footer ? `${body.trim()} ${footer}` : body.trim();
-
   const encoding = isUnicode ? "UCS-2" : "GSM-7";
   const single = isUnicode ? 70 : 160;
   const multi = isUnicode ? 67 : 153;
-  const effectiveLength = isUnicode
-    ? [...full].length
-    : [...full].reduce((n, ch) => n + (GSM7_EXT.includes(ch) ? 2 : 1), 0);
-  const segments = effectiveLength <= single ? 1 : Math.ceil(effectiveLength / multi);
+  const walk = smsSegmentWalk(full, isUnicode, single, multi);
+  const effectiveLength = walk.total;
+  const segments = walk.segments;
 
   return {
     status: "ok",

@@ -44,9 +44,16 @@ import { FORECAST_MARKS_JS } from "../../server/ui/widgets/list-forecast.js";
 import { STATE_GRID_JS } from "../../server/ui/widgets/state-matrix.js";
 import { POSTMASTER_PLOT_JS } from "../../server/ui/widgets/postmaster-trend.js";
 import { INBOX_MARK_JS } from "../../server/ui/widgets/inbox-preview.js";
+import { AUTH_SCALE_JS } from "../../server/ui/widgets/auth-panel.js";
+import { SMS_SEGMENT_JS } from "../../server/ui/widgets/sms-segments.js";
+import { PUSH_ALIGN_JS } from "../../server/ui/widgets/push-matrix.js";
+import { DARK_PAIR_VERDICT_JS } from "../../server/ui/widgets/dark-pairs.js";
+import { ESP_CELL_JS } from "../../server/ui/widgets/esp-matrix.js";
+import { invertPair } from "../../server/html-checks.js";
 import { parsePostmasterSignal } from "../../server/postmaster-parse.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 import { parseTestReadout } from "../../server/lifecycle-helpers.js";
+import { composeSms } from "../../server/content-extensions.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -67,7 +74,12 @@ const TOOL_WIDGETS = {
   orbit_list_growth_forecast: "ui://orbit/list-forecast.html",
   orbit_liquid_state_matrix: "ui://orbit/state-matrix.html",
   orbit_parse_postmaster_signal: "ui://orbit/postmaster-trend.html",
-  orbit_score_subject_line: "ui://orbit/inbox-preview.html"
+  orbit_score_subject_line: "ui://orbit/inbox-preview.html",
+  orbit_check_email_auth: "ui://orbit/auth-panel.html",
+  orbit_compose_sms: "ui://orbit/sms-segments.html",
+  orbit_check_push_copy: "ui://orbit/push-matrix.html",
+  orbit_dark_mode_check: "ui://orbit/dark-pairs.html",
+  orbit_esp_capabilities: "ui://orbit/esp-matrix.html"
 };
 
 let client = null;
@@ -536,6 +548,123 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     });
     assert.equal(res.structuredContent, undefined,
       "a run with no enumerated states handed the host a grid with nothing in it");
+  });
+
+  test("orbit_dark_mode_check hands its widget the flip, not just the pair", async () => {
+    // A near-white heading on white, a dark paragraph on near-black, and
+    // one bare white span with no discoverable background — the three
+    // cases the drawing has to tell apart.
+    const html =
+      "<html><body>" +
+      '<table bgcolor="#ffffff"><tr><td><h1 style="color:#f2f2f2">Save 20%</h1></td></tr></table>' +
+      '<table bgcolor="#1a1a1a"><tr><td><p style="color:#333333">Unsubscribe</p></td></tr></table>' +
+      '<div><span style="color:#ffffff">Sent by Example Co.</span></div>' +
+      "</body></html>";
+    const res = await client.callTool("orbit_dark_mode_check", { html });
+    const structured = res.structuredContent;
+    assert.ok(structured, "dark mode check returned no structuredContent for its widget");
+    assert.equal(structured.verdict, "fail");
+
+    const byTag = new Map(structured.pairs.map((p) => [p.tag, p]));
+
+    // The widget paints the specimen from these four fields and computes
+    // none of them. Missing any one leaves it painting a guess.
+    const h1 = byTag.get("h1");
+    assert.equal(h1.fg, "#f2f2f2");
+    assert.equal(h1.bg, "#ffffff");
+    assert.equal(h1.inverted_fg, "#0d0d0d");
+    assert.equal(h1.inverted_bg, "#000000");
+    assert.equal(typeof h1.ratio, "number");
+    assert.equal(typeof h1.inverted_ratio, "number");
+
+    // A warning with no discoverable background must arrive with an
+    // EXPLICIT null rather than an assumed white, or the pane paints a
+    // background the tool never found.
+    const span = byTag.get("span");
+    assert.equal(span.bg, null);
+    assert.equal(span.inverted_bg, null);
+    assert.equal(span.ratio, null);
+    assert.equal(span.warning, true);
+
+    // A pair the tool found but could not resolve to hex is DROPPED from
+    // the drawing rather than painted from a guess — so the count of them
+    // has to travel with it, or the grid is quietly smaller than the
+    // finding and reads as more complete than it is.
+    assert.equal(typeof structured.pairs_not_drawable, "number");
+    assert.equal(
+      structured.pairs.length + structured.pairs_not_drawable,
+      3,
+      "a pair went missing between the tool and the drawing without being counted"
+    );
+
+    // Prose and attribution are not drawable and stay out of the copy.
+    assert.equal(structured.orbit_attribution, undefined);
+    assert.equal(structured.findings, undefined);
+  });
+
+  test("orbit_dark_mode_check abstains in the widget copy too, rather than drawing a pass", async () => {
+    // A <style> block whose selectors this linter cannot resolve: the
+    // tool reads no colours at all and refuses a verdict. The widget copy
+    // has to carry that refusal, or an unmeasured email renders as an
+    // empty grid that reads as a clean one.
+    const html =
+      "<html><head><style>.hero h1 { color:#f2f2f2 } .hero { background:#ffffff }</style></head>" +
+      '<body><div class="hero"><h1>Save 20%</h1></div></body></html>';
+    const res = await client.callTool("orbit_dark_mode_check", { html });
+    const structured = res.structuredContent;
+    assert.equal(structured.not_measured, true);
+    assert.equal(structured.verdict, "unknown");
+    assert.deepEqual(structured.pairs, []);
+    assert.ok(structured.reason && structured.reason.length > 0,
+      "the widget was handed an abstention with no reason to print");
+  });
+
+  test("orbit_esp_capabilities hands its widget the same block its text carries", async () => {
+    const res = await client.callTool("orbit_esp_capabilities", {});
+    const structured = res.structuredContent;
+    assert.ok(structured, "esp capabilities returned no structuredContent for its widget");
+    assert.ok(Array.isArray(structured.platforms) && structured.platforms.length >= 6);
+
+    // The grid and the text must be the SAME object. Two copies of a
+    // hand-maintained matrix is how a cell ends up saying "native" in the
+    // drawing and "unsupported" in the prose beside it.
+    const text = JSON.parse(res.content.find((c) => c.type === "text").text);
+    assert.deepEqual(structured, text, "the drawing and the text carry different matrices");
+
+    // Every cell the grid draws needs a support level and a label.
+    for (const p of structured.platforms) {
+      assert.ok(p.display_name, `${p.platform} has no name for its column head`);
+      assert.ok(Array.isArray(p.operations) && p.operations.length >= 8);
+      for (const op of p.operations) {
+        assert.ok(["native", "partial", "unsupported"].includes(op.support),
+          `${p.platform}/${op.operation} has support "${op.support}" — the grid would draw it as unknown`);
+        assert.ok(op.label, `${p.platform}/${op.operation} has no label`);
+        // Every non-native cell must explain itself somehow. The matrix
+        // records the explanation under `reason` for unsupported rows and
+        // `notes` for partial ones, and the widget renders both — but a
+        // cell that says "Partial" and nothing else is the one thing this
+        // grid must never show, because "partial" alone is unactionable.
+        if (op.support !== "native") {
+          assert.ok(op.reason || op.notes,
+            `${p.platform}/${op.operation} is ${op.support} and names no constraint at all`);
+        }
+        if (op.support === "unsupported") {
+          assert.ok(op.nearest_alternative,
+            `${p.platform}/${op.operation} is unsupported and offers no way round it`);
+        }
+      }
+    }
+  });
+
+  test("a single-platform capability call still fills the grid", async () => {
+    const res = await client.callTool("orbit_esp_capabilities", { platform: "customerio" });
+    const structured = res.structuredContent;
+    assert.equal(structured.platforms.length, 1);
+    assert.equal(structured.platforms[0].platform, "customerio");
+    // The honesty row this widget exists to make unmissable.
+    const push = structured.platforms[0].operations.find((o) => o.operation === "pushTemplate");
+    assert.equal(push.support, "unsupported");
+    assert.ok(push.nearest_alternative, "an unsupported cell offered no way round it");
   });
 });
 
@@ -1394,5 +1523,305 @@ describe("Inbox preview — marks land on the characters the scorer named", () =
 
   test("no marks on a clean subject", () => {
     assert.equal(markRanges("Your March invoice is ready", { triggers: [], allCaps: [] }).length, 0);
+  });
+});
+
+describe("Auth panel — a scale with no reading refuses to draw one", () => {
+  const { spfBudget, dmarcRung } = new Function(
+    `${AUTH_SCALE_JS}\nreturn { spfBudget, dmarcRung };`
+  )();
+
+  test("a counted record is placed on the 10-lookup budget", () => {
+    const b = spfBudget({ verdict: "warn", records: ["v=spf1 ~all"], lookup_count: 7 });
+    assert.deepEqual([b.known, b.used, b.cap, b.over], [true, 7, 10, 0]);
+  });
+
+  test("an over-budget record reports HOW far over, not just that it is", () => {
+    const b = spfBudget({ records: ["v=spf1 ~all"], lookup_count: 13 });
+    assert.equal(b.over, 3);
+  });
+
+  test("a missing count is an abstention, never a comfortable zero", () => {
+    // This is the whole bug class: `lookup_count` only exists on the
+    // single-record path. Rendering its absence as 0/10 draws a healthy,
+    // empty budget on a domain that has no SPF record at all — the same
+    // markup shape as a clean pass, and the opposite claim.
+    const none = spfBudget({ verdict: "fail", records: [] });
+    assert.equal(none.known, false);
+    assert.match(none.why, /no SPF record/);
+    assert.equal(none.used, undefined, "an uncounted budget produced a number to draw");
+
+    const many = spfBudget({ verdict: "fail", records: ["v=spf1 a ~all", "v=spf1 mx ~all"] });
+    assert.equal(many.known, false);
+    assert.match(many.why, /more than one/);
+  });
+
+  test("a zero count is a reading and IS drawn — only absence abstains", () => {
+    const b = spfBudget({ records: ["v=spf1 -all"], lookup_count: 0 });
+    assert.equal(b.known, true);
+    assert.equal(b.used, 0);
+  });
+
+  test("a published policy lands on its rung, with quarantine as the floor", () => {
+    const r = dmarcRung({ records: ["v=DMARC1; p=quarantine"], tags: { p: "quarantine" } });
+    assert.equal(r.rungs[r.stop], "quarantine");
+    assert.equal(r.floor, 1, "the Gmail/Yahoo floor moved off p=quarantine");
+  });
+
+  test("NOTHING published is not the same as p=none published", () => {
+    // Drawing an absent record on the bottom rung tells a sender they are
+    // one step from enforcement when they are not on the ladder at all.
+    const absent = dmarcRung({ verdict: "fail", records: [] });
+    assert.equal(absent.stop, null);
+    const monitoring = dmarcRung({ records: ["v=DMARC1; p=none"], tags: { p: "none" } });
+    assert.equal(monitoring.stop, 0);
+  });
+
+  test("a record with no p= tag is published but unplaceable", () => {
+    const r = dmarcRung({ records: ["v=DMARC1; rua=mailto:x@y.com"], tags: { rua: "mailto:x@y.com" } });
+    assert.equal(r.stop, null);
+    assert.equal(r.published, true);
+    assert.match(r.why, /no p=/);
+  });
+});
+
+describe("SMS segments — the boundary is where the carrier actually puts it", () => {
+  const { smsUnits, smsSplit, footerStart, smsEncoding } = new Function(
+    `${SMS_SEGMENT_JS}\nreturn { smsUnits, smsSplit, footerStart, smsEncoding };`
+  )();
+
+  test("a GSM-7 extension character costs two units, not one", () => {
+    const u = smsUnits("a{b", "GSM-7");
+    assert.deepEqual(u.map((x) => [x.kind, x.cost]), [["plain", 1], ["ext", 2], ["plain", 1]]);
+  });
+
+  test("on UCS-2 nothing costs two — the extension table stops applying", () => {
+    const u = smsUnits("a{b", "UCS-2");
+    assert.deepEqual(u.map((x) => x.cost), [1, 1, 1]);
+    assert.equal(u[1].kind, "ext", "the character is still identified, it just no longer costs double");
+  });
+
+  test("the character that forced UCS-2 is identifiable by position", () => {
+    const u = smsUnits("you’re due", "UCS-2");
+    const non = u.filter((x) => x.kind === "nongsm");
+    assert.equal(non.length, 1);
+    assert.equal(non[0].ch, "’", "the curly apostrophe was not the character marked");
+  });
+
+  test("a message inside the single-segment limit is one segment at the SINGLE cap", () => {
+    const s = smsSplit(smsUnits("a".repeat(160), "GSM-7"), 160, 153);
+    assert.equal(s.segments.length, 1);
+    assert.equal(s.segments[0].cap, 160, "a one-segment message was measured against the 153 multi-part cap");
+  });
+
+  test("one character over the single limit re-tariffs the WHOLE message at 153", () => {
+    const s = smsSplit(smsUnits("a".repeat(161), "GSM-7"), 160, 153);
+    assert.equal(s.segments.length, 2);
+    assert.deepEqual(s.segments.map((x) => x.units), [153, 8]);
+  });
+
+  test("a two-unit character is never split across a boundary", () => {
+    // 152 plain + one 2-unit char: the char cannot start at unit 153, so
+    // it moves whole and segment one is billed full at 152 of 153.
+    const s = smsSplit(smsUnits("a".repeat(152) + "{" + "b".repeat(20), "GSM-7"), 160, 153);
+    assert.equal(s.segments[0].units, 152, "a 2-unit character was sliced in half across the boundary");
+    assert.equal(s.segments[1].chars[0].ch, "{");
+  });
+
+  test("the unit total is the sum of what was drawn, so the cross-check is real", () => {
+    const u = smsUnits("hi {name}", "GSM-7");
+    const s = smsSplit(u, 160, 153);
+    assert.equal(s.total, u.reduce((n, x) => n + x.cost, 0));
+  });
+
+  test("the widget decides the tariff itself, so the check can actually disagree", () => {
+    // The only part of the cross-check that is not a re-run of the tool's
+    // own arithmetic over the tool's own table. Re-running that can only
+    // ever agree; deciding the ENCODING independently is what catches a
+    // tool that scanned one string and billed another.
+    assert.equal(smsEncoding("Book now. Reply STOP to opt out."), "GSM-7");
+    assert.equal(smsEncoding("Zoe{}"), "GSM-7", "the extension table is still GSM-7");
+    assert.equal(smsEncoding("Zoë Plumbing. Reply STOP"), "UCS-2");
+    assert.equal(smsEncoding("Book now ☕"), "UCS-2");
+  });
+
+  test("the segment count the widget draws is the one composeSms reports", () => {
+    // The pairing that was never made. The tool's segment_count and the
+    // widget's split length are the same claim measured two ways, and a
+    // ceil(units/153) tool under-reported by one whenever a two-unit
+    // character straddled a boundary — three bands drawn under a pill
+    // that said two.
+    const body = "a".repeat(152) + "€" + "a".repeat(152);
+    const tool = composeSms({ body, region: "GLOBAL", includeStopLine: false });
+    const drawn = smsSplit(smsUnits(tool.final_message, tool.encoding), 160, 153);
+    assert.equal(tool.encoding, "GSM-7");
+    assert.equal(tool.segment_count, 3, "ceil(306/153) says 2; the carrier bills 3");
+    assert.equal(drawn.segments.length, tool.segment_count);
+    assert.equal(tool.effective_length, drawn.total);
+  });
+
+  test("the encoding is decided on what is SENT, not on the body alone", () => {
+    // The compliance footer interpolates the caller's brand, so a brand
+    // name with an accent kept the message on the 160/153 tariff while the
+    // carrier billed it on 70/67 — a 3x undercount reported as "Cheapest
+    // path."
+    const body = "Your booking is confirmed for Tuesday.";
+    const accented = composeSms({ body, region: "AU", brand: "Zoë Plumbing" });
+    assert.equal(accented.encoding, "UCS-2");
+    assert.equal(smsEncoding(accented.final_message), accented.encoding);
+    assert.equal(
+      smsSplit(smsUnits(accented.final_message, accented.encoding), 70, 67).segments.length,
+      accented.segment_count
+    );
+
+    // Control: the same message with a plain brand stays on GSM-7.
+    const plain = composeSms({ body, region: "AU", brand: "Acme Plumbing" });
+    assert.equal(plain.encoding, "GSM-7");
+    assert.equal(plain.segment_count, 1);
+
+    // Every region's footer, since each one interpolates the brand.
+    for (const region of ["US", "AU", "UK", "EU", "CA"]) {
+      const r = composeSms({ body, region, brand: "Zoë Plumbing" });
+      assert.equal(r.encoding, "UCS-2", `${region} footer carried the accent and was billed as GSM-7`);
+      assert.equal(smsEncoding(r.final_message), "UCS-2");
+    }
+  });
+
+  test("the footer is located only when it really is the tail", () => {
+    assert.equal(footerStart("Book now. Reply STOP", " Reply STOP"), 9);
+    assert.equal(footerStart("Book now.", ""), -1, "an empty footer produced a mark position");
+    assert.equal(
+      footerStart("Book now.", "Reply STOP"),
+      -1,
+      "a footer that is not the tail of the message was marked anyway"
+    );
+  });
+});
+
+describe("Push matrix — what a platform drops is aligned, not recomputed", () => {
+  const { alignCut, cutVerdict } = new Function(
+    `${PUSH_ALIGN_JS}\nreturn { alignCut, cutVerdict };`
+  )();
+
+  test("an untruncated field drops nothing and keeps everything", () => {
+    const a = alignCut("Job list ready", "Job list ready", false);
+    assert.deepEqual([a.aligned, a.dropped], [true, ""]);
+  });
+
+  test("the dropped tail is the remainder after the tool's own kept prefix", () => {
+    // checkPushCopy keeps limit-1 characters and spends the last on the
+    // ellipsis, so (chars - limit) is short by one on every field. The
+    // alignment counts the string that actually went missing.
+    const full = "abcdefghij";
+    const a = alignCut(full, "abcd…", true);
+    assert.equal(a.kept, "abcd");
+    assert.equal(a.dropped, "efghij");
+    assert.equal(a.dropped.length, 6, "the tail was derived from arithmetic rather than the preview");
+  });
+
+  test("a preview that does not line up abstains instead of inventing a tail", () => {
+    const a = alignCut("Completely different source", "Some other string…", true);
+    assert.equal(a.aligned, false);
+    assert.equal(a.dropped, "");
+  });
+
+  test("the verdict names WHICH field was cut, in words", () => {
+    assert.equal(cutVerdict({ titleTruncates: false, bodyTruncates: false }).word, "Fits whole");
+    assert.equal(cutVerdict({ titleTruncates: true, bodyTruncates: false }).word, "Title cut");
+    assert.equal(cutVerdict({ titleTruncates: false, bodyTruncates: true }).word, "Body cut");
+    assert.equal(cutVerdict({ titleTruncates: true, bodyTruncates: true }).word, "Title + body cut");
+    for (const v of [{}, { titleTruncates: true }]) {
+      assert.ok(cutVerdict(v).glyph && cutVerdict(v).word, "a verdict carried a class with no glyph or word");
+    }
+  });
+});
+
+describe("Dark pairs — the flip is arithmetic, and it is rarely a rescue", () => {
+  const { ratioVerdict, flipVerdict } = new Function(
+    `${DARK_PAIR_VERDICT_JS}\nreturn { ratioVerdict, flipVerdict };`
+  )();
+
+  test("a full invert is close to contrast-preserving — the whole reason the pair is drawn twice", () => {
+    // The sentence a marketer takes away from "this will break in dark
+    // mode" is "it is fine today". For a light-on-light pair it is not:
+    // 1.12:1 becomes 1.08:1, so the flip changes nothing that mattered.
+    // If this ever stops being true the widget's headline claim is wrong.
+    const bad = invertPair({ fg: "#f2f2f2", bg: "#ffffff" });
+    assert.ok(bad.ratio < 4.5 && bad.inverted_ratio < 4.5);
+    assert.ok(Math.abs(bad.ratio - bad.inverted_ratio) < 1);
+
+    const good = invertPair({ fg: "#111111", bg: "#ffffff" });
+    assert.ok(good.ratio > 7 && good.inverted_ratio > 7);
+  });
+
+  test("an unresolvable colour returns null so the pane can abstain", () => {
+    assert.equal(invertPair({ fg: "currentColor", bg: "#ffffff" }), null);
+    assert.equal(invertPair({ fg: "#111", bg: "transparent" }), null);
+    assert.equal(invertPair({}), null);
+  });
+
+  test("the invert is 255 minus the channel, not an approximation of Apple's curve", () => {
+    const p = invertPair({ fg: "#336699", bg: "#ffffff" });
+    assert.equal(p.inverted_fg, "#cc9966");
+    assert.equal(p.inverted_bg, "#000000");
+  });
+
+  test("every pane verdict carries a glyph AND a word, never a colour alone", () => {
+    for (const r of [21, 7, 4.5, 3.2, 1.05]) {
+      const v = ratioVerdict(r);
+      assert.ok(v.glyph && v.word, `ratio ${r} produced a class with no glyph or word`);
+    }
+    assert.equal(ratioVerdict(4.5).word, "Clears AA");
+    assert.equal(ratioVerdict(4.49).word, "Below AA");
+    assert.equal(ratioVerdict(1.05).word, "Unreadable");
+  });
+
+  test("an unmeasured pane says so instead of grading a missing number", () => {
+    assert.equal(ratioVerdict(null).word, "Not measured");
+    assert.equal(ratioVerdict(undefined).cls, "pending");
+    assert.match(flipVerdict(null, null).word, /not measured/i);
+  });
+
+  test("the flip verdict names which of the four cases actually happened", () => {
+    assert.match(flipVerdict(1.12, 1.08).word, /already unreadable/i);
+    assert.match(flipVerdict(12, 1.4).word, /legible today/i);
+    assert.match(flipVerdict(1.4, 12).word, /Fix the light case/i);
+    assert.match(flipVerdict(18.9, 18.1).word, /survives the flip/i);
+  });
+});
+
+describe("ESP matrix — a cell never renders as an empty space", () => {
+  const { cellFor, tally } = new Function(
+    `${ESP_CELL_JS}\nreturn { cellFor, tally };`
+  )();
+
+  test("every support level carries a glyph AND a word", () => {
+    for (const s of ["native", "partial", "unsupported"]) {
+      const c = cellFor(s);
+      assert.ok(c.glyph && c.word, `${s} rendered with no glyph or word`);
+    }
+    assert.equal(cellFor("native").word, "Native");
+    assert.equal(cellFor("partial").word, "Partial");
+    assert.equal(cellFor("unsupported").word, "None");
+  });
+
+  test("an unrecognised level renders as an explicit unknown, not as a blank cell", () => {
+    // The matrix is hand-maintained data. A typo'd or newly-added level
+    // falling through to an empty cell is a grid that lies by omission —
+    // a blank in a support matrix reads as "fine, nothing to say".
+    for (const s of [undefined, null, "", "beta", "SUPPORTED"]) {
+      const c = cellFor(s);
+      assert.equal(c.word, "Unknown");
+      assert.ok(c.glyph, "the unknown cell has no glyph");
+    }
+  });
+
+  test("the column tally counts every row, including ones it does not recognise", () => {
+    const t = tally([
+      { support: "native" }, { support: "native" },
+      { support: "partial" }, { support: "unsupported" }, { support: "beta" }
+    ]);
+    assert.deepEqual(t, { native: 2, partial: 1, unsupported: 1, other: 1 });
+    assert.deepEqual(tally(undefined), { native: 0, partial: 0, unsupported: 0, other: 0 });
   });
 });
