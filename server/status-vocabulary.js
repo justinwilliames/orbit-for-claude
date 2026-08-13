@@ -182,6 +182,26 @@ export const INDIRECT_STATUSES = [
   "needs_plugin_credentials",
 ];
 
+/**
+ * A shaped abstention, for any check whose input never arrived.
+ *
+ * The failure mode this exists to stop is specific and this repo has
+ * shipped it three times: a lookup errors, the error is swallowed, and
+ * the empty result is then reported as a positive finding — "no DKIM
+ * selector was found", "p=missing", "all pairs pass". Nothing was found
+ * because nothing was read. `verdict: null` is the point: there is no
+ * grade, and a caller that wants one has to notice.
+ */
+export function unreadable(reason, extra = {}) {
+  return {
+    status: "not_measurable",
+    verdict: null,
+    not_measured: true,
+    reason,
+    ...extra,
+  };
+}
+
 /** True when this status means the call did not do the thing. */
 export function isFailureStatus(status) {
   return typeof status === "string" && FAILED_STATUSES.has(status);

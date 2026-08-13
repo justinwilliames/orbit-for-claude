@@ -1,0 +1,218 @@
+/**
+ * The first tests this module has ever had.
+ *
+ * orbit_check_email_auth is the shortest path a stranger has into
+ * Orbit: no credentials, a domain in, a verdict out, inside their first
+ * minute. Four hundred lines of DNS logic with zero references in a
+ * 774-test suite, and it returned two false facts about a fourteen-
+ * character, spec-compliant record —
+ *
+ *   v=spf1 redirect=_hspf.example.com
+ *
+ * — the canonical form for a HubSpot-hosted domain and a Microsoft 365
+ * tenant. It counted 1 lookup against a real RFC 7208 count of four to
+ * six, and it raised 'Record has no explicit "all" qualifier', which
+ * RFC 7208 §6.1 says the record must NOT have: redirect= supplies the
+ * policy and is ignored outright if an all mechanism is present. Acting
+ * on the recommendation kills the redirect and unauthorises every
+ * server in the chain.
+ *
+ * The other half of the suite is the abstention rule. A resolver that
+ * says NXDOMAIN is telling you something; a resolver that times out is
+ * telling you nothing, and this module used to convert the second into
+ * positive findings — "No DKIM selector was found", "p=missing" — over
+ * zero observations.
+ *
+ * DNS is stubbed throughout. A test that depends on someone else's
+ * zone file is a test that fails on a plane.
+ */
+
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+
+import { checkEmailAuth, checkBimi } from "../../server/email-auth.js";
+
+/** Build a stub resolver from a host → TXT-values map. */
+function stubResolver(zone, { defaultError = "ENOTFOUND" } = {}) {
+  return async (host) => {
+    const key = String(host).toLowerCase();
+    if (!(key in zone)) return { values: [], error: defaultError };
+    const entry = zone[key];
+    if (typeof entry === "string") return { values: [], error: entry };
+    return { values: entry, error: null };
+  };
+}
+
+const DEAD = async () => ({ values: [], error: "ETIMEOUT" });
+
+describe("SPF — redirect= is a policy delegation, not a missing qualifier", () => {
+  const zone = {
+    "example.com": ["v=spf1 redirect=_spf.example.com"],
+    "_spf.example.com": ["v=spf1 include:one.example.net include:two.example.net ~all"],
+    "one.example.net": ["v=spf1 a mx ~all"],
+    "two.example.net": ["v=spf1 include:three.example.org ~all"],
+    "three.example.org": ["v=spf1 ip4:192.0.2.0/24 ~all"],
+    "_dmarc.example.com": ["v=DMARC1; p=reject; rua=mailto:d@example.com"],
+  };
+
+  test("does not tell the owner to add an all qualifier", async () => {
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(zone) });
+    assert.equal(
+      r.spf.issues.some((i) => /no explicit "all" qualifier/i.test(i)),
+      false,
+      "RFC 7208 §6.1: a record using redirect= must NOT carry an all mechanism"
+    );
+    assert.doesNotMatch(
+      r.spf.recommendation,
+      /Tighten to "-all"/,
+      "the recommendation, followed, would make the redirect inert"
+    );
+    assert.equal(r.spf.verdict, "pass", "a spec-compliant redirect record is clean");
+  });
+
+  test("counts the whole expanded chain, not the one record", async () => {
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(zone) });
+    // redirect(1) + include one(1) + include two(1) + a(1) + mx(1)
+    // + include three(1) = 6, against the old answer of 1.
+    assert.equal(r.spf.lookup_count_is_complete, true);
+    assert.equal(r.spf.lookup_count, 6);
+    assert.ok(
+      r.spf.lookup_expansion.length >= 4,
+      "the expansion path is what makes the count falsifiable by the reader"
+    );
+  });
+
+  test("flags a record carrying BOTH redirect= and all", async () => {
+    const both = { ...zone, "example.com": ["v=spf1 redirect=_spf.example.com -all"] };
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(both) });
+    assert.equal(r.spf.verdict, "fail");
+    assert.ok(r.spf.issues.some((i) => /the redirect is ignored entirely/i.test(i)));
+  });
+
+  test("a redirect to nowhere is a permerror, and says so", async () => {
+    const broken = { "example.com": ["v=spf1 redirect=_spf.example.com"] };
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(broken) });
+    assert.equal(r.spf.verdict, "fail");
+    assert.ok(r.spf.issues.some((i) => /does not resolve to a v=spf1 record/i.test(i)));
+    // The fix has to be named at the target, never by bolting an all
+    // mechanism onto a record that must not have one.
+    assert.match(r.spf.recommendation, /Do NOT add an "all" mechanism/);
+  });
+
+  test("an include loop terminates without inflating the count", async () => {
+    const loop = {
+      "example.com": ["v=spf1 include:a.example.com -all"],
+      "a.example.com": ["v=spf1 include:b.example.com -all"],
+      "b.example.com": ["v=spf1 include:a.example.com -all"],
+    };
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(loop) });
+    assert.equal(r.spf.lookup_count, 3);
+    assert.equal(r.spf.lookup_count_is_complete, true);
+  });
+
+  test("an unreadable nested record withholds the count instead of reporting a partial sum", async () => {
+    const partial = {
+      "example.com": ["v=spf1 include:up.example.com include:down.example.com -all"],
+      "up.example.com": ["v=spf1 a mx -all"],
+      "down.example.com": "ETIMEOUT",
+    };
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(partial) });
+    assert.equal(r.spf.lookup_count, undefined, "a floor must not be published as the count");
+    assert.equal(r.spf.lookup_count_is_complete, false);
+    assert.equal(r.spf.lookup_count_at_least, 4);
+    assert.match(r.spf.lookup_count_incomplete_reason, /did not resolve/i);
+  });
+
+  test("a genuinely over-budget record still fails", async () => {
+    const fat = {
+      "example.com": ["v=spf1 " + Array.from({ length: 11 }, (_, i) => `include:x${i}.example.net`).join(" ") + " -all"],
+    };
+    for (let i = 0; i < 11; i += 1) fat[`x${i}.example.net`] = ["v=spf1 -all"];
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: stubResolver(fat) });
+    assert.equal(r.spf.lookup_count, 11);
+    assert.equal(r.spf.verdict, "fail");
+    assert.ok(r.spf.issues.some((i) => /permerror/.test(i)));
+  });
+});
+
+describe("DNS abstention — a dead resolver is not evidence", () => {
+  test("DKIM does not claim 'not found' over zero observations", async () => {
+    const r = await checkEmailAuth({
+      domain: "example.com",
+      dkimSelectors: ["s20230601"],
+      resolveTxt: DEAD,
+    });
+    assert.equal(r.dkim.verdict, null, "there is no grade to give");
+    assert.equal(r.dkim.status, "not_measurable");
+    assert.equal(r.dkim.reason, "dns_unreachable");
+    assert.equal(r.dkim.selectors_resolved, 0);
+    assert.ok(r.dkim.selectors_errored > 0);
+    assert.equal(
+      r.dkim.issues.some((i) => /No DKIM selector was found/i.test(i)),
+      false,
+      "28 timeouts are 28 non-observations, not a finding"
+    );
+  });
+
+  test("'not found' is claimed only over selectors that actually answered", async () => {
+    // Every selector answers NXDOMAIN — a real negative — so the
+    // absence claim is earned, and the count reports answers rather
+    // than attempts.
+    const r = await checkEmailAuth({
+      domain: "example.com",
+      resolveTxt: stubResolver({ "example.com": ["v=spf1 -all"] }),
+    });
+    assert.equal(r.dkim.verdict, "warn");
+    assert.ok(r.dkim.selectors_resolved > 0);
+    assert.equal(r.dkim.selectors_checked, r.dkim.selectors_resolved);
+  });
+
+  test("an overall verdict is never 'pass' when a lane abstained", async () => {
+    const zone = {
+      "example.com": ["v=spf1 -all"],
+      "_dmarc.example.com": ["v=DMARC1; p=reject; rua=mailto:d@example.com"],
+    };
+    // Selectors resolve, so DKIM is a real warn; add a lane that is
+    // genuinely unreadable and confirm the roll-up notices.
+    const withDeadDmarc = async (host) =>
+      String(host).startsWith("_dmarc.")
+        ? { values: [], error: "SERVFAIL" }
+        : stubResolver(zone)(host);
+    const r = await checkEmailAuth({ domain: "example.com", resolveTxt: withDeadDmarc });
+    assert.equal(r.dmarc.status, "not_measurable");
+    assert.notEqual(r.overall, "pass");
+    assert.match(r.message, /DMARC: not measured/);
+  });
+
+  test("BIMI does not grade a live VMC against a policy it never read", async () => {
+    const zone = {
+      "default._bimi.example.com": [
+        "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+      ],
+    };
+    const resolver = async (host) =>
+      String(host).startsWith("_dmarc.")
+        ? { values: [], error: "ETIMEOUT" }
+        : stubResolver(zone)(host);
+    const r = await checkBimi({ domain: "example.com", resolveTxt: resolver });
+    assert.equal(
+      r.issues.some((i) => /p=missing/.test(i)),
+      false,
+      "'p=missing' over an unread DMARC record is a fabricated fact"
+    );
+    assert.notEqual(r.verdict, "fail");
+    assert.ok(r.not_measured.some((n) => n.check === "dmarc_policy"));
+  });
+
+  test("BIMI still fails a genuinely weak DMARC policy", async () => {
+    const zone = {
+      "default._bimi.example.com": [
+        "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+      ],
+      "_dmarc.example.com": ["v=DMARC1; p=none; rua=mailto:d@example.com"],
+    };
+    const r = await checkBimi({ domain: "example.com", resolveTxt: stubResolver(zone) });
+    assert.equal(r.verdict, "fail");
+    assert.ok(r.issues.some((i) => /p=none/.test(i)));
+  });
+});
