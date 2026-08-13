@@ -360,25 +360,81 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     assert.match(fs.readFileSync(script, "utf8"), /CONTAINER_WIDTH=640/);
 
     // An OLDER Orbit generation is upgraded in place, reporting from → to.
-    fs.writeFileSync(
-      script,
-      fs.readFileSync(script, "utf8").replace(/^# orbit-gate-generation: \d+$/m, "# orbit-gate-generation: 1"),
-      "utf8"
-    );
+    // The generation is edited WITHOUT touching the digest, which is what an
+    // older Orbit's output looks like: its own body, its own hash, an older
+    // number. Every mutation below asserts it landed before its verdict is
+    // read — a .replace() that silently stops matching turns the case into a
+    // test of the control.
+    const bumpDown = fs
+      .readFileSync(script, "utf8")
+      .replace(/^# orbit-gate-generation: \d+( sha256:[0-9a-f]+)?$/m, "# orbit-gate-generation: 1$1");
+    assert.match(bumpDown, /^# orbit-gate-generation: 1 sha256:/m, "the generation mutation did not apply");
+    fs.writeFileSync(script, bumpDown, "utf8");
     const bumped = generateBrainGate({ path: root, clip_kb: 80, container_width: 640 });
     assert.equal(bumped.upgraded[0].from, 1);
     assert.ok(bumped.upgraded[0].to > 1);
 
     // No marker → a human wrote or edited it. Never clobbered, and named.
-    fs.writeFileSync(
-      script,
-      fs.readFileSync(script, "utf8").replace(/^# orbit-gate-generation: \d+\n/m, ""),
-      "utf8"
-    );
+    const stripped = fs
+      .readFileSync(script, "utf8")
+      .replace(/^# orbit-gate-generation:.*\n/m, "");
+    assert.doesNotMatch(stripped, /orbit-gate-generation/, "the strip mutation did not apply");
+    fs.writeFileSync(script, stripped, "utf8");
     const handEdited = generateBrainGate({ path: root, clip_kb: 99 });
-    assert.deepEqual(handEdited.hand_edited.map((p) => path.relative(root, p)), ["build/gate.sh"]);
+    assert.deepEqual(
+      handEdited.hand_edited.map((h) => path.relative(root, typeof h === "string" ? h : h.path)),
+      ["build/gate.sh"]
+    );
     assert.equal(handEdited.upgraded.length, 0);
     assert.doesNotMatch(fs.readFileSync(script, "utf8"), /CLIP_BYTES=101376/);
+  });
+
+  test("an edit to Orbit's OWN generated gate is kept, not reported as an upgrade", () => {
+    // The old hand_edited test was "is the marker missing?", and its own
+    // docblock stated the premise as "no marker, so a human wrote it". False
+    // in the direction that costs data: a human editing a generated script
+    // KEEPS the header — nobody deletes the shebang block to tighten a
+    // threshold. So the guard protected only the edits nobody makes, and the
+    // destruction came back as `upgraded {from: 2, to: 2}` — an upgrade from
+    // a generation to itself, which cannot happen, and which nothing
+    // asserted against.
+    const root = tmpRoot("gate-preserve");
+    const first = generateBrainGate({ path: root, clip_kb: 102 });
+    const script = first.script;
+
+    const edited =
+      fs.readFileSync(script, "utf8").replace(/CLIP_BYTES=\d+/, "CLIP_BYTES=61440") +
+      '\nnote "house-rule" "PASS — a check this team added."\n';
+    assert.match(edited, /CLIP_BYTES=61440/, "the edit mutation did not apply");
+    fs.writeFileSync(script, edited, "utf8");
+
+    const second = generateBrainGate({ path: root, clip_kb: 102 });
+    const after = fs.readFileSync(script, "utf8");
+    assert.match(after, /CLIP_BYTES=61440/, "the owner's threshold was overwritten");
+    assert.match(after, /house-rule/, "the owner's added check was destroyed");
+    assert.equal(second.upgraded.length, 0, "destruction was reported as an upgrade");
+    assert.equal(second.hand_edited.length, 1);
+    // And it must SAY the parameters did not land. A caller who reads only
+    // the message must not come away thinking the regenerate worked.
+    assert.match(second.message, /have NOT been applied/);
+  });
+
+  test("a pre-digest marker is unverifiable, so the file is left alone", () => {
+    const root = tmpRoot("gate-unverified");
+    const first = generateBrainGate({ path: root, clip_kb: 102 });
+    // What an older Orbit wrote: a generation, no digest. We cannot prove it
+    // is untouched, so we do not destroy it. Deleting a file is a one-word
+    // instruction; un-deleting an edit is not.
+    const legacy = fs
+      .readFileSync(first.script, "utf8")
+      .replace(/^# orbit-gate-generation: (\d+) sha256:[0-9a-f]+$/m, "# orbit-gate-generation: $1");
+    assert.doesNotMatch(legacy, /sha256:/, "the legacy-marker mutation did not apply");
+    fs.writeFileSync(first.script, legacy, "utf8");
+
+    const second = generateBrainGate({ path: root, clip_kb: 60 });
+    assert.equal(second.unverified.length, 1);
+    assert.equal(second.upgraded.length, 0);
+    assert.doesNotMatch(fs.readFileSync(first.script, "utf8"), /CLIP_BYTES=61440/);
   });
 
   test("every check fires on real compiled output, and none of them fires on a clean email", () => {

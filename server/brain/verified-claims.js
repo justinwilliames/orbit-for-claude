@@ -17,6 +17,7 @@
  * ALL generated content is customer-neutral: placeholder brand "ACME".
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -38,15 +39,34 @@ const PLACEHOLDER_BRAND = "ACME";
  */
 const SCRIPT_GENERATION = 2;
 
-/** The marker line stamped into every generated script, after the shebang. */
-function generationMarker(kind) {
-  return `# orbit-${kind}-generation: ${SCRIPT_GENERATION}`;
+/**
+ * The marker line stamped into every generated script, after the shebang.
+ *
+ * It carries a digest of the body it was written with, not just a generation
+ * number. The number answers "how old is this?"; only the digest answers the
+ * question that decides whether we may destroy the file — "is this still
+ * byte-for-byte what Orbit wrote, or has a human been in here since?"
+ */
+function generationMarker(kind, digest) {
+  return `# orbit-${kind}-generation: ${SCRIPT_GENERATION} sha256:${digest}`;
 }
 
-/** Read the generation stamped into an existing script; null if unmarked. */
+/** Digest of a script body with any generation marker line removed. */
+function bodyDigest(body, kind) {
+  const stripped = String(body)
+    .split("\n")
+    .filter((l) => !new RegExp(`^# orbit-${kind}-generation:`).test(l))
+    .join("\n");
+  return crypto.createHash("sha256").update(stripped, "utf8").digest("hex").slice(0, 16);
+}
+
+/** Read the generation + digest stamped into an existing script. */
 function readGeneration(body, kind) {
-  const match = body.match(new RegExp(`^# orbit-${kind}-generation:[ \\t]*(\\d+)[ \\t]*$`, "m"));
-  return match ? Number(match[1]) : null;
+  const match = body.match(
+    new RegExp(`^# orbit-${kind}-generation:[ \\t]*(\\d+)(?:[ \\t]+sha256:([0-9a-f]+))?[ \\t]*$`, "m")
+  );
+  if (!match) return null;
+  return { generation: Number(match[1]), digest: match[2] ?? null };
 }
 
 /**
@@ -71,25 +91,47 @@ function writeSkip(filePath, content, result) {
 /**
  * Write a GENERATED script, upgrading an older generation in place.
  *
- * Four outcomes, each named on `result` rather than collapsed into "skipped":
+ * Five outcomes, each named on `result` rather than collapsed into "skipped":
  *   created     — nothing was there.
- *   upgraded    — an Orbit-generated script was rewritten ({path,from,to}).
+ *   upgraded    — Orbit's own untouched output, rewritten ({path,from,to}).
  *   unchanged   — byte-identical to what we would write now.
- *   hand_edited — no marker, so a human wrote or edited it. Left alone.
+ *   hand_edited — a human wrote or edited it. Left alone.
+ *   unverified  — marked by a pre-digest Orbit, so we cannot tell. Left alone.
  *
- * The rewrite triggers on CONTENT, not just on the generation number: a
- * regenerate with a different clip_kb has to land, and reporting "already
+ * WHY THE DIGEST.
+ *
+ * The `hand_edited` test used to be "is the marker missing?", and its own
+ * docblock stated the premise as "no marker, so a human wrote or edited it".
+ * That premise is false in the direction that costs data: a human editing an
+ * Orbit-generated script KEEPS the header. Nobody deletes the shebang block
+ * to tighten a threshold. So the guard protected only the edits nobody makes
+ * and destroyed every edit anyone actually makes — silently, and reported as
+ * `upgraded {from: 2, to: 2}`, an upgrade from a generation to itself, which
+ * is not a thing that can happen and which nothing asserted against.
+ *
+ * One product had two opposite write policies twenty lines apart: writeSkip
+ * refuses and reports `skipped`, writeGenerated overwrote and reported
+ * success — and the destructive one was on the flagship step.
+ *
+ * So the marker now carries a digest of the body Orbit wrote. If the file on
+ * disk still hashes to it, the file is ours and may be replaced. If it does
+ * not, a human has been in here and we stop. A file marked by a pre-digest
+ * Orbit is `unverified` — we cannot prove it is untouched, so we do not
+ * destroy it; deleting it is a one-word instruction, un-deleting an edit is
+ * not.
+ *
+ * The rewrite still triggers on CONTENT, not just on the generation number:
+ * a regenerate with a different clip_kb has to land, and reporting "already
  * current" while leaving the old threshold on disk is the same silent no-op
- * the marker exists to kill. The marker answers a different question —
- * "did Orbit write this, or did a human?"
+ * the marker exists to kill.
  */
 function writeGenerated(filePath, body, result, kind) {
-  for (const key of ["created", "skipped", "upgraded", "unchanged", "hand_edited"]) {
+  for (const key of ["created", "skipped", "upgraded", "unchanged", "hand_edited", "unverified"]) {
     if (!result[key]) result[key] = [];
   }
 
   const lines = body.split("\n");
-  lines.splice(lines[0].startsWith("#!") ? 1 : 0, 0, generationMarker(kind));
+  lines.splice(lines[0].startsWith("#!") ? 1 : 0, 0, generationMarker(kind, bodyDigest(body, kind)));
   const content = lines.join("\n");
 
   if (fs.existsSync(filePath)) {
@@ -99,12 +141,33 @@ function writeGenerated(filePath, body, result, kind) {
       result.hand_edited.push(filePath);
       return false;
     }
+    if (found.digest === null) {
+      result.unverified.push({
+        path: filePath,
+        from: found.generation,
+        reason:
+          "Written by an Orbit that did not stamp a content digest, so whether it " +
+          "has been edited since cannot be established. Not overwritten. Delete the " +
+          "file to regenerate it, after saving anything you added.",
+      });
+      return false;
+    }
+    if (bodyDigest(existing, kind) !== found.digest) {
+      result.hand_edited.push({
+        path: filePath,
+        from: found.generation,
+        reason:
+          "Orbit generated this file and it has been modified since. Your changes " +
+          "were kept. Delete the file to regenerate it from scratch.",
+      });
+      return false;
+    }
     if (existing === content) {
       result.unchanged.push(filePath);
       return false;
     }
     fs.writeFileSync(filePath, content, "utf8");
-    result.upgraded.push({ path: filePath, from: found, to: SCRIPT_GENERATION });
+    result.upgraded.push({ path: filePath, from: found.generation, to: SCRIPT_GENERATION });
     return true;
   }
 

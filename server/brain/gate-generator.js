@@ -20,8 +20,11 @@
  * gate only. It does NOT reproduce send-time render or inbox truth — that stays
  * with the render / inbox QA gate (orbit_qa_email + orbit_render_email_preview).
  *
- * Pure local file generation — no network, no activation gate. Refuses to
- * overwrite an existing file (report-and-skip).
+ * Pure local file generation — no network, no activation gate. It DOES
+ * rewrite its own previous output in place (that is how a changed clip_kb
+ * lands), but never a file a human has touched: the generation marker
+ * carries a digest of the body Orbit wrote, and a file that no longer
+ * hashes to it comes back as `hand_edited` and is left exactly as found.
  *
  * ALL generated content is customer-neutral: placeholder brand "ACME".
  */
@@ -47,7 +50,7 @@ const DEFAULT_MASTER_NAME = "master";
  * @param {number} [args.container_width] Declared email container width in px.
  * @param {string} [args.master_name]     Filename token exempt from the clip check.
  * @returns {{ root, script, clip_kb, mobile_width, container_width, master_name,
- *             created, skipped, upgraded, unchanged, hand_edited }}
+ *             created, skipped, upgraded, unchanged, hand_edited, unverified }}
  */
 export function generateBrainGate({
   path: repoPath,
@@ -74,6 +77,7 @@ export function generateBrainGate({
     upgraded: [],
     unchanged: [],
     hand_edited: [],
+    unverified: [],
   };
 
   const scriptPath = path.join(root, "build", "gate.sh");
@@ -82,6 +86,22 @@ export function generateBrainGate({
   if (writeGenerated(scriptPath, body, result, "gate")) {
     fs.chmodSync(scriptPath, 0o755);
   }
+
+  // Say it in prose too. A caller reading `hand_edited: [{...}]` off a
+  // result object may or may not act on it; a caller reading "your edits
+  // were kept and the parameters you asked for did NOT land" cannot miss
+  // that the regenerate was a no-op.
+  const preserved = [...result.hand_edited, ...result.unverified];
+  result.message =
+    preserved.length > 0
+      ? `Nothing was written: ${scriptPath} already exists and is not verifiably Orbit's own output, ` +
+        "so your copy was left exactly as found. The parameters you passed have NOT been applied. " +
+        "Save anything you added, delete the file, and run this again."
+      : result.unchanged.length > 0
+        ? `${scriptPath} is already current — byte-identical to what would be written now.`
+        : result.created.length > 0
+          ? `Wrote ${scriptPath}. Run it on a COMPILED email before any send.`
+          : `Rewrote ${scriptPath} with the parameters supplied.`;
 
   return result;
 }
