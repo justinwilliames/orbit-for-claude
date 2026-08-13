@@ -367,6 +367,49 @@ describe("buildCohortRetention — happy-path golden values", () => {
     assert.equal(p0.revenue, 60);
   });
 
+  // The period bound was inclusive on floor(elapsed / period), so every
+  // cohort emitted one window covering the REMAINDER of a period — down
+  // to zero seconds of it — as a measured retention_pct. A cohort 21 days
+  // old on 7-day periods reported P3 at 0% with nobody churned, and the
+  // widget drew it as an observation.
+  test("a period whose window has not opened is not emitted at all", () => {
+    const result = buildCohortRetention({
+      enrollments: [{ user_id: "u1", enrolled_at: "2024-01-01T00:00:00Z" }],
+      // Active in every one of the 21 elapsed days; nobody churns.
+      events: Array.from({ length: 21 }, (_, d) => ({
+        user_id: "u1",
+        event_at: new Date(Date.UTC(2024, 0, 1 + d)).toISOString(),
+      })),
+      periodDays: 7,
+      referenceDate: "2024-01-22T00:00:00Z",
+    });
+    const periods = result.cohorts[0].periods.map((p) => p.period);
+    assert.deepEqual(periods, [0, 1, 2, 3], "periods 0-2 are closed, 3 is one day in");
+    const p3 = result.cohorts[0].periods.find((p) => p.period === 3);
+    assert.equal(p3.complete, false, "a window one day into seven was reported as finished");
+    assert.ok(p3.window_elapsed_pct > 0 && p3.window_elapsed_pct < 100);
+    assert.equal(result.cohorts[0].periods.find((p) => p.period === 2).complete, true);
+    // 22 Jan is exactly 3 periods after 1 Jan, so period 4 has not opened.
+    assert.equal(result.cohorts[0].periods.find((p) => p.period === 4), undefined);
+  });
+
+  test("an open window is kept out of the aggregate curve and counted separately", () => {
+    const result = buildCohortRetention({
+      enrollments: [{ user_id: "u1", enrolled_at: "2024-01-01T00:00:00Z" }],
+      events: [{ user_id: "u1", event_at: "2024-01-01T00:00:00Z" }],
+      periodDays: 7,
+      referenceDate: "2024-01-09T00:00:00Z",
+    });
+    // Period 1 is one day into seven. Averaging its running total against
+    // completed cohorts drags the curve down by exactly the time the
+    // window has left to run.
+    const p1 = result.aggregate_curve.find((p) => p.period === 1);
+    assert.equal(p1, undefined, "an incomplete window contributed to the aggregate curve");
+    const p0 = result.aggregate_curve.find((p) => p.period === 0);
+    assert.equal(p0.exposure, 1);
+    assert.equal(p0.exposure_incomplete, 0);
+  });
+
   test("returns needs_inputs for empty enrollments", () => {
     const result = buildCohortRetention({ enrollments: [], events: [] });
     assert.equal(result.status, "needs_inputs");

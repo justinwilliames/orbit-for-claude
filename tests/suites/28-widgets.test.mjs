@@ -403,24 +403,36 @@ describe("Client matrix — a frame never claims to be a render it is not", () =
   const { clientFidelity } = new Function(`${CLIENT_FIDELITY_JS}\nreturn { clientFidelity };`)();
 
   test("a class whose markup differs is the delivered document", () => {
-    const f = clientFidelity({ class: "nocss", same_markup_as: null, render_hints: {} });
+    const f = clientFidelity({ class: "nocss", markup_compared: true, same_markup_as: null, render_hints: {} });
     assert.equal(f.kind, "markup");
   });
 
+  // `same_markup_as: null` used to mean BOTH "compared, and it differs"
+  // and "never compared", so a payload that carried no comparison at all
+  // told every reader "the emitted HTML differs from the baseline" about
+  // documents that were byte-identical to it. Absence now abstains.
+  test("a variant carrying no comparison abstains rather than claiming a difference", () => {
+    const f = clientFidelity({ class: "gmailish", render_hints: {} });
+    assert.equal(f.kind, "unknown");
+    assert.equal(f.label, "not compared");
+    assert.doesNotMatch(f.note, /differs from the baseline/i);
+  });
+
   test("blocked images are emulated, and say so", () => {
-    const f = clientFidelity({ class: "imgoff", same_markup_as: "full", render_hints: { block_images: true } });
+    const f = clientFidelity({ class: "imgoff", markup_compared: true, same_markup_as: "full", render_hints: { block_images: true } });
     assert.equal(f.kind, "emulated");
     assert.match(f.note, /src is stripped/i);
   });
 
   test("a hover-incapable client is the rest state by construction", () => {
-    const f = clientFidelity({ class: "nohover", same_markup_as: "full", render_hints: { never_hover: true } });
+    const f = clientFidelity({ class: "nohover", markup_compared: true, same_markup_as: "full", render_hints: { never_hover: true } });
     assert.equal(f.kind, "by-design");
   });
 
   test("a user-agent condition we cannot force is labelled BASELINE, never as that client", () => {
     const f = clientFidelity({
       class: "reduced",
+      markup_compared: true,
       same_markup_as: "full",
       render_hints: { media_features: [{ name: "prefers-reduced-motion", value: "reduce" }] }
     });
@@ -435,6 +447,7 @@ describe("Client matrix — a frame never claims to be a render it is not", () =
     // drawn that as a distinct client render.
     const f = clientFidelity({
       class: "gmailish",
+      markup_compared: true,
       same_markup_as: "full",
       render_hints: { honour_interaction_media: false }
     });
@@ -481,6 +494,24 @@ describe("Cohort grid — an unobserved period is not a zero", () => {
     const late = { periods: [{ period: 4, active: 7, retention_pct: 7, revenue: 0 }] };
     assert.equal(cohortCell(late, 0).state, "unobserved");
     assert.equal(cohortCell(late, 4).point.retention_pct, 7);
+  });
+
+  // A window still running is not a result. Drawn like a finished one, a
+  // cohort three days into a 30-day period reads as a churn cliff that is
+  // really just a period that has not closed.
+  test("a window that is still open is PARTIAL, never observed", () => {
+    const running = {
+      periods: [{ period: 2, active: 10, retention_pct: 100, revenue: 70, complete: false, window_elapsed_pct: 85.7 }]
+    };
+    const c = cohortCell(running, 2);
+    assert.equal(c.state, "partial");
+    assert.equal(c.point.window_elapsed_pct, 85.7);
+  });
+
+  test("a payload with no completeness field is treated as complete, not hatched wholesale", () => {
+    // Older results carry no `complete` key. Defaulting them to partial
+    // would hatch every cell in the grid and say nothing.
+    assert.equal(cohortCell(cohort, 1).state, "observed");
   });
 
   test("the grid spans only what was observed", () => {
@@ -531,6 +562,33 @@ describe("Design system — a token pair nobody could measure is not a pass", ()
     // mode — a null here means the widget says "not measured" instead of
     // inventing a ratio.
     assert.equal(parseHexColor("rgb(16 24 40 / 50%)"), null);
+  });
+
+  // The parser reads alpha and the measurement used to throw it away, so
+  // an 8%-opacity white and a solid one returned the same ratio and the
+  // same pass — on the one accessibility check this widget runs.
+  test("a translucent token ABSTAINS rather than being measured as opaque", () => {
+    const faint = tokenContrast("rgba(255, 255, 255, 0.08)", "#101828");
+    const solid = tokenContrast("rgba(255, 255, 255, 1)", "#101828");
+    assert.equal(solid.state, "pass");
+    assert.equal(faint.state, "unmeasured");
+    assert.equal(faint.ratio, null);
+    assert.match(faint.reason, /translucent/i);
+    // The failure being guarded: rgba(0,0,0,.35) on white measures 21:1
+    // as three channels and renders at roughly 2.8:1.
+    assert.equal(tokenContrast("rgba(0, 0, 0, 0.35)", "#ffffff").state, "unmeasured");
+  });
+
+  // The specimen renders the heading at 22px/700 — WCAG large text. The
+  // widget graded it at 4.5 and failed brand headings that meet the
+  // standard, while its own doc comment claimed nothing here qualified.
+  test("the heading pair is graded at the large-text floor its specimen renders at", () => {
+    const grey = "#8a8a8a"; // 3.45:1 on white — between the two floors
+    assert.equal(tokenContrast(grey, "#ffffff").state, "fail", "normal text still uses 4.5");
+    const heading = tokenContrast(grey, "#ffffff", 3);
+    assert.equal(heading.state, "pass");
+    assert.equal(heading.threshold, 3);
+    assert.ok(heading.ratio > 3 && heading.ratio < 4.5, `unexpected ratio ${heading.ratio}`);
   });
 });
 

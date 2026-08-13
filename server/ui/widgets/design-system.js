@@ -105,14 +105,28 @@ function relativeLuminance(c) {
  * pass off an assumed white background would be the flattering answer
  * and the wrong one.
  */
-function tokenContrast(fg, bg) {
+function tokenContrast(fg, bg, threshold) {
+  var floor = threshold == null ? AA_NORMAL : threshold;
   var a = parseHexColor(fg);
   var b = parseHexColor(bg);
   if (!a || !b) {
     return {
       state: "unmeasured",
       ratio: null,
+      threshold: floor,
       reason: !a && !b ? "neither colour was extracted" : (!a ? "text colour not extracted" : "background not extracted")
+    };
+  }
+  // Alpha < 1 needs the stacking context underneath to composite against,
+  // and the extractor only ever saw one declaration. Measuring three of
+  // four channels reports a 8%-opacity white at the same ratio as a solid
+  // one — a pass on a token that renders near-invisible. Abstain instead.
+  if (a.a < 1 || b.a < 1) {
+    return {
+      state: "unmeasured",
+      ratio: null,
+      threshold: floor,
+      reason: "translucent colour \\u2014 the composite was not modelled"
     };
   }
   var l1 = relativeLuminance(a);
@@ -120,9 +134,9 @@ function tokenContrast(fg, bg) {
   var ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
   var rounded = Math.round(ratio * 100) / 100;
   return {
-    state: rounded >= 4.5 ? "pass" : "fail",
+    state: rounded >= floor ? "pass" : "fail",
     ratio: rounded,
-    threshold: 4.5,
+    threshold: floor,
     reason: null
   };
 }
@@ -358,10 +372,13 @@ function contrastPairs() {
   return [
     { name: "Button label on button fill", fg: t.primary_button_text_color, bg: t.primary_button_color },
     { name: "Body text on container", fg: t.body_text_color, bg: t.container_background_color },
-    { name: "Heading on container", fg: t.heading_color, bg: t.container_background_color },
+    // The specimen renders .spec-h at 22px / 700 — WCAG large text, so 3:1
+    // is the real floor. Grading it at 4.5 failed brand headings that meet
+    // the standard, in the one accessibility check this widget runs.
+    { name: "Heading on container", fg: t.heading_color, bg: t.container_background_color, threshold: AA_LARGE },
     { name: "Link on container", fg: t.link_color, bg: t.container_background_color }
   ].map(function (p) {
-    var r = tokenContrast(p.fg, p.bg);
+    var r = tokenContrast(p.fg, p.bg, p.threshold);
     return { name: p.name, fg: p.fg, bg: p.bg, result: r };
   });
 }
@@ -375,7 +392,7 @@ function renderPairs() {
     var fg = safeColor(p.fg), bg = safeColor(p.bg);
     var ev = r.state === "unmeasured"
       ? esc(r.reason)
-      : "<b>" + r.ratio.toFixed(2) + ":1</b> against 4.5:1";
+      : "<b>" + r.ratio.toFixed(2) + ":1</b> against " + r.threshold + ":1";
     return '<div class="pair" data-state="' + esc(r.state) + '">' +
       (fg ? '<span class="dot" style="background:' + esc(fg) + '"></span>' : '<span class="dot dot--none" title="not extracted"></span>') +
       (bg ? '<span class="dot" style="background:' + esc(bg) + '"></span>' : '<span class="dot dot--none" title="not extracted"></span>') +
@@ -430,11 +447,12 @@ function reportText() {
     lines.push("  " + p[1] + ": " + (t[p[0]] || "not found"));
   });
   lines.push("");
-  lines.push("Contrast (WCAG AA, 4.5:1):");
+  lines.push("Contrast (WCAG AA \\u2014 4.5:1 normal text, 3:1 large text):");
   contrastPairs().forEach(function (p) {
     var r = p.result;
     lines.push("  " + (r.state === "pass" ? "PASS" : r.state === "fail" ? "FAIL" : "UNMEASURED") +
-      " " + p.name + " \\u2014 " + (r.ratio != null ? r.ratio.toFixed(2) + ":1" : r.reason));
+      " " + p.name + " \\u2014 " +
+      (r.ratio != null ? r.ratio.toFixed(2) + ":1 against " + r.threshold + ":1" : r.reason));
   });
   return lines.join("\\n");
 }

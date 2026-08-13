@@ -50,6 +50,15 @@ function cohortCell(cohort, period) {
   var rows = (cohort && cohort.periods) || [];
   for (var i = 0; i < rows.length; i++) {
     if (Number(rows[i].period) === Number(period)) {
+      // A window still running is not an observation. Drawn the same as a
+      // finished one, a cohort three days into a 30-day period reads as a
+      // near-total churn cliff that is really just a window that has not
+      // closed. \`complete === false\` is the server saying so; an older
+      // payload without the field is treated as complete rather than
+      // hatching every cell it has.
+      if (rows[i].complete === false) {
+        return { state: "partial", point: rows[i] };
+      }
       return { state: "observed", point: rows[i] };
     }
   }
@@ -138,11 +147,28 @@ table.grid td { padding: 4px 5px; border-bottom: 1px solid var(--rule); min-widt
 }
 .cell--none .cell-v { color: var(--ink-3); font-weight: 500; }
 
+/* A window still running. Real numbers, so the bar is drawn — but the
+   period is not over, so the cell is hatched over the top and says how
+   far through it is. Reading it as a finished result is the whole error. */
+.cell--partial {
+  background:
+    repeating-linear-gradient(135deg, transparent, transparent 5px, var(--rule) 5px, var(--rule) 6px),
+    var(--sunk);
+}
+.cell--partial .cell-bar { opacity: .16; }
+.cell--partial .cell-v { color: var(--ink-2); }
+
 .legend { margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--ink-3); align-items: center; }
 .legend .swatch { width: 22px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 5px; }
 .legend .swatch--bar { background: var(--brand); opacity: .3; }
 .legend .swatch--none {
   background: repeating-linear-gradient(135deg, transparent, transparent 4px, var(--rule) 4px, var(--rule) 5px);
+  border: 1px solid var(--rule);
+}
+.legend .swatch--partial {
+  background:
+    repeating-linear-gradient(135deg, transparent, transparent 5px, var(--rule) 5px, var(--rule) 6px),
+    var(--brand);
   border: 1px solid var(--rule);
 }
 
@@ -285,18 +311,25 @@ function renderGrid() {
         continue;
       }
       var pt = cell.point;
+      var partial = cell.state === "partial";
+      var elapsed = partial ? Number(pt.window_elapsed_pct || 0) : 100;
       var v = Number(pt[m.id] || 0);
       var pct = Math.max(0, Math.min(100, (v / peak) * 100));
       var shown = m.id === "retention_pct" ? pt.retention_pct + "%" : num(v);
-      var sub = m.id === "retention_pct"
-        ? num(pt.active) + " of " + num(c.size)
-        : m.id === "active"
-          ? pt.retention_pct + "% retained"
-          : num(pt.active) + " active";
+      var sub = partial
+        ? "so far \\u00b7 " + elapsed + "% of period"
+        : m.id === "retention_pct"
+          ? num(pt.active) + " of " + num(c.size)
+          : m.id === "active"
+            ? pt.retention_pct + "% retained"
+            : num(pt.active) + " active";
       tds +=
-        '<td><div class="cell" title="' +
+        '<td><div class="cell' + (partial ? " cell--partial" : "") + '" title="' +
         esc(c.cohort + " \\u00b7 period " + p + " \\u2014 " + pt.retention_pct + "% retained, " +
-          num(pt.active) + " active, revenue " + num(pt.revenue)) +
+          num(pt.active) + " active, revenue " + num(pt.revenue) +
+          (partial
+            ? " \\u2014 THIS WINDOW IS STILL OPEN (" + elapsed + "% elapsed). A running total, not a result."
+            : "")) +
         '"><span class="cell-bar" style="width:' + pct.toFixed(1) + '%"></span>' +
         '<span class="cell-v">' + esc(shown) + "</span>" +
         '<span class="cell-sub">' + esc(sub) + "</span></div></td>";
@@ -427,6 +460,7 @@ const BODY = `
     <div class="legend until-ready">
       <span><span class="swatch swatch--bar"></span>bar length = value against the largest cell</span>
       <span><span class="swatch swatch--none"></span>&mdash; no data yet: the cohort is younger than this period</span>
+      <span><span class="swatch swatch--partial"></span>hatched over a bar = the window is still open; a running total, not a result</span>
     </div>
   </div>
 

@@ -265,12 +265,20 @@ export function buildCohortRetention({
   const cohorts = [];
   for (const [cohortKey, members] of [...cohortBuckets.entries()].sort()) {
     const cohortStart = new Date(cohortKey);
-    const maxObservablePeriod = Math.min(
-      periodsToTrack,
-      Math.floor((refDate - cohortStart) / cohortMs),
-    );
+    // The period bound used to be inclusive on floor(elapsed / period), so
+    // every cohort emitted one window covering (elapsed mod period) of a
+    // period — sometimes zero seconds of it — as a measured retention_pct.
+    // A cohort 21 days old on 7-day periods reported P3 at 0% active with
+    // nobody churned, and the widget drew that as an observed cell.
+    //
+    // Two rules now: a window that has NOT STARTED is not emitted at all,
+    // and a window still in progress is emitted with `complete: false` and
+    // the share of it that has elapsed, so a reader can see the number is
+    // a running total rather than a result.
     const periods = [];
-    for (let p = 0; p <= maxObservablePeriod; p++) {
+    for (let p = 0; p <= periodsToTrack; p++) {
+      const elapsedMs = refDate - (cohortStart.getTime() + p * cohortMs);
+      if (elapsedMs <= 0) break; // window has not opened
       const key = `${cohortKey}|${p}`;
       const active = activeMap.get(key) ?? new Set();
       periods.push({
@@ -278,6 +286,8 @@ export function buildCohortRetention({
         active: active.size,
         retention_pct: members.size > 0 ? Math.round((active.size / members.size) * 1000) / 10 : 0,
         revenue: Math.round((revenueMap.get(key) ?? 0) * 100) / 100,
+        complete: elapsedMs >= cohortMs,
+        window_elapsed_pct: Math.round(Math.min(1, elapsedMs / cohortMs) * 1000) / 10,
       });
     }
     cohorts.push({
@@ -293,9 +303,18 @@ export function buildCohortRetention({
     let active = 0;
     let cohortSizeSum = 0;
     let revenueSum = 0;
+    let partialExposure = 0;
     for (const c of cohorts) {
       const pt = c.periods.find((pp) => pp.period === p);
       if (!pt) continue; // cohort hasn't existed long enough
+      // A cohort still inside this window has not finished contributing to
+      // it. Averaging its running total against cohorts that completed the
+      // window drags the curve down by exactly as much as the window has
+      // left to run, and nothing in the output said so.
+      if (pt.complete === false) {
+        partialExposure += c.size;
+        continue;
+      }
       active += pt.active;
       cohortSizeSum += c.size;
       revenueSum += pt.revenue;
@@ -306,6 +325,10 @@ export function buildCohortRetention({
       retention_pct: Math.round((active / cohortSizeSum) * 1000) / 10,
       active_users: active,
       exposure: cohortSizeSum,
+      // Users in a cohort whose window for this period is still open. They
+      // are deliberately NOT in `exposure` — naming them is what stops the
+      // curve reading as though they had been measured and had churned.
+      exposure_incomplete: partialExposure,
       revenue: Math.round(revenueSum * 100) / 100,
     });
   }
