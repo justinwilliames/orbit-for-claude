@@ -467,8 +467,31 @@ jobs:
       # Needs a PAT scoped `repo` (classic) or with `Contents: write`
       # on justinwilliames/get-orbit, stored as
       # ORBIT_WEBSITE_DISPATCH_TOKEN in this repo's Actions secrets.
-      # If the secret isn't set, this step skips cleanly so the build
-      # still succeeds; the daily cron will catch up.
+      #
+      # IT IS NOT SET, AND HAS NEVER BEEN SET. Checked 13 Aug 2026:
+      # `gh run list --workflow=sync-mcpb-version.yml --limit 100` on
+      # get-orbit returns ZERO repository_dispatch runs, and this step's
+      # own log on the v0.29.0 release reads "ORBIT_WEBSITE_DISPATCH_TOKEN
+      # not set — skipping website dispatch", green. The comment above
+      # warned that this exact dispatch had once been silently dropped by
+      # an expiring PAT; it was then rebuilt in a shape where never
+      # having been armed at all is equally invisible.
+      #
+      # Two changes, neither of which can fail a release:
+      #
+      #  1. The messages are `::warning::` annotations. A warning lands on
+      #     the run summary, where somebody sees it. A bare `echo` lands in
+      #     a 20,000-line log, which is where this one lived for a month.
+      #  2. `curl ... || echo` is gone. That is the swallow-shape this
+      #     pipeline has now been bitten by three times — a fallback that
+      #     echoes on failure and therefore exits 0. A rejected token and
+      #     a delivered dispatch printed two different sentences and both
+      #     read as success; now the failure is annotated and the reason
+      #     (HTTP status) is printed with it.
+      #
+      # Still deliberately non-fatal: the package IS published, and the
+      # sibling repo's hourly cron picks the release up regardless. The
+      # bug was never that this step is soft — it is that it was silent.
       - name: Notify website of new release
         if: ${{ success() && !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         env:
@@ -476,14 +499,21 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           if [ -z "$DISPATCH_TOKEN" ]; then
-            echo "ORBIT_WEBSITE_DISPATCH_TOKEN not set — skipping website dispatch. Daily cron on get-orbit will pick up the release within 24h."
+            echo "::warning::ORBIT_WEBSITE_DISPATCH_TOKEN is not set, so the website was NOT notified of v$VERSION. yourorbit.team will keep advertising the previous version and tool count until its hourly cron catches up. Set the secret to make release pickup immediate."
             exit 0
           fi
-          curl -fsS -X POST \
+          HTTP=$(curl -sS -o dispatch-body.txt -w '%{http_code}' -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $DISPATCH_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/justinwilliames/get-orbit/dispatches \
-            -d "{\"event_type\":\"mcpb-released\",\"client_payload\":{\"version\":\"$VERSION\"}}" \
-            && echo "Website dispatch fired for v$VERSION" \
-            || echo "Website dispatch failed — daily cron will catch up."
+            -d "{\"event_type\":\"mcpb-released\",\"client_payload\":{\"version\":\"$VERSION\"}}" || echo 000)
+          # 204 is the documented success for this endpoint. Anything else
+          # — including the 000 that means curl never completed — is a
+          # dispatch that did not happen, and must not print like one.
+          if [ "$HTTP" = "204" ]; then
+            echo "Website dispatch fired for v$VERSION (HTTP 204)."
+          else
+            echo "::warning::Website dispatch for v$VERSION FAILED with HTTP $HTTP — the token is set but did not work. yourorbit.team will lag until its hourly cron runs."
+            cat dispatch-body.txt || true
+          fi
