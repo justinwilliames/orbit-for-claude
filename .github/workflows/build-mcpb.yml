@@ -249,7 +249,15 @@ jobs:
               echo "::error::Version $VERSION is already published to the MCP registry as $NAME. Publishing it again would overwrite the public .mcpb and stamp a new checksum against a registry entry that cannot change, so anyone verifying the hash would be refused the download. Bump the version in package.json, manifest.json and server.json — or re-run this workflow manually with allow_republish if the published asset is known to be broken."
               exit 1
             fi
-            echo "::notice::Version $VERSION is already published as $NAME. Nothing to release from this push — build and tests ran, the publish steps are skipped. Bump the version when you want a release."
+            # A ::notice:: is invisible in a green run's summary, and a
+            # green run is exactly what this path produces. Nine commits
+            # were once merged to main at a version the registry already
+            # held: every publish step skipped, the run was green, and
+            # the fixes reached nobody. That is the failure this line
+            # exists to make legible, so it is a WARNING — the job still
+            # succeeds, but the summary says out loud that nothing
+            # shipped.
+            echo "::warning::Version $VERSION is already on the registry as $NAME, so THIS MERGE SHIPPED NOTHING — every publish step below is skipped and no user receives these changes. Build and tests ran. Bump the version in package.json, manifest.json and server.json to release."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

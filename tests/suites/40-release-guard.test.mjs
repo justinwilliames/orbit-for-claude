@@ -190,8 +190,13 @@ describe("Re-release guard — 'already published' is an error on dispatch, not 
     registryMode = "published";
     const result = await runGuard({ version: PUBLISHED_VERSION, event: "push" });
     assert.equal(result.code, 0, `a no-bump push failed the job:\n${result.out}`);
-    assert.match(result.out, /Nothing to release/i);
     assert.equal(readOutputs().publish, "false");
+    // …but it must SAY so at warning level. A ::notice:: on a green run
+    // is invisible, which is how nine commits merged to main at a
+    // version the registry already held: green pipeline, zero users
+    // reached, nothing in the summary to contradict it.
+    assert.match(result.out, /^::warning::/m, "a merge that ships nothing must not pass silently");
+    assert.match(result.out, /SHIPPED NOTHING/);
   });
 
   test("an unpublished version on a push publishes", async () => {
