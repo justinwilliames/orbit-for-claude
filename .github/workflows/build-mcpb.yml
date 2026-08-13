@@ -157,29 +157,93 @@ jobs:
       #
       # One HTTP call: the same versions endpoint the readback already
       # uses, assertion inverted.
+      #
+      # TWO things this step got wrong on the day it was written, both
+      # caught by running its own body rather than reading it:
+      #
+      #  1. `curl -fsS ... || echo ''` swallowed every transport failure.
+      #     A 404, a DNS failure, a registry outage or a rate limit all
+      #     produced an empty body, which parsed to "not published", which
+      #     printed "safe to publish" and exited 0 — waving through the
+      #     `gh release upload --clobber` on the only irreversible step in
+      #     the pipeline. Verified: pointing the same URL at an
+      #     unresolvable host flipped 0.29.0 from REFUSED to "safe". It is
+      #     the same shell-fallback-echoes-on-failure shape the last cycle
+      #     caught twice, reintroduced inside the fix for it. A guard that
+      #     cannot reach its source of truth must REFUSE, not wave through.
+      #     So: capture the status code, and treat anything that is not a
+      #     clean 200 or a clean 404 as unknown, which is a failure.
+      #
+      #  2. It ended in `exit 1` on a `push`. This workflow fires on every
+      #     push to main touching server/**, so from that moment any push
+      #     that did not also bump the version failed the job — 34 of the
+      #     last 40 qualifying commits did exactly that, eight of them in a
+      #     row at one version. "This version is already published" is not
+      #     an error on a push, it is "nothing to release", and collapsing
+      #     the two makes a red main stop meaning anything. On a push we
+      #     set publish=false and the release steps skip; on a manual
+      #     workflow_dispatch, asking to re-release a published version IS
+      #     an error and still exits 1.
       - name: Refuse to re-release a published version
+        id: republish_guard
         if: ${{ !inputs.dry_run && !inputs.allow_republish }}
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           NAME=$(node -e "console.log(require('./server.json').name)")
           ENC=$(node -p "encodeURIComponent(process.argv[1])" "$NAME")
-          BODY=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers/${ENC}/versions" || echo '')
-          ALREADY=$(node -e "
-            let d = {}; try { d = JSON.parse(process.argv[1] || '{}'); } catch {}
-            const list = d.servers || d.versions || [];
-            const hit = list.map((s) => s.server ?? s).find((s) => s.version === process.argv[2]);
-            console.log(hit ? 'yes' : 'no');
-          " "$BODY" "$VERSION")
-          if [ "$ALREADY" = "yes" ]; then
-            echo "::error::Version $VERSION is already published to the MCP registry as $NAME. Publishing it again would overwrite the public .mcpb and stamp a new checksum against a registry entry that cannot change, so anyone verifying the hash would be refused the download. Bump the version in package.json, manifest.json and server.json — or re-run this workflow manually with allow_republish if the published asset is known to be broken."
+          # Overridable so tests/suites/40-release-guard.test.mjs can point
+          # the same body at a local server and at an unresolvable host.
+          # A guard nobody can run against a failure is a guard nobody has
+          # checked — which is how the `|| echo ''` above shipped.
+          REGISTRY_BASE="${REGISTRY_BASE:-https://registry.modelcontextprotocol.io}"
+          HTTP=$(curl -sS -o versions.json -w '%{http_code}' \
+            "${REGISTRY_BASE}/v0/servers/${ENC}/versions" || echo 000)
+          case "$HTTP" in
+            200)
+              ALREADY=$(node -e "
+                let d = {};
+                try { d = JSON.parse(require('fs').readFileSync('versions.json', 'utf8')); } catch {}
+                const list = d.servers || d.versions || [];
+                if (!Array.isArray(list) || list.length === 0) { console.log('unreadable'); }
+                else {
+                  const hit = list.map((s) => s.server ?? s).find((s) => s.version === process.argv[1]);
+                  console.log(hit ? 'yes' : 'no');
+                }
+              " "$VERSION")
+              ;;
+            404)
+              # No entry under this name at all — a first publish.
+              echo "No registry entry for $NAME yet; this is a first publish."
+              ALREADY=no
+              ;;
+            *)
+              ALREADY=unreachable
+              ;;
+          esac
+
+          if [ "$ALREADY" = "unreachable" ] || [ "$ALREADY" = "unreadable" ]; then
+            echo "::error::The MCP registry returned HTTP $HTTP for $NAME, so this run cannot prove version $VERSION is unpublished. Refusing to publish blind — a re-release swaps the public .mcpb bytes under a checksum the registry has already frozen. Re-run when the registry is reachable."
             exit 1
           fi
+
+          if [ "$ALREADY" = "yes" ]; then
+            if [ "$EVENT" = "workflow_dispatch" ]; then
+              echo "::error::Version $VERSION is already published to the MCP registry as $NAME. Publishing it again would overwrite the public .mcpb and stamp a new checksum against a registry entry that cannot change, so anyone verifying the hash would be refused the download. Bump the version in package.json, manifest.json and server.json — or re-run this workflow manually with allow_republish if the published asset is known to be broken."
+              exit 1
+            fi
+            echo "::notice::Version $VERSION is already published as $NAME. Nothing to release from this push — build and tests ran, the publish steps are skipped. Bump the version when you want a release."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "Version $VERSION is not yet on the registry — safe to publish."
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload to MCPB bucket
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.ORBIT_MCPB_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.ORBIT_MCPB_S3_SECRET_ACCESS_KEY }}
@@ -204,7 +268,7 @@ jobs:
       # that it is the build people should get — and that claim is only
       # earned once the readback below passes. "Promote to latest" sets it.
       - name: Publish GitHub Release
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.VERSION }}
@@ -232,7 +296,7 @@ jobs:
       # a missing token degrades to "the registry is stale," not a failed
       # release.
       - name: Stamp and publish the MCP registry entry
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         run: |
           set -euo pipefail
           node scripts/build-server-json.mjs \
@@ -272,7 +336,7 @@ jobs:
       # a failure here must not fail a release whose artifact is already
       # published and correct.
       - name: Deprecate the pre-rename registry entry
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         continue-on-error: true
         run: |
           set -uo pipefail
@@ -321,7 +385,7 @@ jobs:
       # not match its own asset" stays undetectable until a stranger's
       # installer refuses the download.
       - name: Verify the published registry entry
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         run: |
           set -euo pipefail
           NAME=$(node -p "require('./server.json').name")
@@ -366,7 +430,7 @@ jobs:
       # becomes the one strangers get, and it only runs once the registry
       # has been read back and agreed.
       - name: Promote to latest
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.ORBIT_MCPB_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.ORBIT_MCPB_S3_SECRET_ACCESS_KEY }}
@@ -406,7 +470,7 @@ jobs:
       # If the secret isn't set, this step skips cleanly so the build
       # still succeeds; the daily cron will catch up.
       - name: Notify website of new release
-        if: ${{ success() && !inputs.dry_run }}
+        if: ${{ success() && !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}
         env:
           DISPATCH_TOKEN: ${{ secrets.ORBIT_WEBSITE_DISPATCH_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
