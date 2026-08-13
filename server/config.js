@@ -36,7 +36,6 @@ export function loadRuntimeConfig(rootDir) {
     companyName: cleanString(process.env.ORBIT_COMPANY_NAME),
     defaultPlatform: normalizePlatform(process.env.ORBIT_DEFAULT_PLATFORM),
     defaultGeography: cleanString(process.env.ORBIT_DEFAULT_GEOGRAPHY),
-    // Free account-activation key (yourorbit.team). Gates the tool surface;
     brandKitDir,
     defaultOutputDir,
     libraryDir,
