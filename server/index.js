@@ -5634,17 +5634,19 @@ function registerTools() {
         "the DOM; an unmodelled filter or tag FAILS rather than rendering junk; no state collapses; no state drops blocks " +
         "where an else/elsif arm meant to swap them; every conditional arm is reachable. Plus spelling agreement — " +
         "\"true\"/\"True\"/\"1\" must give one branch decision, not two. No credentials, no browser. " +
-        "self_test:true seeds known defects into your own template and asserts each check fires.",
+        "write_states_to writes one RESOLVED document per state to a directory, so your pre-send gate can be run once " +
+        "per branch. self_test:true seeds known defects into your own template and asserts each check fires.",
       inputSchema: {
         html: z.string().min(1).max(MAX_LONG_STRING).describe("Compiled email HTML with its Liquid STILL IN PLACE — a resolved render has no branches to enumerate."),
         variables_json: z.string().optional().describe('JSON object of explicit axis values, e.g. {"loyalty_tier":["gold","silver"]}. Unlisted axes get ["true","false"]; a listed axis is treated as non-boolean and skips the spelling check.'),
         max_axes: z.number().int().min(1).max(16).optional().describe("Cap on discovered axes (default: 12). Above it the tool ABSTAINS rather than sampling a fraction and calling it coverage."),
         block_selector: z.string().max(MAX_SHORT_STRING).optional().describe("Regex for the block-class detector, for an imported design. Default: (?:module|block|section)-[a-z0-9-]+"),
-        self_test: z.boolean().optional().describe("Run the negative test: seed known defects into this template and assert each one FAILS, and the control passes.")
+        self_test: z.boolean().optional().describe("Run the negative test: seed known defects into this template and assert each one FAILS, and the control passes."),
+        write_states_to: z.string().max(MAX_SHORT_STRING).optional().describe("Directory to write one RESOLVED document per state into, so a pre-send gate can be run once per branch. Without it the states are rendered internally and discarded.")
       },
       _meta: widgetMeta(STATE_MATRIX_URI)
     },
-    async ({ html, variables_json: variablesJson, max_axes: maxAxes, block_selector: blockSelector, self_test: selfTest }) => {
+    async ({ html, variables_json: variablesJson, max_axes: maxAxes, block_selector: blockSelector, self_test: selfTest, write_states_to: writeStatesTo }) => {
       const { value: variables, error } = parseToolJson(variablesJson, "variables_json", undefined);
       if (error) return error;
       const result = liquidStateMatrix({
@@ -5652,7 +5654,8 @@ function registerTools() {
         variables,
         max_axes: maxAxes ?? 12,
         block_selector: blockSelector,
-        self_test: selfTest ?? false
+        self_test: selfTest ?? false,
+        write_states_to: writeStatesTo
       });
       // The grid only exists for the enumerated run. A self_test, a
       // needs_inputs, a no_branches template and an over-cap abstention

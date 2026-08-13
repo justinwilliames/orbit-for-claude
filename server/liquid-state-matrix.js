@@ -41,6 +41,9 @@
  * No credentials, no browser, pure string work.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+import { ensureDir } from "./config.js";
 import { resolveLiquid, residualLiquid, newTrace, personalisationTokens, tokenize } from "./liquid-resolve.js";
 
 /** Default block detector: any element carrying a module/block/section class. */
@@ -75,6 +78,13 @@ const FLAG_SPELLINGS = new Set(["true", "false", "True", "False", "TRUE", "FALSE
  *        detector, so an imported design with its own naming still works.
  * @param {boolean} [args.self_test=false] Run the negative test instead: seed
  *        known defects into the supplied template and assert each one FAILS.
+ * @param {string} [args.write_states_to]  Directory to write one RESOLVED
+ *        document per state into. Without it this tool renders every state
+ *        internally and returns only the verdict — which made the recipe the
+ *        generated brain gate prints ("run the gate once per resolved branch")
+ *        have no reachable input. The documents go to disk rather than into
+ *        the response because 2^n documents is exactly the payload that
+ *        already forced client_sim to withhold its output.
  */
 export function liquidStateMatrix({
   html,
@@ -82,6 +92,7 @@ export function liquidStateMatrix({
   max_axes: maxAxes = 12,
   block_selector: blockSelector,
   self_test: selfTest = false,
+  write_states_to: writeStatesTo,
 } = {}) {
   if (typeof html !== "string" || html.trim().length === 0) {
     return {
@@ -140,8 +151,21 @@ export function liquidStateMatrix({
   const results = [];
   const findings = [];
 
-  for (const state of states) {
+  // Written INSIDE the loop, one document at a time. Holding 2^n resolved
+  // copies of an email to write them afterwards is the same size trap in a
+  // different place.
+  const stateDir = writeStatesTo ? ensureDir(path.resolve(writeStatesTo)) : null;
+  const writtenStates = [];
+
+  for (const [index, state] of states.entries()) {
     const rendered = resolveLiquid(html, { attrs: state.attrs, trace });
+
+    if (stateDir) {
+      const file = path.join(stateDir, `state-${String(index).padStart(3, "0")}-${slugForState(state.label)}.html`);
+      fs.writeFileSync(file, rendered);
+      writtenStates.push({ label: state.label, attrs: state.attrs, file, bytes: Buffer.byteLength(rendered) });
+    }
+
     const residual = residualLiquid(rendered);
     const text = visibleText(rendered);
     const blocks = blockSet(rendered, blockRe);
@@ -318,6 +342,20 @@ export function liquidStateMatrix({
       exclusive: a.exclusive,
     })),
     states_rendered: states.length,
+    // Null unless `write_states_to` was passed. The distinction matters to a
+    // reader: `states_rendered: 64` has always meant "64 states were rendered
+    // in memory and thrown away", and every generated gate told its owner to
+    // run itself once per resolved branch as though those 64 documents came
+    // back. They come back here or they do not come back at all.
+    output_files: stateDir
+      ? {
+          dir: stateDir,
+          count: writtenStates.length,
+          states: writtenStates,
+          next_step:
+            `Run your gate once per document: for f in ${stateDir}/state-*.html; do build/gate.sh "$f" || exit 1; done`,
+        }
+      : null,
     arms: { registered: trace.arms.size, taken: trace.taken.size },
     findings,
     summary: {
@@ -537,6 +575,20 @@ function tokenNameIn(text, byName) {
 }
 
 /** Full cartesian product across the axes. */
+/**
+ * A state label is `tier=gold+has_order=true`, which is a filename in most of
+ * the places it is not. Keep it readable, keep it unique-enough, and let the
+ * numeric prefix carry uniqueness outright.
+ */
+function slugForState(label) {
+  const slug = String(label ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return slug.length > 0 ? slug : "state";
+}
+
 function enumerateStates(axes) {
   let states = [{ attrs: {}, on: [] }];
   for (const axis of axes) {

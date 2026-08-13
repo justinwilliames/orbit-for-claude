@@ -13,6 +13,8 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 
 import { spawnMcpClient } from "../harness/mcp-client.mjs";
 import { startMockApiServer } from "../harness/mock-api-server.mjs";
@@ -431,6 +433,43 @@ describe("Liquid state matrix + client simulation", () => {
     assert.equal(parsed.status, "needs_inputs");
     assert.equal(parsed.verdict, "too_many_axes");
     assert.match(parsed.message, /Nothing was checked/);
+  });
+
+  // ── the documents the generated gate is told to loop over ────────
+
+  test("write_states_to puts one RESOLVED document per state on disk", async () => {
+    // Every generated build/gate.sh told its owner to "run the gate once per
+    // resolved branch" off this tool. The tool rendered all of them and
+    // returned none of them, so that instruction had no reachable input.
+    // Assert the FILES, and assert the branches actually differ — a directory
+    // of n identical documents would satisfy a count and prove nothing.
+    const dir = path.join(makeTempWorkspace(), "states");
+    const { parsed } = await matrix(GOOD_EMAIL, { write_states_to: dir });
+
+    assert.equal(parsed.status, "ok");
+    assert.equal(parsed.output_files.count, parsed.states_rendered);
+
+    const written = parsed.output_files.states;
+    for (const state of written) {
+      assert.ok(fs.existsSync(state.file), `${state.label} was reported written and is not there`);
+    }
+    const gold = written.find((s) => /loyalty_tier=gold/.test(s.label));
+    const silver = written.find((s) => /loyalty_tier=silver/.test(s.label));
+    assert.ok(gold && silver, `both tiers must appear: ${written.map((s) => s.label).join(", ")}`);
+    const goldHtml = fs.readFileSync(gold.file, "utf8");
+    const silverHtml = fs.readFileSync(silver.file, "utf8");
+    assert.match(goldHtml, /module-gold-perks/);
+    assert.doesNotMatch(goldHtml, /module-upgrade-nudge/);
+    assert.match(silverHtml, /module-upgrade-nudge/);
+    assert.doesNotMatch(silverHtml, /module-gold-perks/);
+    // Resolved, not merely copied: no Liquid may survive into a file a gate
+    // is about to call clean.
+    assert.doesNotMatch(goldHtml, /\{%|\{\{/);
+  });
+
+  test("without write_states_to the tool reports that it kept nothing", async () => {
+    const { parsed } = await matrix(GOOD_EMAIL);
+    assert.equal(parsed.output_files, null);
   });
 
   // ── the negative test, shipped with the tool ─────────────────────
