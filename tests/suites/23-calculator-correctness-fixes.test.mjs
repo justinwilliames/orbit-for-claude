@@ -21,14 +21,18 @@
  *                              missing a | default: fallback.
  *   F8  ecomm-calcs.js       — rates unclamped, so dirty data (opens>sends)
  *                              printed ">100%" into an exec report.
+ *
+ * 2026-08-13: the "A/B confidence label" finding above was triaged as a
+ * KNOWN-LIMITATION and left. It was not a labelling problem. See the
+ * parseTestReadout block at the bottom of this file.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { accessibilityLint } from "../../server/html-checks.js";
-import { calcLtv } from "../../server/calculators.js";
-import { forecastListGrowth } from "../../server/lifecycle-helpers.js";
+import { calcLtv, zForConfidence } from "../../server/calculators.js";
+import { forecastListGrowth, parseTestReadout } from "../../server/lifecycle-helpers.js";
 import { validateLiquid } from "../../server/content-extensions.js";
 import { buildExecReport } from "../../server/ecomm-calcs.js";
 
@@ -195,5 +199,105 @@ describe("F8 buildExecReport — rates clamped", () => {
       ],
     });
     assert.equal(er.channels[0].open_rate_pct, 42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseTestReadout — the confidence level was neither validated nor used
+//
+// orbit_parse_test_readout was the only one of the three A/B tools that did
+// not use the shared confidenceLevelSchema, and its CI multiplier was a
+// two-branch ternary: `confidenceLevel === 0.99 ? 2.576 : 1.96`. So:
+//
+//   - confidence_level: 90 (the percent, not the fraction) made alpha
+//     1 - 90 = -89, `pValue < -89` false for every input, and a z of 5.96
+//     with p = 0 came back "inconclusive" — with a recommendation stating
+//     its own interval "spans zero" while printing [+1.34pp, +2.66pp];
+//   - confidence_level: 0.90 produced a 95% interval labelled 90%;
+//   - the narrative hardcoded "95% CI" at every level.
+// ---------------------------------------------------------------------------
+
+describe("parseTestReadout — the confidence level is a fraction, and it is used", () => {
+  const decisive = {
+    controlVisitors: 10000,
+    controlConversions: 1000,
+    variantVisitors: 10000,
+    variantConversions: 1200
+  };
+
+  test("a percent where a fraction belongs is refused, not silently absorbed", () => {
+    const result = parseTestReadout({ ...decisive, confidenceLevel: 90 });
+    assert.notEqual(result.status, "ok", "confidence_level 90 produced a readout");
+    assert.equal(result.status, "needs_inputs");
+    assert.match(result.message, /fraction/i);
+  });
+
+  test("each level produces its own interval, and its own label", () => {
+    const widths = [0.9, 0.95, 0.99].map((level) => {
+      const r = parseTestReadout({ ...decisive, confidenceLevel: level });
+      assert.equal(r.status, "ok");
+      assert.equal(r.stats.confidence_level_pct, Math.round(level * 1000) / 10);
+      assert.match(
+        r.narrative,
+        new RegExp(`${Math.round(level * 100)}% CI`),
+        `narrative labelled the interval wrong at ${level}`
+      );
+      return r.stats.ci_high_pct - r.stats.ci_low_pct;
+    });
+    // A higher confidence level is a WIDER interval. Under the ternary,
+    // 0.90 and 0.95 produced byte-identical intervals.
+    assert.ok(widths[0] < widths[1], `90% interval (${widths[0]}) not narrower than 95% (${widths[1]})`);
+    assert.ok(widths[1] < widths[2], `95% interval (${widths[1]}) not narrower than 99% (${widths[2]})`);
+  });
+
+  test("the multiplier matches the published critical values", () => {
+    assert.ok(Math.abs(zForConfidence(0.9) - 1.645) < 0.002);
+    assert.ok(Math.abs(zForConfidence(0.95) - 1.96) < 0.002);
+    assert.ok(Math.abs(zForConfidence(0.99) - 2.576) < 0.002);
+  });
+
+  test("verdict and interval are one test — they agree on every input", () => {
+    // The widget's conflict box claimed the verdict was pooled and the
+    // interval unpooled. Both are the same unpooled seDiff, and the
+    // multiplier is now inverted from the same normal CDF that produces
+    // the p-value, so |z| > zMult and "the interval excludes zero" are one
+    // statement. This sweep is the assertion of that.
+    const disagreements = [];
+    for (const level of [0.9, 0.95, 0.99]) {
+      for (let variantConversions = 90; variantConversions <= 130; variantConversions += 1) {
+        for (const visitors of [1200, 5000, 20000]) {
+          const r = parseTestReadout({
+            controlVisitors: visitors,
+            controlConversions: 100,
+            variantVisitors: visitors,
+            variantConversions,
+            confidenceLevel: level
+          });
+          if (r.status !== "ok") continue;
+          const excludesZero = r.stats.ci_low_pct > 0 || r.stats.ci_high_pct < 0;
+          const decisiveVerdict = r.verdict !== "inconclusive";
+          if (excludesZero !== decisiveVerdict) {
+            disagreements.push(
+              `level ${level}, ${variantConversions}/${visitors}: verdict ${r.verdict}, CI [${r.stats.ci_low_pct}, ${r.stats.ci_high_pct}]`
+            );
+          }
+        }
+      }
+    }
+    assert.deepEqual(disagreements.slice(0, 5), [], `${disagreements.length} disagreements`);
+  });
+
+  test("an inconclusive recommendation only claims 'spans zero' when it does", () => {
+    const r = parseTestReadout({
+      controlVisitors: 1000,
+      controlConversions: 100,
+      variantVisitors: 1000,
+      variantConversions: 104,
+      confidenceLevel: 0.95
+    });
+    assert.equal(r.status, "ok");
+    assert.equal(r.verdict, "inconclusive");
+    assert.ok(r.stats.ci_low_pct <= 0 && r.stats.ci_high_pct >= 0, "the interval does not span zero");
+    assert.match(r.recommendation, /spans zero/);
   });
 });

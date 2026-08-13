@@ -6101,7 +6101,7 @@ function registerTools() {
     {
       title: "Parse A/B Test Readout",
       description:
-        "Take a completed A/B test's numbers (control + variant visitors & conversions) and produce a written read-out: significance z/p, 95% CI on absolute-rate difference, plain-language verdict (winner / loser / inconclusive), and a ship/do-not-ship recommendation. Wraps the existing significance math with narrative framing, and draws the interval against the no-difference line in a widget so whether the result clears zero is a glance rather than an arithmetic exercise.",
+        "Take a completed A/B test's numbers (control + variant visitors & conversions) and produce a written read-out: significance z/p, a confidence interval on the absolute-rate difference at the level you ask for, plain-language verdict (winner / loser / inconclusive), and a ship/do-not-ship recommendation. Wraps the existing significance math with narrative framing, and draws the interval against the no-difference line in a widget so whether the result clears zero is a glance rather than an arithmetic exercise.",
       inputSchema: {
         test_name: z.string().optional().describe("Short name for the test (appears in the narrative header)."),
         hypothesis: z.string().optional().describe("The hypothesis under test, in plain language."),
@@ -6109,7 +6109,13 @@ function registerTools() {
         control_conversions: z.number().describe("Number of conversions in control."),
         variant_visitors: z.number().describe("Number of users exposed to variant."),
         variant_conversions: z.number().describe("Number of conversions in variant."),
-        confidence_level: z.number().optional().describe("Confidence level (0.95 default, 0.99 for stricter)."),
+        // The shared schema its two A/B siblings already use. Bare
+        // z.number() accepted 90 — the percent, not the fraction — which
+        // produced a 9000% "confidence level", a z multiplier of 1.96
+        // against an alpha of -89, and a verdict of "inconclusive" for a
+        // z of 5.96 whose recommendation then said its own interval
+        // "spans zero" while printing [+1.34pp, +2.66pp].
+        confidence_level: confidenceLevelSchema.optional().describe("Confidence level as a float 0-1 (default 0.95; 0.99 for stricter). Not a percent."),
         primary_metric: z.string().optional().describe('Plain-language name of the primary metric (default "conversion rate").'),
         guardrail_metrics_json: z.string().optional().describe("Optional JSON array of guardrail metric names to remind the user to verify before shipping.")
       },

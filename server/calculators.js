@@ -289,6 +289,37 @@ function normalCDF(x) {
   return 0.5 * (1 + sign * y);
 }
 
+/**
+ * The two-sided critical z for a confidence level, INVERTED FROM THE SAME
+ * normalCDF that produces the p-value.
+ *
+ * It matters that this is an inversion and not a lookup table. The readout
+ * decides "significant" from `pValue < 1 - level` and then draws an
+ * interval at `diff ± z * seDiff`; if z comes from a different source than
+ * the p-value, the verdict and the interval are two estimators that can
+ * disagree, and a reader has no way to tell an ordinary boundary case from
+ * a bug. Inverted here, |z| > zForConfidence(level) and "the interval
+ * excludes zero" are the same statement at every level, exactly.
+ *
+ * The old form was a two-branch ternary — `level === 0.99 ? 2.576 : 1.96`
+ * — so every level that was not 0.99 silently got a 95% interval, labelled
+ * with whatever level the caller asked for.
+ */
+export function zForConfidence(confidenceLevel) {
+  const level = Number(confidenceLevel);
+  if (!(level > 0) || !(level < 1)) return null;
+  const alpha = 1 - level;
+  // Bisection on a monotone function over a range that covers 0.5–0.99999.
+  let lo = 0;
+  let hi = 10;
+  for (let i = 0; i < 200; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (2 * (1 - normalCDF(mid)) > alpha) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 export function compareVariants(controlVisitors, controlConversions, variantVisitors, variantConversions, confidenceLevel = 0.95) {
   if (controlVisitors <= 0 || variantVisitors <= 0) return null;
   if (controlConversions < 0 || variantConversions < 0) return null;

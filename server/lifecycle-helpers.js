@@ -12,7 +12,7 @@
 // All pure logic — no external network. Small, deterministic, and
 // chained together by the lifecycle skills.
 
-import { compareVariants } from "./calculators.js";
+import { compareVariants, zForConfidence } from "./calculators.js";
 
 // ---------------------------------------------------------------------------
 // forecastListGrowth
@@ -319,6 +319,22 @@ export function parseTestReadout({
     };
   }
 
+  // A FRACTION, never a percent. 90 is the plausible typo, and it used to
+  // sail straight through: alpha became 1 - 90 = -89, `pValue < -89` was
+  // false for every input, and a z of 5.96 with p = 0 came back
+  // "inconclusive" with a recommendation announcing that its own interval
+  // "spans zero" while the interval printed was [+1.34pp, +2.66pp]. The
+  // two sibling A/B tools have validated this since they were written.
+  if (!(Number(confidenceLevel) >= 0.5) || !(Number(confidenceLevel) <= 0.9999)) {
+    return {
+      status: "needs_inputs",
+      missing: ["confidence_level"],
+      message: `confidence_level must be a fraction between 0.5 and 0.9999 — got ${JSON.stringify(
+        confidenceLevel,
+      )}. 0.95 means 95%; 95 is not a confidence level.`,
+    };
+  }
+
   const stats = compareVariants(
     controlVisitors,
     controlConversions,
@@ -335,22 +351,27 @@ export function parseTestReadout({
   }
 
   // compareVariants returns { rateA, rateB, lift, z, pValue,
-  // confidence, significant }. `lift` is already a relative
-  // percentage. We derive a 95% CI on the absolute-rate difference
-  // using the pooled standard error for visual interpretability.
+  // confidence, significant }. `lift` is already a relative percentage.
+  // The CI below is on the absolute-rate difference, from the SAME
+  // unpooled standard error compareVariants used for the z — so the
+  // verdict and the interval are one test at one alpha, not two
+  // estimators that can disagree.
   const controlRate = stats.rateA;
   const variantRate = stats.rateB;
   const liftPct = Math.round(stats.lift * 100) / 100;
 
   // CI on the absolute difference (variant - control), expressed in
-  // percentage points.
-  const zMultiplier = confidenceLevel === 0.99 ? 2.576 : 1.96;
+  // percentage points. The multiplier is inverted from the same normal
+  // CDF that produced the p-value; it used to be
+  // `confidenceLevel === 0.99 ? 2.576 : 1.96`, so a caller asking for 90%
+  // got a 95% interval labelled 90%.
+  const zMultiplier = zForConfidence(confidenceLevel);
   const seA = Math.sqrt((controlRate * (1 - controlRate)) / controlVisitors);
   const seB = Math.sqrt((variantRate * (1 - variantRate)) / variantVisitors);
   const seDiff = Math.sqrt(seA * seA + seB * seB);
   const diff = variantRate - controlRate;
-  const ciLow = Math.round((diff - zMultiplier * seDiff) * 10000) / 100;
-  const ciHigh = Math.round((diff + zMultiplier * seDiff) * 10000) / 100;
+  const ciLow = roundPercentagePoints((diff - zMultiplier * seDiff) * 100);
+  const ciHigh = roundPercentagePoints((diff + zMultiplier * seDiff) * 100);
 
   const direction = variantRate > controlRate ? "positive" : "negative";
   const verdict = stats.significant
@@ -362,7 +383,7 @@ export function parseTestReadout({
   const recommendation = buildTestRecommendation({
     verdict,
     liftPct,
-    confidenceLevel: confidenceLevel * 100,
+    confidenceLevel: Math.round(confidenceLevel * 1000) / 10,
     ciLow,
     ciHigh,
     guardrailMetrics,
@@ -380,6 +401,7 @@ export function parseTestReadout({
     pValue: stats.pValue,
     verdict,
     recommendation,
+    confidenceLevelPct: Math.round(confidenceLevel * 1000) / 10,
   });
 
   return {
@@ -394,7 +416,7 @@ export function parseTestReadout({
       ci_high_pct: ciHigh,
       z_score: Math.round(stats.z * 100) / 100,
       p_value: Math.round(stats.pValue * 10000) / 10000,
-      confidence_level_pct: confidenceLevel * 100,
+      confidence_level_pct: Math.round(confidenceLevel * 1000) / 10,
       ci_note:
         "CI is on the absolute-rate difference (percentage points), not relative lift.",
     },
@@ -405,6 +427,26 @@ export function parseTestReadout({
       signature: "Built with Orbit · Test Readout",
     },
   };
+}
+
+/**
+ * Round a percentage-point figure for display WITHOUT rounding it across
+ * zero.
+ *
+ * A flat 2dp round turned a genuinely decisive interval of
+ * [+0.0016pp, +0.25pp] into [0, 0.25] — which reads as spanning zero,
+ * contradicts the "winner" verdict printed beside it, and is the last
+ * remaining way real tool output could trip the widget's conflict box.
+ * A bound whose magnitude is below the display precision keeps enough
+ * significant digits to preserve its sign; it is a small number, not a
+ * zero, and the difference is the whole verdict.
+ */
+function roundPercentagePoints(value) {
+  if (!Number.isFinite(value) || value === 0) return 0;
+  const rounded = Math.round(value * 100) / 100;
+  if (rounded !== 0) return rounded;
+  const magnitude = Math.ceil(-Math.log10(Math.abs(value))) + 2;
+  return Number(value.toFixed(Math.min(12, magnitude)));
 }
 
 function buildTestRecommendation({ verdict, liftPct, confidenceLevel, ciLow, ciHigh, guardrailMetrics }) {
@@ -421,12 +463,14 @@ function buildTestRecommendation({ verdict, liftPct, confidenceLevel, ciLow, ciH
   return `Inconclusive. Observed lift is ${liftPct}% but the CI (${ciLow}% to ${ciHigh}%) spans zero. Either extend the test for more sample size, accept the null result and move on, or redesign the variant if the hypothesis is still worth testing.`;
 }
 
-function buildTestNarrative({ testName, hypothesis, primaryMetric, controlRate, variantRate, liftPct, ciLow, ciHigh, pValue, verdict, recommendation }) {
+function buildTestNarrative({ testName, hypothesis, primaryMetric, controlRate, variantRate, liftPct, ciLow, ciHigh, pValue, verdict, recommendation, confidenceLevelPct }) {
   const lines = [];
   if (testName) lines.push(`**Test:** ${testName}`);
   if (hypothesis) lines.push(`**Hypothesis:** ${hypothesis}`);
   lines.push(
-    `**Result:** Control ${(controlRate * 100).toFixed(2)}% ${primaryMetric} vs variant ${(variantRate * 100).toFixed(2)}% (${liftPct}% relative lift). 95% CI: ${ciLow}% to ${ciHigh}%. p = ${pValue.toFixed(4)}.`,
+    // The level was hardcoded to "95% CI" at every level, so a 99% run
+    // printed a 99% interval under a 95% label.
+    `**Result:** Control ${(controlRate * 100).toFixed(2)}% ${primaryMetric} vs variant ${(variantRate * 100).toFixed(2)}% (${liftPct}% relative lift). ${confidenceLevelPct}% CI: ${ciLow}% to ${ciHigh}%. p = ${pValue.toFixed(4)}.`,
   );
   lines.push(`**Verdict:** ${verdictLabel(verdict)}.`);
   lines.push(`**Recommendation:** ${recommendation}`);

@@ -43,6 +43,7 @@ import { RFM_PLOT_JS } from "../../server/ui/widgets/rfm-map.js";
 import { FORECAST_MARKS_JS } from "../../server/ui/widgets/list-forecast.js";
 import { STATE_GRID_JS } from "../../server/ui/widgets/state-matrix.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
+import { parseTestReadout } from "../../server/lifecycle-helpers.js";
 
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -793,14 +794,46 @@ describe("A/B read-out — the drawing never overrules the test", () => {
     assert.equal(a.note, null);
   });
 
-  test("a pooled 'winner' over an interval that spans zero is STATED, not hidden", () => {
-    // The two estimators differ. Near the threshold they disagree, and
-    // the failure mode is a green Ship pill above a bar straddling the
-    // no-difference line with nothing acknowledging it.
+  test("a verdict contradicting its own interval is STATED, not hidden", () => {
+    // This pair is one orbit_parse_test_readout cannot produce — which is
+    // exactly the point. The previous version of this test hand-fed the
+    // same numbers and asserted the note said "pooled", locking in a
+    // mechanism that was never true: verdict and interval come from the
+    // same unpooled seDiff at the same alpha, so on real output they
+    // cannot disagree. A disagreement means the card was assembled from
+    // two different tests, and the note has to say that.
     const a = readoutAgreement("winner", -0.05, 2.1);
     assert.equal(a.agrees, false);
     assert.match(a.note, /spans zero/);
-    assert.match(a.note, /pooled/);
+    assert.match(a.note, /same test at the same confidence/i);
+    assert.doesNotMatch(a.note, /pooled/, "the false mechanism is back in the card");
+  });
+
+  test("real tool output never trips the conflict box, at any supported level", () => {
+    // The only input that ever fired the box was the confidence-level bug.
+    // Sweep the tool itself instead of hand-feeding the widget.
+    const cases = [];
+    for (const level of [0.9, 0.95, 0.99]) {
+      for (const variantConversions of [95, 100, 104, 110, 118, 130, 200]) {
+        for (const controlVisitors of [900, 2000, 8000]) {
+          const out = parseTestReadout({
+            controlVisitors,
+            controlConversions: 100,
+            variantVisitors: controlVisitors,
+            variantConversions,
+            confidenceLevel: level
+          });
+          if (out.status !== "ok") continue;
+          const agree = readoutAgreement(out.verdict, out.stats.ci_low_pct, out.stats.ci_high_pct);
+          if (!agree.agrees) {
+            cases.push(
+              `level ${level}, ${variantConversions}/${controlVisitors}: verdict ${out.verdict}, CI [${out.stats.ci_low_pct}, ${out.stats.ci_high_pct}]`
+            );
+          }
+        }
+      }
+    }
+    assert.deepEqual(cases, [], "verdict and interval disagreed on real tool output");
   });
 
   test("an unusable interval is never reported as agreement by accident", () => {

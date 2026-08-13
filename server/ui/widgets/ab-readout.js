@@ -11,18 +11,23 @@
  *
  * TWO RULES THIS FILE IS BUILT AROUND
  *
- *   1. The widget never recomputes the verdict. The tool's verdict comes
- *      from a POOLED two-proportion z-test; the interval it prints is an
- *      UNPOOLED confidence interval on the absolute-rate difference.
- *      Those two are different estimators and near the boundary they
- *      disagree — a p of 0.048 alongside an interval whose low end is
- *      -0.02pp is an ordinary occurrence, not a bug. A widget that
- *      re-derived "significant" from the bar it happened to draw would
- *      quietly overrule the tool for exactly the tests where the answer
- *      matters most. So: draw the interval, print the tool's verdict,
- *      and when the two point different ways SAY SO, in words, above the
- *      chart. READOUT_INTERVAL_JS holds that comparison as plain source
- *      so a test can run it.
+ *   1. The widget never recomputes the verdict. It draws the interval the
+ *      tool sent and prints the verdict the tool reached, and when those
+ *      two point different ways it SAYS SO, in words, above the chart.
+ *      READOUT_INTERVAL_JS holds that comparison as plain source so a
+ *      test can run it.
+ *
+ *      This block used to explain a disagreement as "the verdict comes
+ *      from a pooled z-test and the interval is unpooled, so they can
+ *      differ within a hair of the threshold". That was never true: both
+ *      came from the same unpooled seDiff, and a brute-force sweep of
+ *      24,158 tests at 0.95 and 0.99 produced zero disagreements. The
+ *      only input that ever fired the box was the confidence-level bug,
+ *      and the box then blamed "a hair of the threshold" for a z of 5.96.
+ *      Verdict and interval are ONE test at ONE alpha — the multiplier is
+ *      inverted from the same normal CDF that produces the p-value — so a
+ *      disagreement means the payload did not come from
+ *      orbit_parse_test_readout, and the note now says that instead.
  *
  *   2. Verdict is never colour alone. Every verdict carries a glyph and
  *      a word — the chart is read by people who will forward a
@@ -68,6 +73,12 @@ function verdictFromInterval(kind) {
 // The tool's verdict is authoritative. This only reports whether the
 // drawing agrees with it, so a disagreement is stated rather than
 // resolved by whichever one happens to be rendered larger.
+//
+// orbit_parse_test_readout derives both from the SAME unpooled standard
+// error at the SAME alpha, so on its output these two can never disagree.
+// A disagreement therefore is not a boundary case to shrug at — it means
+// the numbers on this card did not come from one test, and the card
+// should not be forwarded to anyone.
 function readoutAgreement(verdict, ciLow, ciHigh) {
   var pos = intervalPosition(ciLow, ciHigh);
   var implied = verdictFromInterval(pos.kind);
@@ -79,10 +90,10 @@ function readoutAgreement(verdict, ciLow, ciHigh) {
     position: pos,
     note:
       "The verdict is \\u201c" + verdict + "\\u201d, but the interval drawn below is " +
-      pos.label + ". That is not a contradiction to resolve by eye: the verdict " +
-      "comes from a pooled z-test and the interval is unpooled, so they can " +
-      "differ within a hair of the threshold. Treat a test this close as a test " +
-      "that has not finished."
+      pos.label + " \\u2014 and these are the same test at the same confidence " +
+      "level, so they cannot legitimately differ. Something upstream produced " +
+      "the verdict and the interval from different inputs. Do not act on this " +
+      "card; re-run orbit_parse_test_readout on the raw counts."
   };
 }
 `;
@@ -146,7 +157,12 @@ svg.ci { display: block; width: 100%; height: auto; overflow: visible; }
 .arm { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
 .arm:last-child { margin-bottom: 0; }
 .arm-name { width: 62px; flex: none; font-size: 12px; font-weight: 600; color: var(--ink-2); }
-.arm-track { display: block; flex: 1; height: 22px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
+/* min-width, because flex:1 between two flex:none siblings totalling
+   252px has no floor. On a ~400px host pane the bar starved to a ~60px
+   sliver — and at narrower widths to literally 0 — while the numbers
+   beside it rendered normally and gave no sign anything had degraded.
+   The comparison bar IS the content of this row. */
+.arm-track { display: block; flex: 1; min-width: 48px; height: 22px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
 /* display:block is load-bearing, not tidiness. These are <span>s, and an
    inline box ignores width and height entirely — the fill rendered as an
    empty track at every rate, which is the whole content of the row. */
@@ -166,6 +182,18 @@ svg.ci { display: block; width: 100%; height: auto; overflow: visible; }
 
 .foot { border-top: 1px solid var(--rule); background: var(--card); padding: 10px 18px; display: flex; gap: 8px; align-items: center; }
 .sent { font-size: 11.5px; color: var(--ok-strong); }
+
+/* This file had no breakpoint at all, alone among the widgets — its
+   siblings design-system.js and client-matrix.js both stack at ~900px.
+   Below 560px the 190px number column is wider than the bar it annotates,
+   so the number moves under the track and the track gets the row. */
+@media (max-width: 560px) {
+  .arm { flex-wrap: wrap; row-gap: 3px; }
+  .arm-name { width: auto; min-width: 62px; }
+  .arm-track { flex: 1 1 100%; order: 3; }
+  .arm-num { width: auto; flex: 1; text-align: right; }
+  .stats { gap: 12px; }
+}
 `;
 
 const JS = `
