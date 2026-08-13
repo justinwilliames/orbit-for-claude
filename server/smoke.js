@@ -702,9 +702,7 @@ const brandPngStable =
   fs.statSync(brandRenderOne.output_file).size ===
   fs.statSync(brandRenderTwo.output_file).size;
 
-console.log(
-  JSON.stringify(
-    {
+const summary = {
       skillCount: library.skills.length,
       manifestCount: library.skillManifest.length,
       brandKitDraft: {
@@ -920,11 +918,71 @@ console.log(
         brazePublishTwo: brazePublishTwo.status,
         brazeRequestCounts: mockApi.counts
       }
-    },
-    null,
-    2
-  )
-);
+};
+
+console.log(JSON.stringify(summary, null, 2));
+
+// ---------------------------------------------------------------------------
+// The assertions
+// ---------------------------------------------------------------------------
+//
+// This file used to be 1,400 lines that printed and exited 0 no matter what
+// came back — while package.json's own //overrides docstring names
+// `npm run smoke` as the re-check after a dependency change that "broke the
+// compiler once already". A print documented as a check is worse than no
+// check, because its name in package.json reads as coverage.
+//
+// The ~85 fields it already computes ARE the assertions; they just needed an
+// expected value. Two rules cover all of them:
+//
+//   1. Every boolean in the summary is an invariant the author wrote as a
+//      question with one right answer — `profileExists`, `noSurveyReference`,
+//      `diagramSvgStable`, `imageUploadHasCdnUrls`. All of them must be true.
+//   2. Every `*Status` field must be "ok", EXCEPT the handful where a
+//      non-ok status IS the pass: a tool correctly refusing to guess.
+//
+// Anything new that does not fit either rule fails loudly and has to be
+// classified here, in the commit that introduces it.
+
+/** Status fields whose PASSING value is not "ok". A refusal is a result. */
+const EXPECTED_NON_OK = {
+  "brandKitDraft.needsInputsStatus": "needs_inputs",
+  "brandKitDraft.intakeStartStatus": "needs_inputs",
+  "setup.status": "needs_setup",
+  "brandKitValidation.operationalStatus": "full",
+  "programDiscovery.startStatus": "needs_discovery",
+  "programDiscovery.completeStatus": "ready_for_workspace",
+  invalidPlatformDiagramStatus: "invalid_platform_logic",
+};
+
+/** Booleans that are legitimately false. Empty today; keep it that way. */
+const EXPECTED_FALSE = new Set([]);
+
+const mismatches = [];
+(function assertNode(node, prefix) {
+  if (node === null || typeof node !== "object") return;
+  for (const [key, value] of Object.entries(node)) {
+    const at = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === "boolean") {
+      const want = !EXPECTED_FALSE.has(at);
+      if (value !== want) mismatches.push(`${at}: expected ${want}, got ${value}`);
+    } else if (typeof value === "string" && /status$/i.test(key)) {
+      const want = EXPECTED_NON_OK[at] ?? "ok";
+      if (value !== want) mismatches.push(`${at}: expected "${want}", got "${value}"`);
+    } else {
+      assertNode(value, at);
+    }
+  }
+})(summary, "");
+
+const statusCount = JSON.stringify(summary).match(/"[A-Za-z]*[Ss]tatus":/g)?.length ?? 0;
+if (mismatches.length > 0) {
+  process.stderr.write(`\nSMOKE: FAIL — ${mismatches.length} assertion(s) did not hold\n`);
+  for (const m of mismatches) process.stderr.write(`  ✗ ${m}\n`);
+  process.exitCode = 1;
+} else {
+  process.stderr.write(`\nSMOKE: PASS — ${statusCount} status field(s) and every boolean invariant held\n`);
+}
 
 async function startMockApiServer() {
   const counts = {

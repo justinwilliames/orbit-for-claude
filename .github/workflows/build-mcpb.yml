@@ -83,6 +83,21 @@ jobs:
           ORBIT_TELEMETRY: '0'
         run: npm test
 
+      # The two end-to-end harnesses, which nothing in CI ran until now.
+      # `evals` had been dead for 56 days — the SSRF guard blocked the
+      # loopback mock it starts itself, so it crashed uncaught two-thirds
+      # of the way through and emitted zero bytes of valid output — and
+      # `smoke` contained no assertion at all and exited 0 regardless of
+      # what came back, while package.json's own docstring named it as the
+      # re-check after a dependency change. Both now fail loudly, so both
+      # belong in the gate; a harness nobody runs rots into a name.
+      - name: Run smoke + evals
+        env:
+          ORBIT_TELEMETRY: '0'
+        run: |
+          npm run smoke > /dev/null
+          npm run evals > /dev/null
+
       - run: npm run build:extension
 
       # Package the .mcpb bundle for distribution.

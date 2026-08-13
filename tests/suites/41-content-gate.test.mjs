@@ -113,6 +113,26 @@ describe("Content gate — it never asserts a pass over a field it did not read"
     assert.doesNotMatch(report.notes, /not scored/);
   });
 
+  test("a payload larger than the field cap never reports an unqualified pass", () => {
+    // The walk returns early at MAX_FIELDS_PER_RESPONSE, and the remainder
+    // landed in neither `collected` nor `skipped` — so `total` came out at
+    // exactly the limit, the coverage sentence never fired, and the report
+    // was byte-identical to one over a fully-scored payload. The gate's own
+    // rule ("never assert a pass over a field that was never scored") was
+    // written in the same file it was broken in.
+    const clean = "Your delivery window is confirmed for Thursday between nine and noon.";
+    const payload = { items: [] };
+    for (let i = 0; i < 60; i++) payload.items.push({ subject: clean });
+    for (let i = 0; i < 10; i++) payload.items.push({ subject: "Unleash your potential and supercharge your journey" });
+
+    const report = gatePayload(payload);
+    assert.equal(report.fields_gated, 60);
+    assert.ok(report.fields_untouched > 0, "the unexamined branches were not counted");
+    assert.doesNotMatch(report.notes, /^All scored content passes/);
+    assert.match(report.notes, /never examined/);
+    assert.match(report.notes, /not a verdict on the whole payload/);
+  });
+
   test("attachQualityReport still hangs the report off _quality", () => {
     const payload = { subject: "Unlock your potential today" };
     assert.equal(attachQualityReport(payload), payload);

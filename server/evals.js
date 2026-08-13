@@ -62,6 +62,13 @@ const FIXTURE_PATH = path.join(ROOT_DIR, "evals", "orbit-evals.json");
 const GOLDENS_PATH = path.join(ROOT_DIR, "evals", "orbit-goldens.json");
 
 process.env.ORBIT_IMAGE_PROVIDER = "mock";
+// The eval run points Figma/Braze fetches at a localhost mock server, so it
+// must opt into the SSRF guard's loopback escape hatch — the same line
+// smoke.js has carried since the guard landed on 19 Jun 2026. Without it
+// this harness died uncaught at eval 941 of ~1,270 and emitted zero bytes of
+// valid JSON. It stayed dead for 56 days, through an edit on 8 July, because
+// no CI workflow ran it and its name in package.json read as coverage.
+process.env.ORBIT_ALLOW_PRIVATE_HOSTS = "1";
 
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, "utf8"));
 const goldens = JSON.parse(fs.readFileSync(GOLDENS_PATH, "utf8"));
@@ -1390,7 +1397,13 @@ async function startMockApiServer() {
           JSON.stringify({
             content_block_id: body.content_block_id ?? `cb_${suffix}`,
             liquid_tag: `{{content_blocks.${body.name}}}`,
-            message: "ok"
+            // "success", not "ok". braze-api.js treats a 2xx carrying any
+            // other message as a failed write — the guard that stops a
+            // partial failure being reported as landed. This mock kept
+            // saying "ok" for the whole time the harness was dead, so the
+            // drift could not be seen. smoke.js and the shared test harness
+            // both already say "success".
+            message: "success"
           })
         );
         return;
@@ -1399,7 +1412,7 @@ async function startMockApiServer() {
       res.end(
         JSON.stringify({
           email_template_id: body.email_template_id ?? `et_${counts[url.pathname]}`,
-          message: "ok"
+          message: "success"
         })
       );
       return;

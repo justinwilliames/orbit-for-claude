@@ -165,19 +165,27 @@ function isExcluded(path) {
 function collectContentFields(payload, limit = MAX_FIELDS_PER_RESPONSE) {
   const collected = [];
   const skipped = [];
+  // Fields the walk never reached because it hit the cap. They belong in
+  // NEITHER list — `collected` would be a lie and `skipped` means "seen and
+  // too short" — so before this they were simply gone: total came out at
+  // exactly the limit, the coverage sentence never fired, and the report was
+  // byte-identical to one over a fully-scored payload. The rule "never
+  // assert a pass over a field that was never scored" was written eighty
+  // lines below this function and broken by it.
+  let untouched = 0;
   function walk(node, path) {
-    if (collected.length >= limit) return;
+    if (collected.length >= limit) { untouched += 1; return; }
     if (node === null || node === undefined) return;
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
-        if (collected.length >= limit) return;
+        if (collected.length >= limit) { untouched += 1; continue; }
         walk(node[i], `${path}[${i}]`);
       }
       return;
     }
     if (typeof node === "object") {
       for (const [k, v] of Object.entries(node)) {
-        if (collected.length >= limit) return;
+        if (collected.length >= limit) { untouched += 1; continue; }
         const next = path ? `${path}.${k}` : k;
         if (isExcluded(next)) continue;
         if (typeof v === "string") {
@@ -199,7 +207,7 @@ function collectContentFields(payload, limit = MAX_FIELDS_PER_RESPONSE) {
     }
   }
   walk(payload, "");
-  return { collected, skipped };
+  return { collected, skipped, untouched };
 }
 
 const TIER_RANK = { sharp: 0, decent: 1, generic: 2, slop: 3 };
@@ -214,7 +222,7 @@ const TIER_RANK = { sharp: 0, decent: 1, generic: 2, slop: 3 };
  * content and decide whether to revise.
  */
 export function gatePayload(payload) {
-  const { collected: fields, skipped } = collectContentFields(payload);
+  const { collected: fields, skipped, untouched } = collectContentFields(payload);
   if (fields.length === 0 && skipped.length === 0) return null;
 
   const perField = {};
@@ -256,11 +264,23 @@ export function gatePayload(payload) {
           .join(", ")}${skipped.length > 8 ? ", …" : ""}.`
       : "";
 
+  // What the walk never looked at, named in the same sentence as the
+  // verdict. "All scored content passes" is true and useless when the reader
+  // cannot tell how much "scored" covered.
+  const truncation =
+    untouched > 0
+      ? ` The walk stopped at the ${MAX_FIELDS_PER_RESPONSE}-field cap; ${untouched} further branch${
+          untouched === 1 ? " was" : "es were"
+        } never examined, so this is not a verdict on the whole payload.`
+      : "";
+
   const verdict =
     fields.length === 0
       ? "No content field was long enough to score."
       : minScore >= 85
-        ? "All scored content passes the pre-publish slop gate (≥85 sharp)."
+        ? untouched > 0
+          ? `The ${fields.length} field(s) scored before the cap pass the pre-publish slop gate (≥85 sharp).`
+          : "All scored content passes the pre-publish slop gate (≥85 sharp)."
         : minScore >= 70
           ? "Scored content is acceptable but improvable — consider rewriting fields below 85."
           : "Scored content fell below 70 in at least one field — rewrite before shipping.";
@@ -270,11 +290,12 @@ export function gatePayload(payload) {
     worst_tier: fields.length === 0 ? null : worstTier,
     fields_gated: fields.length,
     fields_skipped: skipped.length,
+    fields_untouched: untouched,
     skipped_fields: skipped.map((s) => s.path),
     top_issues: Array.from(allFindingLabels).slice(0, 5),
     per_field: perField,
     gate_version: "v2",
-    notes: `${verdict}${coverage}`,
+    notes: `${verdict}${coverage}${truncation}`,
   };
 }
 

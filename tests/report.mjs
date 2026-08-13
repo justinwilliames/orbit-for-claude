@@ -48,14 +48,20 @@ function renderHtml(summary, artifacts) {
     : 0;
   const ok = summary.failed === 0;
 
+  // Skips are always listed individually, whatever their nesting. A disabled
+  // test that only shows up as an absence from a green count is a test nobody
+  // re-enables — it drew a green tick here until the runner learned to tell
+  // node's skip flag from a pass.
   const resultRows = summary.results
-    .filter((r) => r.nesting === 0 || r.status === "fail")
+    .filter((r) => r.kind === "suite" || r.status === "fail" || r.status === "skip" || r.status === "todo")
     .map((r) => {
-      const bullet = r.status === "pass" ? "✓" : "✗";
-      const cls = r.status === "pass" ? "pass" : "fail";
+      const bullet = r.status === "pass" ? "✓" : r.status === "fail" ? "✗" : "⊘";
+      const cls = r.status === "pass" ? "pass" : r.status === "fail" ? "fail" : "skip";
       const errorRow = r.status === "fail"
         ? `<div class="err"><pre>${escapeHtml(r.error)}</pre></div>`
-        : "";
+        : r.reason
+          ? `<div class="err"><pre>${escapeHtml(r.status)}: ${escapeHtml(r.reason)}</pre></div>`
+          : "";
       return `
         <tr class="${cls}">
           <td class="bullet">${bullet}</td>
@@ -87,7 +93,7 @@ function renderHtml(summary, artifacts) {
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; background: var(--bg); color: var(--fg); padding: 24px; max-width: 960px; margin: 0 auto; }
   h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; }
   .meta { color: var(--muted); font-size: 13px; }
-  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0 32px; }
+  .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 20px 0 32px; }
   .card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
   .card h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   .card .big { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
@@ -98,6 +104,8 @@ function renderHtml(summary, artifacts) {
   tr.pass td.bullet { color: var(--ok); font-weight: 700; }
   tr.fail td.bullet { color: var(--fail); font-weight: 700; }
   tr.fail { background: rgba(220, 38, 38, 0.04); }
+  tr.skip td.bullet { color: var(--muted); font-weight: 700; }
+  tr.skip { background: rgba(180, 130, 0, 0.07); }
   td.bullet { width: 24px; font-family: monospace; }
   td.file, td.dur { color: var(--muted); font-size: 12px; font-family: monospace; white-space: nowrap; }
   .err { margin-top: 6px; padding: 8px; border-radius: 6px; background: rgba(220, 38, 38, 0.08); }
@@ -119,6 +127,7 @@ function renderHtml(summary, artifacts) {
   <div class="card"><h2>Status</h2><div class="big ${ok ? "ok" : "fail"}">${ok ? "PASS" : "FAIL"}</div></div>
   <div class="card"><h2>Passed</h2><div class="big ok">${summary.passed}</div></div>
   <div class="card"><h2>Failed</h2><div class="big ${summary.failed ? "fail" : ""}">${summary.failed}</div></div>
+  <div class="card"><h2>Skipped</h2><div class="big">${(summary.skipped ?? 0) + (summary.todo ?? 0)}</div></div>
   <div class="card"><h2>Pass rate</h2><div class="big">${passRate}%</div></div>
 </div>
 
