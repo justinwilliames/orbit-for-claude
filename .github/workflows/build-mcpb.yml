@@ -27,6 +27,17 @@ on:
           a version number spent debugging is spent forever.
         type: boolean
         default: false
+      allow_republish:
+        description: >-
+          Republish a version the registry already holds. Off by default,
+          and the guard below refuses without it — a re-run of a shipped
+          version clobbers the public asset and stamps a NEW checksum for
+          a version whose registry entry is immutable, so the entry ends
+          up describing bytes that no longer exist at that URL. Bump the
+          version instead; this switch exists for the rare case where the
+          published asset is known to be broken.
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -131,6 +142,42 @@ jobs:
       #                                    /api/orbit/latest-version
       # The website only reads these via signed URLs — the bucket
       # itself is private, no public ingress.
+      # Refuse to re-release a version the registry already holds.
+      #
+      # This workflow fires on any push to main touching server/**, reads
+      # the version from manifest.json, and if a release for it exists it
+      # --clobbers the public asset. That replaces the "immutable
+      # versioned archive" in S3 and stamps a fresh sha256 for a version
+      # the registry has already frozen — so the readback fails AFTER the
+      # public bytes have been swapped, leaving the registry describing a
+      # file that is no longer there, and "Promote to latest" never runs.
+      # Nothing in the suite compared the version against what is
+      # published; the only version assertion checks the three local files
+      # agree with each other, which they would.
+      #
+      # One HTTP call: the same versions endpoint the readback already
+      # uses, assertion inverted.
+      - name: Refuse to re-release a published version
+        if: ${{ !inputs.dry_run && !inputs.allow_republish }}
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          NAME=$(node -e "console.log(require('./server.json').name)")
+          ENC=$(node -p "encodeURIComponent(process.argv[1])" "$NAME")
+          BODY=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers/${ENC}/versions" || echo '')
+          ALREADY=$(node -e "
+            let d = {}; try { d = JSON.parse(process.argv[1] || '{}'); } catch {}
+            const list = d.servers || d.versions || [];
+            const hit = list.map((s) => s.server ?? s).find((s) => s.version === process.argv[2]);
+            console.log(hit ? 'yes' : 'no');
+          " "$BODY" "$VERSION")
+          if [ "$ALREADY" = "yes" ]; then
+            echo "::error::Version $VERSION is already published to the MCP registry as $NAME. Publishing it again would overwrite the public .mcpb and stamp a new checksum against a registry entry that cannot change, so anyone verifying the hash would be refused the download. Bump the version in package.json, manifest.json and server.json — or re-run this workflow manually with allow_republish if the published asset is known to be broken."
+            exit 1
+          fi
+          echo "Version $VERSION is not yet on the registry — safe to publish."
+
       - name: Upload to MCPB bucket
         if: ${{ !inputs.dry_run }}
         env:
