@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { ensureDir } from "./config.js";
 import {
   fileExists,
@@ -214,6 +215,26 @@ export function importPdfEmailReference({
 
   const extractedText = extractPdfReferenceText(resolvedPdfPath);
   const sections = deriveSectionsFromPdfText(extractedText);
+  // Zero recovered words is a failed read, not an empty design. It used
+  // to return status "ok" with sections invented out of file structure,
+  // which then flowed into a component map of empty rich_text blocks —
+  // also "ok".
+  if (sections.length === 0) {
+    return {
+      status: "unreadable_pdf",
+      source_path: resolvedPdfPath,
+      import_dir: importDir,
+      message:
+        "No text could be recovered from this PDF. That usually means the page is a flat image (a scan or an exported screenshot), or the content stream uses a filter Orbit cannot decode.",
+      alternatives: [
+        "If the design lives in Figma, import it with source='figma' — that path reads real structure, not scraped text.",
+        "If you have the built email as HTML, orbit_learn_email_template derives the module catalogue and brand tokens directly from it.",
+      ],
+      artifacts: {
+        original_pdf: copiedPdfPath,
+      },
+    };
+  }
   const designReference = {
     version: "1.0.0",
     type: "design_import_record",
@@ -255,6 +276,19 @@ export function suggestEmailComponentMap({
     typeof designImport === "string" ? parseJsonInput(designImport, "design import") : designImport;
   if (!record || record.type !== "design_import_record") {
     throw new Error("The supplied design import is not an Orbit design_import_record.");
+  }
+
+  // A design import with no sections has nothing to map. Returning a
+  // map of zero components with status "ok" told the caller the step
+  // succeeded and handed the model an empty catalogue to build from.
+  if ((record.sections ?? []).length === 0) {
+    return {
+      status: "invalid_input",
+      message:
+        "This design import contains no sections, so there is nothing to infer components from. Re-run the import — if it was a PDF, check whether it returned status 'unreadable_pdf'.",
+      source_import_id: record.id,
+      source_type: record.source_type,
+    };
   }
 
   const sections = (record.sections ?? []).map((section, index) =>
@@ -1037,19 +1071,120 @@ function rgbToHex(rgb) {
   return `#${channels.join("")}`;
 }
 
+// Read the words out of a PDF.
+//
+// The old version scraped the raw latin1 bytes for `(...)Tj` literals
+// and any ASCII run over 20 characters, and never called zlib. Every
+// PDF anyone actually produces compresses its content streams, so it
+// recovered nothing — and then handed the caller `/MediaBox`,
+// `<< /Filter /FlateDecode /Length 586 >>` and decompressed-stream
+// garbage dressed up as the design's sections, with status "ok".
+//
+// This is step 2 of the path the server instructions lead with — "this
+// IS their design system; it is derived from their real email" — and a
+// PDF is what a designer is most likely to hand over.
 function extractPdfReferenceText(pdfPath) {
-  const raw = fs.readFileSync(pdfPath);
-  const rawText = raw.toString("latin1");
-  const literalStrings = [...rawText.matchAll(/\(([^()]{2,200})\)\s*Tj/g)]
-    .map((match) => cleanupPdfString(match[1]))
-    .filter(Boolean);
-  const asciiRuns = rawText
-    .replace(/[^ -~\n\r\t]+/g, " ")
-    .split(/\n+/)
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 20);
+  const buf = fs.readFileSync(pdfPath);
+  const rawText = buf.toString("latin1");
 
-  return [...new Set([...literalStrings, ...asciiRuns])].slice(0, 30);
+  // Compressed content streams first, then the same scrape over the
+  // raw bytes for the uncompressed case.
+  const fromStreams = inflatePdfStreams(buf).flatMap(scrapePdfTextOperators);
+  // Only fall back to the raw bytes when nothing inflated. Font and
+  // image streams contain byte sequences that look like `(...)Tj` by
+  // coincidence, and mixing them in pollutes a good extraction.
+  let candidates =
+    fromStreams.length > 0 ? fromStreams : scrapePdfTextOperators(rawText);
+  if (candidates.length === 0) {
+    // Last resort: long ASCII runs, as before — but only ones that
+    // survive the plumbing filter, so an empty answer stays empty.
+    candidates = rawText
+      .replace(/[^ -~\n\r\t]+/g, " ")
+      .split(/\n+/)
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line) => line.length > 20);
+  }
+
+  return [...new Set(candidates)].filter((line) => !isPdfPlumbing(line)).slice(0, 30);
+}
+
+/** Inflate every /FlateDecode stream body we can, skip the ones we can't. */
+function inflatePdfStreams(buf) {
+  const raw = buf.toString("latin1");
+  const out = [];
+  const streamKeyword = /stream\r?\n/g;
+  let match;
+  while ((match = streamKeyword.exec(raw)) !== null) {
+    const dictStart = raw.lastIndexOf("<<", match.index);
+    if (dictStart === -1) continue;
+    if (!/\/FlateDecode/.test(raw.slice(dictStart, match.index))) continue;
+    const bodyStart = match.index + match[0].length;
+    const bodyEnd = raw.indexOf("endstream", bodyStart);
+    if (bodyEnd === -1) continue;
+    // latin1 is one byte per code unit, so string offsets are byte
+    // offsets and it is safe to slice the Buffer with them.
+    const body = buf.subarray(bodyStart, bodyEnd);
+    for (const candidate of [body, trimTrailingEol(body)]) {
+      try {
+        out.push(zlib.inflateSync(candidate).toString("latin1"));
+        break;
+      } catch {
+        // A stream we cannot inflate is a stream we did not read. It
+        // contributes nothing rather than contributing noise.
+      }
+    }
+  }
+  return out;
+}
+
+function trimTrailingEol(body) {
+  let end = body.length;
+  while (end > 0 && (body[end - 1] === 0x0a || body[end - 1] === 0x0d)) end -= 1;
+  return body.subarray(0, end);
+}
+
+/**
+ * Pull the shown strings out of a content stream.
+ *
+ * Tj / ' / " each take one string; TJ takes an array of strings with
+ * kerning numbers between them, which is what any real typesetter
+ * emits, and which the old single-`Tj` regex could not see at all.
+ */
+function scrapePdfTextOperators(content) {
+  const out = [];
+  for (const m of content.matchAll(/\[((?:[^\][\\]|\\.)*)\]\s*TJ/g)) {
+    const parts = [...m[1].matchAll(/\((?:\\.|[^\\()])*\)/g)].map((p) => p[0].slice(1, -1));
+    const joined = cleanupPdfString(parts.join(""));
+    if (joined) out.push(joined);
+  }
+  for (const m of content.matchAll(/\(((?:\\.|[^\\()])*)\)\s*(?:Tj|'|")/g)) {
+    const value = cleanupPdfString(m[1]);
+    if (value) out.push(value);
+  }
+  return out;
+}
+
+/**
+ * True for a line that is PDF file structure rather than design copy.
+ *
+ * Two independent tests, because either alone lets the other class
+ * through: a leading structural token, and a floor of two words. A
+ * decompressed stream that failed to parse is mostly punctuation and
+ * single letters, and clears the first test easily.
+ */
+function isPdfPlumbing(line) {
+  const text = String(line ?? "").trim();
+  if (!text) return true;
+  if (/^(?:<<|>>|\/|%|endobj|obj\b|\d+\s+\d+\s+obj|xref|trailer|startxref|stream|endstream)/.test(text)) {
+    return true;
+  }
+  // Font and image streams inflate to bytes that occasionally contain a
+  // string operator by coincidence. Real copy is almost entirely
+  // printable ASCII; the accident never is.
+  const printable = (text.match(/[ -~]/g) ?? []).length;
+  if (printable / text.length < 0.9) return true;
+  const words = text.match(/[A-Za-z]{3,}/g) ?? [];
+  return words.length < 2;
 }
 
 function cleanupPdfString(value) {

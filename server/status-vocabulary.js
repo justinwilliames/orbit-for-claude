@@ -149,6 +149,12 @@ export const FAILED_STATUSES = new Set([
   // Asked for something that isn't there.
   "file_not_found",
   "file_too_large",
+  // A PDF whose content stream yielded no words. The file is there and
+  // readable; what is missing is any text to derive a design from —
+  // typically a flat image export. A FAILURE, because the step did not
+  // do the thing, and because "ok" over zero recovered words is what
+  // used to feed a component map of empty rich_text blocks.
+  "unreadable_pdf",
   "gen_area_missing",
   "created_gen_area_missing",
   "html_missing",
