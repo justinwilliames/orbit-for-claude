@@ -128,7 +128,7 @@ export function getVersionNag() {
     // one moment they were about to act on it. This nag is also the only
     // channel that reaches an existing install, so it carries the news.
     download_url: cached.download_url ?? "https://yourorbit.team/downloads",
-    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}) — and Orbit is now free: no account, no licence key, every tool unlocked. Download the .mcpb from https://yourorbit.team/downloads and double-click it — Claude replaces the old version in place, no uninstall needed.`,
+    notes: `Orbit v${cached.latest_version} is available (you're on v${cached.installed_version}) — and Orbit is now free: no licence key, no payment, every tool unlocked. Download the .mcpb from https://yourorbit.team/downloads and double-click it (the site asks for a free account \u2014 one email; the GitHub release is ungated) — Claude replaces the old version in place, no uninstall needed.`,
   };
 }
 

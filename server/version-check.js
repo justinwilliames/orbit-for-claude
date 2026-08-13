@@ -83,7 +83,7 @@ export async function checkOrbitVersion({ installedVersion }) {
     download_url: "https://yourorbit.team/downloads",
     suggested_next_steps: comparison < 0
       ? [
-          "Open https://yourorbit.team/downloads in your browser — free, no account and no key.",
+          "Open https://yourorbit.team/downloads in your browser — free, no licence key. The site asks for a free account (one email); https://github.com/justinwilliames/orbit-for-claude/releases is ungated.",
           "Download the latest .mcpb and double-click it. Claude Desktop replaces the old version in place — no uninstall required.",
           "Restart Claude Desktop after install to load the updated skills and tools."
         ]

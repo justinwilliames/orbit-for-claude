@@ -116,6 +116,37 @@ describe("Manifest drift guard — manifest.json tool list matches server regist
     );
   });
 
+  test("the three places Orbit describes itself say the same thing", () => {
+    // manifest.json and server.json were repositioned in one cycle and
+    // serverInfo.description was missed, so the wire carried "Lifecycle
+    // marketing operating system ... with Notion-friendly documentation"
+    // — the pre-repositioning blurb — for a release. A description is
+    // not generated, so this asserts they OVERLAP rather than match:
+    // the free/no-key claim and the word lifecycle have to be in all
+    // three, and none of them may carry the retired positioning.
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
+    const serverJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "server.json"), "utf8"));
+    const indexSrc = fs.readFileSync(path.join(ROOT_DIR, "server", "index.js"), "utf8");
+    const serverInfo = indexSrc
+      .slice(indexSrc.indexOf("const server = new McpServer("))
+      .match(/description:\s*\n?\s*"([^"]+)"/)?.[1];
+
+    assert.ok(serverInfo, "could not find serverInfo.description in server/index.js");
+    for (const [where, text] of [
+      ["manifest.json", manifest.description],
+      ["server.json", serverJson.description],
+      ["serverInfo", serverInfo],
+    ]) {
+      assert.match(text, /lifecycle/i, `${where} does not say what Orbit is`);
+      assert.match(text, /free|no key|no licence key/i, `${where} does not say Orbit is free`);
+      assert.doesNotMatch(
+        text,
+        /operating system|Notion-friendly/i,
+        `${where} still carries the retired positioning`
+      );
+    }
+  });
+
   test("server.json's checksum is generated, never hand-written", () => {
     // The live registry entry pinned a fileSha256 that did not match its
     // own release asset, so any installer honouring the checksum refused

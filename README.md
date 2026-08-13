@@ -1,6 +1,7 @@
 # Orbit
 
-**A lifecycle marketer, built into Claude.** Free, open, no account, no key.
+**A lifecycle marketer, built into Claude.** Free, open, no licence key, every tool unlocked.
+The GitHub release below is ungated; the website download asks for a free account (one email).
 
 Orbit is an MCP extension that gives Claude a senior lifecycle operator's playbook: 79 skills and 126 tools spanning email and MJML, render QA, segmentation maths, deliverability, brand voice, Figma import, Notion export, diagram generation, and the sending layer itself — Braze, Stripo, Klaviyo, Iterable and the rest. Ask Claude a lifecycle question and it answers like someone who has shipped the program, not like someone who has read about it.
 
@@ -19,7 +20,7 @@ Orbit renders it at 640px and 390px in a real engine and measures what only a re
 
 Those are the real findings from the snippet above. Note the second one: `4.47:1 — #ffffff on #6366f1 at 13px`. That is Orbit's own brand indigo, missing AA by three hundredths. The gate does not make exceptions for the people who wrote it.
 
-Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 90 long-form guides bundled inside the extension, offline, no account.
+Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 90 long-form guides bundled inside the extension, offline, with nothing to log into.
 
 ## Build your own lifecycle brain
 
@@ -55,7 +56,7 @@ Roughly two-thirds of the tool surface needs nothing beyond the install:
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
 - **The skill library** — 77 protocols Claude loads and follows, on lifecycle design, deliverability, Braze mechanics, Stripo mechanics, experimentation, copy, and brand.
-- **A 184,000-word practitioner library, offline.** 90 long-form guides and 10 courses ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no account, no network call, and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing.
+- **A 184,000-word practitioner library, offline.** 90 long-form guides and 10 courses ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no network call and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing.
 
 ## What needs a credential
 
