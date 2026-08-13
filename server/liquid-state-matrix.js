@@ -292,9 +292,21 @@ export function liquidStateMatrix({
   findings.push(...checkSpellingAgreement({ html, axes, blockRe }));
 
   const fails = findings.filter((f) => f.severity === "fail");
+  const drawn = drawableStates(results, findings);
   return {
     status: "ok",
     verdict: fails.length === 0 ? "pass" : "fail",
+    // The per-state block sets, which every check above is computed FROM
+    // and which were previously thrown away at this line.
+    //
+    // They are the only representation in which a C2 subset is obvious
+    // rather than argued: the reader sees one row missing a column its
+    // sibling has. Emitted as a shared block dictionary plus per-state
+    // indices because the naive shape — a repeated array of class names
+    // per state — is quadratic in a tool whose whole premise is 2^n.
+    block_catalogue: drawn.catalogue,
+    states: drawn.states,
+    states_shown: drawn.states.length,
     axes: axes.map((a) => ({
       name: a.name,
       dialect: a.dialect,
@@ -659,6 +671,62 @@ function blockSet(html, blockRe) {
 
 function isProperSubset(a, b) {
   return a.size < b.size && [...a].every((x) => b.has(x));
+}
+
+/** Cap on states carried out for drawing. The CHECKS always run on all. */
+const MAX_DRAWN_STATES = 128;
+
+/**
+ * The per-state block sets, as a shared catalogue plus indices.
+ *
+ * Two rules:
+ *
+ *   1. Every state a finding NAMES is kept, whatever the cap. Truncating
+ *      in enumeration order alone would routinely drop the one row the
+ *      reader was sent here to look at — the enumeration is a cartesian
+ *      product, so a failing state is as likely to be state 900 as state
+ *      2, and a grid that silently omits it is worse than no grid.
+ *   2. What was dropped is COUNTED, never implied. `states_rendered`
+ *      stays the true total; the difference is the omission, and the
+ *      widget says so above the grid rather than presenting a partial
+ *      sweep as the whole space.
+ */
+function drawableStates(results, findings) {
+  const named = new Set(findings.map((f) => f.state).filter(Boolean));
+  const keep = [];
+  for (const r of results) if (named.has(r.label)) keep.push(r);
+  for (const r of results) {
+    if (keep.length >= MAX_DRAWN_STATES) break;
+    if (!named.has(r.label)) keep.push(r);
+  }
+  // Back into enumeration order — the axis sweep is the only ordering in
+  // which neighbouring rows differ by one flag, which is what makes a
+  // dropped module legible as a gap rather than as noise.
+  const order = new Map(results.map((r, i) => [r.label, i]));
+  keep.sort((a, b) => order.get(a.label) - order.get(b.label));
+
+  const catalogue = [];
+  const index = new Map();
+  for (const r of keep) {
+    for (const b of r.blocks) {
+      if (!index.has(b)) {
+        index.set(b, catalogue.length);
+        catalogue.push(b);
+      }
+    }
+  }
+  catalogue.sort();
+  catalogue.forEach((b, i) => index.set(b, i));
+
+  return {
+    catalogue,
+    states: keep.map((r) => ({
+      label: r.label,
+      attrs: r.attrs,
+      chars: r.chars,
+      present: [...r.blocks].map((b) => index.get(b)).sort((a, b) => a - b),
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------

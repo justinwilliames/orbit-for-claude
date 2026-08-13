@@ -12,3 +12,8 @@ yarn-error.log*
 .worklog/
 design/
 _gen-assets.mjs
+
+# A widget artifact written to a template-literal path whose variable was
+# undefined lands here. Product code cannot produce it — path.join throws
+# on undefined — but a scratch script can, and it should never be staged.
+undefined/

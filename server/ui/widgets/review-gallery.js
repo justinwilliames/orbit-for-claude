@@ -90,6 +90,80 @@ function reconcileStoredVerdicts(items, stored) {
 }
 `.trim();
 
+/**
+ * Push truncation, as plain source, against Orbit's OWN limits table.
+ *
+ * renderPush() used to carry `const IOS_BODY = 110` — a number in no
+ * limits table anywhere in this repo — clip only the body against it, and
+ * never clip or warn on the TITLE at all. So on the one artifact Orbit
+ * hands to stakeholders, a 91-character title that truncates on iOS,
+ * Android AND web rendered in full across two bold lines with no warning,
+ * while a 148-character body that FITS on iOS got a red "Clipped on iOS"
+ * and the two platforms it genuinely clips on were never named. The
+ * tool's own description promises it "renders each one at the size it
+ * actually ships at".
+ *
+ * The numbers below are PUSH_LIMITS from server/calculators.js, the table
+ * behind orbit_check_push_copy. They are inlined rather than imported
+ * because the widget has no module loader — and suite 28 asserts the two
+ * copies are identical, so the duplication cannot drift.
+ */
+export const PUSH_LIMITS_JS = `
+var PUSH_LIMITS = {
+  ios: { title: 70, body: 178 },
+  android: { title: 65, body: 100 },
+  web: { title: 50, body: 120 }
+};
+
+// What each platform shows, and which ones cut. Mirrors checkPushCopy.
+function pushClip(title, body) {
+  var t = String(title == null ? "" : title).trim();
+  var b = String(body == null ? "" : body).trim();
+  var rows = [];
+  var tightestTitle = Infinity;
+  var tightestBody = Infinity;
+  Object.keys(PUSH_LIMITS).forEach(function (name) {
+    var lim = PUSH_LIMITS[name];
+    var titleCuts = t.length > lim.title;
+    var bodyCuts = b.length > lim.body;
+    if (titleCuts) tightestTitle = Math.min(tightestTitle, lim.title);
+    if (bodyCuts) tightestBody = Math.min(tightestBody, lim.body);
+    rows.push({
+      platform: name,
+      titleCuts: titleCuts,
+      bodyCuts: bodyCuts,
+      titleLimit: lim.title,
+      bodyLimit: lim.body
+    });
+  });
+  return {
+    titleChars: t.length,
+    bodyChars: b.length,
+    rows: rows,
+    // The preview shows the TIGHTEST cut, because a reviewer looking at
+    // one card needs to know the worst case, not a favourable one.
+    titleShown: isFinite(tightestTitle) ? tightestTitle : null,
+    bodyShown: isFinite(tightestBody) ? tightestBody : null,
+    anyCuts: rows.some(function (r) { return r.titleCuts || r.bodyCuts; })
+  };
+}
+
+// "iOS ok · Android cut at 100 · Web cut at 120" — the per-platform row
+// checkPushCopy already returns fully formed, instead of one line naming
+// a single platform that may not even be the one that cuts.
+function pushClipLabel(clip) {
+  var LABELS = { ios: "iOS", android: "Android", web: "Web" };
+  return clip.rows
+    .map(function (r) {
+      var cuts = [];
+      if (r.titleCuts) cuts.push("title " + r.titleLimit);
+      if (r.bodyCuts) cuts.push("body " + r.bodyLimit);
+      return LABELS[r.platform] + (cuts.length ? " \\u2702 " + cuts.join(", ") : " \\u2713");
+    })
+    .join("  \\u00b7  ");
+}
+`;
+
 const CSS = `
 body { height: 100vh; overflow: hidden; }
 .wrap { display: grid; grid-template-columns: var(--rail-w) 1fr; height: 100vh; }
@@ -156,16 +230,23 @@ body { height: 100vh; overflow: hidden; }
 }
 .notif-head { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #5b6072; margin-bottom: 3px; }
 .notif-icon { width: 15px; height: 15px; border-radius: 4px; background: var(--brand); }
-.notif-title { font-size: 13.5px; font-weight: 650; color: #14161f; line-height: 1.3; }
+/* nowrap + ellipsis so the cut is VISIBLE. A 91-character title used to
+   set across two full bold lines with no clip note beneath it, which is
+   the opposite of what this preview exists to show. */
+.notif-title {
+  font-size: 13.5px; font-weight: 650; color: #14161f; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .notif-body { font-size: 13px; color: #34384a; line-height: 1.35; margin-top: 1px; }
 /* Hardcoded, like .notif-title and .notif-body above it. The .notif card
    is a fixed-light phone screen in both themes, so a theme-switching
    token painted onto it is wrong by construction: in dark mode --warn
    resolves to #f87171, calibrated for a dark background, and lands at
    2.65:1 on this near-white card — under the 4.5:1 floor, at 10.5px.
-   And this is the routine case, not an edge one: it fires on every push
-   body over 110 characters. */
+   And this is the routine case, not an edge one: it fires on any push
+   that clips on any platform. */
 .notif-clip { color: #b3402e; font-size: 10.5px; margin-top: 5px; font-weight: 600; }
+.notif-clip-chars { font-weight: 500; color: #5b6072; }
 .frame--iam { width: 100%; height: 520px; border-radius: 14px; background: #fff; }
 
 /* ---- verdict bar --------------------------------------------------- */
@@ -216,6 +297,7 @@ let programme = "Creative review";
 let storeKey = "orbit:review";
 
 ${VERDICT_BINDING_JS}
+${PUSH_LIMITS_JS}
 
 function adoptData(data) {
   if (!data || !Array.isArray(data.items)) return false;
@@ -317,19 +399,24 @@ function renderStage() {
 
 // Push copy is judged on where each platform truncates, so the preview
 // says so rather than leaving the reviewer to guess at the ellipsis.
+// Title AND body, against every platform, from PUSH_LIMITS_JS above.
 function renderPush(it) {
   const p = it.push || {};
   const title = p.title || "";
   const body = p.body || "";
-  const IOS_BODY = 110;
-  const clipped = body.length > IOS_BODY;
+  const clip = pushClip(title, body);
+  const cut = function (text, at) {
+    return at === null ? text : text.slice(0, at - 1) + "…";
+  };
   return (
     '<div class="phone"><div class="notif">' +
     '<div class="notif-head"><span class="notif-icon"></span>' + esc(p.app || "Your app") + " · now</div>" +
-    '<div class="notif-title">' + esc(title) + "</div>" +
-    '<div class="notif-body">' + esc(clipped ? body.slice(0, IOS_BODY) + "…" : body) + "</div>" +
-    (clipped
-      ? '<div class="notif-clip">Clipped on iOS — ' + body.length + " chars, " + IOS_BODY + " shown</div>"
+    '<div class="notif-title">' + esc(cut(title, clip.titleShown)) + "</div>" +
+    '<div class="notif-body">' + esc(cut(body, clip.bodyShown)) + "</div>" +
+    (clip.anyCuts
+      ? '<div class="notif-clip">' + esc(pushClipLabel(clip)) +
+        '<span class="notif-clip-chars"> — title ' + clip.titleChars +
+        " chars, body " + clip.bodyChars + "</span></div>"
       : "") +
     "</div></div>"
   );

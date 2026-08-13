@@ -599,7 +599,7 @@
     },
     {
       "name": "orbit_liquid_state_matrix",
-      "description": "Render every personalisation state of an email and assert no arm is unreachable, no state collapses, and no state silently drops a module."
+      "description": "Render every personalisation state of an email and assert no arm is unreachable, no state collapses, and no state silently drops a module. Draws the states as a grid of which population receives which modules, so a dropped module is a gap in a row rather than a sentence."
     },
     {
       "name": "orbit_compose_sms",
@@ -639,7 +639,7 @@
     },
     {
       "name": "orbit_list_growth_forecast",
-      "description": "Project 12-month subscriber list trajectory from current size, acquisition, and churn. Returns trajectory table plus break-even / halving milestones."
+      "description": "Project 12-month subscriber list trajectory from current size, acquisition, and churn. Returns trajectory table plus break-even / halving milestones, and draws the curve against today's size in a widget with the month churn overtakes acquisition marked."
     },
     {
       "name": "orbit_gdpr_consent_audit",

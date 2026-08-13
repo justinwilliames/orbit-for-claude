@@ -41,6 +41,8 @@ import { renderDesignSystem, DESIGN_SYSTEM_URI } from "./widgets/design-system.j
 import { renderSendCalendar, SEND_CALENDAR_URI } from "./widgets/send-calendar.js";
 import { renderAbReadout, AB_READOUT_URI } from "./widgets/ab-readout.js";
 import { renderRfmMap, RFM_MAP_URI } from "./widgets/rfm-map.js";
+import { renderListForecast, LIST_FORECAST_URI } from "./widgets/list-forecast.js";
+import { renderStateMatrix, STATE_MATRIX_URI } from "./widgets/state-matrix.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -125,6 +127,20 @@ export const ORBIT_WIDGETS = [
     description:
       "Named RFM segments placed by recency and frequency with bubble area carrying revenue, plus revenue share against list share on one scale so the concentration of value is unmissable.",
     render: renderRfmMap,
+  },
+  {
+    uri: LIST_FORECAST_URI,
+    name: "Orbit list forecast",
+    description:
+      "The list's trajectory against the size it starts at, with the month churn overtakes acquisition marked on the curve and drawn again underneath as the two flows crossing — and month 0 kept out of the flows, where its structural zeros would read as a month of total shutdown.",
+    render: renderListForecast,
+  },
+  {
+    uri: STATE_MATRIX_URI,
+    name: "Orbit personalisation states",
+    description:
+      "Every personalisation state of an email as a grid of which population receives which modules — so a branch that drops a module instead of swapping it reads as a gap in one row, not as a sentence about set relations — with any state the drawing cap left out counted rather than implied.",
+    render: renderStateMatrix,
   },
 ];
 

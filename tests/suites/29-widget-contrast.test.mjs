@@ -189,4 +189,33 @@ describe("Widget contrast — Orbit's own chrome clears the bar it enforces", ()
     }
     assert.deepEqual(failures, [], `text tokens below AA:\n  ${failures.join("\n  ")}`);
   });
+  test("severity text outside a pill clears AA on the grounds it ships on", () => {
+    // Two widgets carry a severity colour as plain small text rather than
+    // inside a pill: the state matrix marks a failing row's label in
+    // --warn and its guessed-axis notice in --active-strong, and the
+    // forecast writes its milestone flags in --warn. Both render at 10px,
+    // so the normal-text floor applies and the pill test above never
+    // touches them.
+    //
+    // --active-strong on --sunk is deliberately NOT in this list: it
+    // measures 4.33:1 and nothing renders that pair. Asserting a
+    // combination no widget draws would either fail honestly for no
+    // reason or push a token change nobody needs.
+    const pairs = [
+      ["warn", "card"], ["warn", "paper"],
+      ["active-strong", "card"], ["active-strong", "paper"],
+      ["ok-strong", "card"], ["ok-strong", "paper"]
+    ];
+    const failures = [];
+    for (const theme of ["light", "dark"]) {
+      const p = palette(theme);
+      for (const [ink, ground] of pairs) {
+        const ratio = contrastRatio(p[ink], p[ground]);
+        if (ratio < AA_NORMAL) {
+          failures.push(`${theme}: --${ink} on --${ground} = ${ratio.toFixed(2)}:1`);
+        }
+      }
+    }
+    assert.deepEqual(failures, [], `severity text below AA:\n  ${failures.join("\n  ")}`);
+  });
 });

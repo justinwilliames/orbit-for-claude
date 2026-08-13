@@ -93,8 +93,53 @@ const EXCLUDED_PATH_PATTERNS = [
  * Minimum word count before we bother gating. Very short strings
  * (single words, template placeholders, IDs) can't meaningfully
  * score — skip them and they don't inflate the "fields gated" count.
+ *
+ * This is the LONG-FORM floor. It used to be the only floor, which made
+ * the gate structurally blind to the shortest strings in marketing —
+ * subject lines, preheaders, CTA labels, push titles — i.e. exactly the
+ * copy a customer reads. Orbit's own standard puts them below it by
+ * construction: skills/program-brief.md specifies "CTA text: [~15
+ * characters — minimal; e.g. \"View\" / \"Set up\" / \"Remind me later\"]",
+ * one, two and three words. A payload whose subject, preheader, CTA and
+ * push title all scored badly on their own returned min_score 100,
+ * worst_tier sharp, and an unqualified pass.
  */
 const MIN_GATE_WORDS = 6;
+
+/**
+ * Fields that are SUPPOSED to be short. The slop rules that matter for
+ * these are phrase regexes — marketing-speak verbs, corporate jargon,
+ * the unleash-your-potential cliché — and a regex needs no corpus to
+ * fire. Two words is enough to carry a cliché.
+ */
+const SHORT_FORM_FIELDS = new Set([
+  "subject",
+  "subject_line",
+  "subjectline",
+  "preheader",
+  "preheader_text",
+  "preview_text",
+  "cta",
+  "cta_text",
+  "button_text",
+  "button_label",
+  "push_title",
+  "push_body",
+  "push_text",
+  "notification_title",
+  "notification_body",
+  "sms_text",
+  "sms_body",
+  "sms",
+  "headline",
+  "tagline",
+]);
+
+const MIN_SHORT_FORM_WORDS = 2;
+
+function wordFloorFor(key) {
+  return SHORT_FORM_FIELDS.has(key) ? MIN_SHORT_FORM_WORDS : MIN_GATE_WORDS;
+}
 
 /**
  * Maximum number of fields we'll gate per response. Guards against
@@ -119,6 +164,7 @@ function isExcluded(path) {
  */
 function collectContentFields(payload, limit = MAX_FIELDS_PER_RESPONSE) {
   const collected = [];
+  const skipped = [];
   function walk(node, path) {
     if (collected.length >= limit) return;
     if (node === null || node === undefined) return;
@@ -135,10 +181,16 @@ function collectContentFields(payload, limit = MAX_FIELDS_PER_RESPONSE) {
         const next = path ? `${path}.${k}` : k;
         if (isExcluded(next)) continue;
         if (typeof v === "string") {
-          if (!CONTENT_FIELD_NAMES.has(k.toLowerCase())) continue;
-          const plain = k.toLowerCase() === "body_html" ? stripHtml(v) : v;
+          const key = k.toLowerCase();
+          if (!CONTENT_FIELD_NAMES.has(key)) continue;
+          const plain = key === "body_html" ? stripHtml(v) : v;
           const words = plain.trim().split(/\s+/).filter(Boolean);
-          if (words.length < MIN_GATE_WORDS) continue;
+          if (words.length < wordFloorFor(key)) {
+            // Recorded, not discarded. A field the gate could not score
+            // is not a field that passed, and `notes` has to say which.
+            skipped.push({ path: next, words: words.length });
+            continue;
+          }
           collected.push({ path: next, text: plain });
         } else {
           walk(v, next);
@@ -147,7 +199,7 @@ function collectContentFields(payload, limit = MAX_FIELDS_PER_RESPONSE) {
     }
   }
   walk(payload, "");
-  return collected;
+  return { collected, skipped };
 }
 
 const TIER_RANK = { sharp: 0, decent: 1, generic: 2, slop: 3 };
@@ -162,8 +214,8 @@ const TIER_RANK = { sharp: 0, decent: 1, generic: 2, slop: 3 };
  * content and decide whether to revise.
  */
 export function gatePayload(payload) {
-  const fields = collectContentFields(payload);
-  if (fields.length === 0) return null;
+  const { collected: fields, skipped } = collectContentFields(payload);
+  if (fields.length === 0 && skipped.length === 0) return null;
 
   const perField = {};
   let minScore = 100;
@@ -187,19 +239,42 @@ export function gatePayload(payload) {
     for (const f of a.findings) allFindingLabels.add(f.label);
   }
 
+  // Never assert a pass over a field that was never scored. The old
+  // `notes` said "All content passes" while naming a count that excluded
+  // every skipped field, so a payload where only `description` was long
+  // enough reported a clean gate over four unread customer-facing strings.
+  const total = fields.length + skipped.length;
+  const coverage =
+    skipped.length > 0
+      ? ` Scored ${fields.length} of ${total} content fields; ${skipped.length} ${
+          skipped.length === 1 ? "was" : "were"
+        } below the word floor and ${
+          skipped.length === 1 ? "was" : "were"
+        } not scored: ${skipped
+          .map((s) => s.path)
+          .slice(0, 8)
+          .join(", ")}${skipped.length > 8 ? ", …" : ""}.`
+      : "";
+
+  const verdict =
+    fields.length === 0
+      ? "No content field was long enough to score."
+      : minScore >= 85
+        ? "All scored content passes the pre-publish slop gate (≥85 sharp)."
+        : minScore >= 70
+          ? "Scored content is acceptable but improvable — consider rewriting fields below 85."
+          : "Scored content fell below 70 in at least one field — rewrite before shipping.";
+
   return {
-    min_score: minScore,
-    worst_tier: worstTier,
+    min_score: fields.length === 0 ? null : minScore,
+    worst_tier: fields.length === 0 ? null : worstTier,
     fields_gated: fields.length,
+    fields_skipped: skipped.length,
+    skipped_fields: skipped.map((s) => s.path),
     top_issues: Array.from(allFindingLabels).slice(0, 5),
     per_field: perField,
-    gate_version: "v1",
-    notes:
-      minScore >= 85
-        ? "All content passes the pre-publish slop gate (≥85 sharp)."
-        : minScore >= 70
-          ? "Content is acceptable but improvable — consider rewriting fields below 85."
-          : "Content scored below 70 in at least one field — rewrite before shipping.",
+    gate_version: "v2",
+    notes: `${verdict}${coverage}`,
   };
 }
 
