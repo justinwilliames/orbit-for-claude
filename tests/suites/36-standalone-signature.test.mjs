@@ -99,6 +99,210 @@ let tmpDir = null;
  * quietly measuring nothing.
  */
 const POPULATED = {
+  "ui://orbit/dark-pairs.html": {
+    "status": "ok",
+    "verdict": "fail",
+    "not_measured": false,
+    "reason": null,
+    "has_dark_mode_media_query": false,
+    "has_apple_dark_styles": false,
+    "invert_risk_count": 1,
+    "already_dark_count": 1,
+    "colour_pairs_measured": 3,
+    "pairs_not_drawable": 0,
+    "pairs": [
+      {
+        "tag": "h1",
+        "kind": "invert_risk",
+        "message": "Light-on-light pair will invert to dark-on-dark in Apple Mail / Outlook mobile dark mode. Add a dark-mode override.",
+        "warning": false,
+        "fg": "#f2f2f2",
+        "bg": "#ffffff",
+        "ratio": 1.12,
+        "inverted_fg": "#0d0d0d",
+        "inverted_bg": "#000000",
+        "inverted_ratio": 1.08
+      },
+      {
+        "tag": "p",
+        "kind": "already_dark",
+        "message": "Dark-on-dark pair has contrast 1.38:1 — below WCAG AA (4.5:1).",
+        "warning": false,
+        "fg": "#333333",
+        "bg": "#1a1a1a",
+        "ratio": 1.38,
+        "inverted_fg": "#cccccc",
+        "inverted_bg": "#e5e5e5",
+        "inverted_ratio": 1.27
+      },
+      {
+        "tag": "span",
+        "kind": "bare_white_text",
+        "message": "White text with no discoverable background colour — email clients with partial-invert can land white-on-white.",
+        "warning": true,
+        "fg": "#ffffff",
+        "bg": null,
+        "ratio": null,
+        "inverted_fg": null,
+        "inverted_bg": null,
+        "inverted_ratio": null
+      }
+    ],
+    "recommendation": "Add a @media (prefers-color-scheme: dark) block to override key text/bg pairs, and include color-scheme: light dark in <head> to opt into native dark-mode handling."
+  },
+  "ui://orbit/esp-matrix.html": {
+    "platforms": [
+      {
+        "platform": "customerio",
+        "display_name": "Customer.io",
+        "auth": "App API Bearer token",
+        "base_url": "https://api.customer.io",
+        "templating": "Liquid",
+        "operations": [
+          {
+            "operation": "checkAuth",
+            "label": "auth-check",
+            "support": "partial",
+            "endpoint": "GET /v1/campaigns",
+            "doc_url": "https://docs.customer.io/",
+            "notes": "No dedicated ping; the cheapest read doubles as the probe."
+          },
+          {
+            "operation": "listTemplates",
+            "label": "list templates",
+            "support": "unsupported",
+            "endpoint": null,
+            "doc_url": "https://docs.customer.io/",
+            "reason": "No public listing for reusable templates — content is authored in-app.",
+            "nearest_alternative": "Keep the canonical HTML in your own brain repo and send it inline."
+          },
+          {
+            "operation": "getTemplate",
+            "label": "get template",
+            "support": "unsupported",
+            "endpoint": null,
+            "doc_url": "https://docs.customer.io/",
+            "reason": "No public CRUD for reusable templates/layouts.",
+            "nearest_alternative": "Read the canonical copy from your own repo."
+          },
+          {
+            "operation": "pushTemplate",
+            "label": "create/update template",
+            "support": "unsupported",
+            "endpoint": null,
+            "doc_url": "https://docs.customer.io/journeys/send/transactional/api-examples/",
+            "reason": "No public CRUD for reusable templates/layouts.",
+            "nearest_alternative": "Send via POST /v1/send/email with full inline body (to/from/subject/body supplied per-request)."
+          },
+          {
+            "operation": "listCampaigns",
+            "label": "campaigns/flows read",
+            "support": "native",
+            "endpoint": "GET /v1/campaigns",
+            "doc_url": "https://docs.customer.io/"
+          },
+          {
+            "operation": "listSegments",
+            "label": "segments/lists read",
+            "support": "native",
+            "endpoint": "GET /v1/segments",
+            "doc_url": "https://docs.customer.io/"
+          },
+          {
+            "operation": "getPerformance",
+            "label": "performance metrics",
+            "support": "native",
+            "endpoint": "GET /v1/campaigns/{id}/metrics",
+            "doc_url": "https://docs.customer.io/"
+          },
+          {
+            "operation": "sendTest",
+            "label": "test send",
+            "support": "native",
+            "endpoint": "POST /v1/send/email",
+            "doc_url": "https://docs.customer.io/"
+          }
+        ]
+      }
+    ]
+  },
+  "ui://orbit/auth-panel.html": {
+    status: "ok",
+    domain: "acme-tools.com",
+    overall: "fail",
+    spf: {
+      verdict: "fail",
+      records: ["v=spf1 include:_spf.google.com include:sendgrid.net include:spf.braze.com ~all"],
+      lookup_count: 13,
+      issues: ["SPF record uses 13 DNS lookups (RFC 7208 limit: 10). Mail will be treated as permerror."],
+      recommendation: "Reduce include:/redirect= chains under 10 lookups."
+    },
+    dmarc: {
+      verdict: "warn",
+      records: ["v=DMARC1; p=none; rua=mailto:dmarc@acme-tools.com"],
+      tags: { v: "DMARC1", p: "none", rua: "mailto:dmarc@acme-tools.com" },
+      issues: ["Policy is p=none (monitor-only)."],
+      recommendation: "Move from p=none to p=quarantine."
+    },
+    dkim: {
+      verdict: "warn",
+      selectors_found: 2,
+      records: [
+        { selector: "braze1", host: "braze1._domainkey.acme-tools.com", record: "v=DKIM1; k=rsa; p=MIGfMA0GCS", issues: [] },
+        { selector: "selector2", host: "selector2._domainkey.acme-tools.com", record: "v=DKIM1; k=rsa; p=", issues: ["Selector published with empty public key (p=)."] }
+      ],
+      issues: ["selector2: Selector published with empty public key (p=)."],
+      recommendation: "Re-generate the DKIM key for the selectors with empty p=."
+    },
+    message: "Auth needs work."
+  },
+  "ui://orbit/sms-segments.html": {
+    status: "ok",
+    region: "US",
+    encoding: "GSM-7",
+    effective_length: 205,
+    segment_count: 2,
+    segment_cap: 153,
+    single_segment_limit: 160,
+    gsm_extension_chars: 2,
+    compliance_footer: "Acme Plumbing: Reply STOP to opt out, HELP for info. Msg&data rates may apply.",
+    final_message:
+      "Hey Sam, your winter service is due. Book online and we'll knock 15% off the call-out fee: acme.co/book {rate} " +
+      "Acme Plumbing: Reply STOP to opt out, HELP for info. Msg&data rates may apply.",
+    issues: [],
+    recommendation: "Multi-segment send; acceptable but costs more than single-segment."
+  },
+  "ui://orbit/push-matrix.html": {
+    title: "Your Tuesday job list is ready to review before the crew rolls out",
+    body: "Three jobs are unassigned and one has no parts allocated. Tap to sort it before 7am so nobody turns up to a site without a van full of the right kit.",
+    tier: "truncates-somewhere",
+    platforms: {
+      ios: {
+        titleChars: 65, titleLimit: 70, titleTruncates: false,
+        bodyChars: 149, bodyLimit: 178, bodyTruncates: false,
+        preview: {
+          title: "Your Tuesday job list is ready to review before the crew rolls out",
+          body: "Three jobs are unassigned and one has no parts allocated. Tap to sort it before 7am so nobody turns up to a site without a van full of the right kit."
+        }
+      },
+      android: {
+        titleChars: 65, titleLimit: 65, titleTruncates: false,
+        bodyChars: 149, bodyLimit: 100, bodyTruncates: true,
+        preview: {
+          title: "Your Tuesday job list is ready to review before the crew rolls out",
+          body: "Three jobs are unassigned and one has no parts allocated. Tap to sort it before 7am so nobody turns\u2026"
+        }
+      },
+      web: {
+        titleChars: 65, titleLimit: 50, titleTruncates: true,
+        bodyChars: 149, bodyLimit: 120, bodyTruncates: true,
+        preview: {
+          title: "Your Tuesday job list is ready to review before t\u2026",
+          body: "Three jobs are unassigned and one has no parts allocated. Tap to sort it before 7am so nobody turns up to a site withou\u2026"
+        }
+      }
+    }
+  },
   "ui://orbit/review-gallery.html": {
     programme: "Winback 2026",
     items: [

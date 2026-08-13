@@ -24,7 +24,12 @@ import {
   getOrbitLogoDataUri,
   getOrbitLogoPath,
   registerOrbitPdfFonts,
-  renderOrbitSvgBrandBadge
+  renderOrbitSvgBrandBadge,
+  // Read, never re-typed. The PDF export carried its own copy of both
+  // strings, which is the mechanism that let the two branding systems
+  // drift onto different claims about what Orbit is.
+  ORBIT_ATTRIBUTION,
+  ORBIT_TAGLINE
 } from "./orbit-branding.js";
 import { renderSvgBundle } from "./rendering.js";
 
@@ -1636,7 +1641,7 @@ function drawOrbitPdfBrandBadge(doc, spec, branding, fonts) {
     .fillColor(text)
     .font(fonts.display)
     .fontSize(12.5)
-    .text("Built in Orbit", x + 42, y + 10, {
+    .text(ORBIT_ATTRIBUTION, x + 42, y + 10, {
       width: badgeWidth - 50,
       align: "left"
     });
@@ -1645,7 +1650,7 @@ function drawOrbitPdfBrandBadge(doc, spec, branding, fonts) {
     .opacity(0.72)
     .font(fonts.ui)
     .fontSize(9.5)
-    .text("Lifecycle Marketing Operating System for Claude", x + 42, y + 24, {
+    .text(ORBIT_TAGLINE, x + 42, y + 24, {
       width: badgeWidth - 50,
       align: "left"
     });

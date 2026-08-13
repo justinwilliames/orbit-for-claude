@@ -51,7 +51,7 @@ import { DARK_PAIR_VERDICT_JS } from "../../server/ui/widgets/dark-pairs.js";
 import { ESP_CELL_JS } from "../../server/ui/widgets/esp-matrix.js";
 import { invertPair } from "../../server/html-checks.js";
 import { parsePostmasterSignal } from "../../server/postmaster-parse.js";
-import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
+import { bridgeAvailable, bridgeLoadError, WIDGET_PRELUDE } from "../../server/ui/shell.js";
 import { parseTestReadout } from "../../server/lifecycle-helpers.js";
 import { composeSms } from "../../server/content-extensions.js";
 
@@ -142,6 +142,39 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
       "widget shipped the degraded fallback — window.OrbitApp would be null in the host"
     );
     assert.ok(!/window\.OrbitApp\s*=\s*null/.test(html), "widget shipped the null-bridge fallback");
+  });
+
+  test("a rejected handshake re-runs the degrade instead of nulling app and stopping", () => {
+    // The defect this asserts is structural and invisible to any DOM
+    // check that does not wait for a microtask: orbitDegradeWithoutHost
+    // runs ONCE at module-eval time, while connect() is still pending
+    // and `app` is truthy, so it returns immediately. connect()'s
+    // rejection handler was the only thing that ever learns the
+    // handshake failed, and it set app = null and stopped — nothing
+    // re-touched the DOM. So for the exact case the function's own
+    // docstring names ("the host channel didn't connect") the disabled
+    // state, the title and the banner never fired, on every widget's
+    // primary Send-to-Claude button.
+    //
+    // Verified in Chromium against a stub whose connect() rejects on a
+    // later task: before this change the button stayed enabled with no
+    // title and no banner, forever.
+    // WIDGET_PRELUDE, not a rendered document — the inlined ext-apps
+    // bundle contains hundreds of .catch( blocks of its own.
+    const prelude = WIDGET_PRELUDE;
+    const catchBody = prelude.match(/\.catch\(\(\) => \{([\s\S]{0,600}?)\}\);/);
+    assert.ok(catchBody, "connect()'s rejection handler is no longer shaped as expected");
+    assert.match(
+      catchBody[1],
+      /orbitDegradeWithoutHost\(\)/,
+      "connect()'s rejection handler nulls app and stops — nothing re-applies the degraded UI"
+    );
+    // And the degrade must be a hoisted declaration, not an IIFE, or the
+    // handler above cannot reach it.
+    assert.match(prelude, /function orbitDegradeWithoutHost\(\) \{/);
+    // The banner must be reachable on a failed EMBEDDED handshake, not
+    // only when the bridge file was missing outright.
+    assert.doesNotMatch(prelude, /!orbitEmbedded \|\| !window\.ORBIT_BRIDGE_ERROR/);
   });
 
   test("every widget renders with no data — that is how the static resource is built", () => {
@@ -1779,6 +1812,32 @@ describe("Push matrix — what a platform drops is aligned, not recomputed", () 
     const a = alignCut("Completely different source", "Some other string…", true);
     assert.equal(a.aligned, false);
     assert.equal(a.dropped, "");
+  });
+
+  test("an emoji at the cut is not sliced in half", async () => {
+    // checkPushCopy sliced and counted on UTF-16 code units, so an emoji
+    // straddling a platform limit came back as a lone high surrogate —
+    // a string that is not well-formed UTF-16, which any strict encoder
+    // on the path to this widget replaces with U+FFFD. The widget then
+    // draws that replacement glyph and labels it what Android shows.
+    const { checkPushCopy } = await import("../../server/calculators.js");
+    const body = "x".repeat(98) + "\u{1F680}" + " tail copy past the Android limit";
+    const android = checkPushCopy("Hi", body).platforms.android;
+    assert.ok(android.preview.body.isWellFormed(), "the preview was cut mid-surrogate");
+    assert.equal(
+      android.bodyChars,
+      [...body].length,
+      "an emoji counted as two characters against a char limit"
+    );
+    assert.equal(android.bodyChars, body.length - 1, "the count is not code units");
+    // And the widget's alignment still lines up against it, which is the
+    // whole reason the preview must be a real string.
+    assert.equal(alignCut(body, android.preview.body, true).aligned, true);
+
+    // A regional-indicator pair is two code points and one character.
+    const flags = checkPushCopy("Hi", "\u{1F1E6}\u{1F1FA}".repeat(60) + "tail").platforms.android;
+    assert.equal(flags.bodyChars, 64);
+    assert.ok(flags.preview.body.isWellFormed());
   });
 
   test("the verdict names WHICH field was cut, in words", () => {

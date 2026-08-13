@@ -100,6 +100,10 @@ import { LIST_FORECAST_URI } from "./ui/widgets/list-forecast.js";
 import { STATE_MATRIX_URI } from "./ui/widgets/state-matrix.js";
 import { POSTMASTER_TREND_URI } from "./ui/widgets/postmaster-trend.js";
 import { INBOX_PREVIEW_URI } from "./ui/widgets/inbox-preview.js";
+import { AUTH_PANEL_URI } from "./ui/widgets/auth-panel.js";
+import { SMS_SEGMENTS_URI } from "./ui/widgets/sms-segments.js";
+import { PUSH_MATRIX_URI } from "./ui/widgets/push-matrix.js";
+import { DARK_PAIRS_URI } from "./ui/widgets/dark-pairs.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -175,7 +179,7 @@ import { probeStripoInlineHtml } from "./stripo-inline-html-probe.js";
 import { probeStripoSmartElement } from "./stripo-smart-element-probe.js";
 import { inspectStripoModuleBindings } from "./stripo-module-bindings-inspect.js";
 import { checkEmailAuth, checkBimi } from "./email-auth.js";
-import { checkDarkModeRisk, accessibilityLint } from "./html-checks.js";
+import { checkDarkModeRisk, accessibilityLint, invertPair } from "./html-checks.js";
 import { scoreRfm, buildCohortRetention } from "./segmentation-math.js";
 import {
   scorePreheader,
@@ -1462,9 +1466,13 @@ function registerTools() {
           Object.entries(byChannel)
             .map(([channel, count]) => `${count} ${channel}`)
             .join(", "),
-        `Shareable copy written to ${artifact} — open it in a browser or send the file to anyone; it works without Orbit installed.`,
+        // Same correction as orbit_render_gate: the artifact is a working
+        // console, not just a copy to forward. Naming it that way is the
+        // difference between a usable answer and a wait on a host feature
+        // this server has no way to detect.
+        `The console is at ${artifact} — open it in a browser to review there. The same file can be sent to anyone; it works without Orbit installed.`,
         "",
-        "Approve or flag each one in the console, then send the review back here."
+        "If your host renders Orbit widgets, the console is also open here. Approve or flag each creative, then send the review back."
       ]
         .filter(Boolean)
         .join("\n");
@@ -2261,7 +2269,7 @@ function registerTools() {
         "action='build': create a new spec (requires: goal). If status='needs_inputs', ask the user for the missing items. " +
         "action='update': revise an existing spec (requires: spec_json). " +
         "action='render': render a spec via Gemini and return an inline image preview with a download link. " +
-        "action='save': copy files to Orbit outputs (only when the user explicitly asks). " +
+        "action='save': copy THIS header's PNG + spec to Orbit outputs (requires: spec_json, so it knows which files are yours; only when the user explicitly asks). " +
         "After render: show the inline image preview, then show the download_link as a clickable markdown link (format: [⬇ Download full-resolution image](file://...)), then ask if the user wants changes. Do not describe the image. Do not mention saving or ~/Downloads.",
       inputSchema: {
         action: z.enum(["build", "update", "render", "save"]),
@@ -2303,19 +2311,47 @@ function registerTools() {
         const sourceDir = previewDir ?? path.join(os.homedir(), "Downloads");
         if (!fs.existsSync(sourceDir)) return makeJsonToolResponse({ status: "error", code: "not_found", message: `Source directory not found: ${sourceDir}` });
         const targetDir = ensureDir(outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : resolveOutputDir(runtimeConfig, "brand-headers"));
-        const files = fs.readdirSync(sourceDir).filter((f) => !f.startsWith(".") && /\.(png|json)$/.test(f));
+        // The two filenames the render already knows it wrote — NOT a glob
+        // of the directory. This used to readdir ~/Downloads and copy every
+        // .png and .json in it, reporting the lot as saved_files under a
+        // description that says the user is saving their header.
+        const baseName = (() => {
+          if (!specJson) return null;
+          const { value } = parseToolJson(specJson, "spec_json");
+          const name = value?.export_plan?.base_name;
+          return typeof name === "string" && name.trim() ? name.trim() : null;
+        })();
+        if (!baseName) {
+          return makeJsonToolResponse({
+            status: "error",
+            code: "missing_input",
+            message: "action=save needs spec_json (or its export_plan.base_name) so it knows which files are yours. Without it there is nothing to distinguish your header from everything else in the source folder."
+          });
+        }
+        const wanted = [`${baseName}.png`, `${baseName}.json`];
         const saved = [];
-        for (const file of files) {
+        const missing = [];
+        for (const file of wanted) {
           const src = path.join(sourceDir, file);
+          if (!fs.existsSync(src)) { missing.push(file); continue; }
           const dest = path.join(targetDir, file);
           fs.copyFileSync(src, dest);
           saved.push(dest);
+        }
+        if (saved.length === 0) {
+          return makeJsonToolResponse({
+            status: "error",
+            code: "not_found",
+            message: `Nothing to save: neither ${wanted.join(" nor ")} is in ${sourceDir}. Check the render actually wrote there, or pass preview_dir.`,
+            source_dir: sourceDir
+          });
         }
         return makeJsonToolResponse({
           status: "ok",
           action: "save",
           output_dir: targetDir,
           saved_files: saved,
+          missing_files: missing.length > 0 ? missing : undefined,
           file_count: saved.length
         });
       }
@@ -4434,15 +4470,16 @@ function registerTools() {
     {
       title: "Check Push Notification Copy",
       description:
-        "Check how a push notification title and body render across iOS, Android, and Web — returning truncation warnings and the truncated preview for each platform. Android truncates most aggressively (100 chars body); iOS has the most room (178 chars body).",
+        "Check how a push notification title and body render across iOS, Android, and Web — returning truncation warnings and the truncated preview for each platform. Android truncates most aggressively (100 chars body); iOS has the most room (178 chars body). Draws it in a widget as the same notification on all three platforms side by side, each cut where that platform cuts it, with what each one drops named.",
       inputSchema: {
         title: z.string().min(1).max(MAX_MEDIUM_STRING).describe("Push notification title"),
         body: z.string().min(1).max(MAX_LONG_STRING).describe("Push notification body")
-      }
+      },
+      _meta: widgetMeta(PUSH_MATRIX_URI)
     },
     async ({ title, body }) => {
       const result = checkPushCopy(title, body);
-      return makeJsonToolResponse(result);
+      return makeJsonToolResponse(result, result);
     }
   );
 
@@ -5447,17 +5484,25 @@ function registerTools() {
     {
       title: "Check Email Auth (SPF / DKIM / DMARC)",
       description:
-        "Resolve real DNS records for a domain and return a verdict on SPF, DMARC, and DKIM selectors. Flags common deliverability issues — multiple SPF records, too many lookups, p=none DMARC, empty DKIM keys. Pass dkim_selectors if you know your ESP's selector; otherwise Orbit checks common defaults.",
+        "Resolve real DNS records for a domain and return a verdict on SPF, DMARC, and DKIM selectors. Flags common deliverability issues — multiple SPF records, too many lookups, p=none DMARC, empty DKIM keys. Pass dkim_selectors if you know your ESP's selector; otherwise Orbit checks common defaults. Draws it in a widget as the SPF record's position against RFC 7208's 10-lookup budget and the DMARC policy on the none/quarantine/reject ladder, with the literal TXT strings underneath for whoever owns the DNS zone.",
       inputSchema: {
         domain: z.string().min(1).describe("Root domain — e.g. yourorbit.team (not www.)."),
         dkim_selectors_json: z.string().optional().describe("Optional JSON array of DKIM selector names to probe, in addition to the common defaults.")
-      }
+      },
+      _meta: widgetMeta(AUTH_PANEL_URI)
     },
     async ({ domain, dkim_selectors_json: dkimSelectorsJson }) => {
       const { value: dkimSelectors, error } = parseToolJson(dkimSelectorsJson, "dkim_selectors_json", []);
       if (error) return error;
       const result = await checkEmailAuth({ domain, dkimSelectors });
-      return makeJsonToolResponse(result);
+      // Only the resolved shape is drawable. On `needs_inputs` there are
+      // no lanes to draw, and handing the widget that payload would put
+      // it into its ready state with three empty scales.
+      if (result?.status !== "ok") return makeJsonToolResponse(result);
+      // Attribution is Orbit's own bookkeeping and the panel never draws
+      // it — it stays out of the second copy.
+      const { orbit_attribution: _attribution, ...drawable } = result;
+      return makeJsonToolResponse(result, drawable);
     }
   );
 
@@ -5484,14 +5529,66 @@ function registerTools() {
       title: "Dark Mode Rendering Check",
       description:
         "Single-check tool: parse an HTML email and flag invisible-text risk when Apple Mail / Outlook mobile invert colours in dark mode. Reports per-element colour pairs, checks for a prefers-color-scheme: dark media query, and recommends specific overrides. " +
+        "Drawn in a widget as each pair painted at reading size beside what a full invert does to it. " +
         "For a full pre-send verdict use orbit_qa_email, which runs this check alongside accessibility and size checks in one pass.",
       inputSchema: {
         html: z.string().min(1).describe("The email HTML to analyse.")
-      }
+      },
+      _meta: widgetMeta(DARK_PAIRS_URI)
     },
     async ({ html }) => {
       const result = checkDarkModeRisk({ html });
-      return makeJsonToolResponse(result);
+
+      // Widget payload: the same findings, each resolved to hex with its
+      // measured contrast and the FULL-INVERT pair beside it.
+      //
+      // The inversion is computed here, through the exported and tested
+      // invertPair(), rather than in the drawing. A widget that re-derives
+      // the tool's arithmetic is a widget that can confidently show a
+      // number the tool never produced — the same shape as a truncation
+      // re-computed in a preview card.
+      //
+      // A pair whose colours will not resolve is dropped rather than
+      // drawn from a guess; `pairs_not_drawable` counts them so the
+      // widget's population can never silently be smaller than the
+      // tool's without saying so.
+      const raw = [
+        ...(result.findings ?? []),
+        ...(result.warnings ?? []).map((w) => ({ ...w, warning: true })),
+      ];
+      let notDrawable = 0;
+      const pairs = [];
+      for (const f of raw) {
+        const inv = f.bg ? invertPair({ fg: f.fg, bg: f.bg }) : null;
+        if (f.bg && !inv) { notDrawable += 1; continue; }
+        pairs.push({
+          tag: f.tag,
+          kind: f.kind,
+          message: f.message,
+          warning: f.warning === true,
+          fg: inv ? inv.fg : (f.fg ?? null),
+          bg: inv ? inv.bg : null,
+          ratio: inv ? inv.ratio : null,
+          inverted_fg: inv ? inv.inverted_fg : null,
+          inverted_bg: inv ? inv.inverted_bg : null,
+          inverted_ratio: inv ? inv.inverted_ratio : null,
+        });
+      }
+
+      return makeJsonToolResponse(result, {
+        status: result.status,
+        verdict: result.verdict ?? "unknown",
+        not_measured: result.not_measured === true,
+        reason: result.reason ?? null,
+        has_dark_mode_media_query: result.has_dark_mode_media_query === true,
+        has_apple_dark_styles: result.has_apple_dark_styles === true,
+        invert_risk_count: result.invert_risk_count ?? 0,
+        already_dark_count: result.already_dark_count ?? 0,
+        colour_pairs_measured: result.colour_pairs_measured ?? 0,
+        pairs_not_drawable: notDrawable,
+        pairs,
+        recommendation: result.recommendation ?? null,
+      });
     }
   );
 
@@ -5780,13 +5877,14 @@ function registerTools() {
     {
       title: "Compose + Validate SMS",
       description:
-        "Detect encoding (GSM-7 vs Unicode/UCS-2), compute segment count, inject the correct regional compliance footer (US CTIA, AU, UK/EU GDPR, CA CASL), and surface the final composed message with cost implications.",
+        "Detect encoding (GSM-7 vs Unicode/UCS-2), compute segment count, inject the correct regional compliance footer (US CTIA, AU, UK/EU GDPR, CA CASL), and surface the final composed message with cost implications. Draws it in a widget as the message cut where the carrier starts billing a second segment, with the compliance footer marked in place and every character that costs two units or forced the UCS-2 tariff marked on the message itself.",
       inputSchema: {
         body: z.string().min(1).describe("The SMS body copy."),
         region: z.string().optional().describe("US | AU | UK | EU | CA | GLOBAL. Default: GLOBAL."),
         brand: z.string().optional().describe("Brand name — required for US CTIA compliance."),
         include_stop_line: z.boolean().optional().describe("Append STOP/opt-out line (default: true).")
-      }
+      },
+      _meta: widgetMeta(SMS_SEGMENTS_URI)
     },
     async ({ body, region, brand, include_stop_line: includeStopLine }) => {
       const result = composeSms({
@@ -5795,7 +5893,9 @@ function registerTools() {
         brand,
         includeStopLine: includeStopLine !== false
       });
-      return makeJsonToolResponse(result);
+      if (result?.status !== "ok") return makeJsonToolResponse(result);
+      const { orbit_attribution: _attribution, ...drawable } = result;
+      return makeJsonToolResponse(result, drawable);
     }
   );
 
@@ -6010,9 +6110,14 @@ function registerTools() {
       const summary = [
         `Render gate open: ${payload.label}`,
         `Size (measured here, no render needed): ${(bytes / 1024).toFixed(1)} KB of Gmail's 102 KB limit — ${sizeVerdict}.`,
-        `Shareable copy written to ${artifact} — open it in a browser or send the file to anyone; it works without Orbit installed.`,
+        // The artifact IS the measurement, not merely the share. It runs
+        // the identical checks in whatever browser opens it, with no host
+        // bridge involved. Describing it only as something to forward,
+        // then telling the model to wait for a widget message, left a
+        // widget-less host waiting forever with the full answer on disk.
+        `The measured findings are in ${artifact} — open it in a browser and it lays the email out at 640px and 390px there, measuring widows, CTA row wrap, tap-target size, computed contrast and rendered height, each cited to the px value behind it. The same file can be sent to anyone; it works without Orbit installed.`,
         "",
-        "The widget is now laying this out at 640px and 390px. It measures widows, CTA row wrap, tap-target size, computed contrast and rendered height, then sends the findings back into this conversation with the px values behind each one. Wait for that message before judging the render.",
+        "If your host renders Orbit widgets, those same findings will also arrive in this conversation shortly. Do not treat the size check above as a verdict on the render.",
         "Checks it will NOT perform, deliberately: client-specific rendering (Outlook's Word engine, Yahoo), image loading from blocked hosts, and any pixel-height verdict without max_height_px."
       ]
         .filter(Boolean)

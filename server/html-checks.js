@@ -134,6 +134,51 @@ export function checkDarkModeRisk({ html }) {
 }
 
 // ---------------------------------------------------------------------------
+// Public: invertPair — the arithmetic behind the dark-pairs widget
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve one text/background pair to hex, measure it, and measure what a
+ * FULL-INVERT client does to it.
+ *
+ * This lives here, exported and tested, rather than inside the widget for
+ * the reason push-matrix states in its own header: a drawing that re-derives
+ * the tool's arithmetic is a drawing that can confidently show a number the
+ * tool never produced. The widget renders these values and computes none.
+ *
+ * "Full invert" is `255 - channel`, which is a DEFINED operation and the one
+ * Outlook mobile's aggressive mode performs — not a reconstruction of Apple
+ * Mail's proprietary partial-invert curve, which is why the widget labels it
+ * as the Outlook class and says so out loud. The useful, slightly
+ * counter-intuitive fact this makes visible: inversion is close to
+ * contrast-preserving, so a pair that is unreadable in light mode is still
+ * unreadable after the flip. "It will break in dark mode" understates it —
+ * it is already broken.
+ *
+ * Returns null when either colour cannot be resolved, so a caller can abstain
+ * rather than draw a guessed swatch.
+ *
+ * @param {{fg: string, bg: string}} pair CSS colour strings.
+ */
+export function invertPair({ fg, bg } = {}) {
+  const f = parseColor(fg);
+  const b = parseColor(bg);
+  if (!f || !b) return null;
+  const flip = (c) => ({ r: 255 - c.r, g: 255 - c.g, b: 255 - c.b });
+  const fi = flip(f);
+  const bi = flip(b);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  return {
+    fg: colorToHex(f),
+    bg: colorToHex(b),
+    ratio: round2(contrastRatio(f, b)),
+    inverted_fg: colorToHex(fi),
+    inverted_bg: colorToHex(bi),
+    inverted_ratio: round2(contrastRatio(fi, bi)),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public: accessibilityLint
 // ---------------------------------------------------------------------------
 

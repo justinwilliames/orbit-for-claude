@@ -187,6 +187,24 @@ export async function importFigmaEmailDesign({
 
   writeJson(path.join(importDir, "design-import-record.json"), designImport);
 
+  // The same rule the PDF branch below already follows: zero sections is a
+  // failed read, not an empty design. This branch returned "ok" with a
+  // warning, and the downstream guard then handed the user PDF-specific
+  // advice while echoing source_type "figma" in the same object — on the
+  // headline branch of the flagship path's step 2.
+  if (sections.length === 0) {
+    return {
+      status: "no_sections_detected",
+      design_import: designImport,
+      message:
+        "No component-sized sections were found under this node. That usually means the node you passed is the page or a single layer rather than the frame containing the email.",
+      alternatives: [
+        "Open the file in Figma, select the FRAME that holds the whole email, and copy the link to that node.",
+        "If you have the built email as HTML, orbit_learn_email_template derives the module catalogue and brand tokens directly from it.",
+      ],
+    };
+  }
+
   return {
     status: "ok",
     design_import: designImport
@@ -282,10 +300,17 @@ export function suggestEmailComponentMap({
   // map of zero components with status "ok" told the caller the step
   // succeeded and handed the model an empty catalogue to build from.
   if ((record.sections ?? []).length === 0) {
+    // The guidance branches on WHICH import produced the empty record.
+    // It used to hand every caller PDF advice while echoing
+    // source_type "figma" back at them in the same object.
+    const advice = record.source_type === "figma"
+      ? "The node you imported has no component-sized children — check you passed the frame containing the email, not the page or a single layer. A Figma import that finds nothing now returns status 'no_sections_detected'."
+      : record.source_type === "pdf"
+        ? "Re-run the import and check whether it returned status 'unreadable_pdf' — a flat scan recovers no text and so produces no sections."
+        : "Re-run the import and check the status it returned before this record was written.";
     return {
       status: "invalid_input",
-      message:
-        "This design import contains no sections, so there is nothing to infer components from. Re-run the import — if it was a PDF, check whether it returned status 'unreadable_pdf'.",
+      message: `This design import contains no sections, so there is nothing to infer components from. ${advice}`,
       source_import_id: record.id,
       source_type: record.source_type,
     };

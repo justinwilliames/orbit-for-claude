@@ -19,6 +19,7 @@
  * a generic ESP referred to as "your ESP" unless the caller names one.
  */
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -85,7 +86,65 @@ export function bootstrapBrain({
     writeSkip(path.join(root, dir, ".gitkeep"), "", result);
   }
 
+  // ...and then actually make it a repo.
+  //
+  // The generated README's rule #1 is "Git is canonical", it describes
+  // graphify-out/ as "Git-ignored, regenerable", and its write protocol
+  // tells any AI session to "commit with a scoped message" — over a
+  // directory that was not a git repository. The two things this
+  // deliverable is sold on, templates that stop drifting and knowledge
+  // that stops living in someone's head, are both HISTORY properties.
+  Object.assign(result, initGitRepo(root, company));
+
   return result;
+}
+
+/**
+ * `git init` plus one initial commit, when git is available and this is
+ * not already inside a work tree.
+ *
+ * Never throws: a brain without history is still a usable brain, so a
+ * missing or unhappy git degrades to a next_step the caller can run by
+ * hand rather than failing a bootstrap that otherwise succeeded.
+ */
+function initGitRepo(root, company) {
+  const run = (args) =>
+    spawnSync("git", args, { cwd: root, stdio: "pipe", encoding: "utf8", timeout: 15_000 });
+
+  const version = spawnSync("git", ["--version"], { stdio: "pipe", timeout: 5_000 });
+  if (version.error || version.status !== 0) {
+    return {
+      git_initialised: false,
+      git_next_steps: [`git is not on PATH. Run \`git init\` in ${root} yourself — the README's rules assume a history.`],
+    };
+  }
+
+  const inTree = run(["rev-parse", "--is-inside-work-tree"]);
+  if (inTree.status === 0 && String(inTree.stdout).trim() === "true") {
+    // Already tracked — by this repo or an enclosing one. Committing into
+    // someone else's tree without being asked is not ours to do.
+    return { git_initialised: false, git_already_tracked: true };
+  }
+
+  if (run(["init"]).status !== 0) {
+    return {
+      git_initialised: false,
+      git_next_steps: [`\`git init\` failed in ${root}. Initialise it by hand — the README's rules assume a history.`],
+    };
+  }
+  run(["add", "-A"]);
+  const commit = run([
+    "-c", "user.name=Orbit",
+    "-c", "user.email=orbit@localhost",
+    "commit", "-q", "-m", `brain: scaffold ${company}'s template brain`,
+  ]);
+  return {
+    git_initialised: true,
+    git_committed: commit.status === 0,
+    git_next_steps: commit.status === 0
+      ? []
+      : [`The repo was initialised but the first commit failed. Run \`git commit\` in ${root} once your git identity is configured.`],
+  };
 }
 
 // ── Content generators ────────────────────────────────────────────

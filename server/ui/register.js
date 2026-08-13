@@ -45,6 +45,11 @@ import { renderListForecast, LIST_FORECAST_URI } from "./widgets/list-forecast.j
 import { renderStateMatrix, STATE_MATRIX_URI } from "./widgets/state-matrix.js";
 import { renderPostmasterTrend, POSTMASTER_TREND_URI } from "./widgets/postmaster-trend.js";
 import { renderInboxPreview, INBOX_PREVIEW_URI } from "./widgets/inbox-preview.js";
+import { renderAuthPanel, AUTH_PANEL_URI } from "./widgets/auth-panel.js";
+import { renderSmsSegments, SMS_SEGMENTS_URI } from "./widgets/sms-segments.js";
+import { renderPushMatrix, PUSH_MATRIX_URI } from "./widgets/push-matrix.js";
+import { renderDarkPairs, DARK_PAIRS_URI } from "./widgets/dark-pairs.js";
+import { renderEspMatrix, ESP_MATRIX_URI } from "./widgets/esp-matrix.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -157,6 +162,41 @@ export const ORBIT_WIDGETS = [
     description:
       "A scored subject line and preheader laid out as the inbox row a reader actually sees, measured at three list widths in a real engine so the truncation point is observed rather than guessed from a character count — with every flagged word marked on the string that caused it.",
     render: renderInboxPreview,
+  },
+  {
+    uri: AUTH_PANEL_URI,
+    name: "Orbit email auth",
+    description:
+      "SPF, DMARC and DKIM as they are actually published — the SPF record's position against RFC 7208's 10-lookup budget, the DMARC policy on the none/quarantine/reject ladder with the floor Gmail enforces marked, the selectors that answered — and an explicit refusal to draw either scale when the lookup did not produce a count to place on it.",
+    render: renderAuthPanel,
+  },
+  {
+    uri: SMS_SEGMENTS_URI,
+    name: "Orbit SMS segments",
+    description:
+      "The composed SMS cut where the carrier starts billing a second segment, with the auto-appended compliance footer marked in place and every character that costs two units or forced the UCS-2 tariff marked on the message that carries it — and the widget's own unit count checked against the tool's.",
+    render: renderSmsSegments,
+  },
+  {
+    uri: PUSH_MATRIX_URI,
+    name: "Orbit push preview",
+    description:
+      "One push notification drawn on all three platforms at once, each truncated exactly where that platform truncates it, with what each one drops derived by lining the tool's own preview up against the source rather than re-deriving the cut.",
+    render: renderPushMatrix,
+  },
+  {
+    uri: DARK_PAIRS_URI,
+    name: "Orbit dark mode pairs",
+    description:
+      "Every text/background pair the email declares, painted as body copy at reading size next to what a full-invert client does to it — so \"1.09:1\" is a thing you can see rather than a number you have to trust — with the flip named as Outlook mobile's operation rather than as every dark client, and a pair whose background could not be resolved hatched rather than guessed.",
+    render: renderDarkPairs,
+  },
+  {
+    uri: ESP_MATRIX_URI,
+    name: "Orbit ESP capability matrix",
+    description:
+      "Every supported email platform against every operation as one grid, each cell carrying a glyph and a word rather than a colour, and every partial or absent cell carrying the provider's real constraint and the nearest thing that does work.",
+    render: renderEspMatrix,
   },
 ];
 

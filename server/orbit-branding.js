@@ -4,8 +4,16 @@ import { escapeXml, fileExists, readFileAsDataUri } from "./utils.js";
 
 const BRANDING_DIRNAME = "_orbit-branding";
 const FONT_DIRNAME = "fonts";
-const ORBIT_ATTRIBUTION = "Built in Orbit";
-const ORBIT_TAGLINE = "Lifecycle Marketing Operating System for Claude";
+// Orbit has two artifact-branding systems. This one signs the SVG / PDF /
+// markdown exports — lifecycle diagrams, Notion bundles, Braze packs,
+// email templates — and it drifted: "Lifecycle Marketing Operating System
+// for Claude" appears nowhere on the site, in the README, the manifest,
+// server.json or the MCP instruction string. The widget artifacts sign off
+// with the live positioning (server/ui/shell.js). Both halves now say the
+// same thing, and lifecycle-diagrams.js imports these rather than
+// re-typing them — the duplicate literal is what let them fork.
+export const ORBIT_ATTRIBUTION = "Made with Orbit AI";
+export const ORBIT_TAGLINE = "A free lifecycle marketer, built into Claude";
 const ORBIT_URL = "https://yourorbit.team";
 const ORBIT_LOGO_URL = "https://yourorbit.team/images/orbit-icon.png";
 const ORBIT_LOGO_DARK_URL = "https://yourorbit.team/images/orbit-icon-dark.png";

@@ -219,7 +219,17 @@ const orbitEmbedded = (() => {
 if (orbitEmbedded && window.OrbitApp?.App) {
   app = new window.OrbitApp.App({ name: "Orbit", version: "1.0.0" });
   try {
-    Promise.resolve(app.connect()).catch(() => { app = null; });
+    Promise.resolve(app.connect()).catch(() => {
+      app = null;
+      // This is the ONLY place that learns the handshake actually failed,
+      // and until now it was a dead end: it nulled app and nothing
+      // re-touched the DOM. The degrade below runs once, synchronously,
+      // at module-eval time — while connect() is still pending and app
+      // is still truthy — so it returned immediately and the disabled
+      // state, the title and the banner never fired for the exact case
+      // its own docstring names. (Function declaration, so it hoists.)
+      orbitDegradeWithoutHost();
+    });
   } catch {
     app = null;
   }
@@ -262,32 +272,37 @@ function flash(msg) {
 // Standalone (the shareable artifact, or the file opened from disk) is
 // NOT a fault — there is no host by design — so it gets the same button
 // treatment without the error notice.
-(function orbitDegradeWithoutHost() {
+// Called twice by design: once at module-eval time (for the standalone
+// artifact and the missing-bridge case, both known immediately), and again
+// from connect()'s rejection handler, which is the only signal that an
+// embedded handshake failed. Idempotent, so the second call is free when
+// the first already ran.
+function orbitDegradeWithoutHost() {
   if (app) return;
-  const apply = () => {
-    const send = document.getElementById("send");
-    if (send) {
-      send.disabled = true;
-      send.classList.remove("o-btn--primary");
-      send.title = orbitEmbedded
-        ? "The host channel didn't connect — use Copy instead."
-        : "No host to send to in a standalone copy — use Copy instead.";
-      const copy = document.getElementById("copy");
-      if (copy) copy.classList.add("o-btn--primary");
-    }
-    if (!orbitEmbedded || !window.ORBIT_BRIDGE_ERROR) return;
-    const note = document.createElement("div");
-    note.className = "o-bridge-note";
-    note.textContent =
-      "Host channel unavailable — findings can be copied but not sent back to Claude.";
-    document.body.appendChild(note);
-  };
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", apply, { once: true });
-  } else {
-    apply();
+  const send = document.getElementById("send");
+  if (send) {
+    send.disabled = true;
+    send.classList.remove("o-btn--primary");
+    send.title = orbitEmbedded
+      ? "The host channel didn't connect — use Copy instead."
+      : "No host to send to in a standalone copy — use Copy instead.";
+    const copy = document.getElementById("copy");
+    if (copy) copy.classList.add("o-btn--primary");
   }
-})();
+  // A failed handshake is a fault worth naming; a standalone copy is not.
+  if (!orbitEmbedded) return;
+  if (document.querySelector(".o-bridge-note")) return;
+  const note = document.createElement("div");
+  note.className = "o-bridge-note";
+  note.textContent =
+    "Host channel unavailable — findings can be copied but not sent back to Claude.";
+  document.body.appendChild(note);
+}
+// No readyState branch. Every widget script block is emitted at the END of
+// <body> (see buildWidgetHtml), so the markup this touches is always
+// already parsed — the branch was dead, and reading as though it handled
+// timing is what hid the real defect above.
+orbitDegradeWithoutHost();
 
 // Sign the standalone copy.
 //

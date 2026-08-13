@@ -269,6 +269,15 @@ export async function renderBrandHeader({
   fs.writeFileSync(pngPath, Buffer.from(result.base64, "base64"));
 
   const fileSizeBytes = fs.statSync(pngPath).size;
+  // Measure what was actually written. The tool reported file_size_bytes
+  // and nothing about dimensions, while every spec warned the image had
+  // been "cropped to 1200:400" — a crop no code in this repo performs. A
+  // byte count cannot tell you the header is the wrong shape.
+  const dimensions = readPngDimensions(pngPath);
+  const canvas = normalizedSpec.canvas ?? {};
+  const offCanvas =
+    dimensions && canvas.width && canvas.height &&
+    (dimensions.width !== canvas.width || dimensions.height !== canvas.height);
 
   return {
     status: "ok",
@@ -277,9 +286,37 @@ export async function renderBrandHeader({
     reference_errors: referenceErrors.length > 0 ? referenceErrors : undefined,
     output_file: pngPath,
     file_size_bytes: fileSizeBytes,
+    output_width: dimensions?.width ?? null,
+    output_height: dimensions?.height ?? null,
+    requested_width: canvas.width ?? null,
+    requested_height: canvas.height ?? null,
+    dimension_mismatch: offCanvas
+      ? `The generated PNG is ${dimensions.width}x${dimensions.height}, not the ${canvas.width}x${canvas.height} you asked for. Orbit does not crop — resize it before it goes in an email.`
+      : undefined,
     provider: result.provider,
     model: result.model
   };
+}
+
+/**
+ * Width and height straight out of a PNG's IHDR chunk.
+ *
+ * No imaging dependency: a PNG's first chunk is always IHDR and its width
+ * and height are big-endian uint32s at byte offsets 16 and 20. Returns
+ * null for anything that is not a PNG, rather than guessing.
+ */
+function readPngDimensions(filePath) {
+  try {
+    const fd = fs.openSync(filePath, "r");
+    const head = Buffer.alloc(24);
+    const read = fs.readSync(fd, head, 0, 24, 0);
+    fs.closeSync(fd);
+    if (read < 24) return null;
+    if (head.toString("latin1", 1, 4) !== "PNG") return null;
+    return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -421,8 +458,19 @@ function buildWarnings({ profile, guidelines, guidelineContext, brandExamples, c
   if (brandExamples.length === 0) {
     warnings.push("No brand example images found — adding examples will improve art direction.");
   }
-  if (canvas.providerAspectRatio !== canvas.aspectRatio) {
-    warnings.push(`Gemini generates at ${canvas.providerAspectRatio}, cropped to ${canvas.aspectRatio}.`);
+  // This compared a RATIO string ("21:9") to a PIXEL-DIMENSION string
+  // ("1200:400") and so could never be false — email-square warned that
+  // its own exactly-correct 1:1 had been cropped. It also promised a crop
+  // that does not exist: nothing in this repo resizes the returned PNG.
+  // Compare the actual proportions, and say what really happens.
+  const [pw, ph] = String(canvas.providerAspectRatio).split(":").map(Number);
+  const requested = canvas.width / canvas.height;
+  if (pw && ph && Math.abs(requested - pw / ph) > 0.01) {
+    warnings.push(
+      `Gemini generates at ${canvas.providerAspectRatio}, the nearest ratio it supports to your ` +
+        `${canvas.width}x${canvas.height} canvas. Orbit does NOT crop or resize the result — check the ` +
+        `returned output_width/output_height and crop to ${canvas.width}x${canvas.height} before sending.`
+    );
   }
 
   return warnings;

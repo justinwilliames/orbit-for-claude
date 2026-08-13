@@ -303,8 +303,17 @@ const SHAPED_RESPONSE_FLOOR = 45;
  * Their prose was trimmed to roughly the fleet average before the number was
  * moved; the remainder is five schemas, not verbosity. The budget's job is
  * unchanged — stop the number moving SILENTLY. Tool 127 is still a decision.
+ *
+ * 156_000 -> 157_000 (13 Aug 2026, +253 measured): orbit_dark_mode_check and
+ * orbit_esp_capabilities each gained a widget. 91 of those bytes are the two
+ * `ui/resourceUri` _meta blocks, which are load-bearing — that key is what
+ * binds a tool to its drawing, and dropping it to save 45 bytes ships a
+ * widget no host ever renders. The remaining 162 is one short clause per
+ * tool saying the drawing exists, which is how the model knows to expect
+ * one. Both clauses were cut roughly in half before this number was moved.
+ * Deliberate, and small: no tool was added.
  */
-const TOOLS_LIST_BYTE_BUDGET = 156_000;
+const TOOLS_LIST_BYTE_BUDGET = 157_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

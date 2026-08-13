@@ -490,6 +490,39 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     assert.doesNotMatch(absent.stdout, /PASS/, "no check may report PASS on an unread document");
   });
 
+  test("a bootstrapped brain is an actual git repo", () => {
+    // The generated README's rule #1 is "Git is canonical", it calls
+    // graphify-out/ "Git-ignored, regenerable", and its write protocol
+    // tells any AI session to "commit with a scoped message" — over a
+    // directory that had no .git in it. Templates that stop drifting and
+    // knowledge that stops living in someone's head are both history
+    // properties, and there was no history.
+    const root = tmpRoot("brain-git");
+    const result = bootstrapBrain({ path: root, company_name: "ACME", esp_name: "Braze" });
+    assert.equal(result.git_initialised, true, `git init did not run: ${JSON.stringify(result.git_next_steps)}`);
+    assert.ok(fs.existsSync(path.join(root, ".git")), "no .git directory after a bootstrap");
+    assert.equal(result.git_committed, true);
+    // And the commit is not empty — a repo whose first commit holds
+    // nothing is the same defect wearing a .git directory.
+    const tracked = execFileSync("git", ["-C", root, "ls-files"], { encoding: "utf8" })
+      .split("\n").filter(Boolean);
+    assert.ok(tracked.includes("README.md"), `README.md was not committed; tracked: ${tracked.join(", ")}`);
+    assert.ok(tracked.length >= 8, `only ${tracked.length} file(s) committed`);
+  });
+
+  test("a brain scaffolded INSIDE an existing repo is left alone", () => {
+    // Running `git init` inside someone else's work tree, or committing
+    // into it uninvited, is not this tool's call to make.
+    const outer = tmpRoot("brain-git-outer");
+    fs.mkdirSync(outer, { recursive: true });
+    execFileSync("git", ["-C", outer, "init", "-q"]);
+    const inner = path.join(outer, "brain");
+    const result = bootstrapBrain({ path: inner, company_name: "ACME" });
+    assert.equal(result.git_initialised, false);
+    assert.equal(result.git_already_tracked, true);
+    assert.ok(!fs.existsSync(path.join(inner, ".git")), "a nested repo was created inside an existing work tree");
+  });
+
   test("overflow sees a fixed width in EITHER quoting style", () => {
     const root = tmpRoot("gate-overflow-quotes");
     generateBrainGate({ path: root });

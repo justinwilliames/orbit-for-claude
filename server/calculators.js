@@ -391,23 +391,49 @@ const PUSH_LIMITS = {
   web: { title: 50, body: 120 },
 };
 
+/**
+ * Split text into user-perceived characters, not UTF-16 code units.
+ *
+ * `.length` counts an emoji as two against a limit the tool's own
+ * description calls "100 chars", and `.slice()` cuts one in half — the
+ * preview string is then not well-formed UTF-16, and any strict encoder
+ * on the path to the widget replaces the orphaned surrogate with U+FFFD.
+ * The push-matrix widget then draws that replacement glyph and labels it
+ * what Android shows.
+ *
+ * Intl.Segmenter, not Array.from, because a flag or a ZWJ family is
+ * several code points and one character to the person reading it.
+ */
+const PUSH_SEGMENTER = typeof Intl !== "undefined" && Intl.Segmenter
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+  : null;
+
+function pushGraphemes(text) {
+  const s = String(text ?? "");
+  return PUSH_SEGMENTER
+    ? [...PUSH_SEGMENTER.segment(s)].map((g) => g.segment)
+    : Array.from(s); // code points: still never splits a surrogate pair
+}
+
 export function checkPushCopy(title, body) {
   const t = (title ?? "").trim();
   const b = (body ?? "").trim();
+  const tChars = pushGraphemes(t);
+  const bChars = pushGraphemes(b);
   const platforms = {};
   for (const [platform, limits] of Object.entries(PUSH_LIMITS)) {
-    const titleTrunc = t.length > limits.title;
-    const bodyTrunc = b.length > limits.body;
+    const titleTrunc = tChars.length > limits.title;
+    const bodyTrunc = bChars.length > limits.body;
     platforms[platform] = {
-      titleChars: t.length,
+      titleChars: tChars.length,
       titleLimit: limits.title,
       titleTruncates: titleTrunc,
-      bodyChars: b.length,
+      bodyChars: bChars.length,
       bodyLimit: limits.body,
       bodyTruncates: bodyTrunc,
       preview: {
-        title: titleTrunc ? t.slice(0, limits.title - 1) + "…" : t,
-        body: bodyTrunc ? b.slice(0, limits.body - 1) + "…" : b,
+        title: titleTrunc ? tChars.slice(0, limits.title - 1).join("") + "…" : t,
+        body: bodyTrunc ? bChars.slice(0, limits.body - 1).join("") + "…" : b,
       },
     };
   }

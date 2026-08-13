@@ -65,6 +65,13 @@ function runGenerator(label, fn) {
       );
     }
     if (unchanged.length > 0) parts.push(`${unchanged.length} already current`);
+    // The brain's own README opens with "Git is canonical", so whether it
+    // HAS a history belongs in the one line the model reads back.
+    if (result.git_initialised === true) parts.push("git repo initialised with a first commit");
+    else if (result.git_already_tracked === true) parts.push("already inside a git work tree, left as-is");
+    else if (Array.isArray(result.git_next_steps) && result.git_next_steps.length > 0) {
+      parts.push(`NOT a git repo yet — ${result.git_next_steps[0]}`);
+    }
     if (skipped.length > 0) parts.push(`${skipped.length} skipped (already existed — refused to overwrite)`);
     if (handEdited.length > 0) {
       parts.push(

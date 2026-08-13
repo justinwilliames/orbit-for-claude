@@ -43,6 +43,9 @@ import {
   updateLifecycleDiagramSpec
 } from "./lifecycle-diagrams.js";
 import { exportNotionBundle } from "./notion-export.js";
+// Read the live strings, so the smoke test guards what actually ships
+// rather than a hardcoded copy of what shipped when it was written.
+import { ORBIT_ATTRIBUTION, ORBIT_TAGLINE } from "./orbit-branding.js";
 import { loadOrbitLibrary } from "./orbit-library.js";
 import {
   startProgramDiscovery,
@@ -807,8 +810,8 @@ const summary = {
         plainTextExists: fs.existsSync(compiledEmail.files.plain_text),
         previewDesktopExists: fs.existsSync(emailPreview.files.desktop),
         previewIncludesOrbitBranding:
-          emailPreviewDesktopContent.includes("Built in Orbit") &&
-          emailPreviewDesktopContent.includes("Lifecycle Marketing Operating System for Claude"),
+          emailPreviewDesktopContent.includes(ORBIT_ATTRIBUTION) &&
+          emailPreviewDesktopContent.includes(ORBIT_TAGLINE),
         previewMobileExists: fs.existsSync(emailPreview.files.mobile),
         previewDarkExists: fs.existsSync(emailPreview.files.dark),
         emailQaStatus: emailQa.status,

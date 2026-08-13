@@ -155,6 +155,12 @@ export const FAILED_STATUSES = new Set([
   // do the thing, and because "ok" over zero recovered words is what
   // used to feed a component map of empty rich_text blocks.
   "unreadable_pdf",
+  // The Figma twin of the above: the node resolved and returned structure,
+  // but nothing in it is component-sized — almost always the page or a
+  // single layer rather than the frame holding the email. A FAILURE for
+  // the same reason: "ok" with sections:[] flowed into a component map
+  // that had nothing in it.
+  "no_sections_detected",
   "gen_area_missing",
   "created_gen_area_missing",
   "html_missing",

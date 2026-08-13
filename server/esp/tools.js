@@ -42,6 +42,8 @@ import {
   OPERATION_LABELS,
 } from "./capabilities.js";
 import { EspApiError } from "./errors.js";
+import { widgetMeta } from "../ui/register.js";
+import { ESP_MATRIX_URI } from "../ui/widgets/esp-matrix.js";
 
 /* -------------------------------------------------------------------------- *
  * Config provider — injected by MCP-09 at registration time.
@@ -89,10 +91,15 @@ function getRuntimeConfig() {
  * data (templates, metrics, capability rows) rather than user-facing prose, so
  * it takes the plain-JSON path (no slop gate) — mirroring BRAIN_TOOL_DEFINITIONS.
  */
-function espResponse(payload) {
-  return {
+function espResponse(payload, widgetPayload) {
+  const response = {
     content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
   };
+  // A widget payload is opt-in per tool: only the capability matrix has a
+  // drawing, and every other ESP tool must keep returning text alone so a
+  // host with no MCP Apps support sees exactly what it sees today.
+  if (widgetPayload !== undefined) response.structuredContent = widgetPayload;
+  return response;
 }
 
 /**
@@ -103,11 +110,16 @@ function espResponse(payload) {
  * so those flow through as normal payloads — only genuine failures land here.
  *
  * @param {() => Promise<object>} fn produces the payload to serialise.
+ * @param {boolean} [withWidget=false] also expose the payload as
+ *   structuredContent, for the one ESP tool that has a widget. An error
+ *   response never carries it: the drawing has nothing to draw, and a
+ *   widget handed an error object renders an empty grid rather than the
+ *   message the user needs to read.
  */
-async function runEspTool(fn) {
+async function runEspTool(fn, withWidget = false) {
   try {
     const payload = await fn();
-    return espResponse(payload);
+    return espResponse(payload, withWidget ? payload : undefined);
   } catch (err) {
     if (err instanceof EspApiError) {
       return { ...espResponse(err.toResponse()), isError: true };
@@ -377,11 +389,15 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Capabilities",
       description:
-        "The honest what-works-where matrix for every supported ESP (Braze, Iterable, Customer.io, Klaviyo, Mailchimp, SFMC) — or one, if `platform` is given. Each operation row reports native / partial / unsupported, the endpoint, the doc URL, and for partial/unsupported the real constraint and the nearest alternative. Reads the capability matrix directly (no network, no credentials). Notable honesty rows: Customer.io cannot push templates (send inline transactional proofs instead); Klaviyo has no test-send (render + QA-gate instead); Mailchimp get-template returns metadata only (no stored HTML); SFMC segments + performance are SOAP-gated and unsupported in v1.",
+        "The honest what-works-where matrix for every supported ESP (Braze, Iterable, Customer.io, Klaviyo, Mailchimp, SFMC) — or one, if `platform` is given. Each operation row reports native / partial / unsupported, the endpoint, the doc URL, and for partial/unsupported the real constraint and the nearest alternative. Reads the capability matrix directly (no network, no credentials). Drawn in a widget as the whole grid at once, every cell carrying a glyph and a word rather than a colour. Notable honesty rows: Customer.io cannot push templates (send inline transactional proofs instead); Klaviyo has no test-send (render + QA-gate instead); Mailchimp get-template returns metadata only (no stored HTML); SFMC segments + performance are SOAP-gated and unsupported in v1.",
       inputSchema: {
         platform: platformArg,
       },
+      _meta: widgetMeta(ESP_MATRIX_URI),
     },
+    // The payload IS the drawing here — the grid renders the same
+    // { platforms: [...] } block the text carries, so the two can never
+    // disagree and a host with no widget support loses nothing.
     handler: async ({ platform } = {}) =>
       runEspTool(async () => {
         if (platform) {
@@ -391,7 +407,7 @@ export const ESP_TOOL_DEFINITIONS = [
         return {
           platforms: REGISTERED_PLATFORMS.map((p) => capabilityBlock(p)),
         };
-      }),
+      }, true),
   },
 
   {
