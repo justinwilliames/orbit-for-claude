@@ -143,3 +143,191 @@ describe("Braze performance — canvas headline rollup", () => {
     assert.equal(canvas.metrics.delivered, 0);
   });
 });
+
+/**
+ * Regression target: a failed analytics read was reported as a measured zero.
+ *
+ * safeGet() swallowed every HTTP failure to null, and the null fell through
+ * `summary?.data ?? {}` and `series?.data ?? []` into the aggregators, which
+ * emit 0 for an empty input. A campaign whose /campaigns/data_series read
+ * 403'd therefore came back as 0 sent / 0 delivered / 0 opens with status
+ * "ok", no error field, and campaigns_analysed: 1 — an affirmative claim that
+ * the campaign was analysed and sent nothing. The canvas path went further:
+ * with message steps present and no step metrics it emitted "likely
+ * scheduled-blast canvas", inventing a cause for a zero that was really a 403.
+ *
+ * Braze scopes API keys per endpoint — campaigns.data_series is a separate
+ * permission from campaigns.details — so a key that reads names but not
+ * analytics is the ordinary shape of this bug, not an exotic one.
+ */
+describe("Braze performance — a failed read is not a zero", () => {
+  const FORBIDDEN = { status: 403, body: { message: "Forbidden: insufficient permissions" } };
+
+  // Own server: the suite above closes its mock in `after`, and a closed
+  // server would fail these reads for the wrong reason.
+  let failMock = null;
+  let failConfig = null;
+
+  before(async () => {
+    failMock = await startMockApiServer();
+    failConfig = {
+      brazeApiKey: failMock.env.ORBIT_BRAZE_API_KEY,
+      brazeRestEndpoint: failMock.env.ORBIT_BRAZE_REST_ENDPOINT
+    };
+  });
+
+  after(async () => {
+    if (failMock) await failMock.close();
+  });
+
+  test("canvas: a 403 on data_summary reports an error, not zeros, and invents no cause", async () => {
+    failMock.resetResponses();
+    // /canvas/details stays healthy — the key can read the canvas, just not
+    // its analytics. That is what makes the zeros look credible.
+    failMock.setResponse("GET", "/canvas/data_summary", FORBIDDEN);
+
+    const result = await pullBrazePerformance({
+      config: failConfig,
+      canvasIds: ["canvas-001"],
+      includeKpis: false,
+      days: 30
+    });
+
+    const canvas = result.canvases[0];
+
+    assert.ok(canvas.error, `Unreadable canvas must carry an error, got: ${JSON.stringify(canvas)}`);
+    assert.match(canvas.error, /403/, "The error should name the HTTP failure");
+
+    // Unknown is null. Zero is a measurement.
+    assert.equal(canvas.metrics.sent, null);
+    assert.equal(canvas.metrics.delivered, null);
+    assert.equal(canvas.metrics.unique_opens, null);
+    assert.equal(canvas.metrics.total_revenue, null);
+
+    // The scheduled-blast diagnosis explains a real zero. There is no zero here.
+    assert.deepEqual(
+      canvas.warnings.filter((w) => /scheduled-blast/i.test(w)),
+      [],
+      "A failed read must never be explained away as a canvas type"
+    );
+
+    // The report must not claim it analysed something it could not read.
+    assert.equal(result.summary.canvases_analysed, 0);
+    assert.equal(result.summary.unreadable, 1);
+    assert.equal(result.summary.total_canvas_sends, 0);
+    assert.notEqual(result.status, "ok", "A report over a failed read is not an unqualified ok");
+    assert.match(result.message ?? "", /could not be read/i);
+  });
+
+  test("campaign: a 403 on data_series reports an error, not zeros", async () => {
+    failMock.resetResponses();
+    failMock.setResponse("GET", "/campaigns/data_series", FORBIDDEN);
+
+    const result = await pullBrazePerformance({
+      config: failConfig,
+      campaignIds: ["campaign-001"],
+      includeKpis: false,
+      days: 30
+    });
+
+    const campaign = result.campaigns[0];
+
+    assert.ok(campaign.error, `Unreadable campaign must carry an error, got: ${JSON.stringify(campaign)}`);
+    assert.match(campaign.error, /403/);
+    assert.equal(campaign.metrics.total_sent, null);
+    assert.equal(campaign.metrics.total_delivered, null);
+    assert.equal(campaign.metrics.total_opens, null);
+    assert.equal(campaign.metrics.total_clicks, null);
+
+    assert.equal(result.summary.campaigns_analysed, 0);
+    assert.equal(result.summary.unreadable, 1);
+    assert.equal(result.summary.total_campaign_sends, 0);
+    assert.notEqual(result.status, "ok");
+  });
+
+  test("campaign: a 429 is reported too — the breaker turns one wobble into many", async () => {
+    // BRAZE_BREAKER opens after 3 consecutive failures, so a transient Braze
+    // wobble mid-pull silently nulls every remaining read. Those must surface
+    // as errors as well, not as a confident run of zeros.
+    failMock.resetResponses();
+    failMock.setResponse("GET", "/campaigns/data_series", {
+      status: 429,
+      body: { message: "Rate limit exceeded" }
+    });
+
+    const result = await pullBrazePerformance({
+      config: failConfig,
+      campaignIds: ["campaign-001"],
+      includeKpis: false,
+      days: 30
+    });
+
+    assert.ok(result.campaigns[0].error, "A rate-limited read is still a failed read");
+    assert.equal(result.campaigns[0].metrics.total_sent, null);
+    assert.equal(result.summary.campaigns_analysed, 0);
+  });
+
+  test("segment: a 403 marks the row unreadable rather than merely empty", async () => {
+    failMock.resetResponses();
+    failMock.setResponse("GET", "/segments/data_series", FORBIDDEN);
+
+    const result = await pullBrazePerformance({
+      config: failConfig,
+      segmentIds: ["segment-001"],
+      includeKpis: false,
+      days: 30
+    });
+
+    const segment = result.segments[0];
+    assert.ok(segment.error, `Unreadable segment must carry an error, got: ${JSON.stringify(segment)}`);
+    assert.equal(segment.metrics.current_size, null);
+    assert.equal(result.summary.segments_analysed, 0);
+    assert.equal(result.summary.unreadable, 1);
+  });
+
+  test("a partly-failed pull keeps the readable programme's real numbers", async () => {
+    // The failure must be scoped to the programme that failed. A campaign 403
+    // cannot be allowed to erase a canvas that read cleanly.
+    failMock.resetResponses();
+    failMock.setResponse("GET", "/campaigns/data_series", FORBIDDEN);
+
+    const result = await pullBrazePerformance({
+      config: failConfig,
+      canvasIds: ["canvas-001"],
+      campaignIds: ["campaign-001"],
+      includeKpis: false,
+      days: 30
+    });
+
+    assert.equal(result.canvases[0].error, undefined, "The healthy canvas is unaffected");
+    assert.equal(result.canvases[0].metrics.sent, 985);
+    assert.ok(result.campaigns[0].error);
+
+    assert.equal(result.summary.canvases_analysed, 1);
+    assert.equal(result.summary.campaigns_analysed, 0);
+    assert.equal(result.summary.unreadable, 1);
+    assert.equal(result.summary.total_canvas_sends, 985);
+  });
+
+  test("a fully healthy pull is still a plain ok with no failure noise", async () => {
+    failMock.resetResponses();
+    const result = await pullBrazePerformance({
+      config: failConfig,
+      canvasIds: ["canvas-001"],
+      campaignIds: ["campaign-001"],
+      segmentIds: ["segment-001"],
+      includeKpis: false,
+      days: 30
+    });
+
+    assert.equal(result.status, "ok");
+    assert.equal(result.message, undefined);
+    assert.equal(result.summary.unreadable, 0);
+    assert.equal(result.summary.canvases_analysed, 1);
+    assert.equal(result.summary.campaigns_analysed, 1);
+    assert.equal(result.summary.segments_analysed, 1);
+    for (const row of [...result.canvases, ...result.campaigns, ...result.segments]) {
+      assert.equal(row.error, undefined);
+    }
+  });
+});

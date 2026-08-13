@@ -86,14 +86,24 @@ export async function pullBrazePerformance({
     kpiData = null;
   }
 
+  const summary = buildPerformanceSummary(canvasData, campaignData, segmentData, kpiData);
+
   return {
-    status: "ok",
+    status: summary.unreadable > 0 ? "partial" : "ok",
     period: { days, ending_at: endingAt },
+    // Without this the caller sees status ok, no error, and a pile of
+    // absent numbers it has no reason to distrust.
+    ...(summary.unreadable > 0
+      ? {
+          message:
+            `${summary.unreadable} of ${canvasData.length + campaignData.length + segmentData.length} programmes could not be read — see the error field on each row. Their metrics are unknown, not zero, and are excluded from every total below. A permissions gap on the analytics endpoints (campaigns.data_series, canvas.data_summary) is the usual cause.`
+        }
+      : {}),
     canvases: canvasData,
     campaigns: campaignData,
     segments: segmentData,
     kpis: kpiData,
-    summary: buildPerformanceSummary(canvasData, campaignData, segmentData, kpiData)
+    summary
   };
 }
 
@@ -125,21 +135,53 @@ async function pullCanvasPerformance(config, canvasId, days, endingAt) {
     // step — for scheduled-blast canvases entries can be 0 even when message
     // steps successfully sent, which is why we no longer treat entries as the
     // headline metric.
-    const summaryData = summary?.data ?? {};
+    const name = details.value?.name ?? canvasId;
+    const scheduleType = details.value?.schedule_type ?? null;
+    const status = details.error
+      ? null
+      : details.value?.draft ? "draft" : details.value?.archived ? "archived" : "active";
+
+    // data_summary is where every headline number comes from. If that read
+    // failed we know nothing about this canvas's performance — reporting
+    // zeros would assert it sent nothing, and the scheduled-blast warning
+    // below would invent a reason for a zero that is really a 403.
+    if (summary.error) {
+      return {
+        canvas_id: canvasId,
+        name,
+        status,
+        schedule_type: scheduleType,
+        error: `/canvas/data_summary: ${summary.error}`,
+        metrics: unreadCanvasMetrics(),
+        warnings: [],
+        step_metrics: [],
+        daily_series: []
+      };
+    }
+
+    const summaryData = summary.value?.data ?? {};
     const totalStats = summaryData.total_stats ?? summaryData;
     const totalEntries = totalStats.entries ?? 0;
     const totalConversions = totalStats.conversions ?? 0;
     const totalRevenue = totalStats.revenue ?? 0;
 
-    const stepMetrics = extractStepMetrics(summary);
+    const stepMetrics = extractStepMetrics(summary.value);
     const stepRollup = aggregateStepMetrics(stepMetrics);
 
-    const messageStepCount = countMessageSteps(details);
+    const messageStepCount = countMessageSteps(details.value);
     const warnings = [];
+    // Only reachable when data_summary actually answered, so an empty
+    // step_stats really is a property of the canvas and not of the read.
     if (messageStepCount > 0 && stepMetrics.length === 0) {
       warnings.push(
         "Canvas has message steps but API returned no step metrics — likely scheduled-blast canvas, falling back to data_summary"
       );
+    }
+    if (details.error) {
+      warnings.push(`/canvas/details read failed (${details.error}) — name, status and message-step count unavailable`);
+    }
+    if (series.error) {
+      warnings.push(`/canvas/data_series read failed (${series.error}) — daily_series omitted; headline metrics are from data_summary only`);
     }
 
     const delivered = stepRollup.delivered;
@@ -148,9 +190,9 @@ async function pullCanvasPerformance(config, canvasId, days, endingAt) {
 
     return {
       canvas_id: canvasId,
-      name: details?.name ?? canvasId,
-      status: details?.draft ? "draft" : details?.archived ? "archived" : "active",
-      schedule_type: details?.schedule_type ?? null,
+      name,
+      status,
+      schedule_type: scheduleType,
       metrics: {
         sent,
         delivered,
@@ -174,7 +216,7 @@ async function pullCanvasPerformance(config, canvasId, days, endingAt) {
       },
       warnings,
       step_metrics: stepMetrics,
-      daily_series: extractCanvasDailySeries(series)
+      daily_series: extractCanvasDailySeries(series.value)
     };
   } catch (err) {
     return { canvas_id: canvasId, error: err.message };
@@ -220,13 +262,29 @@ async function pullCampaignPerformance(config, campaignId, days, endingAt) {
       })
     ]);
 
-    const data = series?.data ?? [];
+    const name = details.value?.name ?? campaignId;
+    const channels = details.value?.channels ?? [];
+
+    // Every campaign metric comes from data_series. A failed read is not a
+    // campaign that sent nothing.
+    if (series.error) {
+      return {
+        campaign_id: campaignId,
+        name,
+        channels,
+        error: `/campaigns/data_series: ${series.error}`,
+        metrics: unreadCampaignMetrics(),
+        daily_series: []
+      };
+    }
+
+    const data = series.value?.data ?? [];
     const totals = aggregateTimeSeries(data);
 
     return {
       campaign_id: campaignId,
-      name: details?.name ?? campaignId,
-      channels: details?.channels ?? [],
+      name,
+      channels,
       metrics: {
         total_sent: totals.sent,
         total_delivered: totals.delivered,
@@ -267,14 +325,28 @@ async function pullSegmentPerformance(config, segmentId, days, endingAt) {
       })
     ]);
 
-    const data = series?.data ?? [];
+    const name = details.value?.name ?? segmentId;
+
+    // Sizes were already null-on-failure here, but the row still read as a
+    // successful analysis. Mark it so the summary can leave it out.
+    if (series.error) {
+      return {
+        segment_id: segmentId,
+        name,
+        error: `/segments/data_series: ${series.error}`,
+        metrics: { current_size: null, start_size: null, net_growth: null, growth_rate: "N/A" },
+        daily_series: []
+      };
+    }
+
+    const data = series.value?.data ?? [];
     const currentSize = data.length > 0 ? data[data.length - 1].size : null;
     const startSize = data.length > 0 ? data[0].size : null;
     const growth = startSize && currentSize ? currentSize - startSize : null;
 
     return {
       segment_id: segmentId,
-      name: details?.name ?? segmentId,
+      name,
       metrics: {
         current_size: currentSize,
         start_size: startSize,
@@ -305,11 +377,22 @@ async function pullKpiData(config, days, endingAt) {
     safeGet(config, "/sessions/data_series", { length: days, ending_at: endingAt })
   ]);
 
+  const unread = [
+    ["/kpi/mau/data_series", mau],
+    ["/kpi/dau/data_series", dau],
+    ["/kpi/new_users/data_series", newUsers],
+    ["/sessions/data_series", sessions]
+  ]
+    .filter(([, r]) => r.error)
+    .map(([endpoint, r]) => `${endpoint}: ${r.error}`);
+
   return {
-    mau: (mau?.data ?? []).map((d) => ({ date: d.time, mau: d.mau })),
-    dau: (dau?.data ?? []).map((d) => ({ date: d.time, dau: d.dau })),
-    new_users: (newUsers?.data ?? []).map((d) => ({ date: d.time, new_users: d.new_users })),
-    sessions: (sessions?.data ?? []).map((d) => ({ date: d.time, sessions: d.sessions }))
+    mau: (mau.value?.data ?? []).map((d) => ({ date: d.time, mau: d.mau })),
+    dau: (dau.value?.data ?? []).map((d) => ({ date: d.time, dau: d.dau })),
+    new_users: (newUsers.value?.data ?? []).map((d) => ({ date: d.time, new_users: d.new_users })),
+    sessions: (sessions.value?.data ?? []).map((d) => ({ date: d.time, sessions: d.sessions })),
+    // An empty series and an unreadable series look identical downstream.
+    ...(unread.length > 0 ? { errors: unread } : {})
   };
 }
 
@@ -317,12 +400,46 @@ async function pullKpiData(config, days, endingAt) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Returns { value, error } rather than collapsing a failure to null. A null
+// return was indistinguishable from "the API answered with nothing", so a
+// 403 on data_series fell straight through the `?? []` coalescers below and
+// came back out as a measured zero. Same shape as braze-revenue.js's safeGet.
 async function safeGet(config, endpoint, params) {
   try {
-    return await brazeGet({ config, endpoint, params });
-  } catch {
-    return null;
+    return { value: await brazeGet({ config, endpoint, params }), error: null };
+  } catch (err) {
+    return { value: null, error: err?.message ?? String(err) };
   }
+}
+
+/** A read we could not make has no metrics — null, never 0. */
+function unreadCanvasMetrics() {
+  return {
+    sent: null,
+    delivered: null,
+    unique_opens: null,
+    open_rate: "N/A",
+    unique_clicks: null,
+    click_rate: "N/A",
+    unsubscribes: null,
+    bounces: null,
+    hard_bounces: null,
+    soft_bounces: null,
+    conversions: null,
+    conversion_rate: "N/A",
+    total_revenue: null
+  };
+}
+
+function unreadCampaignMetrics() {
+  return {
+    total_sent: null,
+    total_delivered: null,
+    total_opens: null,
+    total_clicks: null,
+    open_rate: "N/A",
+    click_rate: "N/A"
+  };
 }
 
 function aggregateTimeSeries(data) {
@@ -431,15 +548,27 @@ function aggregateStepMetrics(stepMetrics) {
 }
 
 function buildPerformanceSummary(canvases, campaigns, segments, kpis) {
-  const totalCanvasSends = canvases.reduce((sum, c) => sum + (c.metrics?.sent ?? 0), 0);
-  const totalCanvasEntries = canvases.reduce((sum, c) => sum + (c.debug?.total_entries ?? 0), 0);
-  const totalCampaignSent = campaigns.reduce((sum, c) => sum + (c.metrics?.total_sent ?? 0), 0);
+  // "Analysed" means we read it. A row carrying an error contributed no
+  // numbers, so counting it inflates the denominator behind every total.
+  const read = (rows) => rows.filter((r) => !r.error);
+  const readCanvases = read(canvases);
+  const readCampaigns = read(campaigns);
+  const readSegments = read(segments);
+  const unreadable =
+    (canvases.length - readCanvases.length) +
+    (campaigns.length - readCampaigns.length) +
+    (segments.length - readSegments.length);
+
+  const totalCanvasSends = readCanvases.reduce((sum, c) => sum + (c.metrics?.sent ?? 0), 0);
+  const totalCanvasEntries = readCanvases.reduce((sum, c) => sum + (c.debug?.total_entries ?? 0), 0);
+  const totalCampaignSent = readCampaigns.reduce((sum, c) => sum + (c.metrics?.total_sent ?? 0), 0);
   const latestMau = kpis?.mau?.length > 0 ? kpis.mau[kpis.mau.length - 1].mau : null;
 
   return {
-    canvases_analysed: canvases.length,
-    campaigns_analysed: campaigns.length,
-    segments_analysed: segments.length,
+    canvases_analysed: readCanvases.length,
+    campaigns_analysed: readCampaigns.length,
+    segments_analysed: readSegments.length,
+    unreadable,
     total_canvas_sends: totalCanvasSends,
     total_canvas_entries: totalCanvasEntries,
     total_campaign_sends: totalCampaignSent,
