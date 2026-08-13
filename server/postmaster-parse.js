@@ -20,15 +20,17 @@ export function parsePostmasterSignal({ csv, snapshot }) {
     };
   }
 
-  const data = csv ? parseCsvSnapshot(csv) : normaliseSnapshot(snapshot);
-  if (!data || data.error) {
+  const parsed = csv ? parseCsvSeries(csv) : { snapshot: normaliseSnapshot(snapshot), source: "snapshot" };
+  if (!parsed || parsed.error || !parsed.snapshot || parsed.snapshot.error) {
     return {
       status: "error",
       message:
-        data?.error ??
+        parsed?.error ??
+        parsed?.snapshot?.error ??
         "Could not parse the supplied Postmaster data. Use the CSV export from Postmaster's UI or pass a snapshot object.",
     };
   }
+  const data = parsed.snapshot;
 
   const findings = [];
 
@@ -135,6 +137,18 @@ export function parsePostmasterSignal({ csv, snapshot }) {
               ? "Migrate bulk volume to a healthy IP; investigate the trigger immediately."
               : "Tighten audience selection on this IP; avoid volume spikes.",
         });
+      } else if (band === "medium" || band === "high") {
+        // The array branch has always scored a healthy IP; the scalar branch
+        // dropped it on the floor. A snapshot carrying nothing but a healthy
+        // scalar IP therefore produced zero findings — which now means
+        // "nothing was checked", so the omission would read as an abstention
+        // on data that was in fact read and was in fact fine.
+        findings.push({
+          severity: "pass",
+          metric: "ip_reputation",
+          value: band,
+          message: `IP reputation is ${band} — healthy.`,
+        });
       }
     }
   }
@@ -175,6 +189,53 @@ export function parsePostmasterSignal({ csv, snapshot }) {
     });
   }
 
+  // NOTHING PARSED IS NOT A PASS.
+  //
+  // worstSeverity([]) is "pass" and findings only gain entries for metrics
+  // that parsed, so a CSV whose columns we did not recognise — a renamed
+  // export, a localised one, a per-chart download — produced status ok,
+  // overall_verdict pass, and the sentence "0 signal(s) checked — all
+  // green." over data this tool never read. Healthy and junk were
+  // indistinguishable in the verdict. This is the highest-stakes advice in
+  // the box and one of the first tools a stranger reaches, so it abstains,
+  // in the same vocabulary the render gate already uses.
+  if (findings.length === 0) {
+    // Two ways to arrive here, and they need different sentences: the file's
+    // columns were not ones we grade, or the columns were right and the day
+    // we graded was blank (Postmaster reports nothing for a day whose volume
+    // to Gmail was too low — most weekends, for a small sender).
+    const anyRowHadData = parsed.series
+      ? parsed.series.points.some((p) => signalsPresent(p) > 0)
+      : false;
+    return {
+      status: "needs_inputs",
+      overall_verdict: null,
+      finding_count: 0,
+      findings: [],
+      parsed_snapshot: data,
+      snapshot_source: parsed.source,
+      signals_checked: 0,
+      unrecognised_input: anyRowHadData ? null : parsed.header ?? null,
+      // The series is real data the tool DID read. Withholding it because
+      // the graded row was empty would hide the very rows that explain why.
+      thresholds: THRESHOLDS,
+      series: parsed.series ?? null,
+      message: anyRowHadData
+        ? `The row this verdict would be graded on (${parsed.series.graded_on}) ` +
+          "carries no readable values, so NOTHING was checked and there is no " +
+          "verdict. Postmaster reports nothing for a day whose Gmail volume was " +
+          "too low. Earlier rows in this export do have data — read the series, " +
+          "or re-export a window ending on a day you sent."
+        : "None of the Postmaster signals this tool grades were present in the " +
+          "data supplied, so NOTHING was checked and there is no verdict. " +
+          (parsed.header ? `The header row read: ${parsed.header.join(", ")}. ` : "") +
+          "Expected one of: spam rate, domain reputation, IP reputation, " +
+          "authenticated traffic, delivery errors, feedback loop. Export the " +
+          "combined table from Postmaster rather than a single chart, or pass a " +
+          "snapshot object with those keys.",
+    };
+  }
+
   const overall = worstSeverity(findings);
   return {
     status: "ok",
@@ -182,13 +243,33 @@ export function parsePostmasterSignal({ csv, snapshot }) {
     finding_count: findings.length,
     findings,
     parsed_snapshot: data,
-    message: summarise(overall, findings),
+    // WHICH row the verdict above was graded on, and whether that
+    // choice was a chronology or a guess. See parseCsvSeries.
+    snapshot_source: parsed.source,
+    thresholds: THRESHOLDS,
+    series: parsed.series ?? null,
+    signals_checked: signalsPresent(data),
+    message: summarise(overall, findings, signalsPresent(data)),
     orbit_attribution: {
       heavy: true,
       signature: "Built with Orbit · Postmaster Signal Parser",
     },
   };
 }
+
+/**
+ * The Gmail lines every number in this file is graded against.
+ * Exported into the result so the widget draws the SAME thresholds the
+ * findings were computed from, rather than a second copy that can drift.
+ */
+export const THRESHOLDS = {
+  spam_rate_warn_pct: 0.1,
+  spam_rate_fail_pct: 0.3,
+  authenticated_traffic_warn_pct: 99,
+  authenticated_traffic_fail_pct: 95,
+  delivery_errors_warn_pct: 2,
+  delivery_errors_fail_pct: 5,
+};
 
 function normaliseSnapshot(s) {
   if (!s || typeof s !== "object") return { error: "Invalid snapshot object." };
@@ -207,39 +288,180 @@ function numberOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-// Parse a Postmaster CSV export. Postmaster's UI export produces
-// one row per day with columns like date,spam_rate,ip_reputation,
-// domain_reputation,etc. We extract the most recent row. If the
-// header doesn't match our expected shape, we do a best-effort
-// column scan.
-function parseCsvSnapshot(csv) {
-  const lines = csv.trim().split(/\r?\n/);
+/**
+ * Parse a Postmaster CSV export into the FULL daily series, and pick the
+ * row the verdict is graded on by DATE.
+ *
+ * This used to read `lines[lines.length - 1]` — the last line in the
+ * file — and throw the other 89 days away. Two things were wrong with
+ * that, and they compound:
+ *
+ *   1. "Last line" is not "most recent". Postmaster's UI lists newest
+ *      first, and an export taken from that view is date-DESCENDING, so
+ *      the last line is the OLDEST day in the window. Graded on the same
+ *      six days of a domain going from `high`/0.04% to `bad`/0.41%, the
+ *      old parser returned `fail` when the rows arrived ascending and a
+ *      confident `pass — all green` when the same rows arrived
+ *      descending. Nothing in the output distinguished the two: no date
+ *      was ever read, so the parser could not have known which end it
+ *      was standing at, and it did not say so.
+ *
+ *   2. A single day is the wrong unit anyway. Gmail's thresholds are
+ *      about sustained behaviour, and the finding that matters is almost
+ *      never the value — it is the slope. A spam rate stepping
+ *      0.04 → 0.06 → 0.11 → 0.19 → 0.27 is an emergency that scores
+ *      "within the green band" on its latest reading right up to the day
+ *      it doesn't.
+ *
+ * So: read every row, sort by parsed date, grade the newest, and return
+ * the series so the trend is drawable. When the file carries no readable
+ * date column we fall back to the last row exactly as before — but the
+ * result then says `snapshot_source: "last_row_undated"` instead of
+ * implying a chronology we never established.
+ */
+function parseCsvSeries(csv) {
+  const lines = csv.trim().split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 2) return { error: "CSV needs at least a header row and one data row." };
-  const header = lines[0].toLowerCase().split(",").map((h) => h.trim());
-  const latest = lines[lines.length - 1].split(",").map((c) => c.trim());
-  const cell = (name) => {
-    const idx = header.findIndex((h) => h.includes(name));
-    return idx >= 0 ? latest[idx] : null;
+  const header = splitRow(lines[0]).map((h) => h.toLowerCase());
+
+  const col = (...names) => {
+    for (const name of names) {
+      const idx = header.findIndex((h) => h.includes(name));
+      if (idx >= 0) return idx;
+    }
+    return -1;
   };
-  const spam = cell("spam_rate") ?? cell("spam rate");
-  const domainRep = cell("domain_reputation") ?? cell("domain reputation");
-  const ipRep = cell("ip_reputation") ?? cell("ip reputation");
-  const auth = cell("authenticated") ?? cell("auth_rate") ?? cell("auth");
-  const errs = cell("delivery_error") ?? cell("delivery error") ?? cell("delivery errors");
-  const fbl = cell("fbl") ?? cell("feedback_loop") ?? cell("feedback");
+  const idx = {
+    date: col("date", "day"),
+    spam: col("spam_rate", "spam rate", "spam"),
+    domain: col("domain_reputation", "domain reputation"),
+    ip: col("ip_reputation", "ip reputation"),
+    auth: col("authenticated", "auth_rate", "auth"),
+    errs: col("delivery_error", "delivery error", "delivery errors"),
+    fbl: col("fbl", "feedback_loop", "feedback"),
+  };
+
+  const at = (cells, i) => (i >= 0 && i < cells.length ? cells[i] : null);
+  const points = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = splitRow(lines[i]);
+    const rawDate = at(cells, idx.date);
+    const ts = parseDay(rawDate);
+    points.push({
+      date: ts == null ? null : rawDate,
+      _ts: ts,
+      _order: i,
+      spam_rate_pct: parsePercent(at(cells, idx.spam)),
+      domain_reputation: normaliseBand(at(cells, idx.domain)),
+      ip_reputation: normaliseBand(at(cells, idx.ip)),
+      authenticated_traffic_pct: parsePercent(at(cells, idx.auth)),
+      delivery_errors_pct: parsePercent(at(cells, idx.errs)),
+      feedback_loop_pct: parsePercent(at(cells, idx.fbl)),
+    });
+  }
+  if (points.length === 0) return { error: "CSV had a header but no data rows." };
+
+  const dated = points.filter((p) => p._ts != null);
+  // Every row must carry a date before we claim the file is a
+  // chronology. A part-dated export is a malformed one, and half a
+  // timeline sorted against unsorted rows is worse than no timeline.
+  const isDated = dated.length === points.length;
+
+  const ordered = isDated
+    ? points.slice().sort((a, b) => a._ts - b._ts)
+    : points.slice();
+  const latest = ordered[ordered.length - 1];
+
+  const strip = (p) => ({
+    date: p.date,
+    spam_rate_pct: p.spam_rate_pct,
+    domain_reputation: p.domain_reputation,
+    ip_reputation: p.ip_reputation,
+    authenticated_traffic_pct: p.authenticated_traffic_pct,
+    delivery_errors_pct: p.delivery_errors_pct,
+    feedback_loop_pct: p.feedback_loop_pct,
+  });
+
   return {
-    spam_rate_pct: parsePercent(spam),
-    domain_reputation: normaliseBand(domainRep),
-    ip_reputation: normaliseBand(ipRep),
-    authenticated_traffic_pct: parsePercent(auth),
-    delivery_errors_pct: parsePercent(errs),
-    feedback_loop_pct: parsePercent(fbl),
+    source: isDated ? "newest_dated_row" : "last_row_undated",
+    // Kept so an abstention can quote the columns it was handed rather than
+    // telling the user their file was wrong without saying how.
+    header,
+    snapshot: strip(latest),
+    series: {
+      // The one fact the drawing must not get wrong: whether the x-axis
+      // is time or merely file order.
+      dated: isDated,
+      row_count: ordered.length,
+      first_date: isDated ? ordered[0].date : null,
+      last_date: isDated ? latest.date : null,
+      graded_on: isDated
+        ? `${latest.date} — the newest dated row of ${ordered.length}.`
+        : `Row ${latest._order} of ${ordered.length} — the last line in the file. No readable date column, so this is file order, NOT a chronology; if the export is newest-first this is the OLDEST day in the window.`,
+      points: ordered.map(strip),
+    },
   };
 }
 
+/** Split one CSV row, honouring simple double-quoted cells. */
+function splitRow(line) {
+  const out = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (quoted && line[i + 1] === '"') { cur += '"'; i += 1; }
+      else quoted = !quoted;
+    } else if (ch === "," && !quoted) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+/**
+ * Parse a Postmaster date cell to a timestamp, or null.
+ *
+ * Deliberately strict: only the two shapes Postmaster actually emits
+ * (ISO `YYYY-MM-DD` and US `M/D/YYYY`). Handing an arbitrary string to
+ * `Date.parse` is how a header row, a total row, or a stray metric label
+ * becomes a valid date on some engines and reorders the whole series
+ * around a row that is not a day.
+ */
+function parseDay(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2]));
+  return null;
+}
+
+/**
+ * A percentage cell, or null when there was nothing in it.
+ *
+ * The empty-string guard is the whole point. `Number("")` is 0, not NaN,
+ * so a blank cell used to arrive here and leave as a hard, measured
+ * zero — and zero is the BEST possible spam rate. Postmaster blanks a
+ * day when the volume to Gmail was too low to report on, which is very
+ * common for a small sender and universal on weekends. The result was
+ * `Spam rate 0% — within the green band`: a confident pass, printed for
+ * a day with no data in it at all.
+ *
+ * Caught by drawing the series and seeing the line dip to the axis on
+ * two days the export had left blank. No test had ever fed this function
+ * an empty cell.
+ */
 function parsePercent(s) {
   if (s == null) return null;
   const cleaned = String(s).replace(/%/g, "").trim();
+  if (cleaned === "") return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
@@ -257,11 +479,31 @@ function worstSeverity(findings) {
   return "pass";
 }
 
-function summarise(overall, findings) {
+/**
+ * How many of the six signals were actually READ.
+ *
+ * Not findings.length — that is the number of things worth saying, and three
+ * of the six metrics stay silent when they are healthy. The summary line said
+ * "N signal(s) checked" over the problem count, so a clean read of five
+ * signals announced itself as two.
+ */
+function signalsPresent(data) {
+  if (!data) return 0;
+  return [
+    data.spam_rate_pct,
+    data.domain_reputation,
+    data.ip_reputation,
+    data.authenticated_traffic_pct,
+    data.delivery_errors_pct,
+    data.feedback_loop_pct,
+  ].filter((v) => v != null).length;
+}
+
+function summarise(overall, findings, checked) {
   if (overall === "pass") {
-    return `${findings.length} signal(s) checked — all green.`;
+    return `${checked} signal(s) checked — all green.`;
   }
   const fails = findings.filter((f) => f.severity === "fail").length;
   const warns = findings.filter((f) => f.severity === "warn").length;
-  return `${fails} blocking issue${fails === 1 ? "" : "s"}, ${warns} warning${warns === 1 ? "" : "s"} across ${findings.length} signal(s).`;
+  return `${fails} blocking issue${fails === 1 ? "" : "s"}, ${warns} warning${warns === 1 ? "" : "s"} across ${checked} signal(s) checked.`;
 }
