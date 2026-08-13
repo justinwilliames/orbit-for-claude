@@ -42,6 +42,9 @@ import { READOUT_INTERVAL_JS } from "../../server/ui/widgets/ab-readout.js";
 import { RFM_PLOT_JS } from "../../server/ui/widgets/rfm-map.js";
 import { FORECAST_MARKS_JS } from "../../server/ui/widgets/list-forecast.js";
 import { STATE_GRID_JS } from "../../server/ui/widgets/state-matrix.js";
+import { POSTMASTER_PLOT_JS } from "../../server/ui/widgets/postmaster-trend.js";
+import { INBOX_MARK_JS } from "../../server/ui/widgets/inbox-preview.js";
+import { parsePostmasterSignal } from "../../server/postmaster-parse.js";
 import { bridgeAvailable, bridgeLoadError } from "../../server/ui/shell.js";
 import { parseTestReadout } from "../../server/lifecycle-helpers.js";
 
@@ -62,7 +65,9 @@ const TOOL_WIDGETS = {
   orbit_parse_test_readout: "ui://orbit/ab-readout.html",
   orbit_rfm_score: "ui://orbit/rfm-map.html",
   orbit_list_growth_forecast: "ui://orbit/list-forecast.html",
-  orbit_liquid_state_matrix: "ui://orbit/state-matrix.html"
+  orbit_liquid_state_matrix: "ui://orbit/state-matrix.html",
+  orbit_parse_postmaster_signal: "ui://orbit/postmaster-trend.html",
+  orbit_score_subject_line: "ui://orbit/inbox-preview.html"
 };
 
 let client = null;
@@ -281,6 +286,48 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     // Bookkeeping the grid never draws stays out of the second copy.
     assert.equal(structured.output_files, undefined);
     assert.equal(structured.orbit_attribution, undefined);
+  });
+
+  test("orbit_parse_postmaster_signal hands its widget the whole series, not just the graded day", async () => {
+    const csv = [
+      "Date,Spam Rate,Domain Reputation",
+      "2026-08-06,0.41,bad",
+      "2026-08-05,0.27,low",
+      "2026-08-04,0.19,medium",
+      "2026-08-03,0.11,high"
+    ].join("\n");
+    const res = await client.callTool("orbit_parse_postmaster_signal", { csv });
+    const structured = res.structuredContent;
+    assert.ok(structured, "postmaster returned no structuredContent for its widget");
+    assert.equal(structured.series.row_count, 4);
+    assert.equal(structured.series.dated, true);
+    // Newest-first input; the chart must still read left-to-right in time.
+    assert.equal(structured.series.points[0].date, "2026-08-03");
+    assert.equal(structured.series.points[3].date, "2026-08-06");
+    assert.equal(structured.overall_verdict, "fail");
+    assert.ok(structured.thresholds, "the chart has no thresholds to draw its Gmail lines from");
+    // Prose and attribution are not drawable and stay out of the copy.
+    assert.equal(structured.orbit_attribution, undefined);
+  });
+
+  test("orbit_score_subject_line hands its widget the string it is scoring", async () => {
+    // The widget cannot lay out an inbox row without the subject, and the
+    // scorer's own return shape does not include it.
+    const res = await client.callTool("orbit_score_subject_line", {
+      subject: "LAST CHANCE: your FREE gift",
+      preheader: "Limited time only."
+    });
+    const structured = res.structuredContent;
+    assert.ok(structured, "subject scoring returned no structuredContent for its widget");
+    assert.equal(structured.subject, "LAST CHANCE: your FREE gift");
+    assert.equal(structured.preheader, "Limited time only.");
+    assert.ok(Array.isArray(structured.issues));
+    assert.ok(Array.isArray(structured.triggers) && structured.triggers.length > 0);
+    assert.equal(typeof structured.score, "number");
+    // The subject must NOT ride on the text payload: the slop gate would
+    // run over a subject line this very tool has just finished scoring.
+    const text = JSON.parse(res.content.find((c) => c.type === "text").text);
+    assert.equal(text.subject, undefined, "the scored subject was echoed back into the gated payload");
   });
 
   test("orbit_learn_email_template hands its widget the tokens and the module spine", async () => {
@@ -1159,5 +1206,193 @@ describe("State matrix — the grid draws only columns the catalogue has", () =>
     });
     assert.equal(g.rows[1].severity, "fail");
     assert.equal(g.rows[0].severity, "ok");
+  });
+});
+
+/**
+ * The Postmaster series — the row a verdict is graded on, and the days
+ * nobody measured.
+ *
+ * Both bugs guarded here shipped and both had the same shape: a step
+ * that reported a confident PASS because of what it had failed to look
+ * at. Neither was caught by a test; the second was caught by drawing the
+ * series and seeing the line dip to the axis on two blank days.
+ */
+describe("Postmaster CSV — graded on the newest day, not the last line", () => {
+  const HEADER = "Date,Spam Rate,Domain Reputation,IP Reputation,Authenticated Traffic,Delivery Errors";
+  // Six days of a domain coming apart: 0.04% and `high` on the 1st,
+  // 0.41% and `bad` on the 6th.
+  const DAYS = [
+    "2026-08-01,0.04,high,high,99.8,0.3",
+    "2026-08-02,0.06,high,high,99.8,0.3",
+    "2026-08-03,0.11,high,high,99.8,0.4",
+    "2026-08-04,0.19,medium,high,99.7,0.6",
+    "2026-08-05,0.27,low,medium,99.7,0.9",
+    "2026-08-06,0.41,bad,low,99.5,2.1"
+  ];
+  const csvOf = (rows) => [HEADER, ...rows].join("\n");
+
+  test("row order in the file cannot change the verdict", () => {
+    // Postmaster's UI lists newest first, so an export taken from that
+    // view arrives descending and its LAST line is the OLDEST day. The
+    // old parser read that line and reported "all green" on a domain
+    // whose reputation was `bad` that morning.
+    const asc = parsePostmasterSignal({ csv: csvOf(DAYS) });
+    const desc = parsePostmasterSignal({ csv: csvOf([...DAYS].reverse()) });
+    assert.equal(asc.overall_verdict, "fail");
+    assert.equal(
+      desc.overall_verdict,
+      "fail",
+      "the same six days graded PASS when handed over newest-first"
+    );
+    assert.equal(desc.parsed_snapshot.domain_reputation, "bad");
+    assert.equal(desc.parsed_snapshot.spam_rate_pct, 0.41);
+    assert.equal(desc.snapshot_source, "newest_dated_row");
+  });
+
+  test("the whole series comes back in date order regardless of file order", () => {
+    const desc = parsePostmasterSignal({ csv: csvOf([...DAYS].reverse()) });
+    assert.equal(desc.series.dated, true);
+    assert.equal(desc.series.row_count, 6);
+    assert.equal(desc.series.first_date, "2026-08-01");
+    assert.equal(desc.series.last_date, "2026-08-06");
+    assert.deepEqual(
+      desc.series.points.map((p) => p.spam_rate_pct),
+      [0.04, 0.06, 0.11, 0.19, 0.27, 0.41]
+    );
+  });
+
+  test("a blank cell is no reading, never a measured zero", () => {
+    // Number("") is 0, and 0 is the BEST possible spam rate. Postmaster
+    // blanks a day whose volume was too low to report, which for a small
+    // sender is most weekends — so this produced "Spam rate 0% — within
+    // the green band" for a day with no data in it.
+    const r = parsePostmasterSignal({
+      csv: ["Date,Spam Rate", "2026-08-01,0.05", "2026-08-02,", "2026-08-03,   "].join("\n")
+    });
+    assert.equal(r.series.points[1].spam_rate_pct, null);
+    assert.equal(r.series.points[2].spam_rate_pct, null);
+    assert.equal(r.parsed_snapshot.spam_rate_pct, null, "a blank latest day was graded as 0%");
+    assert.ok(
+      !r.findings.some((f) => f.metric === "spam_rate"),
+      "an unmeasured day produced a spam-rate verdict anyway"
+    );
+  });
+
+  test("an undated export is labelled file order, not a chronology", () => {
+    const r = parsePostmasterSignal({
+      csv: ["Spam Rate,Domain Reputation", "0.41,bad", "0.04,high"].join("\n")
+    });
+    assert.equal(r.snapshot_source, "last_row_undated");
+    assert.equal(r.series.dated, false);
+    assert.equal(r.series.first_date, null);
+    assert.match(r.series.graded_on, /NOT a chronology/);
+  });
+
+  test("a part-dated export is not treated as sorted", () => {
+    // Half a timeline sorted against unsorted rows is worse than none.
+    const r = parsePostmasterSignal({
+      csv: ["Date,Spam Rate", "2026-08-01,0.05", ",0.40"].join("\n")
+    });
+    assert.equal(r.series.dated, false);
+  });
+
+  test("a snapshot object carries no series and says so", () => {
+    const r = parsePostmasterSignal({ snapshot: { spam_rate_pct: 0.2, domain_reputation: "low" } });
+    assert.equal(r.snapshot_source, "snapshot");
+    assert.equal(r.series, null);
+  });
+
+  test("the thresholds the chart draws are the ones the findings used", () => {
+    const r = parsePostmasterSignal({ csv: csvOf(DAYS) });
+    assert.equal(r.thresholds.spam_rate_warn_pct, 0.1);
+    assert.equal(r.thresholds.spam_rate_fail_pct, 0.3);
+    const spam = r.findings.find((f) => f.metric === "spam_rate");
+    assert.equal(spam.threshold, r.thresholds.spam_rate_fail_pct);
+  });
+});
+
+describe("Postmaster chart — a gap in the data is a gap in the line", () => {
+  const { metricSegments, missingCount, bandRuns } = new Function(
+    `${POSTMASTER_PLOT_JS}\nreturn { metricSegments, missingCount, bandRuns };`
+  )();
+
+  const points = [
+    { date: "2026-08-01", spam_rate_pct: 0.05, domain_reputation: "high" },
+    { date: "2026-08-02", spam_rate_pct: null, domain_reputation: "high" },
+    { date: "2026-08-03", spam_rate_pct: null, domain_reputation: null },
+    { date: "2026-08-04", spam_rate_pct: 0.4, domain_reputation: "bad" }
+  ];
+
+  test("nulls split the line rather than being joined across", () => {
+    const segs = metricSegments(points, "spam_rate_pct");
+    assert.equal(segs.length, 2, "the line was drawn straight through days nobody measured");
+    assert.deepEqual(segs[0].map((d) => d.value), [0.05]);
+    assert.deepEqual(segs[1].map((d) => d.value), [0.4]);
+  });
+
+  test("segments keep their real index so the x position stays honest", () => {
+    const segs = metricSegments(points, "spam_rate_pct");
+    assert.equal(segs[1][0].i, 3, "a point after a gap was re-indexed and would plot at the wrong date");
+  });
+
+  test("a measured zero is plotted; only absence is dropped", () => {
+    const segs = metricSegments([{ spam_rate_pct: 0 }, { spam_rate_pct: 0.1 }], "spam_rate_pct");
+    assert.equal(segs.length, 1);
+    assert.equal(segs[0][0].value, 0);
+  });
+
+  test("the unreported days are counted, not silently absorbed", () => {
+    assert.equal(missingCount(points, "spam_rate_pct"), 2);
+  });
+
+  test("consecutive equal bands collapse into one run", () => {
+    const runs = bandRuns(points, "domain_reputation");
+    assert.deepEqual(runs.map((r) => [r.band, r.days]), [["high", 2], [null, 1], ["bad", 1]]);
+  });
+
+  test("an unknown band is its own run and never inherits the last one", () => {
+    const runs = bandRuns([{ domain_reputation: "high" }, { domain_reputation: null }], "domain_reputation");
+    assert.equal(runs[1].band, null, "a day with no reading was drawn as a continuation of the last good one");
+  });
+});
+
+describe("Inbox preview — marks land on the characters the scorer named", () => {
+  const { markRanges } = new Function(`${INBOX_MARK_JS}\nreturn { markRanges };`)();
+
+  test("a trigger is word-bounded, so FREEDOM is not FREE", () => {
+    const r = markRanges("Your FREEDOM starts here", { triggers: ["free"] });
+    assert.equal(r.length, 0, "a substring inside a longer word was marked as a spam trigger");
+  });
+
+  test("a trigger is found case-insensitively, as the scorer counts it", () => {
+    const r = markRanges("Get your FREE gift", { triggers: ["free"] });
+    assert.deepEqual(r.map((x) => [x.start, x.end, x.kind]), [[9, 13, "trigger"]]);
+  });
+
+  test("the longest reason wins and the marks never overlap", () => {
+    // "act now" and "now" both match. Nesting them produces crossed tags.
+    const r = markRanges("Please act now", { triggers: ["act now", "now"] });
+    assert.equal(r.length, 1);
+    assert.equal(r[0].end - r[0].start, 7);
+  });
+
+  test("all-caps matching is case SENSITIVE — the calm spelling is not shouted", () => {
+    const r = markRanges("free FREE", { allCaps: ["FREE"] });
+    assert.deepEqual(r.map((x) => x.start), [5]);
+  });
+
+  test("emoji are marked only when the scorer counted one", () => {
+    assert.equal(markRanges("⚡ Sale", { emoji: false }).length, 0);
+    assert.equal(markRanges("⚡ Sale", { emoji: true })[0].kind, "emoji");
+  });
+
+  test("ranges come back in document order so the markup can be built in one pass", () => {
+    const r = markRanges("FREE gift, act now", { triggers: ["free", "act now"] });
+    assert.deepEqual(r.map((x) => x.start), [0, 11]);
+  });
+
+  test("no marks on a clean subject", () => {
+    assert.equal(markRanges("Your March invoice is ready", { triggers: [], allCaps: [] }).length, 0);
   });
 });

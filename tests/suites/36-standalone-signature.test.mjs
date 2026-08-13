@@ -283,6 +283,52 @@ const POPULATED = {
       { id: "a2", label: "paid · named", rendered: true }
     ],
     findings: [{ severity: "high", invariant: "B", message: "Unmodelled output token: {{canvas.name}}" }]
+  },
+  "ui://orbit/postmaster-trend.html": {
+    overall_verdict: "fail",
+    snapshot_source: "newest_dated_row",
+    thresholds: { spam_rate_warn_pct: 0.1, spam_rate_fail_pct: 0.3 },
+    parsed_snapshot: { spam_rate_pct: 0.41, domain_reputation: "bad", ip_reputation: "low" },
+    series: {
+      dated: true,
+      row_count: 6,
+      first_date: "2026-08-01",
+      last_date: "2026-08-06",
+      graded_on: "2026-08-06 — the newest dated row of 6.",
+      points: [
+        { date: "2026-08-01", spam_rate_pct: 0.04, domain_reputation: "high", ip_reputation: "high" },
+        { date: "2026-08-02", spam_rate_pct: 0.06, domain_reputation: "high", ip_reputation: "high" },
+        { date: "2026-08-03", spam_rate_pct: null, domain_reputation: "high", ip_reputation: "high" },
+        { date: "2026-08-04", spam_rate_pct: 0.19, domain_reputation: "medium", ip_reputation: "high" },
+        { date: "2026-08-05", spam_rate_pct: 0.27, domain_reputation: "low", ip_reputation: "medium" },
+        { date: "2026-08-06", spam_rate_pct: 0.41, domain_reputation: "bad", ip_reputation: "low" }
+      ]
+    },
+    message: "2 blocking issues, 1 warning across 4 signal(s).",
+    findings: [
+      { severity: "fail", metric: "spam_rate", value: 0.41, threshold: 0.3, message: "Spam rate 0.41% — above Gmail's 0.3% red zone.", action: "Stop sending to cold segments immediately." },
+      { severity: "fail", metric: "domain_reputation", value: "bad", message: "Domain reputation is bad.", action: "Run the reputation-recovery protocol." },
+      { severity: "warn", metric: "delivery_errors", value: 2.1, message: "Delivery errors 2.1%.", action: "Slow the volume ramp." }
+    ]
+  },
+  "ui://orbit/inbox-preview.html": {
+    subject: "\u26a1 LAST CHANCE: dont miss your FREE gift, act now!!",
+    preheader: "Limited time only — your exclusive discount expires at midnight tonight.",
+    len: 50,
+    score: 0,
+    tier: "spam",
+    emojiCount: 1,
+    exclamations: 2,
+    questions: 0,
+    allCapsWords: ["LAST", "CHANCE:", "FREE"],
+    triggers: ["free", "act now", "limited time", "expires", "discount", "last chance"],
+    personalisation: false,
+    issues: [
+      { severity: "high", label: '1 probable typo: "dont"' },
+      { severity: "high", label: 'Content-free phrase in subject: "don\'t miss"' },
+      { severity: "high", label: "Shouting pattern" },
+      { severity: "medium", label: "2 exclamation marks" }
+    ]
   }
 };
 
