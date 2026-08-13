@@ -471,7 +471,7 @@
     },
     {
       "name": "orbit_score_subject_line",
-      "description": "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score with a tier and specific issues."
+      "description": "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score with a tier and specific issues, and draws it in a widget as the inbox row at three list widths with the truncation point measured rather than counted."
     },
     {
       "name": "orbit_sample_size",
@@ -635,7 +635,7 @@
     },
     {
       "name": "orbit_parse_postmaster_signal",
-      "description": "Interpret Gmail Postmaster Tools data (CSV export or snapshot) with Gmail-threshold context and recommended actions per metric."
+      "description": "Interpret Gmail Postmaster Tools data (CSV export or snapshot) with Gmail-threshold context and recommended actions per metric. A dated CSV is read in full and graded on its newest day, and drawn in a widget as the spam-rate trend against Gmail's 0.1% target and 0.3% red zone with reputation history underneath."
     },
     {
       "name": "orbit_list_growth_forecast",

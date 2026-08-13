@@ -43,6 +43,8 @@ import { renderAbReadout, AB_READOUT_URI } from "./widgets/ab-readout.js";
 import { renderRfmMap, RFM_MAP_URI } from "./widgets/rfm-map.js";
 import { renderListForecast, LIST_FORECAST_URI } from "./widgets/list-forecast.js";
 import { renderStateMatrix, STATE_MATRIX_URI } from "./widgets/state-matrix.js";
+import { renderPostmasterTrend, POSTMASTER_TREND_URI } from "./widgets/postmaster-trend.js";
+import { renderInboxPreview, INBOX_PREVIEW_URI } from "./widgets/inbox-preview.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -141,6 +143,20 @@ export const ORBIT_WIDGETS = [
     description:
       "Every personalisation state of an email as a grid of which population receives which modules — so a branch that drops a module instead of swapping it reads as a gap in one row, not as a sentence about set relations — with any state the drawing cap left out counted rather than implied.",
     render: renderStateMatrix,
+  },
+  {
+    uri: POSTMASTER_TREND_URI,
+    name: "Orbit deliverability trend",
+    description:
+      "Gmail Postmaster's daily export drawn as the spam-rate line against Gmail's own 0.1% target and 0.3% red zone, with domain and IP reputation as runs underneath — and an explicit refusal to call the x-axis time when the export carried no date column to sort by.",
+    render: renderPostmasterTrend,
+  },
+  {
+    uri: INBOX_PREVIEW_URI,
+    name: "Orbit inbox preview",
+    description:
+      "A scored subject line and preheader laid out as the inbox row a reader actually sees, measured at three list widths in a real engine so the truncation point is observed rather than guessed from a character count — with every flagged word marked on the string that caused it.",
+    render: renderInboxPreview,
   },
 ];
 
