@@ -41,6 +41,9 @@ import {
   updateLifecycleDiagramSpec
 } from "./lifecycle-diagrams.js";
 import { exportNotionBundle } from "./notion-export.js";
+// Read the live string, so these checks guard what actually ships rather
+// than a hardcoded copy of what shipped when they were written.
+import { ORBIT_ATTRIBUTION } from "./orbit-branding.js";
 import { loadOrbitLibrary } from "./orbit-library.js";
 import {
   startProgramDiscovery,
@@ -715,7 +718,7 @@ results.push({
     mjmlTemplate.mjml.includes("<mjml>") &&
     fs.existsSync(compiledEmail.files.compiled_html) &&
     fs.existsSync(emailPreview.files.desktop) &&
-    emailPreviewDesktopContent.includes("Built in Orbit") &&
+    emailPreviewDesktopContent.includes(ORBIT_ATTRIBUTION) &&
     (emailSpec.suggested_next_steps ?? []).some((step) => /figma/i.test(step)) &&
     (emailSpec.suggested_orbit_tools ?? []).includes("orbit_generate_mjml_template"),
   expected: "spec ok + mjml + compiled html + preview",
@@ -891,8 +894,8 @@ results.push({
     brazePack.status === "ok" &&
     fs.existsSync(brazePack.pack.artifacts.build_sheet) &&
     fs.existsSync(brazePack.pack.artifacts.email_asset_manifest) &&
-    brazeBuildSheetContent.includes("Built in Orbit") &&
-    brazeQaChecklistContent.includes("Built in Orbit") &&
+    brazeBuildSheetContent.includes(ORBIT_ATTRIBUTION) &&
+    brazeQaChecklistContent.includes(ORBIT_ATTRIBUTION) &&
     goldens.braze_build_sheet_contains.every((snippet) =>
       brazeBuildSheetContent.includes(snippet)
     ),
@@ -931,13 +934,13 @@ results.push({
   passed:
     notionBundle.status === "ok" &&
     fs.existsSync(notionBundle.bundle.artifacts.index_markdown) &&
-    notionIndexContent.includes("Built in Orbit") &&
+    notionIndexContent.includes(ORBIT_ATTRIBUTION) &&
     goldens.notion_brief_contains.every((snippet) => notionBriefContent.includes(snippet)) &&
     Boolean(
       notionBundle.bundle.artifacts.diagram_png &&
         fs.existsSync(notionBundle.bundle.artifacts.diagram_png)
     ) &&
-    diagramSvgContent.includes("Built in Orbit") &&
+    diagramSvgContent.includes(ORBIT_ATTRIBUTION) &&
     goldens.vector_pdf_forbidden_tokens.every(
       (token) => !diagramPdfBytes.includes(Buffer.from(token))
     ),

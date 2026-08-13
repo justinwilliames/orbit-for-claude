@@ -829,8 +829,8 @@ const summary = {
         brazePackStatus: brazePack.status,
         brazePackBuildSheetExists: fs.existsSync(brazePack.pack.artifacts.build_sheet),
         brazePackIncludesOrbitBranding:
-          brazeBuildSheetContent.includes("Built in Orbit") &&
-          brazeQaChecklistContent.includes("Built in Orbit") &&
+          brazeBuildSheetContent.includes(ORBIT_ATTRIBUTION) &&
+          brazeQaChecklistContent.includes(ORBIT_ATTRIBUTION) &&
           fs.existsSync(path.join(brazePack.output_dir, "_orbit-branding", "orbit-logo-light.png")),
         brazePackHasBriefContent: goldens.braze_build_sheet_contains.every((snippet) =>
           brazeBuildSheetContent.includes(snippet)
@@ -838,7 +838,7 @@ const summary = {
         notionBundleStatus: notionBundle.status,
         notionIndexExists: fs.existsSync(notionBundle.bundle.artifacts.index_markdown),
         notionBundleIncludesOrbitBranding:
-          notionIndexContent.includes("Built in Orbit") &&
+          notionIndexContent.includes(ORBIT_ATTRIBUTION) &&
           fs.existsSync(path.join(notionBundle.bundle.export_dir, "_orbit-branding", "orbit-logo-light.png")),
         notionBriefHasContent: goldens.notion_brief_contains.every((snippet) =>
           notionBriefContent.includes(snippet)
@@ -850,7 +850,7 @@ const summary = {
         diagramPdfIsVectorFirst: goldens.vector_pdf_forbidden_tokens.every(
           (token) => !diagramPdfBytes.includes(Buffer.from(token))
         ),
-        diagramIncludesOrbitBranding: diagramSvgContent.includes("Built in Orbit")
+        diagramIncludesOrbitBranding: diagramSvgContent.includes(ORBIT_ATTRIBUTION)
       },
       designToBraze: {
         bootstrapRoot: bootstrapCheck.root,
