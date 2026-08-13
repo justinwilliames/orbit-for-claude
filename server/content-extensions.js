@@ -97,6 +97,15 @@ export function scorePreheader({ preheader, subject }) {
   const score = scoreFromIssues(issues, length);
   return {
     status: "ok",
+    // The strings under test, echoed back. Without the preheader itself
+    // the caller cannot tell what a client DROPPED: once the text is
+    // longer than the widest cap (Apple Mail's 140) every preview in
+    // `client_previews` is truncated and the full string exists nowhere
+    // in the response. `subject` rides along for the same reason — the
+    // duplicate-prefix issue below names an overlap length with nothing
+    // to measure it against.
+    preheader,
+    subject: typeof subject === "string" ? subject : null,
     length,
     score,
     tier: scoreTier(score),

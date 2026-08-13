@@ -99,6 +99,74 @@ let tmpDir = null;
  * quietly measuring nothing.
  */
 const POPULATED = {
+  // The three widgets the review loop added last. Fixtures are shaped
+  // from what each widget actually reads, not from the tool's schema —
+  // a payload that satisfies the schema and renders an empty card is
+  // exactly the case this suite exists to stop.
+  "ui://orbit/flow-audit.html": {
+    "status": "ok",
+    "flow_id": "WJ3kPq",
+    "name": "Welcome \u2014 free signup",
+    "trigger_type": "list_join",
+    "window": "last 30 days",
+    "unreadable": false,
+    "actions_truncated": false,
+    "note": null,
+    "steps": [
+      { "action_id": "a1", "action_type": "email", "measured": true, "status": "ok", "is_branch": false,
+        "delay_seconds": 0, "delay_human": "immediately",
+        "stats": { "open_rate_percent": 61.4, "click_rate_percent": 12.9 },
+        "drop_off_to_next_percent": 8.2, "messages": [], "message": null },
+      { "action_id": "a2", "action_type": "time_delay", "measured": false, "status": "not_measured", "is_branch": false,
+        "delay_seconds": 172800, "delay_human": "2 days", "stats": null,
+        "drop_off_to_next_percent": null, "messages": [],
+        "message": "A delay carries no engagement of its own." },
+      { "action_id": "a3", "action_type": "email", "measured": true, "status": "warn", "is_branch": false,
+        "delay_seconds": 0, "delay_human": "immediately",
+        "stats": { "open_rate_percent": 38.1, "click_rate_percent": 3.4 },
+        "drop_off_to_next_percent": 41.7, "messages": [],
+        "message": "Largest single drop in the flow." }
+    ]
+  },
+  "ui://orbit/revenue-attribution.html": {
+    "status": "ok",
+    "window": "last 90 days",
+    "total_revenue": 481200,
+    "attributed_revenue": 138940,
+    "programmes_measured": 4,
+    "programmes_unreadable": 0,
+    "programme_list_capped": false,
+    "message": null,
+    "programmes": [
+      { "name": "Abandoned cart", "attributed_revenue": 61200, "attributed_share_percent": 44.0, "over_attributed": false, "verdict": "ok" },
+      { "name": "Welcome", "attributed_revenue": 38400, "attributed_share_percent": 27.6, "over_attributed": false, "verdict": "ok" },
+      { "name": "Win-back", "attributed_revenue": 24100, "attributed_share_percent": 17.3, "over_attributed": true, "verdict": "warn" },
+      { "name": "Post-purchase", "attributed_revenue": 15240, "attributed_share_percent": 11.0, "over_attributed": false, "verdict": "ok" }
+    ],
+    "issues": [
+      { "severity": "warn", "message": "Win-back overlaps the sitewide promo under last-touch, so its share is credited twice." }
+    ]
+  },
+  "ui://orbit/preheader-clip.html": {
+    "status": "ok",
+    "subject": "Your April invoice is ready",
+    "preheader": "Download the PDF, or update the card we have on file before the next run.",
+    "length": 73,
+    "score": 72,
+    "tier": "warn",
+    "hits": 2,
+    "client_previews": [
+      { "client": "Gmail (iOS)", "name": "Gmail (iOS)", "type": "mobile", "limit": 55,
+        "preview": "Download the PDF, or update the card we have on file be", "truncated": true },
+      { "client": "Apple Mail (iOS)", "name": "Apple Mail (iOS)", "type": "mobile", "limit": 90,
+        "preview": "Download the PDF, or update the card we have on file before the next run.", "truncated": false },
+      { "client": "Outlook (desktop)", "name": "Outlook (desktop)", "type": "desktop", "limit": 60,
+        "preview": "Download the PDF, or update the card we have on fil", "truncated": true }
+    ],
+    "issues": [
+      { "severity": "warn", "message": "Clipped in Gmail iOS at 55 characters \u2014 the ask lands outside the preview." }
+    ]
+  },
   "ui://orbit/dark-pairs.html": {
     "status": "ok",
     "verdict": "fail",

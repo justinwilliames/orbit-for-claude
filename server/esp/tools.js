@@ -44,6 +44,7 @@ import {
 import { EspApiError } from "./errors.js";
 import { widgetMeta } from "../ui/register.js";
 import { ESP_MATRIX_URI } from "../ui/widgets/esp-matrix.js";
+import { FLOW_AUDIT_URI } from "../ui/widgets/flow-audit.js";
 
 /* -------------------------------------------------------------------------- *
  * Config provider — injected by MCP-09 at registration time.
@@ -110,22 +111,51 @@ function espResponse(payload, widgetPayload) {
  * so those flow through as normal payloads — only genuine failures land here.
  *
  * @param {() => Promise<object>} fn produces the payload to serialise.
- * @param {boolean} [withWidget=false] also expose the payload as
- *   structuredContent, for the one ESP tool that has a widget. An error
- *   response never carries it: the drawing has nothing to draw, and a
- *   widget handed an error object renders an empty grid rather than the
- *   message the user needs to read.
+ * @param {boolean|((payload: object) => object)} [withWidget=false] also
+ *   expose the payload as structuredContent, for the ESP tools that have a
+ *   widget. Pass `true` to send the payload as-is, or a shaping function
+ *   where sending it whole would duplicate bulk the drawing never reads —
+ *   the flow audit carries the raw Klaviyo action object on every step, and
+ *   structuredContent is emitted ALONGSIDE the text block, not instead of
+ *   it, so echoing that verbatim doubles the largest response this file
+ *   produces. An error response never carries it: the drawing has nothing
+ *   to draw, and a widget handed an error object renders an empty grid
+ *   rather than the message the user needs to read.
  */
 async function runEspTool(fn, withWidget = false) {
   try {
     const payload = await fn();
-    return espResponse(payload, withWidget ? payload : undefined);
+    const widget = typeof withWidget === "function"
+      ? withWidget(payload)
+      : withWidget ? payload : undefined;
+    return espResponse(payload, widget);
   } catch (err) {
     if (err instanceof EspApiError) {
       return { ...espResponse(err.toResponse()), isError: true };
     }
     throw err;
   }
+}
+
+/**
+ * The flow audit's widget payload: the walk, minus the raw Klaviyo objects.
+ *
+ * `esp_raw` exists so the branch predicates and delay settings — which live
+ * in an undocumented shape the tool refuses to paraphrase — stay available
+ * to the reader. The drawing never reads them, and structuredContent is
+ * emitted IN ADDITION to the text block, so passing the payload through
+ * whole would ship every raw action object twice in one response. The
+ * refusal shapes ({unsupported}, needs_setup) pass through untouched: the
+ * widget draws those as an explicit refusal, and an empty console next to a
+ * tool that just answered is its own bug.
+ */
+function flowAuditWidgetPayload(payload) {
+  if (!payload || !Array.isArray(payload.steps)) return payload ?? undefined;
+  const { esp_raw: _flowRaw, steps, ...rest } = payload;
+  return {
+    ...rest,
+    steps: steps.map(({ esp_raw: _stepRaw, ...step }) => step),
+  };
 }
 
 /* -------------------------------------------------------------------------- *
@@ -601,7 +631,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Klaviyo Flow Audit (read)",
       description:
-        "Walk one Klaviyo FLOW step by step and join it to per-message performance — the leak table orbit_esp_read cannot produce (it returns a flow as name + status, and its performance leg needs a campaign_id). Per step: action type, delay, whether it branches, the message name/channel/subject/preview_text, then recipients → delivered → opens → clicks → unsubscribes, plus the delivered drop-off between consecutive MESSAGE steps. Feed each subject/preview_text into orbit_score_subject_line and orbit_score_preheader. Klaviyo only; other platforms return {unsupported}. Without a conversion_metric_id the structure still returns and every statistic is null — never zero-filled.",
+        "Walk one Klaviyo FLOW step by step and join it to per-message performance — the leak table orbit_esp_read cannot produce (it returns a flow as name + status, and its performance leg needs a campaign_id). Per step: action type, delay, whether it branches, the message name/channel/subject/preview_text, then recipients → delivered → opens → clicks → unsubscribes, plus the delivered drop-off between consecutive MESSAGE steps. Feed each subject/preview_text into orbit_score_subject_line and orbit_score_preheader. Klaviyo only; other platforms return {unsupported}. Without a conversion_metric_id the structure still returns and every statistic is null — never zero-filled. Draws it in a widget as the flow's spine, every message's delivered/opened/clicked bars on one shared scale so the narrowing IS the leak, and an unmeasured step hatched rather than drawn as a zero.",
       inputSchema: {
         platform: platformArg,
         flow_id: z
@@ -628,22 +658,26 @@ export const ESP_TOOL_DEFINITIONS = [
             "The conversion metric Klaviyo's flow-values report requires. Omit and Orbit resolves a default; if it cannot, the structure is returned with null statistics."
           ),
       },
+      _meta: widgetMeta(FLOW_AUDIT_URI),
     },
     handler: async ({ platform, flow_id, flow_name, window, conversion_metric_id } = {}) =>
-      runEspTool(async () => {
-        const config = getRuntimeConfig();
-        // Default to klaviyo rather than the configured platform: this tool
-        // is named for one ESP, so resolving to whatever else is configured
-        // would answer a question nobody asked.
-        const p = resolvePlatform(platform ?? "klaviyo", config);
-        return dispatch(p, "auditFlow", {
-          config,
-          flow_id,
-          flow_name,
-          window,
-          conversion_metric_id,
-        });
-      }),
+      runEspTool(
+        async () => {
+          const config = getRuntimeConfig();
+          // Default to klaviyo rather than the configured platform: this tool
+          // is named for one ESP, so resolving to whatever else is configured
+          // would answer a question nobody asked.
+          const p = resolvePlatform(platform ?? "klaviyo", config);
+          return dispatch(p, "auditFlow", {
+            config,
+            flow_id,
+            flow_name,
+            window,
+            conversion_metric_id,
+          });
+        },
+        flowAuditWidgetPayload
+      ),
   },
 
   {

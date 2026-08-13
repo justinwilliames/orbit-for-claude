@@ -104,6 +104,8 @@ import { AUTH_PANEL_URI } from "./ui/widgets/auth-panel.js";
 import { SMS_SEGMENTS_URI } from "./ui/widgets/sms-segments.js";
 import { PUSH_MATRIX_URI } from "./ui/widgets/push-matrix.js";
 import { DARK_PAIRS_URI } from "./ui/widgets/dark-pairs.js";
+import { REVENUE_ATTRIBUTION_URI } from "./ui/widgets/revenue-attribution.js";
+import { PREHEADER_CLIP_URI } from "./ui/widgets/preheader-clip.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -3899,12 +3901,14 @@ function registerTools() {
       title: "Audit Attributed Revenue vs Actual",
       description:
         "Lifecycle's share of revenue: what your Braze programmes CLAIM to have earned against what the business actually earned in the same window. " +
-        "Attribution windows overlap, so when the per-programme sum exceeds the total this reports over-attribution rather than a share above 100%.",
+        "Attribution windows overlap, so when the per-programme sum exceeds the total this reports over-attribution rather than a share above 100%. " +
+        "Draws it in a widget as both figures on one axis, where an over-attributed sum visibly runs past the 100% line instead of being clamped to a clean full bar.",
       inputSchema: {
         days: z.number().optional().describe("Lookback in days, 1-100 (default: 30)."),
         ending_at: z.string().optional().describe("ISO-8601 window anchor, shared by every leg. Legs that come back covering different windows are refused, not compared."),
         max_programmes: z.number().optional().describe("Per-direction ceiling on series calls (default: 25).")
-      }
+      },
+      _meta: widgetMeta(REVENUE_ATTRIBUTION_URI)
     },
     async ({ days, ending_at: endingAt, max_programmes: maxProgrammes }) => {
       const result = await auditAttributedRevenue({
@@ -3913,7 +3917,7 @@ function registerTools() {
         endingAt,
         maxProgrammes: maxProgrammes ?? 25
       });
-      return makeJsonToolResponse(result);
+      return makeJsonToolResponse(result, result);
     }
   );
 
@@ -5735,15 +5739,17 @@ function registerTools() {
     {
       title: "Preheader Scorer",
       description:
-        "Score an email preheader with client-by-client inbox-preview clipping (Gmail mobile 90 / desktop 110, Apple Mail 140, Outlook 55), duplicate-subject risk, greeking detection, and placeholder leakage. Returns per-client preview strings so you can see exactly what each inbox will show.",
+        "Score an email preheader with client-by-client inbox-preview clipping (Gmail mobile 90 / desktop 110, Apple Mail 140, Outlook 55), duplicate-subject risk, greeking detection, and placeholder leakage. Returns per-client preview strings so you can see exactly what each inbox will show. " +
+        "Draws it in a widget as four inbox rows, tightest client first, each cut where that client cuts it with the dropped tail shown.",
       inputSchema: {
         preheader: z.string().min(1).describe("The preheader text."),
         subject: z.string().optional().describe("Optional subject line to check for leading-phrase duplication.")
-      }
+      },
+      _meta: widgetMeta(PREHEADER_CLIP_URI)
     },
     async ({ preheader, subject }) => {
       const result = scorePreheader({ preheader, subject });
-      return makeJsonToolResponse(result);
+      return makeJsonToolResponse(result, result);
     }
   );
 

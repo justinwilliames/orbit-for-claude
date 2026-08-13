@@ -50,6 +50,9 @@ import { renderSmsSegments, SMS_SEGMENTS_URI } from "./widgets/sms-segments.js";
 import { renderPushMatrix, PUSH_MATRIX_URI } from "./widgets/push-matrix.js";
 import { renderDarkPairs, DARK_PAIRS_URI } from "./widgets/dark-pairs.js";
 import { renderEspMatrix, ESP_MATRIX_URI } from "./widgets/esp-matrix.js";
+import { renderFlowAudit, FLOW_AUDIT_URI } from "./widgets/flow-audit.js";
+import { renderRevenueAttribution, REVENUE_ATTRIBUTION_URI } from "./widgets/revenue-attribution.js";
+import { renderPreheaderClip, PREHEADER_CLIP_URI } from "./widgets/preheader-clip.js";
 
 /**
  * Every widget Orbit ships: its `ui://` uri and the function that
@@ -197,6 +200,27 @@ export const ORBIT_WIDGETS = [
     description:
       "Every supported email platform against every operation as one grid, each cell carrying a glyph and a word rather than a colour, and every partial or absent cell carrying the provider's real constraint and the nearest thing that does work.",
     render: renderEspMatrix,
+  },
+  {
+    uri: FLOW_AUDIT_URI,
+    name: "Orbit flow audit",
+    description:
+      "One Klaviyo flow walked in order as a spine — delays, branches and messages — with every message's delivered/opened/clicked bars on ONE shared scale so the narrowing IS the leak, the tool's own drop-off printed between consecutive messages rather than re-derived from adjacent rows, and any step that returned no statistics hatched and named rather than drawn as a zero.",
+    render: renderFlowAudit,
+  },
+  {
+    uri: REVENUE_ATTRIBUTION_URI,
+    name: "Orbit attributed revenue",
+    description:
+      "What lifecycle programmes claim to have earned drawn against what the business actually earned, both on one axis — so an over-attributed sum visibly runs past the 100% line instead of being clamped to a clean full bar — with no share printed at all where the tool withheld one, and the per-programme ranking underneath.",
+    render: renderRevenueAttribution,
+  },
+  {
+    uri: PREHEADER_CLIP_URI,
+    name: "Orbit preheader preview",
+    description:
+      "One preheader in four inbox rows, tightest client first, each cut where that client's documented character cap cuts it — with the dropped tail aligned from the tool's own preview rather than recounted, the run repeated from the subject marked in both strings, and the caps labelled as character caps rather than passed off as measured widths.",
+    render: renderPreheaderClip,
   },
 ];
 
