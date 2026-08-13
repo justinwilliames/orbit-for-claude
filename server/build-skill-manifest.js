@@ -54,7 +54,8 @@ const CATEGORY_GROUPS = {
     "strategic-stress-test",
     "project-kickoff",
     "discovery-sprint",
-    "competitive-intel"
+    "competitive-intel",
+    "quarterly-planning"
   ],
   "lifecycle-design-execution": [
     "journey-mapping",
@@ -87,7 +88,11 @@ const CATEGORY_GROUPS = {
   "creative-personalisation": [
     "copy-framework",
     "graphic-design",
-    "ai-personalization"
+    "ai-personalization",
+    "anti-slop-editor",
+    "claude-design-email-header",
+    "email-header-design",
+    "smart-header-builder"
   ],
   "platform-documentation": [
     "braze-documentation-expert",
@@ -108,6 +113,58 @@ const CATEGORY_GROUPS = {
   ],
   "knowledge-attribution": [
     "sources"
+  ],
+  // Everything below was unmapped, and an unmapped skill fell through a
+  // silent `?? "other"` — shipping with category `other` and an EMPTY
+  // supported_platforms list. Empty means "platform-agnostic" to
+  // catalog.js, so the 13 Braze skills lost the +3 platform bonus, the +4
+  // task-type bonus and the +2 production lift on the one word the
+  // registry rename bets discovery on. `orbit_route_task("QA my Braze
+  // canvas before launch")` answered braze-build-packager and did not
+  // rank braze-canvas-qa in the top five, confidently and with no
+  // warning. `other` is no longer a legal category — see assertMapped().
+  "braze-platform": [
+    "braze-canvas-creator",
+    "braze-canvas-qa",
+    "braze-canvas-reader",
+    "braze-claude-in-chrome-build",
+    "braze-content-block-audit",
+    "braze-data-validation",
+    "braze-deliverability",
+    "braze-instance-audit",
+    "braze-master-template",
+    "braze-namer",
+    "braze-performance",
+    "braze-segment-analysis",
+    "braze-test-users"
+  ],
+  "esp-platform": [
+    "customerio-documentation-expert",
+    "klaviyo-documentation-expert",
+    "mailchimp-documentation-expert",
+    "sfmc-documentation-expert",
+    "esp-migration",
+    "stripo-email-builder",
+    "stripo-integration",
+    "stripo-library-cleanup",
+    "stripo-module-bindings"
+  ],
+  // The flagship path: the user's own brain and their own design system,
+  // derived from the emails they already send.
+  "lifecycle-brain": [
+    "template-brain",
+    "email-template-learning",
+    "brain-graphify-setup",
+    "liquid-branch-coverage"
+  ],
+  "render-deliverability": [
+    "apple-mpp-response",
+    "email-production-qa",
+    "gmail-bulk-sender-compliance",
+    "gmail-delivery-truth",
+    "ip-warming",
+    "postmaster-tools-setup",
+    "reputation-recovery"
   ]
 };
 
@@ -451,6 +508,36 @@ const SKILL_TO_CATEGORY = new Map(
   )
 );
 
+/**
+ * A skill with no category is a BUILD FAILURE, not a default.
+ *
+ * The old `?? "other"` was silent: the build printed "Wrote N skill
+ * manifest entries" and exited 0 with 38 of 79 skills in a category that
+ * carries no platform, no task-type match and no routing lift. Nothing
+ * downstream could tell an unclassified skill from a deliberately
+ * general one. Adding a skill file now costs one line in
+ * CATEGORY_GROUPS, and forgetting it stops the build with the name in
+ * the message.
+ */
+function assertMapped(name) {
+  const category = SKILL_TO_CATEGORY.get(name);
+  if (!category) {
+    throw new Error(
+      `Skill "${name}" is not in CATEGORY_GROUPS (server/build-skill-manifest.js). ` +
+      `Add it to the group it belongs to — an unclassified skill routes badly and ` +
+      `nothing else in the pipeline can tell that apart from a deliberate choice.`
+    );
+  }
+  return category;
+}
+
+const PLATFORM_FROM_NAME = [
+  ["braze", "braze"],
+  ["iterable", "iterable"],
+  ["hubspot", "hubspot"],
+  ["posthog", "posthog"]
+];
+
 const skillFiles = fs
   .readdirSync(SKILLS_DIR)
   .filter((fileName) => fileName.endsWith(".md"))
@@ -463,6 +550,18 @@ const entries = skillFiles.map((fileName) => {
   const name = normalizeSkillName(frontmatter.name || path.basename(fileName, ".md"));
   const title = extractTitle(body) ?? titleCase(name);
   const description = cleanString(frontmatter.description) ?? "";
+  // A description this short is a PARSE failure, not an author writing
+  // tersely — every skill file in the repo describes itself in a
+  // paragraph. Without this the frontmatter parser could quietly drop a
+  // description again and the only symptom would be a skill that never
+  // routes.
+  if (description.length < 40) {
+    throw new Error(
+      `Skill "${name}" has a ${description.length}-character description (${JSON.stringify(description)}). ` +
+      `That is almost certainly a frontmatter parse failure — check the YAML block scalar in skills/${fileName}. ` +
+      `A skill with no description has no keywords and no trigger phrases, so orbit_route_task can never find it.`
+    );
+  }
   const triggerPhrases = extractQuotedPhrases(description);
   const artifactTypes = ARTIFACT_TYPES[name] ?? ["deliverable"];
   const templates = TEMPLATE_MAP[name] ?? [];
@@ -480,7 +579,7 @@ const entries = skillFiles.map((fileName) => {
   return {
     name,
     title,
-    category: SKILL_TO_CATEGORY.get(name) ?? "other",
+    category: assertMapped(name),
     description,
     trigger_phrases: triggerPhrases,
     exclusion_phrases: EXCLUSION_PHRASES[name] ?? [],
@@ -488,7 +587,7 @@ const entries = skillFiles.map((fileName) => {
     adjacent_skills: ADJACENCY_MAP[name] ?? [],
     artifact_types: artifactTypes,
     platform_sensitivity:
-      PLATFORM_SENSITIVITY[name] ?? inferPlatformSensitivity(SKILL_TO_CATEGORY.get(name)),
+      PLATFORM_SENSITIVITY[name] ?? inferPlatformSensitivity(assertMapped(name), name),
     templates,
     validator_rules: SPECIAL_VALIDATOR_RULES[name] ?? DEFAULT_VALIDATOR_RULES,
     keywords
@@ -505,7 +604,26 @@ function inferDisambiguators(name) {
     .map(([key]) => key);
 }
 
-function inferPlatformSensitivity(category) {
+/**
+ * Platforms a skill is FOR, keyed off the skill name where the name says
+ * so, and off the category otherwise.
+ *
+ * The name is the stronger signal and it does not go stale: a file
+ * called braze-canvas-qa.md is a Braze skill whatever list anyone
+ * remembers to update. Before this, catalog.js read an empty
+ * supported_platforms as "platform-agnostic" and every braze-* skill
+ * lost the +3 platform bonus on a request that said the word Braze,
+ * while graphic-design — which does declare Braze support — kept it.
+ */
+function inferPlatformSensitivity(category, name) {
+  const named = PLATFORM_FROM_NAME.find(([token]) => String(name ?? "").startsWith(`${token}-`));
+  if (named) {
+    return {
+      requires_confirmation: false,
+      supported_platforms: [named[1]]
+    };
+  }
+
   if (
     [
       "lifecycle-design-execution",
@@ -571,7 +689,16 @@ function parseFrontmatter(rawYaml) {
     }
 
     const [, key, rawValue] = pair;
-    if (rawValue === ">" || rawValue === "|") {
+    // Block scalars carry optional chomping and indentation indicators —
+    // `>-`, `|-`, `>+`, `|2`. Matching only the bare `>` and `|` meant
+    // eight skills' descriptions parsed to the literal two characters
+    // ">-", taking their keywords and every quoted trigger phrase with
+    // them. braze-canvas-qa was one: it shipped with an empty
+    // trigger_phrases array, so orbit_route_task scored it as though the
+    // request had said nothing about QA, and orbit_list_skills printed
+    // ">-" to the user as its description. The build said "Wrote 79 skill
+    // manifest entries" and exited 0.
+    if (/^[>|][-+]?\d*$/.test(rawValue)) {
       const block = [];
       for (index += 1; index < lines.length; index += 1) {
         const blockLine = lines[index];

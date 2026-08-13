@@ -113,7 +113,7 @@
   {
     "name": "anti-slop-editor",
     "title": "Anti-Slop Editor Protocol",
-    "category": "other",
+    "category": "creative-personalisation",
     "description": "Use this skill whenever Claude is writing, rewriting, editing, or evaluating user-facing or developer-facing language of any length — blog posts, FAQ pages, landing pages, product copy, UI text, onboarding flows, help docs, documentation, marketing emails, knowledge base articles, summaries, and prose. Also trigger automatically as a final pass on any content-producing output from other skills (copy-framework, email-production-system, smart-header-builder, program-brief, notion-documentation-export, sources, and related). Also power the AI slop detector web app exposed via the Orbit MCP tool surface. This skill acts autonomously — it does not pause for editorial approval, does not list options for the operator to choose from, and does not ask whether content should be improved. It detects weak content, decides what to improve, and applies the strongest reasonable improvements by default. The operator can opt into detailed critique by asking explicitly.",
     "trigger_phrases": [],
     "exclusion_phrases": [],
@@ -124,7 +124,11 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -249,7 +253,7 @@
   {
     "name": "apple-mpp-response",
     "title": "Apple Mail Privacy Protection (MPP) Response",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill when the user is puzzled by inflated open rates, asks why their opens went from 20% to 60%, questions whether open-rate A/B test results are real, plans a send-time optimisation project, tries to suppress non-openers, or mentions Apple Mail Privacy Protection / MPP / iOS. Trigger on phrases like \"opens look too high\", \"opens don't correlate with clicks anymore\", \"send time optimisation\", \"suppress non-openers\", \"MPP\", \"privacy protection\", \"pre-fetched pixels\". Apple MPP changed the open-rate signal for ~25-40% of typical audiences — this skill reframes engagement metrics honestly and recommends what to use instead.",
     "trigger_phrases": [
       "opens look too high",
@@ -585,7 +589,7 @@
   {
     "name": "brain-graphify-setup",
     "title": "Brain Graphify Setup",
-    "category": "other",
+    "category": "lifecycle-brain",
     "description": "Use this skill whenever the user wants to add a knowledge-graph index on top of an LLM-first template brain (see `template-brain`) using the open-source `graphify` tool. Trigger on \"set up graphify on the brain\", \"build the knowledge graph\", \"index the repo\", \"regenerate the graph\", \"should we add a graph to our email brain\", \"read the GRAPH_REPORT\", \"which files are the god nodes\", or \"the graph is stale\". The graph is strictly a derived index over the repo — never a source of truth, never hand-edited. For a small repo, be honest: plain reads often beat the graph until the corpus outgrows one context window. Pairs with `template-brain`, which owns the repo itself.",
     "trigger_phrases": [
       "set up graphify on the brain",
@@ -796,7 +800,7 @@
   {
     "name": "braze-canvas-creator",
     "title": "Braze Canvas Designer",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to design a Braze Canvas structure from Orbit program artifacts. Trigger on \"design a Canvas\", \"map this program to a Canvas\", \"build a Canvas layout from this message plan\", or any request to translate an Orbit lifecycle program into a Braze Canvas structure. This skill maps the program model to Canvas steps, delays, channels, and entry logic. The output is a structured Canvas design that can be shared as an artifact or used as a reference to build the Canvas manually in Braze.",
     "trigger_phrases": [
       "design a canvas",
@@ -811,7 +815,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -882,9 +888,18 @@
   {
     "name": "braze-canvas-qa",
     "title": "Braze Canvas QA",
-    "category": "other",
-    "description": ">-",
-    "trigger_phrases": [],
+    "category": "braze-platform",
+    "description": "Use this skill whenever the user wants to QA / pre-launch-review a Braze Canvas (or campaign) before it goes live — verifying entry rules and target audience, segments and filters, audience-path / tier-split logic, the message step ↔ template bindings and their content (subject, preheader, Liquid, links), delay durations and scheduling, conversion events, exit criteria, frequency caps, suppression, variants/control groups, and test sends. Trigger on \"QA this canvas\", \"review the Braze canvas\", \"check the canvas before launch\", \"Braze pre-launch checklist\", \"audit the canvas filters / segments / conversion events / schedule\", \"is this canvas ready to launch\", \"run a Braze QA\", \"spawn a QA agent on the canvas\", or any request to validate a Braze journey is built correctly. The skill runs a structured, severity-rated checklist against the live dashboard (the only source of truth for filters/segments/delays/conversion events) and returns a PASS/FAIL findings table with a go / no-go call. It does NOT launch anything and keeps entry on a test audience throughout.",
+    "trigger_phrases": [
+      "qa this canvas",
+      "review the braze canvas",
+      "check the canvas before launch",
+      "braze pre-launch checklist",
+      "audit the canvas filters / segments / conversion events / schedule",
+      "is this canvas ready to launch",
+      "run a braze qa",
+      "spawn a qa agent on the canvas"
+    ],
     "exclusion_phrases": [],
     "disambiguators": [],
     "adjacent_skills": [],
@@ -893,7 +908,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -923,16 +940,92 @@
       }
     ],
     "keywords": [
+      "against",
+      "agent",
+      "any",
+      "anything",
+      "audience",
+      "audience-path",
+      "audit",
+      "bindings",
       "braze",
       "braze-canvas-qa",
+      "built",
+      "call",
+      "campaign",
       "canvas",
-      "deliverable"
+      "caps",
+      "check",
+      "checklist",
+      "content",
+      "conversion",
+      "correctly",
+      "criteria",
+      "dashboard",
+      "delay",
+      "deliverable",
+      "does",
+      "durations",
+      "entry",
+      "events",
+      "exit",
+      "filters",
+      "filters/segments/delays/conversion",
+      "findings",
+      "frequency",
+      "goes",
+      "groups",
+      "journey",
+      "keeps",
+      "launch",
+      "links",
+      "liquid",
+      "live",
+      "logic",
+      "message",
+      "no-go",
+      "not",
+      "pass/fail",
+      "pre-launch",
+      "pre-launch-review",
+      "preheader",
+      "ready",
+      "request",
+      "returns",
+      "review",
+      "rules",
+      "run",
+      "runs",
+      "schedule",
+      "scheduling",
+      "segments",
+      "sends",
+      "severity-rated",
+      "source",
+      "spawn",
+      "step",
+      "structured",
+      "subject",
+      "suppression",
+      "table",
+      "target",
+      "template",
+      "test",
+      "throughout",
+      "tier-split",
+      "trigger",
+      "truth",
+      "user",
+      "validate",
+      "variants/control",
+      "verifying",
+      "wants"
     ]
   },
   {
     "name": "braze-canvas-reader",
     "title": "Braze Canvas & Campaign Reader",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to read, inspect, or import an existing Braze Canvas or campaign. Trigger on \"show me this Canvas\", \"what does this Canvas look like?\", \"import this Canvas into Orbit\", \"read campaign X\", or any request to understand the structure of an existing Braze journey. Also use when reverse-mapping a Braze Canvas to an Orbit message plan.",
     "trigger_phrases": [
       "show me this canvas",
@@ -948,7 +1041,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1008,7 +1103,7 @@
   {
     "name": "braze-claude-in-chrome-build",
     "title": "Braze via Claude in Chrome — Build & Edit Manual",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, the three-rung escalation ladder (JS/fiber -> Claude-in-Chrome clicking -> OS-level Codex Computer Use), the proven one-change-Save-verify canvas-surgery loop, and the four things the REST API is structurally blind to (entry audience, audience-path filters, delay durations, template-vs-inline bodies).",
     "trigger_phrases": [],
     "exclusion_phrases": [],
@@ -1019,7 +1114,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1154,7 +1251,7 @@
   {
     "name": "braze-content-block-audit",
     "title": "Braze Content Block Audit",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to audit, inventory, or clean up their Braze Content Blocks. Trigger on \"audit our content blocks\", \"find duplicate content blocks\", \"which content blocks are stale?\", \"check content block quality\", or any request about Content Block health, duplicates, or Liquid quality issues.",
     "trigger_phrases": [
       "audit our content blocks",
@@ -1170,7 +1267,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1230,7 +1329,7 @@
   {
     "name": "braze-data-validation",
     "title": "Braze Data Model Validation",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when Orbit needs to verify that custom events and custom attributes referenced in a message plan or personalisation actually exist in the Braze instance. Trigger on \"do these attributes exist in Braze?\", \"validate our data model\", \"check if this event is tracked\", \"what custom attributes are available?\", or before launching any program that depends on specific user data fields.",
     "trigger_phrases": [
       "do these attributes exist in braze?",
@@ -1246,7 +1345,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1315,7 +1416,7 @@
   {
     "name": "braze-deliverability",
     "title": "Braze Deliverability Health Check",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to check email deliverability health in Braze. Trigger on \"check our deliverability\", \"how are our bounce rates?\", \"are we getting spam complaints?\", \"email health check\", \"should we launch this email program?\", or any request about bounce rates, unsubscribe trends, or email sending reputation. The bounce/unsubscribe export shapes here are Braze-specific; other ESPs surface these signals through their own native reporting (see Other ESPs).",
     "trigger_phrases": [
       "check our deliverability",
@@ -1332,7 +1433,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1511,7 +1614,7 @@
   {
     "name": "braze-instance-audit",
     "title": "Braze Instance Audit",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to audit, inventory, or health-check their Braze workspace. Trigger on \"what's in my Braze instance?\", \"audit our Braze setup\", \"how many Canvases do we have?\", \"find unused content blocks\", \"check our Braze naming conventions\", or any request to understand the current state of a Braze workspace before building new programs. This skill reads everything, writes nothing. The full audit (Canvases, Content Blocks, custom attributes) is Braze-specific; a portable cross-ESP inventory of templates/campaigns/segments is available via the generic ESP read tools (see Other ESPs).",
     "trigger_phrases": [
       "what's in my braze instance?",
@@ -1528,7 +1631,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1614,7 +1719,7 @@
   {
     "name": "braze-master-template",
     "title": "Master Template Workflow",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to import an existing HTML email template, break it into reusable modules, generate multiple content variations from it, or manage template images. Trigger on \"use my existing template\", \"import this HTML email\", \"generate 10 email variations\", \"break this template into sections\", \"upload these images to Braze\", \"I have a master template\", or any request involving template reuse, variation generation, or image management for email production.",
     "trigger_phrases": [
       "use my existing template",
@@ -1632,7 +1737,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1701,7 +1808,7 @@
   {
     "name": "braze-namer",
     "title": "Braze Namer",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user needs to generate a consistent naming convention for a Braze asset — Canvas, campaign, segment, template, Content Block, or any other object. Trigger on \"name this Canvas\", \"what should I call this campaign?\", \"generate a Braze naming convention\", \"naming standard for our Braze assets\", or any request to produce deterministic, structured asset names for Braze.",
     "trigger_phrases": [
       "name this canvas",
@@ -1717,7 +1824,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1783,7 +1892,7 @@
   {
     "name": "braze-performance",
     "title": "Braze Performance Dashboard",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user wants to pull performance data or analytics from Braze. Trigger on \"how is this Canvas performing?\", \"show me campaign metrics\", \"what are our open rates?\", \"pull MAU trends\", \"segment growth report\", \"lifecycle performance dashboard\", or any request for Braze analytics, conversion data, or KPI trends. The Canvas/MAU-level detail here is Braze-specific; a portable normalized performance readout for other ESPs is available via the generic ESP read tool (see Other ESPs).",
     "trigger_phrases": [
       "how is this canvas performing?",
@@ -1801,7 +1910,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1883,9 +1994,11 @@
   {
     "name": "braze-segment-analysis",
     "title": "Braze Segment Analysis",
-    "category": "other",
-    "description": "Use this skill when the user wants to analyse, audit, or understand their Braze segments. Trigger on \"show me our segments\", \"which segments are we using?\", \"find overlapping segments\", \"are any segments unused?\", \"how is this segment growing?\", or any request about Braze segment health, size trends, or organisation.",
+    "category": "braze-platform",
+    "description": "Use this skill when the user wants to analyse, audit, or understand their Braze segments. Trigger on \"analyse my Braze segments\", \"audit the segments in my Braze workspace\", \"show me our segments\", \"which segments are we using?\", \"find overlapping segments\", \"are any segments unused?\", \"how is this segment growing?\", or any request about Braze segment health, size trends, or organisation.",
     "trigger_phrases": [
+      "analyse my braze segments",
+      "audit the segments in my braze workspace",
       "show me our segments",
       "which segments are we using?",
       "find overlapping segments",
@@ -1900,7 +2013,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -1956,7 +2071,8 @@
       "unused",
       "user",
       "using",
-      "wants"
+      "wants",
+      "workspace"
     ]
   },
   {
@@ -2058,7 +2174,7 @@
   {
     "name": "braze-test-users",
     "title": "Braze Test User Validation",
-    "category": "other",
+    "category": "braze-platform",
     "description": "Use this skill when the user needs to validate test user profiles in Braze before sending QA test messages. Trigger on \"check my test users\", \"validate test user data\", \"does this user have the right attributes?\", \"check subscription status\", or any request about QA readiness for specific Braze user profiles.",
     "trigger_phrases": [
       "check my test users",
@@ -2074,7 +2190,9 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -2133,7 +2251,7 @@
   {
     "name": "claude-design-email-header",
     "title": "Claude Design — Email Header / Hero",
-    "category": "other",
+    "category": "creative-personalisation",
     "description": "Use this skill whenever the user wants to design an on-brand EMAIL HEADER or HERO image using Anthropic's Claude Design product (claude.ai/design), driven through Claude in Chrome. Trigger on \"make an email header with Claude Design\", \"build an on-brand email hero in Claude Design\", \"design the email banner from our website / these references\", \"use Claude Design for the hero\", \"email header from this brand URL\", or any request to produce a top-of-email banner that should match a brand by feeding Claude Design a website link and/or reference images. The skill takes a brand URL and/or reference images (plus optional dimensions and exact allowed text), drives the real Claude Design web app to generate the header, then exports it to an email-ready PNG. It is brand-AGNOSTIC — brand comes in as input (a URL, refs, or a loadable brand pack). Bring your own brand pack — see the brand-pack template in Appendix B. Do NOT use for in-body content images, full email layout/copy (use the email build skill), or for raster/photoreal scenes with no brand-system needs (use codex-imagegen). Requires Claude in Chrome connected and a claude.ai login with Claude Design access (Pro/Max/Team/Enterprise).",
     "trigger_phrases": [
       "make an email header with claude design",
@@ -2150,7 +2268,11 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -2674,7 +2796,7 @@
   {
     "name": "customerio-documentation-expert",
     "title": "Customer.io Documentation Expert",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever a task involves Customer.io — building Campaigns, Broadcasts, Newsletters, segments, transactional sends, Liquid personalisation, or any Customer.io App API configuration. Trigger on \"how do I do X in Customer.io?\", \"build this campaign\", \"write this Liquid\", \"why isn't this segment matching?\", \"send this transactional email\", or any Customer.io-specific implementation question. This skill operates as a deep Customer.io platform expert — precise and implementable, and honest about the biggest Orbit limitation here: Customer.io exposes no public template CRUD, so Orbit can read the program and send proofs but cannot push templates.",
     "trigger_phrases": [
       "how do i do x in customer.io?",
@@ -3154,7 +3276,7 @@
   {
     "name": "email-header-design",
     "title": "Email Header Design Loop",
-    "category": "other",
+    "category": "creative-personalisation",
     "description": "Use this skill whenever the user wants to design, generate, or iteratively improve an EMAIL HERO or HEADER image (the banner at the top of a marketing or lifecycle email) and wants it to be on-brand, mobile-friendly, and reviewed to a best-practice bar. It runs a multi-agent design loop: one agent reviews the brand's live website for palette, type, and style; then N rounds of AI image generation (via a Codex/gpt-image image tool) are each critiqued by a panel of graphic-design reviewers (brand fidelity / mobile legibility / composition and balance), with the feedback synthesised back into the next generation, looping until a quality score is hit. Trigger on \"design an email header\", \"design an email hero\", \"email hero image\", \"email header image\", \"make a hero banner for this email\", \"improve this email hero\", \"iterate the hero with design agents\", \"hero header design loop\", \"best-practice email header\", \"review my email hero\", or any request to produce or harden a top-of-email banner image. Do NOT use for in-body content images, full email layout/copy (use the email build skill), or for logos/icons that should stay vector. Requires an AI image generator (e.g. the codex-imagegen skill / Codex CLI) and, because it spawns many agents, explicit opt-in to multi-agent Workflow orchestration.",
     "trigger_phrases": [
       "design an email header",
@@ -3176,7 +3298,11 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -3301,7 +3427,7 @@
   {
     "name": "email-production-qa",
     "title": "Email Production QA",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill before any lifecycle email send to verify it's ready to ship. Triggers on \"QA this email\", \"is this ready to send?\", \"pre-send check\", \"check this HTML\", \"will this render properly?\", \"validate before launch\", \"what could go wrong\", or whenever a user is about to push an email to Braze / production and wants a defensible gate check. This is the canonical pre-send protocol — the single entry point that chains accessibility, dark- mode, Gmail-clipping, and render-QA into one combined verdict.",
     "trigger_phrases": [
       "qa this email",
@@ -3576,7 +3702,7 @@
   {
     "name": "email-template-learning",
     "title": "Email Template Learning",
-    "category": "other",
+    "category": "lifecycle-brain",
     "description": "Use this skill when the user pastes or points at an existing HTML email template and wants Orbit to learn it, remember its modules, and build future on-brand emails from it. Trigger on \"here's my email template\", \"learn this email\", \"remember this template\", \"build an email like this one\", \"use the same template\", \"remove the testimonial section\", \"change the CTA text\", \"swap the hero image\", or any request that implies long-term reuse of a specific master template's modular structure. Orbit persists the learned template in its library and preserves Stripo's es-* / esd-* markup so assembled HTML remains editable when pasted back into Stripo. Learning and assembly are ESP-neutral; the learned HTML can be published to any supported ESP via `orbit_esp_push_template` (see Other ESPs).",
     "trigger_phrases": [
       "here's my email template",
@@ -3697,7 +3823,7 @@
   {
     "name": "esp-migration",
     "title": "ESP Migration",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill when the user is moving from one ESP to another (e.g. Mailchimp → Braze, HubSpot → Iterable, Klaviyo → Braze, Customer.io → SFMC, etc.), planning a migration timeline, mapping custom attributes between platforms, designing a parallel-send / cutover strategy, or asking how to avoid a deliverability dip during transition. Trigger on \"migrating to Braze\", \"moving off Mailchimp\", \"ESP switch\", \"cutover plan\", \"deprecate the old ESP\", \"dual-send\", \"parallel running\". Different from `martech-audit` (evaluation of which ESP to use) and `ip-warmup-braze` (IP warming on a new platform). The template export/import legs are wired to the generic ESP tools so this works across every supported platform (see Cross-ESP tooling).",
     "trigger_phrases": [
       "migrating to braze",
@@ -3906,7 +4032,7 @@
   {
     "name": "gmail-bulk-sender-compliance",
     "title": "Gmail / Yahoo Bulk-Sender Compliance (2024+)",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill when the user asks about Gmail / Yahoo's 2024 bulk-sender rules, is about to cross the 5,000-per-day threshold, gets a sudden inbox-placement drop attributable to Feb 2024+ enforcement, wants to audit their compliance, or mentions \"one-click unsubscribe\", \"List-Unsubscribe-Post header\", \"SPF/DKIM/DMARC alignment\", \"complaint threshold 0.3%\", \"bulk sender requirements\". Trigger on \"am I compliant?\", \"Gmail rejected my email\", \"Yahoo bounces\", \"complaint rate flagged\". This skill is the defensible checklist against the published Google + Yahoo spec, not general deliverability advice.",
     "trigger_phrases": [
       "one-click unsubscribe",
@@ -4012,7 +4138,7 @@
   {
     "name": "gmail-delivery-truth",
     "title": "Gmail delivery truth",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill when an email looks right in preview and wrong in the inbox — the class of bug where the document the client assembles is not the document you authored. Trigger on \"my email breaks in Gmail\", \"it looks fine in preview but broken when I send it\", \"the buttons aren't clickable\", \"my CSS isn't applying in Gmail\", \"the styles disappeared\", \"why does Gmail ignore my styles\", \"the email is cut off in Gmail\", \"dark mode inverted my email\", or \"it renders differently in Outlook\". Also use before any first send on a template imported from outside your own build pipeline. Covers the block-atomic style sanitizer, the CSS-inliner anchor hoist, the 102 KB clip, and how to prove each one rather than guess.",
     "trigger_phrases": [
       "my email breaks in gmail",
@@ -4485,7 +4611,7 @@
   {
     "name": "ip-warming",
     "title": "IP Warming & Micro-Warming Protocol",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill whenever the user wants to ramp, throttle, or stagger email send volume to protect sender reputation — especially \"micro IP warming\": spreading a one-time full-base send across several days so daily volume never spikes above what the IP's recent history has earned. Trigger on \"warm up the IP\", \"micro IP warming\", \"ramp up the send\", \"full base send safely\", \"don't spike our volume\", \"spread the send over N days\", \"stagger the blast\", \"warm-up program\", \"throttle the send\", \"how do I send to all users without hurting deliverability\", or any request to size a safe daily send ceiling and build it in Braze with audience paths, random bucket numbers, and delays. This skill carries BOTH the ramp MATHS (mirrors the Orbit IP Warm-Up Planner at https://yourorbit.team/apps/ip-warmup) AND the HOW-TO-BUILD-IT in Braze via Audience Paths + Random Bucket Numbers + Delays. For cold-IP / new-domain warming over weeks, cross-load the deliverability-management skill (the slow ramp lives there); this skill is the fast spread-a-warm-IP method plus the Braze build. Pairs with braze-canvas-qa for pre-launch checks and the Orbit braze namer for naming.",
     "trigger_phrases": [
       "micro ip warming",
@@ -4844,7 +4970,7 @@
   {
     "name": "klaviyo-documentation-expert",
     "title": "Klaviyo Documentation Expert",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever a task involves Klaviyo — building Flows, campaigns, segments, lists, templates, Django-style personalisation, catalog/feed integrations, or any Klaviyo configuration. Trigger on \"how do I do X in Klaviyo?\", \"build this Flow\", \"write this Klaviyo template tag\", \"why isn't this segment populating?\", \"set up this metric\", or any Klaviyo-specific implementation question. This skill operates as a deep Klaviyo platform expert — precise and implementable, and honest about which operations Orbit's generic ESP tools can and cannot execute against Klaviyo.",
     "trigger_phrases": [
       "how do i do x in klaviyo?",
@@ -5250,7 +5376,7 @@
   {
     "name": "liquid-branch-coverage",
     "title": "Liquid branch coverage",
-    "category": "other",
+    "category": "lifecycle-brain",
     "description": "Use this skill when an email is personalised and you need to know that EVERY version of it is correct, not just the one your test profile happens to produce. Trigger on \"test every version of this email\", \"check all the personalisation states\", \"does this render for every segment\", \"my conditional isn't firing\", \"some customers got a broken email\", \"the dynamic content is wrong for one group\", \"test the Liquid branches\", \"will this work when the flag is true\", or \"QA a dynamic email\". Also use before the first send of any template whose content branches on a custom attribute. Enumerates the full state space and names the arms nobody has ever seen.",
     "trigger_phrases": [
       "test every version of this email",
@@ -5366,7 +5492,7 @@
   {
     "name": "mailchimp-documentation-expert",
     "title": "Mailchimp Documentation Expert",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever a task involves Mailchimp — building Customer Journeys, campaigns, audiences, segments, templates, merge-tag personalisation, or any Mailchimp Marketing API configuration. Trigger on \"how do I do X in Mailchimp?\", \"build this journey\", \"write this merge tag\", \"why isn't this segment matching?\", \"set up this audience\", or any Mailchimp- specific implementation question. This skill operates as a deep Mailchimp platform expert — precise and implementable, and honest about which operations Orbit's generic ESP tools can and cannot execute against Mailchimp.",
     "trigger_phrases": [
       "how do i do x in mailchimp?",
@@ -5997,7 +6123,7 @@
   {
     "name": "postmaster-tools-setup",
     "title": "Gmail Postmaster Tools — Setup + First Read",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill when the user hasn't set up Gmail Postmaster Tools, or when they're trying to interpret their Postmaster data. Trigger on \"set up Postmaster\", \"add my domain to Postmaster\", \"Postmaster isn't showing data\", \"what am I looking at in Postmaster?\", \"domain verification for Postmaster\", \"add TXT record for Postmaster\", \"my reputation shows as ---\", \"connect Postmaster\". Postmaster Tools is the primary Gmail telemetry every bulk sender needs; this skill walks setup and first-read.",
     "trigger_phrases": [
       "set up postmaster",
@@ -6392,7 +6518,7 @@
   {
     "name": "quarterly-planning",
     "title": "Quarterly Planning for Lifecycle",
-    "category": "other",
+    "category": "strategy-planning",
     "description": "Use this skill when the user is planning a quarter or half-year of lifecycle work, needs to turn annual OKRs into a concrete program backlog, prioritising multiple candidate programs against each other, building a quarterly roadmap for exec approval, or committing to a set of lifecycle experiments for Q1/Q2/Q3/Q4. Trigger on \"quarterly planning\", \"Q1 roadmap\", \"half-year plan\", \"OKRs into lifecycle\", \"which programs this quarter\", \"CRM roadmap\". Different from `project-kickoff` (tactical — one program) and `strategic-stress-test` (one decision). This is the backlog-level prioritisation protocol.",
     "trigger_phrases": [
       "quarterly planning",
@@ -6488,7 +6614,7 @@
   {
     "name": "reputation-recovery",
     "title": "Reputation Recovery",
-    "category": "other",
+    "category": "render-deliverability",
     "description": "Use this skill when a sender is in active deliverability trouble — bounce rate above 2%, complaint rate above 0.3%, sudden inbox-placement drop at Gmail / Microsoft / Yahoo, domain blacklisted on Spamhaus / SURBL / SpamCop, SNDS flagged red, or Postmaster Tools reputation in the \"bad\" band. Trigger on phrases like \"deliverability tanked\", \"we're blacklisted\", \"Gmail started going to spam\", \"bounces spiked overnight\", \"complaint rate is red\", \"reputation recovery\". This is an emergency playbook — diagnose in hours, not weeks, and intervene surgically rather than re-starting the warm-up from zero.",
     "trigger_phrases": [
       "deliverability tanked",
@@ -6807,7 +6933,7 @@
   {
     "name": "sfmc-documentation-expert",
     "title": "Salesforce Marketing Cloud (SFMC) Documentation Expert",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever a task involves Salesforce Marketing Cloud (SFMC) — building Journeys, Content Builder assets/templates, data extensions, AMPscript personalisation, transactional sends, or any SFMC REST API configuration. Trigger on \"how do I do X in SFMC?\", \"build this Journey\", \"write this AMPscript\", \"create a Content Builder asset\", \"why won't this journey read?\", or any SFMC-specific implementation question. This skill operates as a deep SFMC platform expert — precise and implementable, and honest about the v1 REST-only boundary: subscriber lists/data extensions and send-level metrics are SOAP- first and out of scope until a SOAP client ships.",
     "trigger_phrases": [
       "how do i do x in sfmc?",
@@ -6916,7 +7042,7 @@
   {
     "name": "smart-header-builder",
     "title": "Smart Header Builder",
-    "category": "other",
+    "category": "creative-personalisation",
     "description": "Use this skill whenever a user asks Orbit to generate, create, build, or design a brand header, email header, email banner, or brand image. Trigger on asks like \"make me a header\", \"generate a brand header\", \"create an email banner\", \"build a header for my welcome email\", \"design a header for this campaign\", or any request that will end with a call to orbit_brand_header. This skill wraps the full header generation flow — setup validation, intelligent brand example selection, spec building, rendering, and preview — so the user never needs to think about example paths or tool sequencing.",
     "trigger_phrases": [
       "make me a header",
@@ -6933,7 +7059,11 @@
     ],
     "platform_sensitivity": {
       "requires_confirmation": false,
-      "supported_platforms": []
+      "supported_platforms": [
+        "braze",
+        "iterable",
+        "hubspot"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -7410,7 +7540,7 @@
   {
     "name": "stripo-email-builder",
     "title": "Stripo Email Builder",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever the user wants to write, draft, build, scope, or design any email program destined for a Braze Canvas or campaign — single email or a multi-email activation, onboarding, winback, dormant, trial-conversion, or lifecycle program. The output is a Notion-ready Program Build Spec with a version-numbered provenance callout, program shape section, email index, per-email <details> toggles (each holding a metadata table plus a per-Stripo-module copy table — Module 1 logo header, Module 2 Text + body + CTA, Module 3 Chat bubbles, Module 4 Footer), a pre-build verification checklist, six pre-launch operational gates, and architectural notes. Every email's modules are drawn from the live Stripo library (synced first) and CTAs come from the project's canonical deep-link (Universal URL) inventory. The chat bubbles module follows a strict 3-step operator <-> agent <-> operator conversation pattern, never marketer voice. Always cross-load the project's voice skill (the project's voice-writer skill) for tone, spelling, and persona rules before writing copy. Trigger on \"write me an email\", \"build an email\", \"draft an email\", \"email build spec\", \"Stripo email\", \"Braze campaign email\", \"lifecycle email\", \"Canvas email\", \"onboarding email\", \"winback email\", \"nurture email\", \"activation email\", \"re-engagement email\", \"build spec for the X program\", or any request to produce email copy destined for a Braze Canvas or campaign. ALSO covers the END-TO-END build lifecycle, not just the spec: building/pushing emails into Stripo, exporting to Braze templates, fixing placeholder/render bugs, and cleaning up the Stripo workspace (see \"Building & shipping in Stripo (operational)\"). Trigger additionally on \"build the templates\", \"push to Stripo\", \"export to Braze\", \"regenerate the emails\", \"the emails are rendering with placeholders\", \"clean up Stripo\", \"delete the old templates\".",
     "trigger_phrases": [
       "write me an email",
@@ -7606,7 +7736,7 @@
   {
     "name": "stripo-integration",
     "title": "Foundational requirement: Smart Element bindings (Path A)",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever the user wants to connect a Stripo account to Orbit, sync their saved custom modules from Stripo, document the Stripo-side design system, or compose new emails directly into Stripo via API. Trigger on \"connect Stripo\", \"sync my Stripo modules\", \"pull modules from Stripo\", \"build an email in Stripo\", \"compose email and push to Stripo\", \"use my Stripo modules\", or any mention of using Stripo's API as opposed to copy-pasting HTML out of Stripo. Do NOT trigger for the older paste-driven `orbit_learn_email_template` flow — that's the email-template-learning skill.",
     "trigger_phrases": [
       "connect stripo",
@@ -7705,7 +7835,7 @@
   {
     "name": "stripo-library-cleanup",
     "title": "Stripo Library Cleanup",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill whenever the user wants to CLEAN UP, TIDY, DEDUPE, or REORGANISE their Stripo email library / workspace — as opposed to building or composing a new email (that is stripo-email-builder). The job is housekeeping: find duplicate templates and keep only the latest of each, delete stale versions, and file loose root-level emails into the correct (often nested) folders. Trigger on \"clean up Stripo\", \"clean up my Stripo folders\", \"tidy the Stripo library\", \"tidy my Stripo workspace\", \"organise Stripo\", \"sort my Stripo emails into folders\", \"keep only the latest of each template\", \"dedupe Stripo\", \"delete the old Stripo templates\", \"Stripo library cleanup\", \"my Stripo workspace is a mess\", \"file these loose emails\". This skill drives the Stripo cabinet UI through Claude-in-Chrome plus the Orbit Stripo API (read + delete), in the most efficient order, and AVOIDS the dead-ends (per-card checkbox roulette, double-click-renames-a-folder, the DOM-vs-screenshot coordinate offset, phantom stale cards after API deletes). It is read-and-plan first, confirm-before-deleting (Stripo deletes are PERMANENT), then execute. Do NOT use this skill to write, compose, push, or export emails — load stripo-email-builder for build work. Cross-references stripo-email-builder's \"Workspace management\" section.",
     "trigger_phrases": [
       "clean up stripo",
@@ -7847,7 +7977,7 @@
   {
     "name": "stripo-module-bindings",
     "title": "Stripo Module Bindings",
-    "category": "other",
+    "category": "esp-platform",
     "description": "Use this skill when the user needs to make a Stripo module's text, link, or image substitutable per send — the registration step that has to happen before any compose call can vary that field. Trigger on \"how do I make the button text/href substitutable\", \"register a Stripo variable\", \"add a Smart Property\", \"bind p_cta_text to my module\", \"my variable isn't substituting\", \"slot_values keeps rejecting my variable name\", or any run of `orbit_inspect_stripo_module_bindings` that reports orphan esd-gen-* classes, unbound CTA elements, or registered variables missing from the API surface. Do NOT trigger for the compose flow itself — that's `stripo-integration`. This skill is the bench-work before compose: getting the bindings right inside Stripo's editor so the API can see them.",
     "trigger_phrases": [
       "how do i make the button text/href substitutable",
@@ -7965,7 +8095,7 @@
   {
     "name": "template-brain",
     "title": "Template Brain",
-    "category": "other",
+    "category": "lifecycle-brain",
     "description": "Use this skill whenever the user wants to build, structure, or maintain an LLM-first \"template brain\" — a git repository that is the single source of truth for their lifecycle/marketing email program, designed so any AI session can load full context cold and produce a correct, on-brand email without re-deriving anything. Trigger on \"set up a template brain\", \"make our email knowledge AI-readable\", \"put our lifecycle program in git\", \"our templates live in the ESP and it's a mess\", \"how do we structure an email knowledge repo\", \"scaffold a brain repo\", \"add a program to the brain\", \"write to the brain correctly\", \"set up an email design system\", \"build our email design system\", \"single source of truth for our emails\", \"where should our email knowledge live\", \"our templates keep drifting\", \"source of truth for my lifecycle programme\", or when scattered wiki pages and ESP dashboards keep drifting from what actually ships. Pairs with `brain-graphify-setup` (the graph layer on top of the repo). The brain is the upstream knowledge layer; it does NOT certify render correctness — that stays with the compile + render QA gate.",
     "trigger_phrases": [
       "template brain",

@@ -141,13 +141,27 @@ export function extractSection(body, sectionTitle) {
   return lines.slice(startIndex, endIndex).join("\n").trim();
 }
 
+/**
+ * Two-letter tokens the length filter would otherwise eat.
+ *
+ * The filter is `length > 2`, which is a reasonable default and was
+ * silently deleting the acronyms this domain runs on. "QA" — the word a
+ * marketer types for the pre-launch check — never reached the router at
+ * all, from either the request or a skill's trigger phrases, so
+ * `orbit_route_task("QA my Braze canvas before launch")` scored
+ * braze-canvas-qa as though the request had said nothing about QA. Same
+ * shape for IP (warming) and AB (test). Kept to an explicit list rather
+ * than lowering the floor: "my", "of", "is" are noise and belong dropped.
+ */
+const SHORT_TOKENS = new Set(["qa", "ip", "ab", "ai", "ux", "cx"]);
+
 export function tokenize(text) {
   return String(text)
     .toLowerCase()
     .replace(/[^a-z0-9+\-\/ ]+/g, " ")
     .split(/\s+/)
     .map((token) => token.replace(/^-+|-+$/g, ""))
-    .filter((token) => token.length > 2 && !STOPWORDS.has(token));
+    .filter((token) => (token.length > 2 || SHORT_TOKENS.has(token)) && !STOPWORDS.has(token));
 }
 
 function buildDocumentRecord(filePath) {

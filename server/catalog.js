@@ -435,10 +435,21 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
     }
   }
 
+  // Trigger phrases matched by SUBSTRING only, which meant a skill was
+  // rewarded for the user having typed its example verbatim. Nobody
+  // types "QA this canvas"; they type "QA my Braze canvas before
+  // launch", and braze-canvas-qa scored zero for a request that is the
+  // thing it exists for. A content-word subset still discriminates —
+  // "review the Braze canvas" needs the word review — but it no longer
+  // requires the author to have guessed the exact wording. Scored below
+  // an exact hit so a verbatim phrase still wins.
   for (const phrase of skill.triggerPhrases) {
     if (normalizedRequest.includes(phrase)) {
       score += 7;
       reasons.push(`Matches trigger phrase "${phrase}".`);
+    } else if (phraseTokensCovered(phrase, requestTokens)) {
+      score += 5;
+      reasons.push(`Covers every content word of trigger phrase "${phrase}".`);
     }
   }
 
@@ -622,6 +633,19 @@ function extractRequestPhrases(normalizedRequest) {
   }
 
   return [...phrases];
+}
+
+/**
+ * Every content word of a trigger phrase present in the request.
+ *
+ * Two or more content words required: a one-word phrase covered this way
+ * is just a keyword, and keywords are already scored above. `tokenize`
+ * drops the stopword list, so "QA this canvas" reduces to {qa, canvas}.
+ */
+function phraseTokensCovered(phrase, requestTokens) {
+  const tokens = tokenize(phrase);
+  if (tokens.length < 2) return false;
+  return tokens.every((token) => requestTokens.has(token));
 }
 
 function computePhraseCoverage(requestPhrases, skill) {
@@ -898,7 +922,12 @@ function evaluateValidatorRule(rule, text) {
 
 function inferTaskType(requestText) {
   const normalized = requestText.toLowerCase();
-  if (/\b(audit|review|critique|evaluate|stress[- ]?test)\b/.test(normalized)) {
+  // `qa` is the word a marketer actually types for this, and it was not
+  // here at all — so "QA my Braze canvas before launch" fell through to
+  // the build branch on the word `launch` and scored +4 for every skill
+  // with "build" in its name. The pre-launch check is an audit; running
+  // it should never rank the packager above the QA protocol.
+  if (/\b(audit|review|critique|evaluate|stress[- ]?test|qa|pre[- ]?launch|verify|validate)\b/.test(normalized)) {
     return "audit";
   }
   if (/\b(fix|broken|debug|why isn’t|troubleshoot)\b/.test(normalized)) {

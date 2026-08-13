@@ -2,7 +2,8 @@
 name: braze-segment-analysis
 description: >
   Use this skill when the user wants to analyse, audit, or understand their Braze segments.
-  Trigger on "show me our segments", "which segments are we using?", "find overlapping
+  Trigger on "analyse my Braze segments", "audit the segments in my Braze workspace",
+  "show me our segments", "which segments are we using?", "find overlapping
   segments", "are any segments unused?", "how is this segment growing?", or any request
   about Braze segment health, size trends, or organisation.
 ---
