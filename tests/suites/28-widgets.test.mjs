@@ -1527,8 +1527,8 @@ describe("Inbox preview — marks land on the characters the scorer named", () =
 });
 
 describe("Auth panel — a scale with no reading refuses to draw one", () => {
-  const { spfBudget, dmarcRung } = new Function(
-    `${AUTH_SCALE_JS}\nreturn { spfBudget, dmarcRung };`
+  const { spfBudget, dmarcRung, pill } = new Function(
+    `${AUTH_SCALE_JS}\nreturn { spfBudget, dmarcRung, pill };`
   )();
 
   test("a counted record is placed on the 10-lookup budget", () => {
@@ -1582,6 +1582,62 @@ describe("Auth panel — a scale with no reading refuses to draw one", () => {
     assert.equal(r.stop, null);
     assert.equal(r.published, true);
     assert.match(r.why, /no p=/);
+  });
+
+  test("a null verdict is Not measured, never Warn", () => {
+    // email-auth.js was deliberately given a not_measurable state:
+    // { verdict: null, not_measured: true }. `V[verdict] || V.warn` turned
+    // every one of those into a Warn chip — a verdict on a domain nobody
+    // reached.
+    assert.match(pill(null, true), /Not measured/);
+    assert.doesNotMatch(pill(null, true), /Warn/);
+    assert.match(pill("warn", false), /Warn/, "a real warn must still read Warn");
+    assert.match(pill("pass", false), /Pass/);
+  });
+
+  test("an unresolved lookup states nothing about the zone", async () => {
+    // The whole finding in one assertion: run the real tool against a
+    // resolver that never answers, then check every string the scales
+    // would print. Each of these sentences is a fact about a DNS zone that
+    // was never read — and they went into the copy-out artifact whose
+    // stated job is being forwarded to whoever owns that zone.
+    const { checkEmailAuth } = await import("../../server/email-auth.js");
+    const result = await checkEmailAuth({
+      domain: "example.test",
+      resolveTxt: async () => ({ error: "ETIMEOUT" }),
+    });
+    assert.equal(result.spf.not_measured, true);
+    assert.equal(result.spf.verdict, null);
+
+    const drawn = [
+      spfBudget(result.spf).why,
+      dmarcRung(result.dmarc).why,
+      pill(result.spf.verdict, result.spf.not_measured),
+      pill(result.dmarc.verdict, result.dmarc.not_measured),
+      pill(result.dkim.verdict, result.dkim.not_measured),
+    ].join("\n");
+    assert.doesNotMatch(drawn, /no SPF record|no DMARC record|none of the common|Nothing published/);
+    assert.doesNotMatch(drawn, /Warn/);
+    assert.match(drawn, /ETIMEOUT/, "the tool's own reason should be what is shown");
+    assert.equal(spfBudget(result.spf).measured, false);
+    assert.equal(dmarcRung(result.dmarc).measured, false);
+  });
+
+  test("a walk that stopped early reports its floor instead of shrugging", () => {
+    // email-auth.js withholds `lookup_count` and reports
+    // `lookup_count_at_least` when the include: chain could not be walked
+    // to the end. Printing "the tool did not report a lookup count"
+    // discards a number the tool did report.
+    const b = spfBudget({
+      records: ["v=spf1 include:a.test -all"],
+      lookup_count_at_least: 6,
+      lookup_count_is_complete: false,
+      lookup_count_incomplete_reason: "depth limit reached",
+    });
+    assert.equal(b.known, false);
+    assert.match(b.why, /at least 6/);
+    assert.match(b.why, /depth limit reached/);
+    assert.doesNotMatch(b.why, /did not report a lookup count/);
   });
 });
 
