@@ -38,11 +38,34 @@ const guides = JSON.parse(
   fs.readFileSync(path.join(ROOT_DIR, "data", "guides-export.json"), "utf8")
 );
 
+const guideList = Array.isArray(guides) ? guides : (guides.guides ?? []);
+
+/**
+ * Words of guide BODY, measured — never estimated.
+ *
+ * The README claimed "A 184,000-word practitioner library" against a true
+ * 176,951, and nothing in the repo computed the figure, so nothing could
+ * catch it drifting. Rounded DOWN to the nearest thousand, which is the
+ * same safe-display rule the brain Orbit itself generates writes into its
+ * verified-claims gate: a number you present is a floor you can defend.
+ */
+function guideWordCount() {
+  let words = 0;
+  for (const g of guideList) {
+    words += String(g.markdown ?? "").trim().split(/\s+/).filter(Boolean).length;
+  }
+  return Math.floor(words / 1000) * 1000;
+}
+
 export const COUNTS = {
   skills: skills.length,
   tools: manifest.tools.length,
-  guides: Array.isArray(guides) ? guides.length : (guides.guides?.length ?? guides.count ?? 0),
+  guides: guideList.length || (guides.count ?? 0),
+  guideWords: guideWordCount(),
 };
+
+/** The one library-size sentence, everywhere. */
+export const GUIDE_WORDS = `${COUNTS.guideWords.toLocaleString("en-US")}-word practitioner library`;
 
 /** The one inventory sentence, everywhere. */
 export const INVENTORY = `${COUNTS.skills} skills and ${COUNTS.tools} tools`;
@@ -60,6 +83,11 @@ const REWRITES = [
     pattern: /\b\d+\+? (?:long-form )?practitioner guides\b/g,
     replacement: () => GUIDE_INVENTORY,
   },
+  { pattern: /\b[\d,]+-word practitioner library\b/g, replacement: () => GUIDE_WORDS },
+  // The skill count also ships under a second noun. "77 protocols" sat two
+  // lines above a correctly-synced "79 skills and 126 tools" because the
+  // inventory pattern could not see it.
+  { pattern: /\b\d+\+? protocols Claude loads\b/g, replacement: () => `${COUNTS.skills} protocols Claude loads` },
 ];
 
 /** Files that state Orbit's own size. */

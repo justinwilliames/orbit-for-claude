@@ -52,14 +52,21 @@ export function forecastListGrowth({
 
   for (let m = 1; m <= horizon; m++) {
     const churned = list * churnRate;
-    list = list - churned + acquisition;
+    // THIS month's intake, held before compounding rather than divided back
+    // out of next month's. `acquisition / (1 + acqGrowthRate)` is 0/0 at
+    // acquisition_growth_pct = -100 — the natural way to model "we stop
+    // acquiring" — and every row's acquisition and net serialised as null
+    // while the tool returned status ok with a confident prose message and
+    // the widget drew it.
+    const acquired = acquisition;
+    list = list - churned + acquired;
     acquisition *= 1 + acqGrowthRate;
     trajectory.push({
       month: m,
       list_size: Math.round(list),
-      acquisition: Math.round(acquisition / (1 + acqGrowthRate)),
+      acquisition: Math.round(acquired),
       churn: Math.round(churned),
-      net: Math.round(acquisition / (1 + acqGrowthRate) - churned),
+      net: Math.round(acquired - churned),
     });
   }
 
@@ -79,6 +86,26 @@ export function forecastListGrowth({
     }
     if (halvedMonth === null && row.list_size <= currentListSize / 2) {
       halvedMonth = row.month;
+    }
+  }
+
+  // The month acquisition growth takes the list back, if it ever does.
+  //
+  // break_even_month latches on the FIRST negative month and never
+  // reconsiders. With any acquisition growth the early months are usually
+  // negative — a growth rate compounds off a small base while churn is
+  // already scaled to the whole list — so a list growing 68% over the
+  // horizon reported break_even_month: 1 and said nothing about the month
+  // it turned. The widget marked that 1 on the curve.
+  let recoveryMonth = null;
+  if (breakEvenMonth !== null) {
+    for (let i = breakEvenMonth; i < trajectory.length; i++) {
+      if (trajectory[i].net > 0) {
+        // Only a recovery that HOLDS to the horizon. A single positive
+        // month inside a decline is noise, not a turn.
+        if (trajectory.slice(i).every((r) => r.net > 0)) recoveryMonth = trajectory[i].month;
+        break;
+      }
     }
   }
 
@@ -103,10 +130,18 @@ export function forecastListGrowth({
     },
     steady_state_acquisition_needed: steadyStateAcquisitionNeeded,
     halved_by_month: halvedMonth,
+    // Precisely what it measures: the FIRST month churn exceeds that
+    // month's intake. Not "the month the list starts shrinking for good" —
+    // that is recovery_month's absence.
+    first_negative_net_month: breakEvenMonth,
     break_even_month: breakEvenMonth,
+    recovery_month: recoveryMonth,
     message:
       endSize > currentListSize
-        ? `List grows from ${currentListSize.toLocaleString()} to ${endSize.toLocaleString()} over ${horizon} months (+${Math.round(deltaPct)}%). Steady-state monthly acquisition to hold current size is ${steadyStateAcquisitionNeeded.toLocaleString()}.`
+        ? `List grows from ${currentListSize.toLocaleString()} to ${endSize.toLocaleString()} over ${horizon} months (+${Math.round(deltaPct)}%). Steady-state monthly acquisition to hold current size is ${steadyStateAcquisitionNeeded.toLocaleString()}.` +
+          (recoveryMonth !== null
+            ? ` Net intake is negative from month ${breakEvenMonth} and turns positive for good at month ${recoveryMonth}.`
+            : "")
         : `List shrinks from ${currentListSize.toLocaleString()} to ${endSize.toLocaleString()} over ${horizon} months (${Math.round(deltaPct)}%). You'd need at least ${steadyStateAcquisitionNeeded.toLocaleString()} new signups per month just to hold current size.`,
     orbit_attribution: {
       heavy: false,

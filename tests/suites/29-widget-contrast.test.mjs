@@ -131,6 +131,64 @@ describe("Widget contrast — Orbit's own chrome clears the bar it enforces", ()
     });
   }
 
+  // ── text-bearing fills outside .o-pill ──────────────────────────
+  //
+  // This suite only ever walked .o-pill variants, so it did not know
+  // .mk--on existed — the checkmark that is the sole "this population
+  // receives this module" signal in every cell of the personalisation-states
+  // grid, and again in its legend. It read `background: var(--brand);
+  // color: #fff`, and --brand is documented one file over as a FILL hue.
+  // 4.47:1 light, 2.98:1 dark, at 10px/700 — worse than any of the four
+  // pills already fixed, and the third time this cycle a token meant for
+  // fills was used to carry text.
+  const FILL_PAIRS = [
+    // [label, file, light fg, light bg, dark fg, dark bg]
+    ["state-matrix .mk--on", "state-matrix.js", "#ffffff", "brand-strong", "paper", "brand"],
+  ];
+
+  test(".mk--on is 10px, so the 4.5:1 floor is the right one", () => {
+    const css = fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "server", "ui", "widgets", "state-matrix.js"),
+      "utf8"
+    );
+    assert.match(
+      css,
+      /\.mk\s*\{[^}]*font-size:\s*10px/,
+      ".mk is no longer 10px — re-check which WCAG threshold applies before relaxing this"
+    );
+    // The invariant, not the one instance: white ink on the plain --brand
+    // fill is the pairing that computes 4.47 light / 2.98 dark. The dark
+    // rule pairs --brand with --paper deliberately and must stay legal.
+    const whiteOnBrand = [...css.matchAll(/\{([^}]*)\}/g)]
+      .map(([, body]) => body)
+      .filter((b) => /background:\s*var\(--brand\)\s*[;}]/.test(b) && /color:\s*(#fff|#ffffff|white)\b/i.test(b));
+    assert.deepEqual(
+      whiteOnBrand,
+      [],
+      "white ink on the --brand fill is 4.47:1 light / 2.98:1 dark — use --brand-strong, or invert in dark"
+    );
+  });
+
+  for (const theme of ["light", "dark"]) {
+    test(`text-bearing fills outside .o-pill clear AA in the ${theme} palette`, () => {
+      const p = palette(theme);
+      const failures = [];
+      for (const [label, , lightFg, lightBg, darkFg, darkBg] of FILL_PAIRS) {
+        const [fgToken, bgToken] = theme === "light" ? [lightFg, lightBg] : [darkFg, darkBg];
+        // A literal (#ffffff) is used as-is; anything else is a token name.
+        const fg = fgToken.startsWith("#") ? fgToken : p[fgToken];
+        const bg = bgToken.startsWith("#") ? bgToken : p[bgToken];
+        assert.ok(fg, `${theme}: --${fgToken} is not declared as a hex literal`);
+        assert.ok(bg, `${theme}: --${bgToken} is not declared as a hex literal`);
+        const ratio = contrastRatio(fg, bg);
+        if (ratio < AA_NORMAL) {
+          failures.push(`${label} — ${fg} on ${bg} = ${ratio.toFixed(2)}:1 (needs ${AA_NORMAL})`);
+        }
+      }
+      assert.deepEqual(failures, [], `${theme}:\n  ${failures.join("\n  ")}`);
+    });
+  }
+
   test("the fixed-light push preview never reads a theme-switching colour token", () => {
     // The .notif card is a phone screen: deliberately light in BOTH
     // themes, which is why .notif-title and .notif-body hardcode their

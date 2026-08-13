@@ -55,8 +55,8 @@ Roughly two-thirds of the tool surface needs nothing beyond the install:
 - **Your design system, on one sheet.** Paste an email you already send and Orbit reads back the module spine, the palette, a type-and-button specimen drawn with your own tokens, and the WCAG contrast of the four pairs that actually meet on the page.
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
-- **The skill library** — 77 protocols Claude loads and follows, on lifecycle design, deliverability, Braze mechanics, Stripo mechanics, experimentation, copy, and brand.
-- **A 184,000-word practitioner library, offline.** 90 long-form guides and 10 courses ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no network call and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing.
+- **The skill library** — 79 protocols Claude loads and follows, on lifecycle design, deliverability, Braze mechanics, Stripo mechanics, experimentation, copy, and brand.
+- **A 176,000-word practitioner library, offline.** 90 long-form guides ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no network call and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing. A ten-course reading path indexes them by level; the courses themselves are slugs and links, so the lessons open on the site.
 
 ## What needs a credential
 

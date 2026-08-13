@@ -98,6 +98,8 @@ import { AB_READOUT_URI } from "./ui/widgets/ab-readout.js";
 import { RFM_MAP_URI } from "./ui/widgets/rfm-map.js";
 import { LIST_FORECAST_URI } from "./ui/widgets/list-forecast.js";
 import { STATE_MATRIX_URI } from "./ui/widgets/state-matrix.js";
+import { POSTMASTER_TREND_URI } from "./ui/widgets/postmaster-trend.js";
+import { INBOX_PREVIEW_URI } from "./ui/widgets/inbox-preview.js";
 import { registerGuideResources } from "./guides.js";
 import { registerCourseResources } from "./courses.js";
 import {
@@ -4267,15 +4269,26 @@ function registerTools() {
     {
       title: "Score Subject Line",
       description:
-        "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score, a tier (sharp/decent/risky/spam), and a list of specific issues the operator can fix.",
+        "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score, a tier (sharp/decent/risky/spam), and a list of specific issues the operator can fix. Draws it in a widget as the inbox row at three list widths — where the subject clips is measured in a real engine rather than counted in characters — with every flagged word marked on the string that caused it.",
       inputSchema: {
         subject: z.string().min(1).max(MAX_MEDIUM_STRING).describe("The subject line to score"),
         preheader: z.string().max(MAX_MEDIUM_STRING).optional().describe("Optional preheader text — the second line that renders in the inbox preview")
-      }
+      },
+      _meta: widgetMeta(INBOX_PREVIEW_URI)
     },
     async ({ subject, preheader }) => {
       const result = scoreSubject(subject, preheader ?? "");
-      return makeJsonToolResponse(result ?? { error: "Subject cannot be empty." });
+      if (!result) return makeJsonToolResponse({ error: "Subject cannot be empty." });
+      // The subject and preheader ride on the WIDGET copy only, not the
+      // text payload. The widget cannot draw an inbox row without the
+      // string it is scoring; the model already has it, and putting it
+      // back into the gated payload would run the slop gate over a
+      // subject line this very tool has just finished scoring.
+      return makeJsonToolResponse(result, {
+        subject,
+        preheader: preheader ?? "",
+        ...result
+      });
     }
   );
 
@@ -6034,17 +6047,31 @@ function registerTools() {
     {
       title: "Parse Gmail Postmaster Signal",
       description:
-        "Interpret Gmail Postmaster Tools data. Accept either the CSV export from Postmaster's UI (string) or a structured snapshot { spam_rate_pct, domain_reputation, ip_reputation, authenticated_traffic_pct, delivery_errors_pct }. Returns per-metric pass/warn/fail verdicts with Gmail-threshold context and recommended actions.",
+        "Interpret Gmail Postmaster Tools data. Accept either the CSV export from Postmaster's UI (string) or a structured snapshot { spam_rate_pct, domain_reputation, ip_reputation, authenticated_traffic_pct, delivery_errors_pct }. Returns per-metric pass/warn/fail verdicts with Gmail-threshold context and recommended actions. A dated CSV is read in full and graded on its newest day (not its last line), returns the whole daily series, and draws it in a widget as the spam-rate trend against Gmail's 0.1% target and 0.3% red zone with domain and IP reputation history underneath.",
       inputSchema: {
         csv: z.string().optional().describe("Raw CSV export from Gmail Postmaster Tools UI."),
         snapshot_json: z.string().optional().describe("Structured snapshot as JSON: { spam_rate_pct, domain_reputation, ip_reputation, authenticated_traffic_pct, delivery_errors_pct, feedback_loop_pct? }.")
-      }
+      },
+      _meta: widgetMeta(POSTMASTER_TREND_URI)
     },
     async ({ csv, snapshot_json: snapshotJson }) => {
       const { value: snapshot, error } = parseToolJson(snapshotJson, "snapshot_json", null);
       if (error) return error;
       const result = parsePostmasterSignal({ csv, snapshot });
-      return makeJsonToolResponse(result);
+      if (result.status !== "ok") return makeJsonToolResponse(result);
+      // The widget copy carries the series the chart draws plus the
+      // thresholds the findings were computed against — the same
+      // constant, never a second copy that can drift from the verdict
+      // printed beside it.
+      return makeJsonToolResponse(result, {
+        overall_verdict: result.overall_verdict,
+        findings: result.findings,
+        parsed_snapshot: result.parsed_snapshot,
+        snapshot_source: result.snapshot_source,
+        thresholds: result.thresholds,
+        series: result.series,
+        message: result.message
+      });
     }
   );
 
@@ -6053,13 +6080,17 @@ function registerTools() {
     {
       title: "List Growth Forecast",
       description:
-        "Project a subscriber list's 12-month trajectory from current size, monthly acquisition, monthly churn, and (optional) acquisition growth rate. Returns a month-by-month table plus break-even, halving, and steady-state-acquisition metrics, and draws it in a widget as the curve against today's size with the month churn overtakes acquisition marked. Use in planning conversations to quantify the list cost of inaction.",
+        "Project a subscriber list's 12-month trajectory from current size, monthly acquisition, monthly churn, and (optional) acquisition growth rate. Returns a month-by-month table plus halving and steady-state-acquisition metrics, and draws it in a widget as the curve against today's size. break_even_month is the FIRST month churn exceeds that month's intake — with acquisition growth the early months are routinely negative, so read it alongside recovery_month, the month net intake turns positive for good. Use in planning conversations to quantify the list cost of inaction.",
       inputSchema: {
         current_list_size: z.number().describe("Current active subscribers."),
         monthly_acquisition: z.number().describe("New signups per month at the starting point."),
         monthly_churn_pct: z.number().describe("Monthly churn rate as a percentage (0-100)."),
         months: z.number().optional().describe("Horizon in months (default 12, max 60)."),
-        acquisition_growth_pct: z.number().optional().describe("Monthly growth rate of acquisition, in percent (0-100, default 0).")
+        // Bounded. Unbounded, -100 ("we stop acquiring") produced a 0/0 in
+        // the row maths and every acquisition and net column serialised as
+        // null under a status of "ok". The maths no longer divides, so -100
+        // is now a legal and meaningful input rather than a silent hole.
+        acquisition_growth_pct: z.number().min(-100).max(100).optional().describe("Monthly growth rate of acquisition, in percent (-100 to 100, default 0). -100 models acquisition stopping after the first month.")
       },
       _meta: widgetMeta(LIST_FORECAST_URI)
     },

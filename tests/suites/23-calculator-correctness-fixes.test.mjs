@@ -130,7 +130,62 @@ describe("F6 forecastListGrowth — break-even on a shrinking list", () => {
       months: 12,
     });
     assert.equal(f.break_even_month, null);
+    assert.equal(f.recovery_month, null);
     assert.ok(f.end_state.list_size > 10000);
+  });
+
+  test("acquisition growth that takes the list back reports the month it turned", () => {
+    // break_even_month latches on the FIRST negative month and never
+    // reconsiders. A growth rate compounds off a small base while churn is
+    // already scaled to the whole list, so the early months of a healthy
+    // plan are routinely negative — and this list, up 72% over the horizon
+    // with a month-12 net of +19,160, reported break_even_month: 1 and said
+    // nothing about the month acquisition took it back. The widget marked
+    // that 1 on the curve.
+    const f = forecastListGrowth({
+      currentListSize: 100000,
+      monthlyAcquisition: 2000,
+      monthlyChurnPct: 2.7,
+      acquisitionGrowthPct: 25,
+      months: 12,
+    });
+    assert.equal(f.break_even_month, 1);
+    assert.equal(f.recovery_month, 3);
+    assert.ok(f.end_state.growing, "this list ends larger than it started");
+    assert.match(f.message, /turns positive for good at month 3/);
+  });
+
+  test("a recovery must HOLD to the horizon, not be one good month in a decline", () => {
+    const f = forecastListGrowth({
+      currentListSize: 10000,
+      monthlyAcquisition: 2000,
+      monthlyChurnPct: 5,
+      acquisitionGrowthPct: -40,
+      months: 12,
+    });
+    assert.ok(f.break_even_month !== null);
+    assert.equal(f.recovery_month, null, "a decaying acquisition curve never turns");
+  });
+
+  test("acquisition_growth_pct = -100 models a stop, not a column of nulls", () => {
+    // The row maths divided this month's compounded acquisition back out by
+    // (1 + rate) to recover the intake. At -100 that is 0/0: every row's
+    // acquisition and net serialised as null while status stayed "ok", the
+    // prose message stayed confident, and the widget drew it.
+    const f = forecastListGrowth({
+      currentListSize: 100000,
+      monthlyAcquisition: 2000,
+      monthlyChurnPct: 2.7,
+      acquisitionGrowthPct: -100,
+      months: 12,
+    });
+    assert.equal(f.status, "ok");
+    for (const row of f.trajectory) {
+      assert.ok(Number.isFinite(row.acquisition), `month ${row.month} acquisition was ${row.acquisition}`);
+      assert.ok(Number.isFinite(row.net), `month ${row.month} net was ${row.net}`);
+    }
+    assert.equal(f.trajectory[1].acquisition, 2000, "the first month still acquires");
+    assert.equal(f.trajectory[2].acquisition, 0, "and every month after it does not");
   });
 });
 

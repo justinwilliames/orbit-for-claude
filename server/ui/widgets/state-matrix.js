@@ -152,7 +152,21 @@ table.grid td { padding: 3px 4px; border-bottom: 1px solid var(--rule); text-ali
    in ink as well as in hue, so the grid survives greyscale. */
 .mk { display: inline-block; width: 15px; height: 15px; border-radius: 4px; line-height: 15px;
       font-size: 10px; font-weight: 700; }
-.mk--on { background: var(--brand); color: #fff; }
+/* --brand is a FILL hue, not a text-bearing background: #fff on it computes
+   4.47:1 in light and 2.98:1 in dark, and this glyph is 10px/700 — well
+   under WCAG's large-text exception, so the 4.5:1 floor applies strictly.
+   It is also the only "this population receives this module" signal in the
+   grid, so it is the one mark that must not be squinted at. Light mode takes
+   the same --brand-strong substitution already made for .o-btn--primary
+   (6.29:1). Dark mode cannot: --brand-strong is only 4.47:1 there. So dark
+   inverts instead — the light brand fill carrying paper-dark ink, 6.27:1 —
+   which is what the palette's own dark accents do everywhere else. */
+.mk--on { background: var(--brand-strong); color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .mk--on { background: var(--brand); color: var(--paper); }
+}
+:root[data-theme="dark"] .mk--on { background: var(--brand); color: var(--paper); }
+:root[data-theme="light"] .mk--on { background: var(--brand-strong); color: #fff; }
 .mk--off {
   background: repeating-linear-gradient(135deg, transparent, transparent 3px, var(--rule) 3px, var(--rule) 4px);
   color: transparent; border: 1px solid var(--rule);
