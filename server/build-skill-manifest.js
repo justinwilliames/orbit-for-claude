@@ -305,6 +305,26 @@ const PLATFORM_SENSITIVITY = {
     requires_confirmation: true,
     supported_platforms: ["posthog"]
   },
+  // The five ESPs added after this table was written. Left out, they fell
+  // through to inferPlatformSensitivity's empty-list default, which
+  // catalog.js reads as platform-agnostic — so a request that said the word
+  // Klaviyo gave the Klaviyo expert no bonus at all.
+  "klaviyo-documentation-expert": {
+    requires_confirmation: true,
+    supported_platforms: ["klaviyo"]
+  },
+  "mailchimp-documentation-expert": {
+    requires_confirmation: true,
+    supported_platforms: ["mailchimp"]
+  },
+  "customerio-documentation-expert": {
+    requires_confirmation: true,
+    supported_platforms: ["customerio"]
+  },
+  "sfmc-documentation-expert": {
+    requires_confirmation: true,
+    supported_platforms: ["sfmc"]
+  },
   "braze-build-packager": {
     requires_confirmation: true,
     supported_platforms: ["braze"]
@@ -531,11 +551,19 @@ function assertMapped(name) {
   return category;
 }
 
+// Must stay in step with PLATFORM_ALIASES in server/catalog.js: a skill whose
+// platform the router cannot name can never earn the platform bonus, which is
+// how the five non-Braze ESP documentation experts shipped invisible to their
+// own trigger phrases.
 const PLATFORM_FROM_NAME = [
   ["braze", "braze"],
   ["iterable", "iterable"],
   ["hubspot", "hubspot"],
-  ["posthog", "posthog"]
+  ["posthog", "posthog"],
+  ["klaviyo", "klaviyo"],
+  ["mailchimp", "mailchimp"],
+  ["customerio", "customerio"],
+  ["sfmc", "sfmc"]
 ];
 
 const skillFiles = fs

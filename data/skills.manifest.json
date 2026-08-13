@@ -2812,8 +2812,10 @@
       "deliverable"
     ],
     "platform_sensitivity": {
-      "requires_confirmation": false,
-      "supported_platforms": []
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "customerio"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -4986,8 +4988,10 @@
       "deliverable"
     ],
     "platform_sensitivity": {
-      "requires_confirmation": false,
-      "supported_platforms": []
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "klaviyo"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -5508,8 +5512,10 @@
       "deliverable"
     ],
     "platform_sensitivity": {
-      "requires_confirmation": false,
-      "supported_platforms": []
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "mailchimp"
+      ]
     },
     "templates": [],
     "validator_rules": [
@@ -6949,8 +6955,10 @@
       "deliverable"
     ],
     "platform_sensitivity": {
-      "requires_confirmation": false,
-      "supported_platforms": []
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "sfmc"
+      ]
     },
     "templates": [],
     "validator_rules": [

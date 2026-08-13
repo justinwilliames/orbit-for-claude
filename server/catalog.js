@@ -1,6 +1,31 @@
 import { extractSection, getSkill, normalizeSkillName, tokenize } from "./orbit-library.js";
 
-const PLATFORM_NAMES = ["braze", "iterable", "hubspot", "posthog"];
+/**
+ * The platform vocabulary the router can SEE, as [spelling, canonical name].
+ *
+ * A name missing from this table is not "unknown" — it is silently replaced
+ * by the configured default, so a request that says Klaviyo gets routed and
+ * explained as if it said Braze. Commit 8c7b8ef fixed that for Braze; every
+ * ESP with an adapter in server/esp/ belongs here for the same reason.
+ * Aliases are matched longest-first so "salesforce marketing cloud" is not
+ * beaten to it by a shorter spelling.
+ */
+const PLATFORM_ALIASES = [
+  ["braze", "braze"],
+  ["iterable", "iterable"],
+  ["hubspot", "hubspot"],
+  ["posthog", "posthog"],
+  ["klaviyo", "klaviyo"],
+  ["mailchimp", "mailchimp"],
+  ["customerio", "customerio"],
+  ["customer.io", "customerio"],
+  ["customer io", "customerio"],
+  ["sfmc", "sfmc"],
+  ["salesforce marketing cloud", "sfmc"],
+  ["marketing cloud", "sfmc"]
+].sort(([left], [right]) => right.length - left.length);
+
+export const PLATFORM_NAMES = [...new Set(PLATFORM_ALIASES.map(([, canonical]) => canonical))];
 
 const SEQUENCES = [
   {
@@ -215,7 +240,14 @@ export function routeTask(library, request, limit = 5, defaults = {}) {
       disambiguators: [],
       assumptionsToState: [],
       recommendedQuestions: [],
-      interactionRecommendation: "ask_user",
+      // Same shape as the matched branch below. Both in-repo consumers read
+      // `.mode`, so a bare string here made the one branch where asking is
+      // mandatory the one branch where the field read as undefined.
+      interactionRecommendation: {
+        mode: "ask_user_first",
+        reason: "No Orbit skill matched this request with sufficient confidence.",
+        proceed_only_if: null
+      },
       assistantInstruction:
         "Ask the user to clarify their request before loading any skill. Do not guess.",
       adjacentSkills: [],
@@ -224,6 +256,8 @@ export function routeTask(library, request, limit = 5, defaults = {}) {
       detectedSignals: {
         platform: signals.platform,
         platform_source: signals.platformSource,
+        platforms_mentioned: signals.mentionedPlatforms,
+        platform_conflict: signals.platformConflict,
         geography: signals.geography,
         geography_source: signals.geographySource,
         business_model: signals.businessModel,
@@ -276,6 +310,8 @@ export function routeTask(library, request, limit = 5, defaults = {}) {
     detectedSignals: {
       platform: signals.platform,
       platform_source: signals.platformSource,
+      platforms_mentioned: signals.mentionedPlatforms,
+      platform_conflict: signals.platformConflict,
       geography: signals.geography,
       geography_source: signals.geographySource,
       business_model: signals.businessModel,
@@ -783,6 +819,24 @@ function buildAssumptions(disambiguators, signals) {
     );
   }
 
+  // Surfaced whatever the skill's disambiguators say: a request naming a
+  // platform other than the configured default is the case where a silent
+  // substitution does the most damage.
+  if (signals.platformConflict) {
+    assumptions.push(
+      `The request names ${signals.platformConflict.requested}, but ORBIT_DEFAULT_PLATFORM is ` +
+        `${signals.platformConflict.configured_default}. Working in ${signals.platformConflict.requested} — ` +
+        "say so, and confirm before writing platform-specific configuration."
+    );
+  }
+
+  if (signals.mentionedPlatforms?.length > 1) {
+    assumptions.push(
+      `The request names more than one platform (${signals.mentionedPlatforms.join(", ")}). ` +
+        `Confirm which one is in scope; ${signals.mentionedPlatforms[0]} was assumed.`
+    );
+  }
+
   if (disambiguators.includes("geography") && !signals.explicitGeography) {
     assumptions.push(
       signals.geography
@@ -817,7 +871,7 @@ function buildCriticalQuestionPlan({
 
   if (disambiguators.includes("platform") && !signals.explicitPlatform) {
     questions.push(
-      "Which platform are you working in for this task: Braze, Iterable, HubSpot, PostHog, or something else?"
+      "Which platform are you working in for this task: Braze, Iterable, Klaviyo, Mailchimp, Customer.io, Salesforce Marketing Cloud, HubSpot, PostHog, or something else?"
     );
   }
 
@@ -947,16 +1001,30 @@ function inferTaskType(requestText) {
 
 function detectSignals(requestText, defaults) {
   const normalized = requestText.toLowerCase();
-  const explicitPlatform = PLATFORM_NAMES.find((platformName) =>
-    normalized.includes(platformName)
-  );
+  const mentionedPlatforms = [
+    ...new Set(
+      PLATFORM_ALIASES.filter(([alias]) => normalized.includes(alias)).map(
+        ([, canonical]) => canonical
+      )
+    )
+  ];
+  const explicitPlatform = mentionedPlatforms[0];
   const explicitGeographyMatch = normalized.match(
     /\b(australia|australian|united states|usa|canada|casl|uk|united kingdom|gdpr|eu|europe)\b/
   );
+  // The request naming a platform that is not the configured default is not
+  // an error — the request wins — but the substitution must be visible, or
+  // the caller cannot tell a deliberate override from a stale ORBIT_DEFAULT_PLATFORM.
+  const platformConflict =
+    explicitPlatform && defaults.defaultPlatform && explicitPlatform !== defaults.defaultPlatform
+      ? { requested: explicitPlatform, configured_default: defaults.defaultPlatform }
+      : null;
 
   return {
     platform: explicitPlatform ?? defaults.defaultPlatform ?? null,
     explicitPlatform,
+    mentionedPlatforms,
+    platformConflict,
     platformSource: explicitPlatform ? "request" : defaults.defaultPlatform ? "config" : null,
     geography: explicitGeographyMatch?.[1] ?? defaults.defaultGeography ?? null,
     explicitGeography: explicitGeographyMatch?.[1] ?? null,
