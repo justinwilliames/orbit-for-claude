@@ -136,7 +136,7 @@ export function safeJsonForScript(value) {
  *   user's workspace.
  * @returns {string} a complete HTML document
  */
-export function buildWidgetHtml({ title, body, css = "", js = "", data = null, bridge = true }) {
+export function buildWidgetHtml({ title, body, css = "", js = "", data = null, bridge = true, branding = true }) {
   if (bridge) loadBridge();
 
   const bridgeBlock = bridge && bridgeSource
@@ -172,7 +172,7 @@ ${css}
 </head>
 <body>
 ${body}
-<script>window.ORBIT_BOOTSTRAP = ${safeJsonForScript(data)};</script>
+<script>window.ORBIT_BOOTSTRAP = ${safeJsonForScript(data)};${branding ? "" : "window.ORBIT_NO_BRANDING = true;"}</script>
 ${bridgeBlock}
 <script type="module">
 ${js}
@@ -300,13 +300,20 @@ function flash(msg) {
 // chrome would just be noise.
 (function orbitSignStandalone() {
   if (orbitEmbedded) return;
+  // The user can have their artifact unbranded. If they ask, the tool
+  // passes branding:false and this row never renders. Making the mark
+  // impossible to remove would be the one thing about it that actually
+  // annoys someone — and an artifact they refuse to send because of a
+  // footer reaches nobody at all.
+  if (window.ORBIT_NO_BRANDING === true) return;
   const apply = () => {
     const row = document.createElement("div");
     row.className = "o-made-with";
     row.innerHTML =
       '${ORBIT_MARK_INLINE.replace(/^<svg /, '<svg class="o-mark" aria-hidden="true" ')}' +
-      'Made with <a href="https://yourorbit.team" target="_blank" rel="noopener">Orbit</a>' +
-      ' \\u2014 a free lifecycle marketer, built into Claude.';
+      'Made with <a href="https://yourorbit.team" target="_blank" rel="noopener">Orbit AI</a>' +
+      ' \\u2014 a free lifecycle marketer, built into Claude. By ' +
+      '<a href="https://www.linkedin.com/in/justinwilliames" target="_blank" rel="noopener">Justin Williames</a>.';
     document.body.appendChild(row);
 
     // ...and then make room for it. Every widget sets

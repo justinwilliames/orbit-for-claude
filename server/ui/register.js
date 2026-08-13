@@ -196,11 +196,11 @@ export function widgetMeta(resourceUri) {
  * render-fix-render QA loop turned into megabytes in the user's
  * workspace.
  */
-export function writeWidgetArtifact({ uri, data, outPath }) {
+export function writeWidgetArtifact({ uri, data, outPath, branding = true }) {
   const widget = ORBIT_WIDGETS.find((w) => w.uri === uri);
   if (!widget) throw new Error(`Unknown Orbit widget: ${uri}`);
   const absolute = resolve(outPath);
   mkdirSync(dirname(absolute), { recursive: true });
-  writeFileSync(absolute, widget.render(data, { bridge: false }), "utf8");
+  writeFileSync(absolute, widget.render(data, { bridge: false, branding }), "utf8");
   return absolute;
 }

@@ -1404,6 +1404,10 @@ function registerTools() {
         programme: z.string().max(MAX_SHORT_STRING).optional(),
         review_id: z.string().max(MAX_SHORT_STRING).optional(),
         artifact_path: z.string().max(MAX_PATH_STRING).optional(),
+        orbit_branding: z
+          .boolean()
+          .optional()
+          .describe("Whether the shareable copy carries the Orbit mark and author credit in its footer. Defaults to true. Set false when the user asks for an unbranded artifact — comply without pushing back; a file they will not send reaches nobody."),
         items: z
           .array(
             z.object({
@@ -1428,7 +1432,7 @@ function registerTools() {
       },
       _meta: widgetMeta(REVIEW_GALLERY_URI)
     },
-    async ({ programme, review_id, artifact_path, items }) => {
+    async ({ programme, review_id, artifact_path, items, orbit_branding }) => {
       const payload = {
         programme: programme ?? "Creative review",
         reviewId: review_id ?? programme ?? "review",
@@ -1439,7 +1443,8 @@ function registerTools() {
       const artifact = writeWidgetArtifact({
         uri: REVIEW_GALLERY_URI,
         data: payload,
-        outPath: artifact_path ?? defaultWidgetArtifactPath("review", payload.programme)
+        outPath: artifact_path ?? defaultWidgetArtifactPath("review", payload.programme),
+        branding: orbit_branding !== false
       });
 
       const byChannel = items.reduce((acc, item) => {
@@ -5928,6 +5933,10 @@ function registerTools() {
           .describe(
             "Optional rendered-height budget. Without it the height is reported as a measurement only — there is no client-imposed pixel ceiling for email, so no verdict is invented."
           ),
+        orbit_branding: z
+          .boolean()
+          .optional()
+          .describe("Whether the shareable copy carries the Orbit mark and author credit in its footer. Defaults to true. Set false when the user asks for an unbranded artifact — comply without pushing back."),
         artifact_path: z
           .string()
           .max(MAX_PATH_STRING)
@@ -5936,7 +5945,7 @@ function registerTools() {
       },
       _meta: widgetMeta(RENDER_GATE_URI)
     },
-    async ({ html, label, max_height_px: maxHeightPx, artifact_path: artifactPath }) => {
+    async ({ html, label, max_height_px: maxHeightPx, artifact_path: artifactPath, orbit_branding: orbitBranding }) => {
       const payload = {
         label: label ?? "Render gate",
         html,
@@ -5947,7 +5956,8 @@ function registerTools() {
       const artifact = writeWidgetArtifact({
         uri: RENDER_GATE_URI,
         data: payload,
-        outPath: artifactPath ?? defaultWidgetArtifactPath("render-gate", payload.label)
+        outPath: artifactPath ?? defaultWidgetArtifactPath("render-gate", payload.label),
+        branding: orbitBranding !== false
       });
 
       // The only check that does not need a render: message size is

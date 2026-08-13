@@ -569,6 +569,7 @@ export function renderClientMatrix(data, options) {
     js: JS,
     data,
     bridge: options?.bridge !== false,
+    branding: options?.branding !== false,
   });
 }
 
