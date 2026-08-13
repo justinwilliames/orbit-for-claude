@@ -392,6 +392,9 @@ export function personalisationTokens(src) {
   for (const m of String(src).matchAll(/\{\{\s*(?:person|event|organization)\.(\w+)[^{}]*\}\}/g)) {
     add("klaviyo_property", m[1], m[0]);
   }
+  for (const m of String(src).matchAll(/\{\{\s*customer\.(\w+)[^{}]*\}\}/g)) {
+    add("customerio_property", m[1], m[0]);
+  }
 
   // Bindings that appear ONLY inside a {% %} tag — an attribute the template
   // branches on but never prints. Keying discovery on output tokens alone made
@@ -404,8 +407,74 @@ export function personalisationTokens(src) {
     for (const m of body.matchAll(/campaign\.\$\{(\w+)\}/g)) add("braze_campaign", m[1], m[0]);
     for (const m of body.matchAll(/(?<![.\w])\$\{(\w+)\}/g)) add("braze_personalisation", m[1], m[0]);
     for (const m of body.matchAll(/(?<![.\w])(?:person|event|organization)\.(\w+)\b/g)) add("klaviyo_property", m[1], m[0]);
+    for (const m of body.matchAll(/(?<![.\w])customer\.(\w+)\b/g)) add("customerio_property", m[1], m[0]);
+  }
+
+  // Bare identifiers read by a CONDITION — `{% if has_order %}`.
+  //
+  // Four of the six ESPs in the registry emit no sigil at all: Iterable,
+  // Customer.io's non-dotted form, Mailchimp's Liquid blocks and hand-written
+  // plain Liquid all branch on a naked name. Keying discovery on the sigilled
+  // dialects alone meant the matrix answered `no_branches` — a sentence about
+  // the TEMPLATE — for a template with three `{% if %}` tags in it. What had
+  // actually been observed was a fact about the detector.
+  //
+  // Scanned last and deliberately narrow:
+  //   - conditions only, never output tokens, so a name that is merely printed
+  //     never inflates the cartesian;
+  //   - the sigilled shapes are stripped from the condition first, so
+  //     `custom_attribute` and `person` are never mistaken for attributes;
+  //   - names bound by {% assign %} / {% capture %} / {% for %} are excluded.
+  //     Those are intermediates that discoverAxes already resolves back to the
+  //     attribute behind them, and promoting them to axes of their own doubles
+  //     the state space to test the same branch twice.
+  const localNames = liquidLocalNames(src);
+  for (const tag of String(src).matchAll(/\{%\s*(if|unless|elsif)\s+([\s\S]*?)%\}/g)) {
+    for (const name of bareConditionIdentifiers(tag[2])) {
+      if (!localNames.has(name)) add("liquid_identifier", name, name);
+    }
   }
   return [...found.values()];
+}
+
+/** Words a Liquid condition can contain that are not attribute names. */
+const LIQUID_RESERVED = new Set([
+  "and", "or", "not", "contains", "true", "false", "nil", "null", "empty", "blank",
+  "if", "unless", "elsif", "else", "endif", "endunless", "in", "by", "with",
+  "forloop", "size", "first", "last", "default",
+]);
+
+/** Names the template binds locally — never personalisation attributes. */
+function liquidLocalNames(src) {
+  const names = new Set();
+  for (const m of String(src).matchAll(/\{%\s*assign\s+(\w+)\s*=/g)) names.add(m[1]);
+  for (const m of String(src).matchAll(/\{%\s*capture\s+(\w+)\s*%\}/g)) names.add(m[1]);
+  for (const m of String(src).matchAll(/\{%\s*for\s+(\w+)\s+in\b/g)) names.add(m[1]);
+  return names;
+}
+
+/**
+ * The bare attribute names one condition reads.
+ *
+ * Strips, in order: the sigilled binding shapes (so their prefixes cannot leak
+ * through as names), string literals (so `== 'FREE'` does not contribute FREE),
+ * and filter chains. What survives is a naked identifier the author branched on.
+ */
+function bareConditionIdentifiers(condition) {
+  const stripped = String(condition)
+    .replace(/custom_attribute\.\$\{\w+\}/g, " ")
+    .replace(/campaign\.\$\{\w+\}/g, " ")
+    .replace(/content_blocks\.\$\{[\w-]+\}/g, " ")
+    .replace(/\$\{\w+\}/g, " ")
+    .replace(/\{\{[\s\S]*?\}\}/g, " ")
+    .replace(/(?:person|event|organization|customer)\.\w+/g, " ")
+    .replace(/'[^']*'|"[^"]*"/g, " ")
+    .replace(/\|[^%]*/g, " ");
+  const out = [];
+  for (const m of stripped.matchAll(/(?<![.\w$])([A-Za-z_]\w*)(?![\w.])/g)) {
+    if (!LIQUID_RESERVED.has(m[1])) out.push(m[1]);
+  }
+  return out;
 }
 
 /** A fresh trace collector. */
@@ -463,8 +532,15 @@ export function resolveLiquid(html, opts = {}) {
   sub(new RegExp(`\\{\\{\\s*custom_attribute\\.\\$\\{(\\w+)\\}\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? "");
   sub(new RegExp(`\\{\\{\\s*\\$\\{(\\w+)\\}\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
   sub(new RegExp(`\\{\\{\\s*(?:person|event|organization)\\.(\\w+)\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
+  sub(new RegExp(`\\{\\{\\s*customer\\.(\\w+)\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
   sub(new RegExp(`\\{\\{\\s*campaign\\.\\$\\{(\\w+)\\}\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
   sub(new RegExp(`\\{\\{\\s*content_blocks\\.\\$\\{([a-z0-9_-]+)\\}\\s*${CHAIN}\\}\\}`, "gi"), (n) => bound(n) ?? "");
+  // The naked form, LAST so every sigilled shape has already claimed its
+  // matches. Without it a plain-Liquid `{{ first_name }}` fell to the step-3
+  // catch-all, became the fallback word, and was recorded as an unmodelled
+  // output — an invariant-B failure reported against a template whose only
+  // sin was not being written in Braze's dialect.
+  sub(new RegExp(`\\{\\{\\s*([A-Za-z_]\\w*)\\s*${CHAIN}\\}\\}`, "g"), (n) => bound(n) ?? fallback);
 
   // 2. The interpreter proper, over an env SEEDED from attrs.
   //
@@ -533,6 +609,7 @@ function seedEnv(attrs) {
       `person.${name}`,
       `event.${name}`,
       `organization.${name}`,
+      `customer.${name}`,
     ]) {
       env[key] = v;
     }

@@ -44,6 +44,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ensureDir } from "./config.js";
+import { resolveSafe } from "./path-safety.js";
 import { resolveLiquid, residualLiquid, newTrace, personalisationTokens, tokenize } from "./liquid-resolve.js";
 
 /** Default block detector: any element carrying a module/block/section class. */
@@ -64,6 +65,32 @@ const MAX_HARVESTED_VALUES = 5;
 
 /** Values that mean an attribute is being used as an on/off flag. */
 const FLAG_SPELLINGS = new Set(["true", "false", "True", "False", "TRUE", "FALSE", "1", "0", ""]);
+
+/** The binding shapes discovery can actually bind, named in the abstention. */
+const RECOGNISED_DIALECTS = Object.freeze([
+  "Braze ${attr} / custom_attribute.${attr} / campaign.${attr}",
+  "Klaviyo person.attr / event.attr / organization.attr",
+  "Customer.io customer.attr",
+  "plain Liquid bare identifiers inside {% if %} / {% unless %}",
+]);
+
+/**
+ * Conditional syntax present in the document that discovery could not bind.
+ *
+ * Used only to choose between "the template has one state" and "this tool
+ * could not read the template". Handlebars and AMPscript are not Liquid at
+ * all — the resolver cannot enumerate them and does not pretend to — but
+ * seeing them is what separates an honest abstention from a false all-clear.
+ */
+function unmodelledConditionals(html) {
+  const src = String(html);
+  const seen = [];
+  if (/\{%\s*(?:if|unless)\b/.test(src)) seen.push("{% if %} / {% unless %}");
+  if (/\{\{\s*#\s*(?:if|unless|each)\b/.test(src)) seen.push("Handlebars {{#if}} (Iterable)");
+  if (/%%\[[\s\S]*?\bIF\b/i.test(src)) seen.push("AMPscript %%[IF]%% (SFMC)");
+  if (/\*\|\s*IF:/i.test(src)) seen.push("Mailchimp *|IF:…|* merge conditional");
+  return seen;
+}
 
 /**
  * Run the matrix.
@@ -109,12 +136,36 @@ export function liquidStateMatrix({
 
   const axes = discoverAxes(html, variables);
   if (axes.length === 0) {
+    // Zero axes has two completely different causes and they used to share one
+    // verdict. If the document carries conditional syntax we could not bind,
+    // the honest report is that the DETECTOR came up empty — not that the
+    // template has one state. Abstain, the way too_many_axes does, and name
+    // what was seen.
+    const unbound = unmodelledConditionals(html);
+    if (unbound.length > 0) {
+      return {
+        status: "needs_inputs",
+        verdict: "unknown_dialect",
+        axes: [],
+        output_files: null,
+        conditionals_seen: unbound,
+        recognised_dialects: RECOGNISED_DIALECTS,
+        message:
+          `This template contains conditional syntax (${unbound.join(", ")}) but no ` +
+          "personalisation binding this tool can resolve, so NOTHING was checked. " +
+          `The binding shapes it reads are: ${RECOGNISED_DIALECTS.join(", ")}. ` +
+          "Pass the axes explicitly in `variables` (e.g. {\"has_order\":[\"true\",\"false\"]}) " +
+          "to enumerate anyway — an empty verdict on a branching template is the " +
+          "false all-clear this tool exists to prevent.",
+      };
+    }
     return {
       status: "ok",
       verdict: "no_branches",
       axes: [],
+      output_files: null,
       message:
-        "No personalisation binding drives a conditional in this template, so " +
+        "No conditional and no personalisation binding in this template, so " +
         "there is exactly one state and nothing to enumerate. That is a fact " +
         "about the template, not a pass — if you expected branches, check that " +
         "you passed the COMPILED html with Liquid intact rather than a resolved render.",
@@ -134,6 +185,7 @@ export function liquidStateMatrix({
       status: "needs_inputs",
       verdict: "too_many_axes",
       axes: axes.map((a) => ({ name: a.name, values: a.values })),
+      output_files: null,
       states_required: stateCount,
       states_cap: stateCap,
       message:
@@ -154,7 +206,13 @@ export function liquidStateMatrix({
   // Written INSIDE the loop, one document at a time. Holding 2^n resolved
   // copies of an email to write them afterwards is the same size trap in a
   // different place.
-  const stateDir = writeStatesTo ? ensureDir(path.resolve(writeStatesTo)) : null;
+  // resolveSafe rather than bare path.resolve: same absolute result, plus the
+  // null-byte rejection every other user-supplied path in this repo gets. The
+  // recipe the generated gate prints passes a RELATIVE path ("build/states"),
+  // which resolves against the MCP server process's cwd — not the user's brain
+  // repo — so the absolute answer is echoed back in output_files.dir and the
+  // relative input is named alongside it rather than left to be guessed.
+  const stateDir = writeStatesTo ? ensureDir(resolveSafe(writeStatesTo)) : null;
   const writtenStates = [];
 
   for (const [index, state] of states.entries()) {
@@ -350,6 +408,11 @@ export function liquidStateMatrix({
     output_files: stateDir
       ? {
           dir: stateDir,
+          // What the caller typed, when it was not already absolute. A relative
+          // path resolves against this process's cwd, and a reader who cannot
+          // see both strings cannot tell whether the files landed where they
+          // meant them to.
+          requested: path.isAbsolute(writeStatesTo) ? null : writeStatesTo,
           count: writtenStates.length,
           states: writtenStates,
           next_step:
@@ -392,8 +455,11 @@ export function liquidStateMatrix({
  */
 export function discoverAxes(html, variables) {
   const tokens = personalisationTokens(html);
-  if (tokens.length === 0) return [];
-
+  // NO early return on an empty token set. There used to be one, and it sat
+  // ABOVE the `variables` merge — so the documented escape hatch for a dialect
+  // the detector does not model ("pass the axis explicitly") was unreachable
+  // in exactly the case it was written for. An empty discovery is a reason to
+  // read the caller's own axes, not a reason to stop reading.
   const byName = new Map(tokens.map((t) => [t.name, t]));
   const branching = new Set();
 

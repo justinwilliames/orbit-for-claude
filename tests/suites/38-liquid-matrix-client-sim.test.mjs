@@ -58,6 +58,29 @@ const GOOD_EMAIL = `<!DOCTYPE html>
 </html>`;
 
 /**
+ * One branching email, parameterised over the binding dialect.
+ *
+ * A swap, not an optional module: each arm carries a block the other lacks,
+ * so a run that only ever renders one arm cannot produce two distinct module
+ * sets. Deliberately the same copy in both, because the thing under test is
+ * whether the AXIS was discovered — not whether the copy differs.
+ */
+function dialectEmail(cond, print) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <div class="module-hero"><h1>Hello ${print}</h1><p>${FILLER.repeat(4)}</p></div>
+  {% if ${cond} %}
+    <div class="module-reorder"><p>Your usual is back in stock. ${FILLER.repeat(2)}</p></div>
+  {% else %}
+    <div class="module-browse"><p>New arrivals this week. ${FILLER.repeat(2)}</p></div>
+  {% endif %}
+  <div class="module-footer"><p>Manage preferences or unsubscribe at any time.</p></div>
+</body>
+</html>`;
+}
+
+/**
  * The DIRECT Braze dialect — a condition that reads the binding with no
  * `{{ }}` around it, which is the form Orbit's own braze-documentation-expert
  * skill teaches. `plan_type` is compared against string literals and is never
@@ -418,6 +441,38 @@ describe("Liquid state matrix + client simulation", () => {
     );
   });
 
+  // ── every dialect the registry ships ─────────────────────────────
+  //
+  // The suite used to feed this tool Braze syntax and nothing else, and the
+  // tool answered `no_branches` — "there is exactly one state in this
+  // template" — for the same branching email written in any other dialect.
+  // Four of the six platforms in the ESP registry emit no sigil at all, so
+  // the control was the bug. One case per binding shape, all of them the
+  // SAME email, so a dialect that regresses is the only thing that can move.
+
+  for (const [dialect, cond, print] of [
+    ["braze_personalisation", "${has_order}", "{{${first_name}}}"],
+    ["braze_custom_attribute", "custom_attribute.${has_order}", "{{custom_attribute.${first_name}}}"],
+    ["klaviyo", "person.has_order", "{{person.first_name}}"],
+    ["customerio", "customer.has_order", "{{customer.first_name}}"],
+    ["plain_liquid_bare", "has_order", "{{first_name}}"],
+  ]) {
+    test(`${dialect}: a branching template enumerates both arms`, async () => {
+      const { parsed } = await matrix(dialectEmail(cond, print));
+      assert.equal(parsed.status, "ok", `${dialect} did not enumerate: ${parsed.message}`);
+      assert.equal(parsed.axes.length, 1, `${dialect} discovered no axis`);
+      assert.equal(parsed.states_rendered, 2);
+      // Both arms carry the identical CTA label. That is the defect the
+      // fixture exists to carry, so a dialect that "enumerates" by rendering
+      // one arm twice cannot pass this.
+      assert.equal(
+        new Set(parsed.states.map((s) => s.present.join("|"))).size,
+        2,
+        `${dialect} rendered two states with the same module set`
+      );
+    });
+  }
+
   // ── abstentions ──────────────────────────────────────────────────
 
   test("a template with no branches says so, and does not call it a pass", async () => {
@@ -426,6 +481,39 @@ describe("Liquid state matrix + client simulation", () => {
     });
     assert.equal(parsed.verdict, "no_branches");
     assert.match(parsed.message, /not a pass/i);
+    assert.equal(parsed.output_files, null, "kept nothing must be stated, not implied by absence");
+  });
+
+  test("a conditional in a dialect nothing binds ABSTAINS, it does not say no_branches", async () => {
+    // Handlebars. The resolver cannot enumerate it and does not pretend to —
+    // but "there is exactly one state in this template" is a claim about the
+    // template, and what was observed is a fact about the detector.
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html:
+        `<html><body><div class="module-hero"><p>${FILLER.repeat(4)}</p></div>` +
+        `{{#if hasOrder}}<div class="module-a"><p>${FILLER.repeat(3)}</p></div>` +
+        `{{else}}<div class="module-b"><p>${FILLER.repeat(3)}</p></div>{{/if}}</body></html>`,
+    });
+    assert.equal(parsed.status, "needs_inputs");
+    assert.equal(parsed.verdict, "unknown_dialect");
+    assert.match(parsed.message, /NOTHING was checked/);
+    assert.ok(parsed.recognised_dialects.length >= 4);
+  });
+
+  test("the documented `variables` escape hatch works when discovery finds nothing", async () => {
+    // discoverAxes used to return on an empty token set BEFORE it read
+    // `variables`, so the override was unreachable in the only case it was
+    // written for.
+    const { parsed } = await client.callToolJson("orbit_liquid_state_matrix", {
+      html:
+        `<html><body><div class="module-hero"><p>${FILLER.repeat(4)}</p></div>` +
+        `{{#if hasOrder}}<div class="module-a"><p>${FILLER.repeat(3)}</p></div>` +
+        `{{else}}<div class="module-b"><p>${FILLER.repeat(3)}</p></div>{{/if}}</body></html>`,
+      variables_json: JSON.stringify({ hasOrder: ["true", "false"] }),
+    });
+    assert.equal(parsed.status, "ok");
+    assert.equal(parsed.axes.length, 1);
+    assert.equal(parsed.states_rendered, 2);
   });
 
   test("too many axes ABSTAINS rather than sampling and calling it coverage", async () => {
