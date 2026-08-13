@@ -164,6 +164,45 @@ describe("Attributed revenue — a share needs a denominator", () => {
     assert.match(result.message, /purchases\.revenue_series/);
   });
 
+  test("nothing read is not zero attributed", async () => {
+    // The shape of a key with purchases but not analytics permission:
+    // the denominator reads fine and every per-programme series 403s.
+    // This returned status ok / verdict ok / 0% — a total measurement
+    // failure printed as a clean measurement of zero, with a real
+    // denominator beside it making it look authoritative. `issues`
+    // carried the truth; `message` is the field that gets read.
+    mock.setResponse("GET", "/campaigns/data_series", { status: 403, body: { message: "Not authorized" } });
+    mock.setResponse("GET", "/canvas/data_series", { status: 403, body: { message: "Not authorized" } });
+
+    const result = await audit();
+    assert.equal(result.status, "unavailable");
+    assert.equal(result.attributed_share_percent, undefined, "no share may be printed off nothing");
+    assert.equal(result.attributed_revenue, undefined);
+    assert.doesNotMatch(result.message, /attributed 0%|0% of revenue/);
+    assert.match(result.message, /Nothing was measured/i);
+    assert.ok(result.programmes_unreadable.length > 0);
+  });
+
+  test("a partly-unreadable run reports a floor, and leads with the gap", async () => {
+    // Campaigns read, every Canvas 403s. A share is still computable but
+    // the numerator is short by an unknown amount, so it is a floor — and
+    // the count of what was missed comes before the percentage, because
+    // the percentage is the part that gets quoted.
+    mock.setResponse("GET", "/campaigns/data_series", campaignRevenue([100, 100, 100, 100, 100]));
+    mock.setResponse("GET", "/canvas/data_series", { status: 403, body: { message: "Not authorized" } });
+
+    const result = await audit();
+    assert.equal(result.status, "ok");
+    assert.equal(result.verdict, "partial", "unread programmes make the run partial, capped or not");
+    assert.ok(result.programmes_unreadable.length > 0);
+    assert.match(result.message, /could not be read/i);
+    assert.match(result.message, /at least/);
+    assert.ok(
+      result.message.indexOf("could not be read") < result.message.indexOf("%"),
+      "the unread count must come before the percentage"
+    );
+  });
+
   test("a capped programme list reports a floor, and says so", async () => {
     mock.setResponse("GET", "/campaigns/data_series", campaignRevenue([100, 100, 100, 100, 100]));
     mock.setResponse("GET", "/canvas/data_series", canvasRevenue([0, 0, 0, 0, 0]));

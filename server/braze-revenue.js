@@ -128,6 +128,23 @@ export async function auditAttributedRevenue({
     };
   }
 
+  // Nothing read at all. Every other refusal in this module withholds the
+  // number; this path used to print it. With a key that carries purchases
+  // but not analytics permission, every per-programme series 403s, and the
+  // result was status ok / verdict ok / "Lifecycle is attributed 0% of
+  // revenue — 0 of 50000 across 0 programmes" — a total measurement
+  // failure rendered as a clean measurement of zero, with a real
+  // denominator beside it making it look authoritative.
+  if (rows.length === 0 && programmes.length > 0) {
+    return {
+      status: "unavailable",
+      message: `None of the ${programmes.length} programme(s) returned a revenue series (${unreadable.length} unreadable; first reason: ${unreadable[0]?.reason ?? "unknown"}). Nothing was measured, so no share is reported — a 0% here would be a failure to read, not a finding about lifecycle.`,
+      window: { ...window, length, ending_at: anchor },
+      programmes_unreadable: unreadable,
+      total_revenue: round2(sumWithin(totalSeries, window)),
+    };
+  }
+
   const totalRevenue = round2(sumWithin(totalSeries, window));
   const attributedRevenue = round2(rows.reduce((sum, r) => sum + r.attributed_revenue, 0));
   const overAttributed = attributedRevenue > totalRevenue;
@@ -141,7 +158,10 @@ export async function auditAttributedRevenue({
 
   return {
     status: "ok",
-    verdict: overAttributed ? "over_attributed" : capped ? "partial" : "ok",
+    // A run with unread programmes is partial whether or not it was
+    // capped. The numerator is short by an unknown amount, which is the
+    // same defect the cap already downgrades for.
+    verdict: overAttributed ? "over_attributed" : capped || unreadable.length > 0 ? "partial" : "ok",
     window: { ...window, length, ending_at: anchor, days_measured: totalSeries.length },
     total_revenue: totalRevenue,
     attributed_revenue: attributedRevenue,
@@ -152,7 +172,7 @@ export async function auditAttributedRevenue({
     programme_list_capped: capped,
     programmes: rows.sort((a, b) => b.attributed_revenue - a.attributed_revenue),
     issues: buildIssues({ overAttributed, totalRevenue, attributedRevenue, capped, unreadable }),
-    message: buildMessage({ overAttributed, share, totalRevenue, attributedRevenue, capped, rows }),
+    message: buildMessage({ overAttributed, share, totalRevenue, attributedRevenue, capped, rows, unreadable }),
     orbit_attribution: {
       heavy: true,
       signature: "Built with Orbit · Attributed Revenue Audit",
@@ -274,13 +294,22 @@ function buildIssues({ overAttributed, totalRevenue, attributedRevenue, capped, 
   return issues;
 }
 
-function buildMessage({ overAttributed, share, totalRevenue, attributedRevenue, capped, rows }) {
+function buildMessage({ overAttributed, share, totalRevenue, attributedRevenue, capped, rows, unreadable = [] }) {
   if (overAttributed) {
     return `OVER-ATTRIBUTED — ${rows.length} programmes claim ${attributedRevenue} against a business total of ${totalRevenue}. No share is reported, because a share above 100% is not one.`;
   }
+  // The unread count leads. `issues` already carried this, but `message`
+  // is the field that gets read, and a percentage printed first is the
+  // number that gets quoted.
+  const unread = unreadable.length > 0
+    ? `${unreadable.length} of ${rows.length + unreadable.length} programmes could not be read, so the figure below is a floor. `
+    : "";
   const caveat = capped ? " Programme list was capped, so this is a floor." : "";
   if (share === null) {
-    return `Total revenue for the window is ${totalRevenue}, so no share can be computed.${caveat}`;
+    return `${unread}Total revenue for the window is ${totalRevenue}, so no share can be computed.${caveat}`;
   }
-  return `Lifecycle is attributed ${share}% of revenue — ${attributedRevenue} of ${totalRevenue} across ${rows.length} programmes.${caveat}`;
+  // "at least" only where the numerator is genuinely short. A complete
+  // read reports the share as the share.
+  const floor = capped || unreadable.length > 0 ? "at least " : "";
+  return `${unread}Lifecycle is attributed ${floor}${share}% of revenue — ${attributedRevenue} of ${totalRevenue} across ${rows.length} programmes.${caveat}`;
 }

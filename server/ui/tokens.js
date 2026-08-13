@@ -78,6 +78,10 @@ export const ORBIT_TOKENS_CSS = `
 
   --brand: #6366F1;
   --brand-strong: #4F46E5;
+  /* One rung below --brand-strong, for a light-mode hover that has to
+     stay under white text. Hovering UP the ramp took the primary button
+     to #6366F1 and 4.47:1 — losing contrast on the state being touched. */
+  --brand-deep: #3F35B8;
   --brand-soft: #818CF8;
   --brand-wash: #eef0fe;
   --brand-line: #c3c8fb;
@@ -116,6 +120,7 @@ export const ORBIT_TOKENS_CSS = `
 
     --brand: #818CF8;
     --brand-strong: #6366F1;
+    --brand-deep: #4F46E5;
     --brand-soft: #a5adfb;
     --brand-wash: #1e2140;
     --brand-line: #3c4176;
@@ -146,7 +151,7 @@ export const ORBIT_TOKENS_CSS = `
   --ink: #eef0f6; --ink-2: #b6bccd; --ink-3: #858ca1;
   --paper: #101219; --card: #171a24; --rule: #2a2e3c; --sunk: #1d2029;
   --shadow: rgba(0, 0, 0, .38);
-  --brand: #818CF8; --brand-strong: #6366F1; --brand-soft: #a5adfb;
+  --brand: #818CF8; --brand-strong: #6366F1; --brand-deep: #4F46E5; --brand-soft: #a5adfb;
   --brand-wash: #1e2140; --brand-line: #3c4176; --brand-ink: #a5adfb;
   --active: #F59E0B; --active-strong: #fbbf24;
   --active-wash: #33260d; --active-line: #6b5117;
@@ -160,7 +165,7 @@ export const ORBIT_TOKENS_CSS = `
   --ink: #14161f; --ink-2: #414658; --ink-3: #616879;
   --paper: #f6f7fa; --card: #ffffff; --rule: #e2e5ec; --sunk: #eceef3;
   --shadow: rgba(20, 22, 31, .09);
-  --brand: #6366F1; --brand-strong: #4F46E5; --brand-soft: #818CF8;
+  --brand: #6366F1; --brand-strong: #4F46E5; --brand-deep: #3F35B8; --brand-soft: #818CF8;
   --brand-wash: #eef0fe; --brand-line: #c3c8fb; --brand-ink: #4F46E5;
   --active: #F59E0B; --active-strong: #B45309;
   --active-wash: #fdf3e3; --active-line: #f0cf95;
@@ -224,10 +229,37 @@ a { color: var(--brand-strong); }
 .o-btn[aria-pressed="true"] {
   background: var(--brand-wash); border-color: var(--brand-line); color: var(--brand-strong);
 }
+/* The single primary action in 15 of 18 widgets. Light mode carries white
+   on --brand-strong at 6.29:1. Dark mode cannot: white on dark
+   --brand-strong is 4.47:1 and white on dark --brand (the :hover state) is
+   2.98:1 — worse contrast on the state the user is actively touching, at
+   12px/600 which does not qualify for the large-text exception. Dark
+   inverts instead, exactly as .mk--on already proved: the light brand fill
+   carrying paper-dark ink. */
 .o-btn--primary {
   background: var(--brand-strong); border-color: var(--brand-strong); color: #fff;
 }
-.o-btn--primary:hover { background: var(--brand); border-color: var(--brand); color: #fff; }
+.o-btn--primary:hover { background: var(--brand-deep); border-color: var(--brand-deep); color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .o-btn--primary {
+    background: var(--brand); border-color: var(--brand); color: var(--paper);
+  }
+  .o-btn--primary:hover {
+    background: var(--brand-soft); border-color: var(--brand-soft); color: var(--paper);
+  }
+}
+:root[data-theme="dark"] .o-btn--primary {
+  background: var(--brand); border-color: var(--brand); color: var(--paper);
+}
+:root[data-theme="dark"] .o-btn--primary:hover {
+  background: var(--brand-soft); border-color: var(--brand-soft); color: var(--paper);
+}
+:root[data-theme="light"] .o-btn--primary {
+  background: var(--brand-strong); border-color: var(--brand-strong); color: #fff;
+}
+:root[data-theme="light"] .o-btn--primary:hover {
+  background: var(--brand-deep); border-color: var(--brand-deep); color: #fff;
+}
 .o-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .o-btn[disabled] { opacity: .5; cursor: not-allowed; }
 .o-btn[disabled]:hover { border-color: var(--rule); color: var(--ink); }

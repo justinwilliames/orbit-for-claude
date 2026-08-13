@@ -35,6 +35,16 @@ const REVIEW_GALLERY_CSS = fs.readFileSync(
   "utf8"
 );
 
+const PUSH_MATRIX_CSS = fs.readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "server", "ui", "widgets", "push-matrix.js"),
+  "utf8"
+);
+
+const DARK_PAIRS_CSS = fs.readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "server", "ui", "widgets", "dark-pairs.js"),
+  "utf8"
+);
+
 /** WCAG 2.x relative luminance for an #rrggbb string. */
 function luminance(hex) {
   const c = hex.replace("#", "");
@@ -144,7 +154,41 @@ describe("Widget contrast — Orbit's own chrome clears the bar it enforces", ()
   const FILL_PAIRS = [
     // [label, file, light fg, light bg, dark fg, dark bg]
     ["state-matrix .mk--on", "state-matrix.js", "#ffffff", "brand-strong", "paper", "brand"],
+    // The shared primary button — the single primary action in 15 of the
+    // 18 widgets, and the one this list did not cover because the list
+    // enumerates known pairs rather than asserting an invariant. It shipped
+    // at 4.47:1 dark resting and 2.98:1 dark HOVER: worse contrast on the
+    // state the user is actively touching, at 12px/600.
+    [".o-btn--primary resting", "tokens.js", "#ffffff", "brand-strong", "paper", "brand"],
+    [".o-btn--primary hover", "tokens.js", "#ffffff", "brand-deep", "paper", "brand-soft"],
   ];
+
+  test(".o-btn is 12px, so the 4.5:1 floor is the right one", () => {
+    assert.match(
+      ORBIT_BASE_CSS,
+      /\.o-btn\s*\{[^}]*font-size:\s*12px/,
+      ".o-btn is no longer 12px — re-check which WCAG threshold applies before relaxing this"
+    );
+    // The invariant behind the two pairs above: white ink on --brand or
+    // --brand-strong is theme-dependent and illegal in dark, so every
+    // .o-btn--primary rule that sets `color: #fff` must be reachable only
+    // in light. Any such rule that is NOT inside a light-only selector is
+    // the bug this test exists for.
+    const offenders = [...ORBIT_BASE_CSS.matchAll(/([^{}]*\.o-btn--primary[^{}]*)\{([^}]*)\}/g)]
+      .filter(([, , body]) => /color:\s*(#fff|#ffffff|white)\b/i.test(body))
+      .map(([, selector]) => selector.trim())
+      .filter((selector) => !/data-theme="light"/.test(selector));
+    // The two bare rules are the light default and are overridden by both
+    // the media query and the explicit dark selector below them; anything
+    // beyond those two means a dark path is carrying white ink again.
+    assert.equal(
+      offenders.length,
+      2,
+      `unexpected white-ink .o-btn--primary rules — dark mode cannot carry white on the brand ramp:\n  ${offenders.join("\n  ")}`
+    );
+    assert.match(ORBIT_BASE_CSS, /:root\[data-theme="dark"\] \.o-btn--primary\b/);
+    assert.match(ORBIT_BASE_CSS, /:root\[data-theme="dark"\] \.o-btn--primary:hover\b/);
+  });
 
   test(".mk--on is 10px, so the 4.5:1 floor is the right one", () => {
     const css = fs.readFileSync(
@@ -230,6 +274,90 @@ describe("Widget contrast — Orbit's own chrome clears the bar it enforces", ()
       if (ratio < AA_NORMAL) failures.push(`${name} — ${hex} on ${cardBg} = ${ratio.toFixed(2)}:1`);
     }
     assert.deepEqual(failures, [], `push preview text below AA:\n  ${failures.join("\n  ")}`);
+  });
+
+  test("the push matrix's fixed-light notification card never reads a theme token", () => {
+    // Same defect, second surface. The .pn card is a phone screen and is
+    // deliberately light in BOTH themes, so every colour on it is a
+    // literal. A var(--warn) here resolves to #f87171 in dark — a hue
+    // calibrated for a dark ground — painted on a near-white card, which
+    // is how the gallery's "Clipped on iOS" line ended up at 2.65:1.
+    const rules = [...PUSH_MATRIX_CSS.matchAll(/\.pn[a-z-]*\s*\{([^}]*)\}/g)];
+    assert.ok(rules.length >= 4, "no .pn rules found — did the notification card move?");
+    const themed = rules
+      .map(([rule, body]) => [rule, /(^|;|\s)(color|background):\s*var\(--/.test(body)])
+      .filter(([, isThemed]) => isThemed)
+      .map(([rule]) => rule.split("{")[0].trim());
+    assert.deepEqual(
+      themed,
+      [],
+      `Fixed-light push-matrix rules reading a theme-switching token: ${themed.join(", ")}`
+    );
+
+    // And the literals clear the bar on the card they ship on.
+    const cardBg = "#fafafc";
+    const failures = [];
+    for (const [name, hex] of [
+      [".pn-app", "#5b6072"],
+      [".pn-title", "#14161f"],
+      [".pn-body", "#34384a"],
+      [".pn-cut", "#b3402e"],
+    ]) {
+      const declared = PUSH_MATRIX_CSS.match(
+        new RegExp(`\\${name}\\s*\\{[^}]*color:\\s*(#[0-9a-fA-F]{6})`)
+      );
+      assert.ok(declared, `${name} no longer declares a hex colour`);
+      assert.equal(declared[1].toLowerCase(), hex, `${name} colour changed — re-check its contrast`);
+      const ratio = contrastRatio(hex, cardBg);
+      if (ratio < AA_NORMAL) failures.push(`${name} — ${hex} on ${cardBg} = ${ratio.toFixed(2)}:1`);
+    }
+    assert.deepEqual(failures, [], `push matrix card text below AA:\n  ${failures.join("\n  ")}`);
+  });
+
+  test("the dark-pairs specimen card never reads a theme token, and its own chrome clears AA", () => {
+    // Third surface, same rule. The .pair card is the email, fixed light
+    // in both themes, so a var(--warn) on it resolves to a dark-calibrated
+    // #f87171 painted on white. This widget is the worst possible place
+    // for that: its entire subject is text that cannot be read.
+    //
+    // The specimen box itself is deliberately excluded — .spec carries its
+    // colours from the PAYLOAD as inline styles, which is the finding.
+    const rules = [...DARK_PAIRS_CSS.matchAll(/\.(?:pair|pane|vp|flip)[a-z-]*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g)];
+    assert.ok(rules.length >= 6, "no fixed-light dark-pairs rules found — did the specimen card move?");
+    const themed = rules
+      .map(([rule, body]) => [rule, /(^|;|\s)(color|background):\s*var\(--/.test(body)])
+      .filter(([, isThemed]) => isThemed)
+      .map(([rule]) => rule.split("{")[0].trim());
+    assert.deepEqual(
+      themed,
+      [],
+      `Fixed-light dark-pairs rules reading a theme-switching token: ${themed.join(", ")}`
+    );
+
+    // Every literal pair, at 11px-12px, on the ground it actually ships on.
+    const failures = [];
+    const pairs = [
+      [".vp ok", "#036b4d", "#e6f7f1"],
+      [".vp active", "#8a4004", "#fdf3e3"],
+      [".vp warn", "#a3392a", "#fbe9e6"],
+      [".vp pending", "#4a5160", "#eef1f5"],
+      [".flip ok", "#036b4d", "#ffffff"],
+      [".flip active", "#8a4004", "#ffffff"],
+      [".flip warn", "#a3392a", "#ffffff"],
+      [".pair-msg", "#4a5160", "#ffffff"],
+      [".pane-name", "#5b6072", "#ffffff"],
+      [".pair-tag", "#4a5160", "#eef1f5"],
+      [".spec-none", "#4a5160", "#f4f6f9"],
+    ];
+    for (const [name, fg, bg] of pairs) {
+      assert.ok(
+        DARK_PAIRS_CSS.includes(fg),
+        `${name} declares ${fg} in this test but that hex is no longer in the widget`
+      );
+      const ratio = contrastRatio(fg, bg);
+      if (ratio < AA_NORMAL) failures.push(`${name} — ${fg} on ${bg} = ${ratio.toFixed(2)}:1`);
+    }
+    assert.deepEqual(failures, [], `dark-pairs chrome below AA:\n  ${failures.join("\n  ")}`);
   });
 
   test("body text clears AA on every surface it sits on", () => {
