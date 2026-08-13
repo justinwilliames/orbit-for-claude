@@ -63,6 +63,17 @@ const VERIFIED_SAFE = [
 const CLASS_NAMES = ["full", "nocss", "gmailish", "gmailish_worstcase", "imgoff", "reduced", "nohover"];
 
 /**
+ * Total emitted-document bytes this tool will spend in one response.
+ *
+ * Sized against the generic 100 KB response cap in orbit-resilience.js
+ * with room for the findings, the metadata and the two-copy widget
+ * envelope. Overrunning it is not a crash — it is the array trimmer
+ * silently deleting whole classes — so the tool spends its own budget
+ * and says what it withheld instead.
+ */
+const DOCUMENT_BUDGET_BYTES = 55_000;
+
+/**
  * Emit the degraded documents plus the static purity findings.
  *
  * @param {object} args
@@ -94,19 +105,70 @@ export function clientSim({ html, classes, include_html: includeHtml = true } = 
   const blocks = styleBlocks(html);
   const purity = purityChecks(html, blocks);
 
-  const variants = wanted.map((name) => {
-    const built = degrade(name, html, blocks);
+  // Build every document, then carry each DISTINCT one exactly once.
+  //
+  // Four of the seven classes differ from the baseline by a render
+  // CONDITION, not by markup — their emitted html is byte-identical to
+  // `full`. Shipping all seven strings whole turned a 65 KB email into
+  // ~470 KB of tool result, which the generic response-size cap then
+  // trimmed as the largest array: variants started disappearing at ~14 KB
+  // of email and at 65 KB only `full` survived — the single document this
+  // tool exists to stop you measuring, still described as seven.
+  //
+  // `same_markup_as` is decided by COMPARING the strings, never by a
+  // hardcoded list of which classes "should" match: `gmailish` on an
+  // email with no poison construct emits the baseline document too, and a
+  // list would have called that a distinct render.
+  //
+  // `markup_compared` is separate on purpose. A reader cannot tell
+  // "compared, and it differs" from "never compared" off a null
+  // `same_markup_as`, and a consumer that guesses says "the emitted HTML
+  // differs from the baseline" about a byte-identical document.
+  const built = wanted.map((name) => ({ name, ...degrade(name, html, blocks) }));
+  const baseline = built.find((b) => b.name === "full");
+  const variants = built.map((b) => {
+    const sameAsBaseline =
+      baseline != null && b.name !== "full" && b.html === baseline.html;
     return {
-      class: name,
-      what_it_models: WHAT_IT_MODELS[name],
-      style_blocks_kept: built.kept,
-      style_blocks_dropped: built.dropped,
-      bytes: Buffer.byteLength(built.html, "utf8"),
-      render_hints: RENDER_HINTS[name],
-      html: includeHtml ? built.html : null,
+      class: b.name,
+      what_it_models: WHAT_IT_MODELS[b.name],
+      style_blocks_kept: b.kept,
+      style_blocks_dropped: b.dropped,
+      bytes: Buffer.byteLength(b.html, "utf8"),
+      render_hints: RENDER_HINTS[b.name],
+      markup_compared: baseline != null,
+      same_markup_as: sameAsBaseline ? "full" : null,
+      html: includeHtml && !sameAsBaseline ? b.html : null,
     };
   });
 
+  // Even deduped, two distinct copies of an 80 KB email do not fit under
+  // the generic 100 KB response cap — and the generic trimmer's answer is
+  // to delete whole variants from the array, taking their metadata with
+  // them, so the reader is left with fewer classes than they asked for
+  // and no statement that anything is missing. Spend a budget here
+  // instead: keep documents in class order until it runs out, keep EVERY
+  // class's metadata either way, and name what was withheld plus the
+  // exact re-run that gets it. This is the paginable path the generic
+  // continue_hint assumes, made real for a tool whose payload is
+  // documents rather than rows.
+  const withheld = [];
+  let budget = DOCUMENT_BUDGET_BYTES;
+  for (const v of variants) {
+    if (v.html == null) continue;
+    if (v.bytes <= budget) {
+      budget -= v.bytes;
+      continue;
+    }
+    v.html = null;
+    v.html_withheld = true;
+    withheld.push(v.class);
+  }
+
+  // Count the documents that were actually emitted, not the classes asked
+  // for. Saying "7 degraded document(s) emitted" when four of them are the
+  // baseline is the same overstatement in a friendlier register.
+  const distinct = variants.filter((v) => v.same_markup_as == null).length;
   const fails = purity.filter((f) => f.severity === "fail");
   return {
     status: "ok",
@@ -117,16 +179,28 @@ export function clientSim({ html, classes, include_html: includeHtml = true } = 
     variants,
     summary: {
       failures: fails.length,
+      classes_requested: variants.length,
+      distinct_documents: distinct,
+      documents_withheld: withheld,
       headline:
         fails.length === 0
-          ? `No block-atomic poison and no anchor-wrapped table. ${variants.length} degraded document(s) emitted.`
+          ? `No block-atomic poison and no anchor-wrapped table. ${variants.length} class(es) simulated, ${distinct} distinct document(s); the rest are byte-identical to the baseline.`
           : `${fails.length} transport defect(s) that no render of the authored HTML can show you.`,
     },
     next_step:
-      "Run orbit_render_gate on each emitted `html` and DIFF the results. A " +
+      (withheld.length > 0
+        ? `This email is large enough that ${withheld.length} document(s) — ` +
+          `${withheld.join(", ")} — did not fit in one response and were WITHHELD, not simulated away. ` +
+          `Their findings and byte counts above are real; only the markup is missing. ` +
+          `Re-run orbit_client_sim with classes: ["full", "${withheld[0]}"] to get that pair. `
+        : "") +
+      "Run orbit_render_gate on each DISTINCT `html` and DIFF the results. A " +
       "finding that appears under `gmailish` or `nocss` but not under `full` " +
       "is a fallback path nobody has ever exercised. Measuring only `full` is " +
-      "measuring a document your recipients will not receive. " +
+      "measuring a document your recipients will not receive. A class carrying " +
+      "`same_markup_as: \"full\"` emits the baseline document byte for byte — " +
+      "re-gating it measures nothing new; what varies there is the render " +
+      "CONDITION (blocked images, no hover), not the markup. " +
       "`gmailish_worstcase` is the speculative view — it drops blocks on " +
       "constructs nobody has isolated, so a finding that appears ONLY there is " +
       "a reason to run a real test send, not a defect to fix on faith.",

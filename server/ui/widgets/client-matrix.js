@@ -66,6 +66,19 @@ import { buildWidgetHtml, WIDGET_PRELUDE } from "../shell.js";
 export const CLIENT_FIDELITY_JS = `
 function clientFidelity(variant) {
   var hints = (variant && variant.render_hints) || {};
+  // A null \`same_markup_as\` means two different things and only one of
+  // them is "it differs": the server may never have compared at all.
+  // Keying on absence alone reported "the emitted HTML differs from the
+  // baseline" for documents that were byte-identical to it. The server
+  // states the comparison happened; anything else abstains.
+  if (variant && variant.markup_compared !== true) {
+    return {
+      kind: "unknown",
+      glyph: "\\u25CC",
+      label: "not compared",
+      note: "This result did not carry a baseline comparison, so whether these bytes differ from the authored document is unknown here. Re-run orbit_client_sim to get the comparison."
+    };
+  }
   // The server tells us whether this class's document differs from the
   // baseline. When it does, the frame is the delivered document and there
   // is nothing to emulate.
@@ -174,6 +187,7 @@ body:not([data-ready]) .until-ready { display: none !important; }
 .cls[data-kind="emulated"] { border-left-color: var(--active); }
 .cls[data-kind="by-design"] { border-left-color: var(--ok); }
 .cls[data-kind="caveat"] { border-left-color: var(--pending); }
+.cls[data-kind="unknown"] { border-left-color: var(--ink-3); }
 .cls-name { display: block; font-family: var(--mono); font-size: 12px; font-weight: 700; }
 .cls-fid { display: block; font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
 .cls-stat { display: block; font-size: 11px; color: var(--ink-2); margin-top: 3px; font-variant-numeric: tabular-nums; }

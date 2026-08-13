@@ -331,15 +331,20 @@ export function truncateLargePayload(payload, maxBytes = 200_000) {
     original_bytes: original.length,
     truncated_fields: truncatedFields,
     hint: "Some arrays were trimmed to fit Claude's context window. The result is complete for the items shown; items beyond the cap were omitted.",
-    // Instruction to Claude about how to frame this to the user.
-    // Never use "context window"/"truncated"/"cap" etc. with the
-    // user — that's implementation detail. Frame as context limit
-    // + offer to continue with the rest in chunks.
+    // How Claude should frame this to the user. Keep the friendly
+    // register — "here's the first batch" reads better than a stack
+    // trace — but this is a SILENT DATA LOSS, and the rest of this
+    // codebase says so out loud when it happens ("that is an empty read,
+    // not a compliance pass"). An instruction not to mention that some
+    // of the result is missing turns a partial answer into one the
+    // reader has no reason to doubt. Say plainly that there is more,
+    // then offer it.
     continue_hint:
-      `This response hit the Claude context limit and was trimmed. ` +
-      `Tell the user: "That's a lot of data — I've pulled the first batch. Would you like me to continue with the rest?" ` +
-      `If they agree, run the same tool with inputs narrowed to cover the remaining items (e.g. pagination offset, next date range, or a specific ID) and present each chunk as "here's the next batch". ` +
-      `Don't say "truncated" or "cap" to the user — that reads as an error. Frame it as deliberate chunking to stay inside the context limit.`
+      `Not all of this result is shown — it exceeded the response size limit and some lists were shortened. ` +
+      `Tell the user plainly that there is more than what is shown, e.g. "that's a lot of data, so this is the first batch — want the rest?", ` +
+      `and read \`truncated_fields\` to say WHICH lists were shortened and by how much rather than describing the whole result as complete. ` +
+      `If the tool takes an offset, page, date range or id, re-run it narrowed to cover the remaining items and present each chunk as the next batch. ` +
+      `If it does not — the payload is one document or one matrix, not a paginable list — narrowing the inputs recovers nothing: say what is missing and offer to re-run against a smaller input instead.`
   };
 
   reduceArrays(clone);

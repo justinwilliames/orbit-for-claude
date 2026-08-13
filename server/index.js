@@ -302,16 +302,21 @@ const server = new McpServer({
   title: "Orbit",
   version: ORBIT_VERSION,
   // The mark a host shows beside the server, and — in most clients —
-  // beside each of its tool calls. One copy, 972 bytes for both themes.
+  // beside each of its tool calls. One copy, 1,146 bytes for both themes,
+  // drawing the same planet + ring + satellite as icon.png and the site
+  // favicon.
   //
-  // Deliberately NOT repeated onto all 126 tools: an identical icon per
-  // tool measured at +120KB on a 154KB tools/list, a 78% increase to
-  // show the same glyph the host already has. Tools that DRAW something
-  // carry it individually (see registerToolSafe) so the icon marks a
-  // real distinction rather than acting as wallpaper.
+  // Deliberately NOT repeated onto any tool: an identical icon per tool
+  // measured at +120KB on a 154KB tools/list, a 78% increase to show the
+  // same glyph the host already has (see registerToolSafe).
   icons: ORBIT_ICONS,
+  // Kept in step with manifest.json and server.json by
+  // scripts/sync-counts.mjs — this is the third place the positioning is
+  // written, and it was the one left saying "operating system … with
+  // Notion-friendly documentation" for a cycle after the other two were
+  // rewritten.
   description:
-    "Lifecycle marketing operating system for Claude with guided discovery, production workspaces, Braze-ready flows, MJML email generation, and Notion-friendly documentation."
+    "Lifecycle marketing in Claude: Braze, email QA, deliverability, segmentation. Free, no key."
 }, {
   // The first thing every host reads, and therefore the single most
   // load-bearing text in the product. It used to open by naming Stripo
@@ -5651,43 +5656,16 @@ function registerTools() {
       const result = clientSim({ html, classes, include_html: includeHtml ?? true });
       if (result.status !== "ok") return makeJsonToolResponse(result);
 
-      // The widget copy carries each class's document ONCE.
-      //
-      // Four of the seven classes differ from the baseline by a render
-      // CONDITION, not by markup — their emitted html is byte-identical
-      // to `full`. Shipping all seven strings twice (text block +
-      // structuredContent) turned a 90 KB email into ~1.2 MB of tool
-      // result, most of it the same bytes seven times over.
-      //
-      // `same_markup_as` is decided by COMPARING the strings, never by a
-      // hardcoded list of which classes "should" match: `gmailish` on an
-      // email with no poison construct emits the baseline document too,
-      // and a list would have called that a distinct render.
-      const baseline = (result.variants ?? []).find((v) => v.class === "full");
-      const widgetVariants = (result.variants ?? []).map((v) => {
-        const sameAsBaseline =
-          baseline != null &&
-          v.class !== "full" &&
-          typeof v.html === "string" &&
-          v.html === baseline.html;
-        return {
-          class: v.class,
-          what_it_models: v.what_it_models,
-          style_blocks_kept: v.style_blocks_kept,
-          style_blocks_dropped: v.style_blocks_dropped,
-          bytes: v.bytes,
-          render_hints: v.render_hints,
-          same_markup_as: sameAsBaseline ? "full" : null,
-          html: sameAsBaseline ? null : v.html
-        };
-      });
-
+      // clientSim already carries each DISTINCT document once and stamps
+      // `markup_compared` / `same_markup_as` on every variant, so the
+      // widget copy is the same array — no second dedupe, and no shape
+      // that only one of the two consumers has ever seen.
       return makeJsonToolResponse(result, {
         verdict: result.verdict,
         style_blocks: result.style_blocks,
         purity_findings: result.purity_findings,
         summary: result.summary,
-        variants: widgetVariants
+        variants: result.variants
       });
     }
   );

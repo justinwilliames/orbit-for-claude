@@ -500,7 +500,11 @@ describe("Liquid state matrix + client simulation", () => {
     });
     const by = Object.fromEntries(parsed.variants.map((v) => [v.class, v]));
     assert.equal(by.gmailish.style_blocks_dropped, 0, "a suspected killer deleted real CSS");
-    assert.equal(by.gmailish.html, by.full.html, "gmailish must be byte-identical to full here");
+    // Byte-identical documents are carried ONCE: the class points at the
+    // baseline rather than repeating it. Asserting the string back would
+    // now be asserting the duplication that broke the response cap.
+    assert.equal(by.gmailish.same_markup_as, "full", "gmailish must be byte-identical to full here");
+    assert.equal(by.gmailish.html, null);
     assert.equal(by.gmailish_worstcase.style_blocks_dropped, 1, "the speculative view must still drop it");
     // The purity finding still fires — the construct is worth a test send,
     // it just does not get to rewrite the document on suspicion.
@@ -544,11 +548,56 @@ describe("Liquid state matrix + client simulation", () => {
     });
     assert.equal(parsed.variants.length, 3);
     for (const variant of parsed.variants) {
-      assert.equal(typeof variant.html, "string");
       assert.ok(variant.bytes > 0);
       assert.ok(variant.what_it_models.length > 0);
+      // A class carrying `same_markup_as` IS the baseline document, byte
+      // for byte — the string is carried once rather than repeated. A
+      // class without it must still hand over its own document.
+      assert.equal(variant.markup_compared, true);
+      if (variant.same_markup_as == null) {
+        assert.equal(typeof variant.html, "string");
+      } else {
+        assert.equal(variant.same_markup_as, "full");
+      }
     }
     const nocss = parsed.variants.find((v) => v.class === "nocss");
     assert.ok(!/<style/i.test(nocss.html), "nocss must actually strip the style block");
+  });
+
+  // The whole tool exists to stop you measuring one document. It used to
+  // return seven full copies of the email, which the generic 100 KB
+  // response cap then trimmed as the largest array: at ~14 KB of email
+  // variants started disappearing, and at 65 KB only `full` survived —
+  // while the headline still said seven documents were emitted and the
+  // next_step told the model to diff them.
+  test("a 60 KB email does not lose classes to the response size cap", async () => {
+    const filler = "<p>Body copy that exists only to make this email large enough to matter.</p>\n".repeat(1000);
+    const big = CLEAN_HTML.replace("</body>", `${filler}</body>`);
+    assert.ok(Buffer.byteLength(big, "utf8") > 60_000, "the fixture is not large enough to exercise the cap");
+
+    const { parsed } = await client.callToolJson("orbit_client_sim", { html: big });
+    assert.equal(parsed._orbit_truncation, undefined, "the response was trimmed — variants were dropped again");
+    assert.deepEqual(
+      parsed.variants.map((v) => v.class),
+      ["full", "nocss", "gmailish", "gmailish_worstcase", "imgoff", "reduced", "nohover"]
+    );
+    // ...and the headline counts the documents actually emitted, not the
+    // classes asked for.
+    assert.equal(parsed.summary.classes_requested, 7);
+    assert.ok(parsed.summary.distinct_documents < 7, "every class emitted a distinct document — check the fixture");
+    assert.match(parsed.summary.headline, new RegExp(`${parsed.summary.distinct_documents} distinct document`));
+
+    // At this size two full copies do not fit. Whatever could not be
+    // carried must be NAMED and re-runnable, never silently absent.
+    for (const v of parsed.variants) {
+      if (v.html == null && v.same_markup_as == null) {
+        assert.equal(v.html_withheld, true, `${v.class} lost its document with no statement that it did`);
+        assert.ok(parsed.summary.documents_withheld.includes(v.class));
+      }
+    }
+    if (parsed.summary.documents_withheld.length > 0) {
+      assert.match(parsed.next_step, /WITHHELD, not simulated away/);
+      assert.match(parsed.next_step, /Re-run orbit_client_sim with classes/);
+    }
   });
 });
