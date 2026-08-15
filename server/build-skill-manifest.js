@@ -55,7 +55,9 @@ const CATEGORY_GROUPS = {
     "project-kickoff",
     "discovery-sprint",
     "competitive-intel",
-    "quarterly-planning"
+    "quarterly-planning",
+    "advanced-prd-writer",
+    "okr-structuring"
   ],
   "lifecycle-design-execution": [
     "journey-mapping",
@@ -169,6 +171,12 @@ const CATEGORY_GROUPS = {
 };
 
 const ADJACENCY_MAP = {
+  "advanced-prd-writer": [
+    "program-brief",
+    "experiment-design",
+    "strategic-stress-test",
+    "copy-framework"
+  ],
   "journey-mapping": ["crm-data-model", "segmentation-strategy", "lifecycle-design"],
   "lifecycle-design": ["journey-mapping", "crm-data-model", "segmentation-strategy", "program-brief"],
   "onboarding-design": ["journey-mapping", "lifecycle-design", "copy-framework"],
@@ -192,6 +200,17 @@ const ADJACENCY_MAP = {
   "graphic-design": ["copy-framework", "pre-launch-review"],
   "ai-personalization": ["crm-data-model", "segmentation-strategy", "experiment-design"]
   ,
+  "okr-structuring": [
+    "quarterly-planning",
+    "strategic-stress-test",
+    "project-kickoff",
+    "advanced-prd-writer"
+  ],
+  "quarterly-planning": [
+    "okr-structuring",
+    "strategic-stress-test",
+    "experiment-design"
+  ],
   "email-production-system": [
     "program-brief",
     "copy-framework",
@@ -343,10 +362,25 @@ const EXCLUSION_PHRASES = {
     "what is braze",
     "strategy for braze",
     "best practices for braze"
-  ]
+  ],
+  // The PRD writer's trigger surface is document-shaped ("draft", "review",
+  // "improve", "make this better"), which is the same verb set a marketer uses
+  // on an email. It ranked 7th on "improve the email copy in this draft" — off
+  // the podium, but competing for a request it can do nothing useful with.
+  // Email copy belongs to the copy protocols, never to the PRD writer.
+  "advanced-prd-writer": ["email copy"],
+  // okr-structuring's OWN description draws this boundary: it "does not turn an
+  // existing OKR set into a lifecycle program backlog — that handoff is
+  // `quarterly-planning`". It was violating it, taking rank 1 over
+  // quarterly-planning on every phrasing of the handoff. These exclude the
+  // DESTINATION noun ("program roadmap/backlog") rather than the verb, so the
+  // legitimate trigger "turn these into functional OKRs" is untouched.
+  "okr-structuring": ["program backlog", "program roadmap", "what programs should we run"]
 };
 
 const TEMPLATE_MAP = {
+  "advanced-prd-writer": ["prd"],
+  "okr-structuring": ["okr-set"],
   "strategic-stress-test": ["strategy-review"],
   "project-kickoff": ["project-brief"],
   "discovery-sprint": ["discovery-plan"],
@@ -391,6 +425,8 @@ const TEMPLATE_MAP = {
 };
 
 const ARTIFACT_TYPES = {
+  "advanced-prd-writer": ["prd", "product-spec", "prd-audit"],
+  "okr-structuring": ["okr-set", "okr-audit", "okr-cascade"],
   "strategic-stress-test": ["strategy-review", "risk-register"],
   "project-kickoff": ["project-brief", "working-plan"],
   "discovery-sprint": ["discovery-plan", "opportunity-map"],
@@ -462,6 +498,58 @@ const DEFAULT_VALIDATOR_RULES = [
 ];
 
 const SPECIAL_VALIDATOR_RULES = {
+  // The default rules look for "diagnosis / situation / current state" — the
+  // vocabulary of an audit answer, not of a PRD. A correct, complete PRD would
+  // have failed every default rule while a padded one that happened to say
+  // "situation" passed.
+  "advanced-prd-writer": [
+    { label: "TL;DR or audit summary", type: "regex", value: "(tl;dr|audit summary)", flags: "i" },
+    { label: "problem or findings", type: "regex", value: "(problem|blocker|finding)", flags: "i" },
+    {
+      label: "success metrics",
+      type: "regex",
+      value: "(success metric|baseline|target|primary metric)",
+      flags: "i"
+    },
+    {
+      label: "non-goals or scope boundary",
+      type: "regex",
+      value: "(non-goal|out of scope|rabbit hole|not in scope)",
+      flags: "i"
+    },
+    {
+      label: "risks or assumptions",
+      type: "regex",
+      value: "(risk|assumption|dependenc)",
+      flags: "i"
+    },
+    {
+      label: "next move",
+      type: "regex",
+      value: "(next move|next action|next step|sharpen|split|ship)",
+      flags: "i"
+    }
+  ],
+  // The default rules look for "diagnosis / situation / current state /
+  // findings" — audit vocabulary. A correct, complete OKR set (Create or
+  // Cascade mode output) would fail every default rule while never
+  // claiming to diagnose anything; it states an Objective and Key Results.
+  "okr-structuring": [
+    { label: "Objective stated", type: "regex", value: "(objective)", flags: "i" },
+    { label: "Key Results stated", type: "regex", value: "(key results?|\\bkrs?\\b)", flags: "i" },
+    {
+      label: "Measurable baseline/target/confidence",
+      type: "regex",
+      value: "(baseline|target|confidence)",
+      flags: "i"
+    },
+    {
+      label: "Committed/Aspirational or cycle framing",
+      type: "regex",
+      value: "(committed|aspirational|cycle|quarter)",
+      flags: "i"
+    }
+  ],
   "program-brief": [
     { label: "Program name", type: "includes", value: "Program name:" },
     { label: "Objective section", type: "includes", value: "1. OBJECTIVE" },

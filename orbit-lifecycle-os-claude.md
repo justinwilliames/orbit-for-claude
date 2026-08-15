@@ -73,7 +73,7 @@ Do not hide these questions inside a long answer. Surface them plainly so the us
 
 ## Available Protocols
 
-Orbit includes **40 specialist protocols** in project knowledge.
+Orbit includes **81 specialist protocols** in project knowledge.
 
 ### Strategy & Planning
 - `strategic-stress-test`

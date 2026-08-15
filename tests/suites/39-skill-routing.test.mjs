@@ -36,6 +36,30 @@ const manifest = JSON.parse(
 );
 const library = loadOrbitLibrary(ROOT_DIR);
 
+/**
+ * The `## Skill Index` table in orbit.md, read the way the router reads it:
+ * one row per protocol, the name in the first cell's backticks. Everything
+ * from the heading to the next `## ` is in scope, headings and separator
+ * rows included — a name that moves between category tables still counts.
+ */
+function readSkillIndexRows() {
+  const lines = fs.readFileSync(path.join(ROOT_DIR, "orbit.md"), "utf8").split("\n");
+  const start = lines.findIndex((l) => l.trim() === "## Skill Index");
+  assert.notEqual(start, -1, "orbit.md has no `## Skill Index` heading");
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^## /.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return lines
+    .slice(start, end)
+    .map((line) => line.match(/^\|\s*`([^`]+)`\s*\|/))
+    .filter(Boolean)
+    .map((m) => m[1]);
+}
+
 describe("Skill manifest — no skill ships unclassified or undescribed", () => {
   test("every skill has a real description, never a stray block-scalar marker", () => {
     const broken = manifest
@@ -70,6 +94,47 @@ describe("Skill manifest — no skill ships unclassified or undescribed", () => 
       return declared.includes(platform) ? null : `${skill}: declares ${JSON.stringify(declared)}`;
     }).filter(Boolean);
     assert.deepEqual(wrong, [], "an ESP skill does not say which ESP it is for");
+  });
+});
+
+/**
+ * The Skill Index in orbit.md is the map the router reads before it reads
+ * anything else, and it is hand-maintained. It fell to 53 rows against 81
+ * skills — 29 protocols, including all 13 braze-* ones, invisible to the
+ * router while their tools shipped and worked. Nothing went red, because
+ * nothing was looking.
+ *
+ * Row count EQUALS manifest length is the load-bearing assertion here.
+ * "Every skill appears once" and "no orphaned rows" both pass against an
+ * empty table, so both would have shipped a generator that emitted nothing
+ * — or, as happened, a table that quietly stopped being extended. The
+ * other two are diagnostics: they say WHICH names, once equality says the
+ * count is wrong.
+ */
+describe("orbit.md Skill Index covers exactly the skills that ship", () => {
+  test("the index has one row per manifest skill — count equality, not just coverage", () => {
+    const rows = readSkillIndexRows();
+    assert.equal(
+      rows.length,
+      manifest.length,
+      `Skill Index has ${rows.length} rows against ${manifest.length} shipped skills. ` +
+        "An index shorter than the manifest hides skills from the router; one longer points at skills that do not exist."
+    );
+  });
+
+  test("every shipped skill has a row", () => {
+    const listed = new Set(readSkillIndexRows());
+    const missing = manifest.map((s) => s.name).filter((name) => !listed.has(name));
+    assert.deepEqual(missing, [], "a shipped skill is absent from the Skill Index — the router cannot see it");
+  });
+
+  test("no row names a skill that does not ship, and none is listed twice", () => {
+    const rows = readSkillIndexRows();
+    const names = new Set(manifest.map((s) => s.name));
+    const orphans = rows.filter((name) => !names.has(name));
+    const duplicates = rows.filter((name, i) => rows.indexOf(name) !== i);
+    assert.deepEqual(orphans, [], "the Skill Index points at a protocol with no manifest entry");
+    assert.deepEqual(duplicates, [], "a protocol is listed twice — two trigger lines will drift apart");
   });
 });
 

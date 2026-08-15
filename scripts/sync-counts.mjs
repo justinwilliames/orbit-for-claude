@@ -88,10 +88,56 @@ const REWRITES = [
   // lines above a correctly-synced "79 skills and 126 tools" because the
   // inventory pattern could not see it.
   { pattern: /\b\d+\+? protocols Claude loads\b/g, replacement: () => `${COUNTS.skills} protocols Claude loads` },
+  // A THIRD noun, on the two files a stranger and a cold Claude thread read
+  // FIRST. orbit.md is the master router; its frontmatter description is what
+  // decides whether Orbit activates at all. Both it and
+  // orbit-lifecycle-os-claude.md ship (build-extension.js COPY_PATHS) and both
+  // sat at "62 specialist protocols and 84 tools" / "40 specialist protocols"
+  // against a true 81 and 128 — understating the router by 19 skills and 44
+  // tools on the surface that introduces the product.
+  //
+  // Neither file was in TARGETS, so this script printed "Inventory already in
+  // sync everywhere" and exited 0 while shipping all three stale numbers. A
+  // green receipt on a stale artefact is worse than no receipt: the four
+  // covered files WERE in sync, so nothing looked wrong.
+  //
+  // The "and" pattern is newline-tolerant and preserves the whitespace it
+  // matched. In orbit.md the string wraps mid-phrase inside a YAML folded
+  // scalar ("...and 84\n  tools"), so a `\s`-blind pattern silently matches
+  // nothing and a naive " " replacement would unwrap the block.
+  //
+  // Order matters: both two-number forms must run BEFORE the bare
+  // "N specialist protocols" rule, or that rule fixes the skill count and
+  // leaves the tool count stale next to it.
+  {
+    pattern: /\b\d+\+? specialist protocols and \d+\+?(\s+)tools\b/g,
+    replacement: () => `${COUNTS.skills} specialist protocols and ${COUNTS.tools}$1tools`,
+  },
+  {
+    pattern: /\b\d+\+? specialist protocols\.(\s+)\d+\+? tools\b/g,
+    replacement: () => `${COUNTS.skills} specialist protocols.$1${COUNTS.tools} tools`,
+  },
+  {
+    pattern: /\b\d+\+? specialist protocols\b/g,
+    replacement: () => `${COUNTS.skills} specialist protocols`,
+  },
 ];
 
-/** Files that state Orbit's own size. */
-const TARGETS = ["README.md", "server.json", "server/index.js", "manifest.json"];
+/**
+ * Files that state Orbit's own size.
+ *
+ * orbit.md and orbit-lifecycle-os-claude.md are here because they SHIP — see
+ * COPY_PATHS in scripts/build-extension.js. A count file that is packed into
+ * the bundle but absent from this list is drift nothing can detect.
+ */
+const TARGETS = [
+  "README.md",
+  "server.json",
+  "server/index.js",
+  "manifest.json",
+  "orbit.md",
+  "orbit-lifecycle-os-claude.md",
+];
 
 if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const stale = [];

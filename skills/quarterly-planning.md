@@ -128,6 +128,12 @@ Deliver to the exec/stakeholder group:
 
 ## What this skill does NOT do
 
+- **Doesn't write the OKRs themselves.** This skill *consumes* an annual or
+  quarterly north-star KPI and turns it into a program backlog — it assumes
+  the OKR already exists. If the OKRs don't exist yet, are untested against
+  the eight must-haves, or need cascading from leadership into a functional
+  set, use `okr-structuring` first and bring the resulting Key Results back
+  here as the north-star input.
 - **Doesn't pick programs for you.** It gives you the framework; the ranked list
   comes from your business context.
 - **Doesn't generate copy / creative / build flows.** That's post-planning execution —

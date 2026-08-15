@@ -22,13 +22,15 @@ description: >
   IP warming, dedicated IPs, shared IPs, domain reputation, DNS records, CAN-SPAM,
   GDPR, CASL, CTIA, PECR, compliance, consent, Apple MPP, Mail Privacy Protection,
   B2B lifecycle, account-based marketing, account tiering, quarterly planning,
-  program prioritisation, lifecycle audits, pre-launch reviews, program briefs,
+  program prioritisation, OKRs, objectives and key results, PRDs, product specs,
+  one-pagers, RFCs, launch plans and experiment briefs for lifecycle, CRM or
+  retention programs, lifecycle audits, pre-launch reviews, program briefs,
   lifecycle reporting, exec reporting, dashboards, QBRs, Braze Canvas, Braze
   campaigns, Braze Content Blocks, Braze Liquid personalisation, Iterable, HubSpot,
   PostHog, Klaviyo, Mailchimp, SendGrid, Customer.io, Marketo, Pardot, ActiveCampaign,
   Salesforce Marketing Cloud, Omnisend, Attentive, Postscript, and any other ESP,
   CRM, CDP, or martech platform when the ask is about lifecycle / retention / CRM
-  / martech work. Orbit is the master router for 62 specialist protocols and 84
+  / martech work. Orbit is the master router for 81 specialist protocols and 128
   tools: select the single best protocol for the task, sequence adjacent protocols
   only when required, and confirm platform, geography, and business model before
   implementation. When a user pastes an email template, a signup page, an A/B test
@@ -40,7 +42,7 @@ description: >
 
 # Orbit — Lifecycle Marketing System
 
-A unified lifecycle marketing operating system for advanced CRM, growth, and martech work. One router. 62 specialist protocols. 84 tools. Orbit is the router, not the answer template: its job is to choose the right protocol, apply it fully, connect adjacent protocols only when the task genuinely spans them, and **hold the user's hand through getting the right inputs before the tool runs**.
+A unified lifecycle marketing operating system for advanced CRM, growth, and martech work. One router. 81 specialist protocols. 128 tools. Orbit is the router, not the answer template: its job is to choose the right protocol, apply it fully, connect adjacent protocols only when the task genuinely spans them, and **hold the user's hand through getting the right inputs before the tool runs**.
 
 When Orbit returns a judgment, a diagnosis, a recommendation, or a synthesis across multiple tool calls, deliver it as a senior operator would — a call, with the reasoning behind it. That posture is the product; naming the product inside the user's own output is not.
 
@@ -63,7 +65,7 @@ Orbit should fire any time the user's ask touches the **lifecycle / email / rete
 - **Email craft**: subject lines, preheaders, from names, email copy, MJML, HTML email, email template design, Stripo templates, dark-mode rendering, email accessibility / WCAG, render QA, Gmail clipping, image hosting, content blocks, reusable modules, email design ingestion (Figma / PDF)
 - **Compliance**: CAN-SPAM, GDPR, CCPA, CASL, CTIA, PECR, consent audits, unsubscribe compliance, preference centres, one-click unsubscribe, List-Unsubscribe header
 - **Martech**: martech stack audits, ESP evaluation, ESP migration, CDP integration, data-warehouse sync, tool redundancy, vendor selection
-- **Strategy & planning**: lifecycle audits, program briefs, pre-launch reviews, quarterly planning, program prioritisation, B2B lifecycle, account-based lifecycle, lifecycle-team building, stakeholder reporting
+- **Strategy & planning**: lifecycle audits, program briefs, pre-launch reviews, quarterly planning, program prioritisation, OKRs / objectives and key results, PRDs, product specs, one-pagers, RFCs, launch plans, experiment briefs, B2B lifecycle, account-based lifecycle, lifecycle-team building, stakeholder reporting
 - **Growth adjacencies**: paid-to-lifecycle handoff, attribution-audit, growth marketing (paid, SEO, AEO, ASO) where it integrates with lifecycle programs
 - **Platforms**: Braze, Iterable, HubSpot, PostHog, Klaviyo, Mailchimp, SendGrid, Customer.io, Marketo, Pardot, ActiveCampaign, Salesforce Marketing Cloud, Omnisend, Attentive, Postscript, and any other ESP / CDP / CRM when the question is about lifecycle or CRM workflows inside that platform
 - **Artefacts that signal lifecycle work**: pasted email HTML, pasted signup page HTML, A/B test result JSON, deliverability CSVs, Postmaster exports, customer list exports for RFM / cohort analysis
@@ -204,7 +206,7 @@ Before any heavy tool fires, the user should be able to answer: *"I know what Or
 
 ## Further Reading — cite guides when they informed the answer
 
-Orbit ships 80+ practitioner guides as MCP resources. When a guide's context, framework, or specific claim was used to produce the response, **cite it at the end of the answer** under a "Further reading" block with the public URL.
+Orbit ships 91 long-form practitioner guides as MCP resources. When a guide's context, framework, or specific claim was used to produce the response, **cite it at the end of the answer** under a "Further reading" block with the public URL.
 
 ### Format
 
@@ -269,6 +271,9 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `project-kickoff` | Start a new initiative with scope, owners, risks, and sprint plan |
 | `discovery-sprint` | Validate a new product, feature, or proposition before build |
 | `competitive-intel` | Research competitor moves, positioning, and market trajectory |
+| `advanced-prd-writer` | Write or critique a PRD, spec, one-pager, PR-FAQ, RFC, or experiment brief |
+| `okr-structuring` | Write, cascade, or audit Objectives and Key Results |
+| `quarterly-planning` | Turn annual OKRs into the quarter's prioritised lifecycle priorities, capacity, and sequencing that survives exec review |
 
 ### Lifecycle Design & Execution
 | Protocol | Trigger |
@@ -312,6 +317,10 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `copy-framework` | Write or review lifecycle copy across email, push, SMS, and in-app |
 | `graphic-design` | Direct or critique visual work, CRM creative, decks, dashboards, and image prompts |
 | `ai-personalization` | Use AI/LLMs for timing, content, audience scoring, or orchestration |
+| `anti-slop-editor` | Detect and rewrite weak, generic, or AI-sounding copy into stronger user- or developer-facing language |
+| `claude-design-email-header` | Generate an on-brand email header or hero image by driving Anthropic's Claude Design app from a brand URL or references |
+| `email-header-design` | Run a multi-agent design loop to generate and critique an on-brand email hero or header image |
+| `smart-header-builder` | Generate a brand header, banner, or hero image end-to-end via orbit_brand_header |
 
 ### Platform Documentation
 | Protocol | Trigger |
@@ -320,6 +329,10 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `iterable-documentation-expert` | Any Iterable-specific implementation question |
 | `hubspot-documentation-expert` | Any HubSpot-specific implementation question |
 | `posthog-documentation-expert` | Any PostHog-specific implementation question |
+| `customerio-documentation-expert` | Any Customer.io-specific implementation question — Campaigns, Broadcasts, segments, transactional sends, or Liquid |
+| `klaviyo-documentation-expert` | Any Klaviyo-specific implementation question — Flows, campaigns, segments, templates, or flow performance audits |
+| `mailchimp-documentation-expert` | Any Mailchimp-specific implementation question — Customer Journeys, campaigns, audiences, or merge tags |
+| `sfmc-documentation-expert` | Any Salesforce Marketing Cloud question — Journeys, Content Builder, data extensions, or AMPscript |
 
 ### Production & Operations
 | Protocol | Trigger |
@@ -340,9 +353,41 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `apple-mpp-response` | Reframe engagement metrics and program decisions for audiences dominated by Apple Mail Privacy Protection |
 | `gmail-bulk-sender-compliance` | Defensible checklist against Google + Yahoo's Feb 2024 bulk-sender requirements (5k/day threshold) |
 | `esp-migration` | Move from one ESP to another without tanking reputation — 4-phase plan with dual-send cutover |
-| `quarterly-planning` | Turn annual OKRs into a prioritised 90-day lifecycle program backlog that survives exec review |
 | `email-production-qa` | Canonical pre-send QA gate — chains accessibility, dark-mode, and Gmail-clipping checks via orbit_qa_email |
 | `postmaster-tools-setup` | Set up Gmail Postmaster Tools and interpret the six dashboards — pairs with orbit_parse_postmaster_signal |
+| `stripo-email-builder` | Write, build, and ship a full email or multi-email program into Stripo and Braze from a Program Build Spec |
+| `stripo-module-bindings` | Register a Stripo module's text, link, or image as substitutable before it can be composed per-send |
+| `gmail-delivery-truth` | Diagnose an email that looks right in preview but breaks in Gmail — clipping, style sanitising, or dark-mode inversion |
+| `ip-warming` | Size and build a safe send-volume ramp so a full-base blast doesn't spike beyond an IP's earned reputation |
+
+### Lifecycle Brain
+| Protocol | Trigger |
+|---|---|
+| `brain-graphify-setup` | Add a knowledge-graph index on top of an existing template brain using graphify |
+| `liquid-branch-coverage` | Enumerate every personalisation branch of a Liquid-conditioned email so no segment ships an untested version |
+| `template-brain` | Scaffold or maintain the git repo that is the single source of truth for a lifecycle email program |
+
+### Braze Platform
+| Protocol | Trigger |
+|---|---|
+| `braze-canvas-creator` | Design a Braze Canvas structure — steps, delays, channels, entry logic — from an Orbit program plan |
+| `braze-canvas-qa` | Run a severity-rated pre-launch QA checklist against a live Braze Canvas or campaign before it goes live |
+| `braze-canvas-reader` | Read or import an existing Braze Canvas or campaign to understand or reverse-map its structure |
+| `braze-claude-in-chrome-build` | Drive the Braze dashboard via browser automation for canvas edits, audience-path changes, and saves the API can't reach |
+| `braze-content-block-audit` | Audit, inventory, or clean up Braze Content Blocks for duplicates and Liquid quality issues |
+| `braze-data-validation` | Verify that custom events and attributes referenced in a message plan actually exist in the Braze instance |
+| `braze-deliverability` | Check Braze-specific email deliverability health — bounce rates, complaints, and sending reputation |
+| `braze-instance-audit` | Audit and inventory a Braze workspace — Canvases, Content Blocks, custom attributes, naming conventions |
+| `braze-master-template` | Import an existing HTML email template, break it into reusable modules, and generate variations |
+| `braze-namer` | Generate a consistent, deterministic naming convention for any Braze asset |
+| `braze-performance` | Pull Braze performance data and analytics — Canvas results, open rates, MAU trends, KPI reports |
+| `braze-segment-analysis` | Analyse Braze segments for health, overlap, size trends, and organisation |
+| `braze-test-users` | Validate Braze test-user profiles before sending QA test messages |
+
+### Knowledge & Attribution
+| Protocol | Trigger |
+|---|---|
+| `sources` | Attribute a specific claim, benchmark, framework, or regulatory rule Orbit cites to its original source |
 
 ---
 
