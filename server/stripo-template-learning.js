@@ -871,6 +871,24 @@ function resolveModuleSelection(modules, selection) {
   return modules.slice();
 }
 
+/**
+ * The marker label for one module: its type, plus its id from the learned
+ * record.
+ *
+ * The id is what makes the label usable as an identity. A template with three
+ * `content-text` modules would otherwise emit three identically-labelled
+ * blocks, and any downstream comparison — the brain's drift gate in
+ * particular — resolves a label to the FIRST match, so the second and third
+ * would be measured against the wrong module and fail for a reason that is not
+ * true. Ids come from the learned record, so the same module carries the same
+ * label in the master and in every send composed from it.
+ */
+function moduleLabel(m) {
+  const type = String(m?.type ?? "module").replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const id = String(m?.id ?? "").replace(/[^a-zA-Z0-9._-]+/g, "");
+  return id ? `${type}-${id}` : type;
+}
+
 function assembleFromModules({ record, chosenModules, brief, imageOverrides }) {
   // We reconstruct the full email by taking the original HTML and
   // KEEPING only the chosen module blocks in source order. This
@@ -887,16 +905,54 @@ function assembleFromModules({ record, chosenModules, brief, imageOverrides }) {
     return sourceHtml.indexOf(last) + last.length;
   })();
 
+  // Each module is wrapped in the marker pair the rest of Orbit uses
+  // (see email-components.js). They are HTML comments — invisible in every
+  // client, a few dozen bytes each — and they are what makes the module
+  // boundary machine-readable AFTER assembly.
+  //
+  // Without them a composed email is one undifferentiated document, and the
+  // brain's drift gate (build/drift-check.sh) has nothing to compare against:
+  // it cannot tell which bytes are "the hero module" in this send versus in
+  // the master. That is the difference between a design system and a folder
+  // of files, so the markers are not optional decoration.
+  // Wrap ONCE. A learned source that already carries markers — anything Orbit
+  // itself previously assembled, or a hand-marked master — got a second pair
+  // wrapped around the first, and the interleaved open/close sequence broke
+  // drift-check's first-close-wins parser: it mis-attributed the skeletons and
+  // failed a faithful send as "composed from memory". A false BLOCKED is worse
+  // than a missed one, because it teaches people the gate is wrong.
+  // STRIP, then wrap. Skipping a slice that already carried a marker was not
+  // enough: the module parser re-segments by table structure and ignores
+  // pre-existing MODULE boundaries entirely, so re-learning an already-marked
+  // email left ORPHANED markers in the head and tail — an opening tag from the
+  // old segmentation closing against a new one, interleaved and mismatched.
+  // drift-check reads first-close-wins, so it mis-attributed the skeletons and
+  // failed faithful content as "composed from memory". A false BLOCKED is
+  // worse than a missed one: it teaches people the gate is wrong.
+  const stripMarkers = (html) =>
+    String(html).replace(/[ \t]*<!--\s*\/?\s*MODULE:[^>]*-->[ \t]*\r?\n?/gi, "");
+
+  const wrap = (m, moduleHtml) => {
+    const label = moduleLabel(m);
+    return `<!-- MODULE: ${label} -->\n${stripMarkers(moduleHtml)}\n<!-- /MODULE: ${label} -->`;
+  };
+
   let html;
   if (firstIdx >= 0 && lastIdx > firstIdx) {
-    const head = sourceHtml.slice(0, firstIdx);
-    const tail = sourceHtml.slice(lastIdx);
-    const moduleHtmls = chosenModules.map((m) => applyBriefToModule(m, brief, imageOverrides));
+    // The shell is spliced straight from the source, so a previous assembly's
+    // markers live here too — and an orphaned opener in the head pairs with the
+    // first closer of the NEW segmentation. Scrub the shell as well as the
+    // slices, or the mismatch just moves outward.
+    const head = stripMarkers(sourceHtml.slice(0, firstIdx));
+    const tail = stripMarkers(sourceHtml.slice(lastIdx));
+    const moduleHtmls = chosenModules.map((m) =>
+      wrap(m, applyBriefToModule(m, brief, imageOverrides))
+    );
     html = head + moduleHtmls.join("\n") + tail;
   } else {
     // Fallback: use the raw module HTMLs. Not a full valid email
     // document but never silently-broken — downstream QA catches it.
-    html = chosenModules.map((m) => m.html).join("\n");
+    html = chosenModules.map((m) => wrap(m, m.html)).join("\n");
   }
 
   // Apply image overrides globally too, in case the brief referenced

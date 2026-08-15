@@ -37,7 +37,7 @@ const PLACEHOLDER_BRAND = "ACME";
  * upgraded in place, a missing marker means a human edited it and we do not
  * touch it.
  */
-const SCRIPT_GENERATION = 2;
+const SCRIPT_GENERATION = 3;
 
 /**
  * The marker line stamped into every generated script, after the shebang.
@@ -266,8 +266,17 @@ export function buildCheckClaimsScript() {
 
 set -euo pipefail
 
+# Resolve the claims file against the REPO, not the caller's cwd. The default
+# used to be the bare relative path, which only worked when someone happened to
+# run this from the repo root — and gate.sh now calls it on every send from
+# wherever the author is standing. A gate stage that reports "claims file not
+# found" because of a working directory reads as a missing file, and the fix
+# people reach for is to stop running the check.
+HERE="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+ROOT="\$(dirname "\$HERE")"
+
 HTML_FILE="\${1:-}"
-CLAIMS_FILE="\${2:-knowledge/verified-claims.md}"
+CLAIMS_FILE="\${2:-\$ROOT/knowledge/verified-claims.md}"
 
 if [[ -z "\$HTML_FILE" || ! -f "\$HTML_FILE" ]]; then
   echo "check-claims: usage: build/check-claims.sh <compiled-email.html> [claims-file]" >&2
@@ -289,6 +298,13 @@ fi
 # Numbers that are structural, not claims — safe to ignore. Extend for your
 # own template: years, common pixel/spacing values, colour hex digits, etc.
 IGNORE_RE='^(0|1|2|3|4|5|6|7|8|9|10|20|24|100|200|202[0-9]|203[0-9]|600|640)\$'
+
+# A STATISTIC is a figure offered as evidence. A price, a clock time, a date, a
+# street number and a quantity are none of those, and the first version of this
+# gate blocked "free over \$50" and "ends at 11pm" while waving through
+# "Save 20%" — the one figure in that sentence that actually needs a source.
+# These patterns are matched against the number IN CONTEXT, not the bare digits.
+CONTEXTUAL_IGNORE='([\$£€¥][0-9]|[0-9][ ]?(am|pm|AM|PM)|[0-9](st|nd|rd|th)|[0-9][ ]?(hours?|days?|weeks?|months?|mins?|minutes?|seconds?)|[0-9][ ]?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))'
 
 # ── extraction ────────────────────────────────────────────────────
 # Two rules earned the hard way, both of which made this gate fire on 100%
@@ -355,13 +371,36 @@ numbers() {
 # file matches "12000" extracted from the email.
 approved="\$(numbers < "\$CLAIMS_FILE" || true)"
 
+# A receipts table with nothing in it cannot enforce this law; it can only
+# block every number in every email. Bootstrapping a brain now writes this
+# script, so that empty state is the DEFAULT one — and a gate whose
+# out-of-the-box behaviour is to refuse an ordinary marketing email is a gate
+# people delete on day one. Say the law is not armed yet, and arm it the moment
+# the author writes their first receipt.
+if [[ -z "\$approved" ]]; then
+  echo "check-claims: NOT ARMED — \$CLAIMS_FILE has no receipts in it yet, so there is nothing to check figures against. Add your first receipt and this law starts enforcing on the next run." >&2
+  exit 2
+fi
+
 # Every standalone integer in the email's VISIBLE copy.
-rendered="\$(visible_text "\$HTML_FILE" | numbers || true)"
+visible="\$(visible_text "\$HTML_FILE")"
+rendered="\$(printf '%s' "\$visible" | numbers || true)"
 
 violations=()
 while IFS= read -r n; do
   [[ -z "\$n" ]] && continue
   [[ "\$n" =~ \$IGNORE_RE ]] && continue
+  # Skip it ONLY if we can SEE its occurrences and every one of them sits
+  # inside a price, a clock time or a date. Two ways to get this wrong, and
+  # the first draft managed both: the probe searched for the comma-stripped
+  # form while the copy reads "48,000", found nothing — and then treated
+  # "no occurrences" as "no violations" and waved the figure through. An
+  # unreadable context is a reason to CHECK, never a reason to skip.
+  probe="\$(printf '%s' "\$n" | sed 's/./&,\\?/g')"
+  ctx="\$(grep -oE "[^ ]{0,3}\$probe[^ ]{0,10}" <<< "\$visible" || true)"
+  if [[ -n "\$ctx" ]] && ! grep -qvE "\$CONTEXTUAL_IGNORE" <<< "\$ctx"; then
+    continue
+  fi
   if ! grep -qxF "\$n" <<< "\$approved"; then
     violations+=("\$n")
   fi

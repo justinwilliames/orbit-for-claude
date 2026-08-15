@@ -257,7 +257,12 @@ async function pushTemplate({ config, name, html, subject, preheader, template_i
   const isUpdate = template_id != null && template_id !== "";
   const endpoint = isUpdate ? "/templates/email/update" : "/templates/email/create";
 
-  const body = { template_name: name, body: html };
+  // Never let the ESP rewrite the body on the way in. Orbit states this mandate
+  // in two other places (server/html-checks.js, server/client-sim.js) and then
+  // did not send it, so a push whose CSS was inlined server-side came back from
+  // the new readback check as `differs` — reporting a discrepancy Orbit had
+  // chosen not to prevent, against a body the author never wrote.
+  const body = { template_name: name, body: html, should_inline_css: false };
   if (subject != null) body.subject = subject;
   if (preheader != null) body.preheader = preheader;
   if (isUpdate) body.email_template_id = template_id;

@@ -479,6 +479,13 @@ async function exportOneEmail({ config, stripoEmailId, brazeTemplateId, nameMap,
     template_name: templateName,
     subject,
     preheader,
+    // Never let Braze rewrite the body on the way in. This repo asserts the
+    // mandate in server/html-checks.js and server/client-sim.js, and the
+    // inliner it warns about hoists a table out of any anchor wrapping it —
+    // shipping a CTA that looks right and does nothing. The flag landed on the
+    // ESP adapter first and missed the two paths the tool descriptions
+    // actually route people to, which is every path that matters.
+    should_inline_css: false,
     body: html,
     ...(tags && tags.length ? { tags } : {}),
     description: `Exported from Stripo email ${stripoEmailId} via Orbit`,

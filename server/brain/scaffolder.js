@@ -24,8 +24,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { resolveSafe } from "../path-safety.js";
+import { installRetention } from "./retention.js";
 import {
+  buildCheckClaimsScript,
   buildVerifiedClaimsMarkdown,
+  writeGenerated,
   writeSkip,
   PLACEHOLDER_BRAND,
   today,
@@ -77,14 +80,33 @@ export function bootstrapBrain({
     result
   );
 
+  // ...and the EXECUTABLE half of the same contract. Writing verified-claims.md
+  // without check-claims.sh shipped every brain with the statistics law
+  // UNENFORCED until the user separately discovered orbit_init_verified_claims —
+  // a law nobody had told them was switched off.
+  const claimsScript = path.join(root, "build", "check-claims.sh");
+  if (writeGenerated(claimsScript, buildCheckClaimsScript(), result, "claims")) {
+    fs.chmodSync(claimsScript, 0o755);
+  }
+
   // Program stage folders + the rest of the tree. Empty dirs get a
   // .gitkeep so git (and the graph builder) sees the shape.
   for (const stage of stageList) {
     writeSkip(path.join(root, "programs", stage, ".gitkeep"), "", result);
   }
-  for (const dir of ["templates", "build", "assets", "reviews", "reference"]) {
+  for (const dir of ["build", "assets", "reviews", "reference", "evidence"]) {
     writeSkip(path.join(root, dir, ".gitkeep"), "", result);
   }
+
+  // templates/ gets a contract instead of a .gitkeep. The directory existing
+  // is not the point — what makes "compose from the master, never from memory"
+  // enforceable is a named file the drift check can diff against, and a
+  // document saying which file that is.
+  writeSkip(path.join(root, "templates", "README.md"), buildTemplatesReadme(company), result);
+
+  // Retention: a render never enters git, "regenerable" must be proved, and
+  // captures of live platform state are evidence that is never auto-pruned.
+  Object.assign(result, installRetention(root, result));
 
   // ...and then actually make it a repo.
   //
@@ -150,6 +172,7 @@ function initGitRepo(root, company) {
 // ── Content generators ────────────────────────────────────────────
 
 function buildReadme(company, esp, stageList) {
+  const espMid = midSentenceEsp(esp);
   const stageLine = stageList.map((s) => `\`${s}\``).join(" · ");
   return `# ${company} — Template Brain
 
@@ -157,15 +180,15 @@ The single, canonical source of truth for ${company}'s lifecycle & marketing
 email program. Any AI session — or a new hire — can load full context cold from
 this repo and produce an on-brand, correct email without re-deriving anything.
 
-**The core inversion:** the repo is the *source*; ${esp} is a *derived output*.
+**The core inversion:** the repo is the *source*; ${espMid} is a *derived output*.
 Canonical template HTML, the design rules, the per-program specs, the decisions
-and the hard-won lessons all live as markdown + source files in git. ${esp}
+and the hard-won lessons all live as markdown + source files in git. ${espMid}
 holds only downstream copies pushed from here.
 
 ## The four rules
 
 1. **Git is canonical.** If an AI builds from it, it lives here. Other tools
-   (a dashboard, a wiki, ${esp}) link to this repo or omit — they never keep a
+   (a dashboard, a wiki, ${espMid}) link to this repo or omit — they never keep a
    divergent editable copy.
 2. **The graph is derived.** The knowledge-graph index in \`graphify-out/\` is
    regenerated *from* this repo and is read-only downstream. Never hand-edit it;
@@ -175,7 +198,7 @@ holds only downstream copies pushed from here.
    stays a separate compile + QA gate. Reading the repo is never permission to
    ship.
 4. **${esp} is derived.** ${esp} templates are downstream snapshots. The
-   canonical HTML lives here, never *only* in ${esp}.
+   canonical HTML lives here, never *only* in ${espMid}.
 
 ## Layout
 
@@ -297,10 +320,72 @@ function buildGitignore() {
   return `# The knowledge graph is DERIVED — regenerated from the repo, never a source.
 graphify-out/
 
-# Local compile / preview output.
+# Renders never enter git. All of it is output; the recipe for each path is in
+# scripts/retention-policy.tsv, and the commit hook from scripts/install-hooks.sh
+# blocks them even when someone stages one by hand. See RETENTION.md.
+build/compiled/
+build/preview/
+build/states/
 *.compiled.html
+
+# NOT ignored, on purpose: evidence/ — captures of live platform state. Those
+# cannot be re-taken, so they are committed and never auto-pruned.
+
 .DS_Store
 node_modules/
+`;
+}
+
+/**
+ * `templates/README.md` — the contract that makes "compose from the master"
+ * checkable rather than aspirational.
+ *
+ * A directory cannot enforce anything. What the drift check needs is one named
+ * file it can diff every send against, and modules inside it delimited by
+ * markers. This document is where the name is written down.
+ */
+function buildTemplatesReadme(company) {
+  return `# Templates — ${company}'s canonical email source
+
+**\`master-template.html\` is the module library, and it is the only one.**
+
+Everything in here is source. The copies in your ESP are downstream: pushed from
+this repo, verified by readback, and never edited in the dashboard. If the two
+disagree, this file is right and the ESP is stale.
+
+## Composing a send
+
+Copy module blocks OUT of the master. Never re-type one from an older send, and
+never from memory — that is how a module ships missing the one element that made
+it that module, and it passes every layout check on the way out because nothing
+was measuring it against anything.
+
+Modules are delimited by markers:
+
+\`\`\`html
+<!-- MODULE: hero -->
+  …
+<!-- /MODULE: hero -->
+\`\`\`
+
+\`build/drift-check.sh\` compares every marked module in a composed send against
+the same module here, and fails on any structural difference. Copy and links are
+excluded from that comparison — those are supposed to change per send. Padding,
+colour and structure are not.
+
+## Changing a module
+
+Change it HERE first, then recompose the sends that use it. A send that diverges
+from the master fails the gate, and the only legal way to keep a divergence is a
+line in \`build/drift-allowlist.tsv\` citing the ruling that permitted it. An
+allowlist entry with no ruling fails too — an exemption nobody wrote a reason
+for is the check quietly switched off.
+
+## Adding a module
+
+Add it to the master before any send uses it. A module label the master does not
+have is treated as composed-from-memory and blocked, which is the point: the
+library is the vocabulary, and a send cannot invent a word.
 `;
 }
 
@@ -390,9 +475,22 @@ function normaliseBrand(name) {
   return trimmed.length > 0 ? trimmed : PLACEHOLDER_BRAND;
 }
 
+/**
+ * Two forms of the ESP name, because the placeholder lands in two grammatical
+ * positions and one form cannot serve both.
+ *
+ * `esp` opens sentences and a bolded rule heading in the generated README —
+ * the cold-start file this repo tells every future session to read first — so
+ * on the default path it rendered "**your ESP is derived.**" three times in the
+ * first document a stranger opens. `espMid` is the mid-sentence form.
+ */
 function normaliseEsp(name) {
   const trimmed = (name ?? "").trim();
-  return trimmed.length > 0 ? trimmed : "your ESP";
+  return trimmed.length > 0 ? trimmed : "Your ESP";
+}
+
+function midSentenceEsp(esp) {
+  return esp === "Your ESP" ? "your ESP" : esp;
 }
 
 function normaliseStages(stages) {

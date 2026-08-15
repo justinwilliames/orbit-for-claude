@@ -19,7 +19,51 @@ On top of a plain template-brain repo (see `template-brain`) sits an optional de
 
 ---
 
+## Before the first build: decide what the graph is allowed to see
+
+Do this **first**, not after the first ugly graph. A `.graphifyignore` at the repo root, same
+syntax as `.gitignore`:
+
+```
+# Renders and previews — output, not knowledge.
+build/compiled/
+build/preview/
+build/states/
+graphify-out/
+node_modules/
+
+# Process scratch: review transcripts, working notes, dated audit folders.
+reviews/
+.worklog/
+
+# Binaries carry no edges worth indexing.
+*.png
+*.jpg
+*.pdf
+```
+
+This is the single highest-leverage thing in the whole graph layer, and it is worth more than
+any query you will ever run. A brain that indexes its own renders and review transcripts
+produces a graph that is mostly process scratch — the knowledge is in there, outnumbered. Worse,
+graph builders stop emitting the browsable `graph.html` past a few thousand nodes, so an
+over-inclusive index does not degrade loudly; it just quietly stops drawing, and nobody notices
+for weeks because nobody was looking at a picture that had stopped existing.
+
+The ignore list and the retention policy are the same list twice. `template-brain`'s
+`scripts/retention-policy.tsv` already names the generated paths, and `.gitignore` already keeps
+them out of git — anything on either of those lists belongs here too. Keep them in step; a path
+that earns its way into one has just earned its way into the others.
+
+The exception, both ways: `evidence/` **is** committed, and it **is** ignored by the graph.
+Screenshots of live platform state are records worth keeping and edges worth nothing.
+
 ## How indexing works
+
+Graphify is an open-source knowledge-graph builder that runs as a Claude Code skill; install it
+the way you install any other skill, and confirm it is loaded before relying on it. If the user
+does not have it, say so plainly rather than writing instructions for a tool that will not run —
+a brain works fine without a graph, and §"the honesty rule" below says most of them should start
+that way.
 
 From the repo root, run the graph build in **Claude Code skill mode — no API key needed**:
 
@@ -48,6 +92,18 @@ Grep finds a *string*; the graph surfaces *structure*. Read `GRAPH_REPORT.md` fo
 - **Hyperedges** — group relationships (this PRD + these three specs + this template form one unit).
 
 Because links become edges, the graph is only as good as the repo's cross-linking discipline (`template-brain`). Under-linked files produce a thin, useless graph — fix the links, not the graph.
+
+**Read the node count before you read the report.** One number tells you whether the graph is
+worth trusting: what share of its nodes are the brain — `knowledge/`, `programs/`, `templates/`
+— versus process scratch. A graph where the core is a minority is not a graph of your brain, it
+is a graph of your build output with your brain somewhere inside it. The fix is always the
+ignore list, never the query.
+
+**The graph indexes prose, not enforcement.** It will happily tell you which files cluster
+around the master template. It cannot tell you whether a send drifted from it — that is
+`build/drift-check.sh`, and no amount of graph structure substitutes for the gate. Read
+`template-brain`'s "comprehension ≠ enforcement" rule as binding here too: a well-indexed brain
+whose gate is UNENFORCED is a searchable record of an unchecked system.
 
 ---
 

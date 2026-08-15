@@ -27,6 +27,8 @@
  * rule; it asks the adapter.
  */
 
+import crypto from "node:crypto";
+
 import { z } from "zod";
 
 import {
@@ -135,6 +137,123 @@ async function runEspTool(fn, withWidget = false) {
     }
     throw err;
   }
+}
+
+/* -------------------------------------------------------------------------- *
+ * Push verification — never trust the 2xx.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Collapse the differences an ESP is allowed to introduce without changing the
+ * email: whitespace between tags, and line endings. Anything that survives this
+ * and still differs is a CONTENT change — the ESP rewrote your markup, or the
+ * write did not land.
+ */
+function normaliseForCompare(html) {
+  return String(html)
+    .replace(/\r\n/g, "\n")
+    .replace(/>\s+</g, "><")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(String(value), "utf8").digest("hex");
+}
+
+/**
+ * Re-fetch a just-pushed template and compare it to what we sent.
+ *
+ * Four verdicts, and the distinction between the last two is the whole point:
+ *
+ *   exact         byte-identical. The only verdict that is proof.
+ *   normalised    identical once inter-tag whitespace is collapsed. The ESP
+ *                 reformatted; your content is intact.
+ *   differs       the stored body is not your body. Named causes first, because
+ *                 "differs" alone sends people looking at the wrong layer.
+ *   unverifiable  the ESP will not return stored HTML (Mailchimp), or the read
+ *                 failed. NOT a pass — there is simply no evidence either way,
+ *                 and saying so is the honest answer.
+ *
+ * Never throws: a failed readback must not turn a SUCCESSFUL write into an
+ * error response. The write happened; what is unknown is what landed.
+ */
+async function verifyPush({ p, config, pushed, html }) {
+  const id = pushed?.id ?? null;
+  if (!id) {
+    return {
+      verdict: "unverifiable",
+      verified: false,
+      note:
+        "The push returned no template id, so there is nothing to read back. Treat the write as unconfirmed.",
+    };
+  }
+
+  let stored = null;
+  let readError = null;
+  try {
+    stored = await dispatch(p, "getTemplate", { config, template_id: id });
+  } catch (err) {
+    readError = err?.detail ?? err?.message ?? String(err);
+  }
+
+  const storedHtml = stored?.html ?? null;
+  if (typeof storedHtml !== "string" || storedHtml.length === 0) {
+    return {
+      verdict: "unverifiable",
+      verified: false,
+      template_id: id,
+      sent_sha256: sha256(html),
+      sent_bytes: Buffer.byteLength(html, "utf8"),
+      note: readError
+        ? `The readback failed (${readError}), so nothing here confirms what was stored. The write itself was accepted.`
+        : `${p} does not return stored template HTML on read, so this push cannot be verified from the API. ` +
+          "Your repo copy stays the canonical one; confirm the render with a real test send.",
+    };
+  }
+
+  return { template_id: id, ...compareTemplateBodies(html, storedHtml) };
+}
+
+/**
+ * The verdict itself, kept pure so it can be exercised without an ESP.
+ * Exported for the test suite.
+ */
+export function compareTemplateBodies(sentHtml, storedHtml) {
+  const sentSha = sha256(sentHtml);
+  const storedSha = sha256(storedHtml);
+  const exact = sentSha === storedSha;
+  const normalised =
+    !exact && normaliseForCompare(sentHtml) === normaliseForCompare(storedHtml);
+
+  const base = {
+    sent_sha256: sentSha,
+    stored_sha256: storedSha,
+    sent_bytes: Buffer.byteLength(String(sentHtml), "utf8"),
+    stored_bytes: Buffer.byteLength(String(storedHtml), "utf8"),
+  };
+
+  if (exact) {
+    return { ...base, verdict: "exact", verified: true, note: "Byte-identical readback." };
+  }
+  if (normalised) {
+    return {
+      ...base,
+      verdict: "normalised",
+      verified: true,
+      note:
+        "The stored body differs only in whitespace between tags — the ESP reformatted it and your content is intact.",
+    };
+  }
+  return {
+    ...base,
+    verdict: "differs",
+    verified: false,
+    note:
+      "The stored body is NOT what was sent. Most likely, in order: the ESP inlined your CSS on write, " +
+      "it rewrote links for click tracking, or the update was applied to a different template. " +
+      `Byte delta ${base.stored_bytes - base.sent_bytes}. Read the stored template and diff it before sending anything from it.`,
+  };
 }
 
 /**
@@ -511,7 +630,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Push Template (write)",
       description:
-        "Create or update an email template on the target ESP. Pass template_id to update an existing template, omit it to create one; returns { id, action: \"created\"|\"updated\", url }. This is a WRITE path, kept separate from the read tools on purpose — approving a read must never silently approve a write. Klaviyo additionally renders server-side on push (the created template can be proofed via its render endpoint, since Klaviyo has no test-send). {unsupported} where the ESP has no public template CRUD: Customer.io (author in-app; send inline proofs via orbit_esp_send_test instead). Note for Mailchimp: pushes accept HTML normally, but reads return metadata only — keep your canonical HTML in your own repo / template brain.",
+        "Create or update an email template on the target ESP, then READ IT BACK and compare hashes. Pass template_id to update, omit to create; returns { id, action, url, verification }. A 2xx means the request was accepted, not that your HTML is what got stored — so verification re-fetches and returns: exact (byte-identical sha256, the only verdict that is proof), normalised (differs only in whitespace between tags — reformatted, content intact), differs (stored body is NOT yours: usually CSS inlining, link wrapping, or a write applied elsewhere — diff before sending), or unverifiable (no stored HTML, so no evidence either way). verify:false skips the readback. WRITE path, kept separate from the read tools on purpose. Klaviyo renders server-side on push (proof via its render endpoint; no test-send). {unsupported} where an ESP has no public template CRUD: Customer.io (author in-app; proof via orbit_esp_send_test). Mailchimp reads return metadata only, so every Mailchimp push is unverifiable — keep canonical HTML in your own repo / template brain.",
       inputSchema: {
         platform: platformArg,
         name: z
@@ -539,13 +658,19 @@ export const ESP_TOOL_DEFINITIONS = [
           .max(MAX_SHORT_STRING)
           .optional()
           .describe("Provide to UPDATE an existing template; omit to CREATE."),
+        verify: z
+          .boolean()
+          .optional()
+          .describe(
+            "Read the template back after writing and compare hashes. Defaults to TRUE — a 2xx says the request was accepted, not that your bytes are what got stored."
+          ),
       },
     },
-    handler: async ({ platform, name, html, subject, preheader, template_id } = {}) =>
+    handler: async ({ platform, name, html, subject, preheader, template_id, verify } = {}) =>
       runEspTool(async () => {
         const config = getRuntimeConfig();
         const p = resolvePlatform(platform, config);
-        return dispatch(p, "pushTemplate", {
+        const pushed = await dispatch(p, "pushTemplate", {
           config,
           name,
           html,
@@ -553,6 +678,8 @@ export const ESP_TOOL_DEFINITIONS = [
           preheader,
           template_id,
         });
+        if (verify === false) return pushed;
+        return { ...pushed, verification: await verifyPush({ p, config, pushed, html }) };
       }),
   },
 

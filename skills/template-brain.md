@@ -48,10 +48,11 @@ A clean, LLM-legible top level. Roles matter more than exact names; this is the 
 | `CONVENTIONS.md` | File/folder rules, the frontmatter spec, the content-shape rules for retrieval. | The style guide that keeps every file machine-parseable. |
 | `programs/<stage>/<slug>/` | One folder per program: `prd.md` plus sub-specs (`copy-spec.md`, `email-build-spec.md`, `technical-spec.md`). | Per-program knowledge. `<stage>` is a small fixed set of lifecycle phases; `<slug>` is the kebab-cased program name. |
 | `knowledge/` | Cross-program knowledge: design rules, audience/engagement-state definitions, naming conventions, a decisions log, a workflow-learnings log, a verified-claims file. | The reusable doctrine every program draws on. |
-| `templates/` | Canonical email source (and any other channel source). | The one place real template markup lives. |
+| `templates/` | Canonical email source, headed by `master-template.html` — the module library, marked up with `<!-- MODULE: … -->` boundaries. | The one place real template markup lives, and the one file the drift gate diffs every send against. |
 | `reference/` | Slower-moving reference: OKRs, an impact tracker, image-gen guidelines, a metrics glossary. | Context that frames the work but isn't a program. |
 | `build/` | The compile/QA machinery: master template, module library, generator scripts, the ship gate, worklogs. | The engine room. |
 | `assets/` | Images, icons, brand source files, referenced by relative path. | Binary assets, kept out of the markdown. |
+| `evidence/` | Captures of live platform state — ESP dashboard screenshots, exported reports. | Never regenerable, never auto-pruned. The audit trail you cannot rebuild at any price. |
 | `reviews/` | Dated historical design/QA review records. | The audit trail of how the system got hardened. |
 | `.claude/skills/` | The repo's own write-protocol skill. | Ships "how to write to me correctly" inside the repo. |
 | `graphify-out/` | The derived knowledge-graph index. **Git-ignored, regenerable.** | Downstream artifact only. |
@@ -133,11 +134,32 @@ This converts "don't make up numbers" into an auditable guardrail — exactly wh
 
 The brain feeds a compile + QA gate; it does not replace it. End to end:
 
-1. **Gate the source** — `orbit_generate_brain_gate` produces the offline `build/gate.sh`: compile the source, resolve every templating branch off one variable map (resolve, never strip), byte-based clip check (`wc -c`, master exempt by name), mobile no-horizontal-overflow at a true emulated viewport, orphan check, a real axe-core accessibility pass with an email-specific allowlist, CTA parity (same visible label → one destination), and the master↔module drift diff. Its header states its honest scope: this is the layout/structure gate only.
+1. **Gate the source** — `orbit_generate_brain_gate` produces `build/gate.sh`, plus `build/drift-check.sh` and a seeded `build/drift-allowlist.tsv`. Compile and resolve every templating branch upstream (resolve, never strip — `orbit_liquid_state_matrix` with `write_states_to` emits the branch files), then run the gate once per branch. Seven stages: precondition, byte-clip (`wc -c`, master exempt by basename), overflow past the declared container, orphan links, CTA parity (same visible label → one destination), **module drift** against the master, and **Gmail-first** (constructs the dominant client will not render are dropped, not degraded). It also runs `build/check-claims.sh` when `orbit_init_verified_claims` has wired it. Its header states its honest scope: this is the layout/structure gate only — no emulated viewport, no accessibility engine, no render truth. Those live in step 4, on purpose.
 2. **Push the compiled HTML to the ESP from a file** — never paste a huge body inline.
-3. **Verify by readback + hash** — never trust the ESP's 2xx; re-fetch the stored body and confirm a byte or hash match.
+3. **Verify by readback + hash** — never trust the ESP's 2xx. `orbit_esp_push_template` does this for you by default: it re-fetches the stored template and returns a verdict of `exact`, `normalised`, `differs` or `unverifiable`. Only `exact` is proof. `unverifiable` is not a pass — it means the ESP will not return stored HTML (Mailchimp) and there is no evidence either way.
 4. **Run the render/inbox QA gate on the exact readback** — `orbit_qa_email` + `orbit_render_email_preview`. This is where render truth lives; the offline gate is necessary, not sufficient.
 5. **Record the new template** in the owning program's spec + changelog via the write protocol below.
+
+### The six laws the gate enforces
+
+The gate is not a linter. Each stage exists because a specific class of defect ships through a green review otherwise.
+
+| Law | Why it is mechanical and not a judgement call |
+|---|---|
+| **Module drift is a FAIL** | An "eyeball pass" is how a module ships missing the one element that made it that module — every layout check stays green, because nothing was comparing it to anything. Divergence is legal only as a line in `drift-allowlist.tsv` **citing a ruling**; an entry with no ruling fails too, because an exemption nobody wrote a reason for is the check quietly switched off, one line at a time. |
+| **Compose from the master, never from memory** | Same defect, caught earlier: a module label the master does not have was retyped, not copied. The library is the vocabulary; a send cannot invent a word. |
+| **Gmail-first single tier** | A treatment that only survives in a minority client is a treatment most of the list sees broken. Anything unsupported is **dropped, not degraded**. The one documented exemption is font fallbacks — a webfont is fine as long as a generic family is declared behind it. |
+| **Verify the push by readback** | A 2xx means the request was accepted. It says nothing about what the ESP stored, and CSS inlining or link rewriting on write is silent. |
+| **A figure quoted as a statistic needs a receipt** | See the verified-claims pattern above. No receipt → drop the module, never a placeholder, never an extrapolation. |
+| **Render gate before any send** | The offline gate reads a document. Only a render reads the world. |
+
+### Retention — what a brain is allowed to keep
+
+`orbit_bootstrap_brain` also writes `RETENTION.md`, `scripts/retention-policy.tsv`, `scripts/install-hooks.sh` and `scripts/prune-audit.sh`. Three rules:
+
+- **A render never enters git.** The commit hook rejects any staged file ≥1MB and anything under the generated paths. If it blocks you, regenerate — `--no-verify` is not the fix.
+- **"Regenerable" must be proved, not assumed.** The auditor deletes only when the file has aged out, is referenced by nothing, *and* a policy recipe matches it whose source still exists. A recipe whose input was deleted two refactors ago is a sentence about the past, not a way back. Even `--apply --yes` uses `git rm`, so removals are staged for review.
+- **Captures of live platform state are evidence.** A screenshot of an ESP dashboard cannot be re-taken — the dashboard moved. Those paths are marked `EVIDENCE` and are never auto-pruned at any age. Keep them under `evidence/`.
 
 ---
 
@@ -163,9 +185,23 @@ Run this before any write to the brain is "done":
 
 ## When to use each tool
 
-- **Standing up a new brain?** `orbit_bootstrap_brain` — generates the whole layout, the four rules worded for the user's named ESP, `CONVENTIONS.md`, the stage folders, and the `knowledge/` stubs.
+- **Standing up a new brain?** `orbit_bootstrap_brain` — generates the whole layout, the four rules worded for the user's named ESP, `CONVENTIONS.md`, the stage folders, the `knowledge/` stubs, `templates/README.md` (the master-is-canon contract), and the retention policy with its commit hook and prune auditor.
+- **Turning what they already send into a design system?** `orbit_learn_email_template` on a real compiled email (or `orbit_import_design` from Figma/PDF) derives the module catalogue and brand tokens. Then **write the assembled master into the repo as `templates/master-template.html`** — see the seam below. This is the step people skip, and skipping it is what leaves the drift law unenforced forever.
 - **Adding a program?** `orbit_scaffold_brain_program` — one `programs/<stage>/<slug>/` folder with a `prd.md` stub (`status: backlog`, `human_approved: false`) and pre-cross-linked spec siblings. The stub is what makes the program exist to any agent.
-- **Wiring the numbers guardrail?** `orbit_init_verified_claims` — the claims whitelist plus the build check that fails on any unlisted figure.
-- **Wiring the ship gate?** `orbit_generate_brain_gate` — `build/gate.sh` parameterised to the user's limits and templating branches.
+- **Wiring the numbers guardrail?** `orbit_init_verified_claims` — the claims whitelist plus the build check that fails on any unlisted figure. The gate runs it automatically once it exists.
+- **Wiring the ship gate?** `orbit_generate_brain_gate` — `build/gate.sh`, `build/drift-check.sh` and the seeded `build/drift-allowlist.tsv`, parameterised to the user's limits, container width and master path.
+
+### The seam: getting the master onto disk
+
+Ingestion saves to Orbit's own library; the brain is a separate repo on the user's filesystem. Nothing crosses that boundary on its own — but **no new tool is needed**, because the two parameters that cross it already exist. Most people miss this and hand-write the file, so state it explicitly:
+
+1. `orbit_learn_email_template` on their real email → a `template_id`.
+2. `orbit_build_email_from_template` with that `template_id`, **every** module selected, and `output_dir` set to the brain's `templates/` directory. Selecting every module is what makes the output a library rather than a send. The assembler emits `<!-- MODULE: … -->` markers; those markers are the boundaries the drift check reads.
+3. Rename the written file to `master-template.html` — or skip the rename and pass `master_template: "templates/<the-name-it-wrote>.html"` to `orbit_generate_brain_gate` in the next step. Either works; the gate does not care what the file is called, only that you tell it.
+4. Run `orbit_generate_brain_gate`. Stage 5 flips from UNENFORCED to enforced on the very next run, and the gate's exit code goes from 3 to 0.
+
+**Do this in the same session as the bootstrap.** Until it happens the gate reports `PASS WITH WARNINGS` and exits 3 on every single run — deliberately loud, because a law nobody wired is not a law. But a warning that fires forever is a warning people learn to skip, and the whole point of the brain is that the checking survives the enthusiasm.
+
+If the user has no email clean enough to learn from, say so plainly and let them hand-write a master from `orbit://templates/email/base`'s module order. A low-confidence import promoted to canonical master is worse than no master: the gate will then enforce a shape nobody verified, and every real send will fail against it.
 
 For the graph layer on top of the repo, load `brain-graphify-setup`.

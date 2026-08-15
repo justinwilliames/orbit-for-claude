@@ -41,6 +41,7 @@ Default response shape for this skill:
 - Do not infer component semantics with false certainty when the design is ambiguous.
 - Flag non-email-safe layout patterns explicitly.
 - If a section cannot fit the canonical component taxonomy safely, mark it as low-reuse or `raw_html`.
+- **Single-tier, not graceful degradation.** A design translates into email at the level the dominant webmail client supports, and anything below that line is dropped rather than degraded. Flexbox, grid, absolute positioning, inline SVG, CSS custom properties and negative margins have no fallback worth shipping — a treatment two-thirds of the list sees broken is not a treatment. Say so at the component-map stage, while it is still a design conversation, rather than at the gate when someone is trying to send.
 
 ## Componentization Rules
 
@@ -58,3 +59,13 @@ When producing a componentization-ready answer, include:
 - Reuse candidates
 - Contract considerations
 - Approval checkpoint
+
+---
+
+## After approval: the module library becomes a file
+
+An approved component map is a plan. What makes it a design system is one document holding **one of every module**, marked up so the boundaries are machine-readable, living in the user's repo.
+
+Once the map is approved, assemble the complete set — not a subset, not a sample send — and write it to `templates/master-template.html` in their template brain. The assemblers emit `<!-- MODULE: … -->` markers around each block; `build/drift-check.sh` reads those markers and fails any send whose module has drifted from the master.
+
+From then on the rule is one direction only: **change the master, then recompose the sends.** A module edited in a send and not in the master is drift, and drift is a gate failure rather than a judgement call. Load `template-brain` for the repo, the gate and the allowlist that records the divergences someone genuinely ruled on.

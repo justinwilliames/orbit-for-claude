@@ -55,3 +55,20 @@ When producing an ingestion-ready answer, include:
 - Imported artifacts
 - Structural notes and warnings
 - Handoff to the next Orbit step
+
+---
+
+## Where this ends up: the brain
+
+Ingestion is step 2 of the flagship path, not the destination. The point of reading someone's existing email is to derive **their** design system rather than hand them a vendor's, and a design system only becomes enforceable once it is a file on disk that a gate can diff against.
+
+So finish the chain in the same session:
+
+1. Ingest — this skill (`orbit_import_design` for Figma/PDF, `orbit_learn_email_template` when they have compiled HTML, which is always the higher-fidelity source).
+2. Componentize — `design-to-email-componentization`, into modules with stable contracts.
+3. Assemble the **complete** module set into one document and write it to `templates/master-template.html` in their brain repo. Both assemblers emit `<!-- MODULE: … -->` markers; those markers are the module boundary every downstream check reads.
+4. `orbit_generate_brain_gate` — the drift stage is UNENFORCED until step 3 exists, and says so on every run.
+
+An import that stops at "here are your components" leaves the user with a nicer description of the same drift they came in with. Load `template-brain` for the repo this feeds.
+
+**A PDF import is not a design system.** PDF is reference-mode only, and it is honest to say the derived structure is a reading rather than a source. Where the user has the sending HTML, use it — a low-confidence import promoted to canonical master is worse than no master, because the gate will then enforce a shape nobody verified.

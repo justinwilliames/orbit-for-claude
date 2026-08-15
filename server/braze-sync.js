@@ -184,6 +184,13 @@ export async function syncBrazeEmailTemplate({
     template_name: templateName ?? loaded?.item?.title ?? spec.title,
     subject: spec.subject_line,
     preheader: spec.preheader,
+    // Never let Braze rewrite the body on the way in. This repo asserts the
+    // mandate in server/html-checks.js and server/client-sim.js, and the
+    // inliner it warns about hoists a table out of any anchor wrapping it —
+    // shipping a CTA that looks right and does nothing. The flag landed on the
+    // ESP adapter first and missed the two paths the tool descriptions
+    // actually route people to, which is every path that matters.
+    should_inline_css: false,
     body: html,
     description: description ?? `Orbit email template ${spec.title}`
   };

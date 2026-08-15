@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SERVER_DIR = process.env.ORBIT_TEST_SERVER_DIR
@@ -99,17 +99,22 @@ const CLEAN_EMAIL = `<mjml>
 </mjml>`;
 
 /** Run a generated script, returning { code, stdout, stderr } without throwing. */
+/**
+ * Run a generated script and capture BOTH streams, whatever the exit code.
+ *
+ * The execFileSync form this replaced returned `stderr: ""` on success, so
+ * anything the gate wrote to stderr while exiting 0 was invisible to every
+ * assertion — including its own PASS WITH WARNINGS verdict, which is the one
+ * line distinguishing "clean" from "green over a law that never ran". A test
+ * harness that can only see stderr on failure cannot test a warning at all.
+ */
 function runScript(script, args) {
-  try {
-    const stdout = execFileSync("bash", [script, ...args], { encoding: "utf8", stdio: "pipe" });
-    return { code: 0, stdout, stderr: "" };
-  } catch (err) {
-    return {
-      code: err.status ?? 1,
-      stdout: err.stdout?.toString() ?? "",
-      stderr: err.stderr?.toString() ?? "",
-    };
-  }
+  const res = spawnSync("bash", [script, ...args], { encoding: "utf8" });
+  return {
+    code: res.status ?? 1,
+    stdout: res.stdout ?? "",
+    stderr: res.stderr ?? "",
+  };
 }
 
 /** Assert no "sophiie" (any case) appears in any file under `root`. */
@@ -143,11 +148,21 @@ describe("orbit_bootstrap_brain — repo scaffolder", () => {
       "programs/onboarding/.gitkeep",
       "programs/engagement/.gitkeep",
       "programs/retention/.gitkeep",
-      "templates/.gitkeep",
+      // templates/ gets a CONTRACT, not a .gitkeep: the drift law needs a
+      // named master on disk, and a placeholder file says nothing about which
+      // file that is.
+      "templates/README.md",
       "build/.gitkeep",
       "assets/.gitkeep",
       "reviews/.gitkeep",
       "reference/.gitkeep",
+      "evidence/.gitkeep",
+      // Retention — a render never enters git, "regenerable" must be proved,
+      // and captures of live platform state are never auto-pruned.
+      "RETENTION.md",
+      "scripts/retention-policy.tsv",
+      "scripts/install-hooks.sh",
+      "scripts/prune-audit.sh",
     ]);
 
     // The four governing rules and the ESP-derived framing must be present.
@@ -165,16 +180,24 @@ describe("orbit_bootstrap_brain — repo scaffolder", () => {
     assert.ok(res.stages.includes("welcome") && res.stages.includes("win-back"));
   });
 
-  test("refuses to overwrite on a second run (0 created, all skipped)", () => {
+  test("refuses to overwrite on a second run (0 created, nothing clobbered)", () => {
     const root = tmpRoot("bootstrap-idempotent");
     const first = bootstrapBrain({ path: root, esp_name: "Braze" });
     const second = bootstrapBrain({ path: root, esp_name: "Braze" });
     assert.equal(second.created.length, 0, "a re-run creates nothing");
+    // Two write policies, both non-destructive, and the distinction matters.
+    // USER content (docs, the retention policy) is `skipped` — never touched.
+    // GENERATED scripts (the hook installer, the prune auditor) are digest-
+    // checked and come back `unchanged` when they are byte-identical to what
+    // we would write. Asserting only on `skipped` would fail the moment a
+    // generated script joined the bootstrap, which is exactly what happened.
     assert.equal(
-      second.skipped.length,
+      second.skipped.length + second.unchanged.length,
       first.created.length,
-      "every previously-created file is reported skipped, never clobbered"
+      "every previously-created file is accounted for, never clobbered"
     );
+    assert.equal(second.upgraded.length, 0, "an unchanged generated script is not an upgrade");
+    assert.equal(second.hand_edited.length, 0, "nothing Orbit wrote reads as hand-edited");
   });
 
   test("generated output is sanitised (no 'sophiie', neutral ACME placeholder)", () => {
@@ -284,6 +307,10 @@ describe("orbit_init_verified_claims — verified-claims + check-claims.sh", () 
     // Stripping tags without first stripping <style> turned #111111 into the
     // claim "111111", and `tr -d ','` turned "300,400,500,700" into
     // "300400500700" — so this gate used to fail every real email it saw.
+    // The law is NOT ARMED until at least one receipt exists — an empty table
+    // cannot enforce "every figure needs a source", it can only refuse every
+    // number in every email. Declare one, then test enforcement.
+    fs.appendFileSync(claims, "\n| 4,812 active accounts | 4812 | 4,800 | warehouse | 2026-08-15 |\n", "utf8");
     const clean = compileMjml(root, "clean", CLEAN_EMAIL);
     const pass = runScript(script, [clean, claims]);
     assert.equal(pass.code, 0, `expected PASS, got:\n${pass.stdout}${pass.stderr}`);
@@ -344,9 +371,20 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     assert.equal(first.clip_kb, 102, "default Gmail clip");
     assert.equal(first.mobile_width, 375, "default mobile viewport");
     assert.equal(first.container_width, 600, "default container width");
+    assert.equal(first.master_template, "templates/master-template.html", "default master path");
+    assert.equal(first.gmail_first, true, "single-tier enforcement is on by default");
     const second = generateBrainGate({ path: root });
     assert.equal(second.created.length, 0);
-    assert.deepEqual(second.unchanged.map((p) => path.relative(root, p)), ["build/gate.sh"]);
+    assert.deepEqual(second.unchanged.map((p) => path.relative(root, p)).sort(), [
+      "build/drift-check.sh",
+      "build/gate.sh",
+    ]);
+    // The allowlist is USER content — a regenerate reports it skipped, never
+    // rewritten. Every line in it is a ruling someone made, and regenerating
+    // the gate must not be able to erase the record of why.
+    assert.deepEqual(second.skipped.map((p) => path.relative(root, p)), [
+      "build/drift-allowlist.tsv",
+    ]);
   });
 
   test("a regenerate with different parameters lands instead of silently no-opping", () => {
@@ -448,8 +486,23 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     // email, which is a warning nobody reads twice.
     const clean = compileMjml(root, "clean", CLEAN_EMAIL);
     const ok = runScript(script, [clean]);
-    assert.equal(ok.code, 0, `expected a clean PASS, got:\n${ok.stdout}${ok.stderr}`);
-    assert.doesNotMatch(ok.stdout, /FAIL|WARN/);
+    // Exit 3, not 0: this gate root has no master template, so module-drift is
+    // UNENFORCED. A law nobody ran must not share an exit code with a law that
+    // passed — the gate's own documented `|| exit 1` recipe is the consumer
+    // that could not tell them apart.
+    assert.equal(ok.code, 3, `expected PASS WITH WARNINGS, got:\n${ok.stdout}${ok.stderr}`);
+    assert.doesNotMatch(ok.stdout, /FAIL/);
+    // A compiler's default webfont <link> is the documented FONT exemption.
+    // Failing it would fail every correctly-compiled email in the repo, and a
+    // stage that fires on everything is a stage nobody reads.
+    assert.match(ok.stdout, /\[gmail-first\] PASS/);
+
+    // But a bare brain is NOT a clean pass. Two laws have no files to enforce
+    // against here, and the gate has to say so on stdout AND in its verdict —
+    // a green line over a law that never ran is the defect these stages exist
+    // to prevent.
+    assert.match(ok.stdout, /\[module-drift\] UNENFORCED/);
+    assert.match(ok.stderr, /PASS WITH WARNINGS \(exit 3\)/);
 
     // Known-bad: two CTAs sharing a label but not a destination, plus a
     // placeholder href. The gate used to pass both, because awk RS="<a "
@@ -488,6 +541,278 @@ describe("orbit_generate_brain_gate — build/gate.sh", () => {
     assert.notEqual(absent.code, 0);
     assert.match(absent.stderr, /NOT CHECKED/);
     assert.doesNotMatch(absent.stdout, /PASS/, "no check may report PASS on an unread document");
+  });
+
+  // ── module drift + compose-from-the-master (laws 1 and 2) ──────────
+  //
+  // These two are the reason the gate exists at all. Every other stage
+  // measures a document against a constant; these measure it against the
+  // library, which is the only check that can catch "it looks right".
+
+  const MASTER = [
+    "<!doctype html><html><body>",
+    '<table role="presentation" width="600">',
+    "<!-- MODULE: hero -->",
+    '<tr><td style="padding:32px" align="center">',
+    '<span style="height:4px;width:48px;background-color:#7c5cff"></span>',
+    '<h1 style="font-size:28px">Headline</h1>',
+    "</td></tr>",
+    "<!-- /MODULE: hero -->",
+    "<!-- MODULE: cta -->",
+    '<tr><td style="padding:24px" align="center">',
+    '<a href="https://acme.test/start" style="padding:14px 28px">Get started</a>',
+    "</td></tr>",
+    "<!-- /MODULE: cta -->",
+    "</table></body></html>",
+  ].join("\n");
+
+  /** A send composed from the master: same skeletons, different copy + hrefs. */
+  const composedFrom = (master) =>
+    master
+      .replace("Headline", "Your account is ready")
+      .replace("https://acme.test/start", "https://acme.test/onboarding")
+      .replace("Get started", "Finish setup");
+
+  function driftFixture(name) {
+    const root = tmpRoot(name);
+    generateBrainGate({ path: root });
+    fs.mkdirSync(path.join(root, "templates"), { recursive: true });
+    fs.writeFileSync(path.join(root, "templates", "master-template.html"), MASTER, "utf8");
+    const write = (file, html) => {
+      const p = path.join(root, file);
+      fs.writeFileSync(p, html, "utf8");
+      return p;
+    };
+    return { root, drift: path.join(root, "build", "drift-check.sh"), write };
+  }
+
+  test("a send composed from the master passes; copy and hrefs are free to change", () => {
+    const { drift, write } = driftFixture("drift-clean");
+    const res = runScript(drift, [write("send.html", composedFrom(MASTER))]);
+    assert.equal(res.code, 0, `${res.stdout}${res.stderr}`);
+    assert.match(res.stdout, /PASS — 2 module\(s\) match the master/);
+  });
+
+  test("a module missing one element is a FAIL, not a judgement call", () => {
+    const { drift, write } = driftFixture("drift-eyebrow");
+    // The gradient eyebrow disappears from the hero. Every layout check stays
+    // green — the email is still valid, still under the clip limit, still has
+    // no orphan link. Only a comparison against the master can see it.
+    const send = composedFrom(MASTER).replace(
+      '<span style="height:4px;width:48px;background-color:#7c5cff"></span>\n',
+      ""
+    );
+    const res = runScript(drift, [write("send.html", send)]);
+    assert.equal(res.code, 1);
+    assert.match(res.stderr, /FAIL \[hero\] — drifted from the master/);
+  });
+
+  test("a module the master does not have was composed from memory", () => {
+    const { drift, write } = driftFixture("drift-memory");
+    const send = composedFrom(MASTER).replace(
+      "<!-- MODULE: cta -->",
+      "<!-- MODULE: testimonial -->\n<tr><td>Great product.</td></tr>\n<!-- /MODULE: testimonial -->\n<!-- MODULE: cta -->"
+    );
+    const res = runScript(drift, [write("send.html", send)]);
+    assert.equal(res.code, 1);
+    assert.match(res.stderr, /FAIL \[testimonial\] — no such module in the master/);
+  });
+
+  test("an allowlist entry with no ruling fails; one that cites a ruling passes", () => {
+    const { root, drift, write } = driftFixture("drift-allowlist");
+    const send = composedFrom(MASTER).replace(
+      '<span style="height:4px;width:48px;background-color:#7c5cff"></span>\n',
+      ""
+    );
+    const file = write("send.html", send);
+    const allowlist = path.join(root, "build", "drift-allowlist.tsv");
+
+    // The failure names the exact skeleton hash — pinning one shape is the
+    // point. A blanket "this module may differ" is the check switched off.
+    const first = runScript(drift, [file]);
+    const hash = /skeleton ([0-9a-f]{12})/.exec(first.stderr)?.[1];
+    const masterHash = /master ([0-9a-f]{12})/.exec(first.stderr)?.[1];
+    assert.ok(hash && masterHash, `expected both hashes in:\n${first.stderr}`);
+
+    // TODO is not a ruling. An exemption nobody wrote a reason for is the
+    // check quietly switched off, one line at a time.
+    fs.appendFileSync(allowlist, `hero\t${hash}\t${masterHash}\tTODO\tlooked fine\n`, "utf8");
+    const unruled = runScript(drift, [file]);
+    assert.equal(unruled.code, 1);
+    assert.match(unruled.stderr, /allowlisted with no ruling/);
+
+    // The same divergence, with a decision behind it, is legal.
+    fs.writeFileSync(
+      allowlist,
+      `hero\t${hash}\t${masterHash}\tdecisions-log.md#r12\teyebrow dropped for the plain variant\n`,
+      "utf8"
+    );
+    const ruled = runScript(drift, [file]);
+    assert.equal(ruled.code, 0, `${ruled.stdout}${ruled.stderr}`);
+    assert.match(ruled.stdout, /ALLOWED \[hero\].*decisions-log\.md#r12/);
+  });
+
+  test("an unmarked document is NOT CHECKED, never a pass", () => {
+    const { drift, write } = driftFixture("drift-unmarked");
+    const send = composedFrom(MASTER).replace(/<!-- \/?MODULE:[^>]*-->/g, "");
+    const res = runScript(drift, [write("send.html", send)]);
+    assert.equal(res.code, 2);
+    assert.match(res.stderr, /NOT CHECKED/);
+    assert.doesNotMatch(res.stdout, /PASS/);
+  });
+
+  // ── Gmail-first single tier (law 3) ────────────────────────────────
+
+  test("constructs the dominant client cannot render are dropped, not degraded", () => {
+    const root = tmpRoot("gate-gmail");
+    generateBrainGate({ path: root });
+    const script = path.join(root, "build", "gate.sh");
+
+    const cases = [
+      ["display:flex", '<div style="display:flex">x</div>', /flexbox \/ grid/],
+      ["inline svg", "<svg><circle/></svg>", /inline <svg>/],
+      ["css variables", '<div style="color:var(--ink)">x</div>', /CSS custom properties/],
+      ["position:absolute", '<div style="position:absolute">x</div>', /position:absolute/],
+      ["form controls", '<form><input name="a"></form>', /form controls/],
+      ["bare font stack", '<div style="font-family:Cooper">x</div>', /no generic fallback/],
+    ];
+
+    for (const [label, snippet, expected] of cases) {
+      const file = path.join(root, `${label.replace(/[^a-z]+/gi, "-")}.html`);
+      fs.writeFileSync(
+        file,
+        `<!doctype html><html><body><table width="600"><tr><td>${snippet}` +
+          `<a href="https://acme.test/x">Go</a></td></tr></table>` +
+          `<!-- padding to clear the precondition floor: ${"x".repeat(600)} -->` +
+          "</body></html>",
+        "utf8"
+      );
+      const res = runScript(script, [file]);
+      assert.equal(res.code, 1, `${label} must block the send:\n${res.stdout}${res.stderr}`);
+      assert.match(res.stdout, expected, `${label} must be named in the output`);
+    }
+  });
+
+  // ── The fail-to-fail suite ────────────────────────────────────────
+  //
+  // Every case below is a real exploit that scored a clean PASS on the first
+  // shipped version. They share one shape: the gate could not READ the document
+  // it was judging, and every stage is an absence check, so unreadable scored
+  // perfect. These are regression locks — if one of them ever passes again, the
+  // gate has gone back to lying.
+
+  // Real text, not a comment: the flattener now strips comments before the
+// balance scan, so comment padding no longer counts toward the length floor.
+const pad = `<div style="display:none">${"filler words ".repeat(70)}</div>`;
+  function gateFixture(name) {
+    const root = tmpRoot(name);
+    generateBrainGate({ path: root });
+    const write = (file, html) => {
+      const p = path.join(root, file);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, html, "utf8");
+      return p;
+    };
+    return { root, script: path.join(root, "build", "gate.sh"), write };
+  }
+
+  test("an unbalanced <style is NOT CHECKED, not three silent PASSes", () => {
+    const { script, write } = gateFixture("gate-unbalanced");
+    // The flattener used to return everything BEFORE the unclosed tag and throw
+    // the rest away, so overflow / orphan-link / CTA-parity measured a truncated
+    // document — and the oversized table and the dead href living in the
+    // discarded half all reported PASS, exit 0.
+    const file = write(
+      "unbal.html",
+      '<!doctype html><html><body><table width="600"><tr><td>hi</td></tr></table>' +
+        '<style>.a{color:red}<table width="1200"><tr><td><a href="#">Dead</a></td></tr></table>' +
+        `</body></html>${pad}`
+    );
+    const res = runScript(script, [file]);
+    assert.equal(res.code, 2);
+    assert.match(res.stderr, /NOT CHECKED — .*unbalanced <style or <script/);
+    assert.doesNotMatch(res.stdout, /PASS/);
+  });
+
+  test("a '>' inside an attribute value does not hide a CTA-parity collision", () => {
+    const { script, write } = gateFixture("gate-gt-attr");
+    // Slicing the opening tag at the first '>' folded the href into the visible
+    // label, so two buttons reading "shop now" and pointing at different
+    // destinations had different labels and never collided.
+    const file = write(
+      "gt.html",
+      '<!doctype html><html><body><table width="600"><tr><td>' +
+        '<a title="Save > 50%" href="https://a.test/one">shop now</a>' +
+        '<a title="Save > 50%" href="https://b.test/two">shop now</a>' +
+        `</td></tr></table></body></html>${pad}`
+    );
+    const res = runScript(script, [file]);
+    assert.equal(res.code, 1);
+    assert.match(res.stdout, /\[CTA-parity\] FAIL/);
+  });
+
+  test("gmail-first sees a tag whose attributes wrap onto the next line", () => {
+    const { script, write } = gateFixture("gate-wrapped-tag");
+    // Stage 6 grepped the raw file line by line while every other stage read a
+    // flattened buffer — so the attribute wrapping real compilers emit hid
+    // <script>, <svg> and <iframe> from the one stage hunting for them.
+    const file = write(
+      "wrap.html",
+      '<!doctype html><html><body><table width="600"><tr><td>hi</td></tr></table>\n' +
+        '<script\n  type="text/javascript">alert(1)</script>\n' +
+        `</body></html>${pad}`
+    );
+    const res = runScript(script, [file]);
+    assert.equal(res.code, 1);
+    assert.match(res.stdout, /\[gmail-first\] FAIL — 1 construct/);
+    // Every bullet keeps the line prefix, or a `grep '^gate:'` scrape drops the
+    // only actionable part of the failure.
+    assert.match(res.stdout, /^gate:\s+- <script>/m);
+  });
+
+  test("the clip exemption matches a name SEGMENT, not any substring", () => {
+    const { script, write } = gateFixture("gate-mastercard");
+    // "master" as a substring exempted mastercard-launch.html from the clip law
+    // entirely — and printed SKIP, so nothing said a law had been waived.
+    const file = write("mastercard-launch.html", `<!doctype html><html><body><table width="600"><tr><td>hi</td></tr></table></body></html>${pad.repeat(300)}`);
+    const res = runScript(script, [file]);
+    assert.equal(res.code, 1);
+    assert.match(res.stdout, /\[byte-clip\] FAIL/);
+  });
+
+  test("drift sees inside a downlevel-hidden conditional", () => {
+    const { drift, write } = driftFixture("drift-mso");
+    // The generic comment strip ate <!--[if mso]> … <![endif]--> whole, so
+    // deleting a module's entire Outlook fallback hashed identically.
+    const send = composedFrom(MASTER).replace(
+      '<span style="height:4px;width:48px;background-color:#7c5cff"></span>',
+      '<span style="height:4px;width:48px;background-color:#7c5cff"></span>'
+    );
+    const master = path.join(path.dirname(path.dirname(drift)), "templates", "master-template.html");
+    fs.writeFileSync(
+      master,
+      MASTER.replace("<h1", '<!--[if mso]><table width="600"><tr><td>fallback</td></tr></table><![endif]--><h1'),
+      "utf8"
+    );
+    const res = runScript(drift, [write("gutted.html", send)]);
+    assert.equal(res.code, 1, `${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, /FAIL \[hero\] — drifted/);
+  });
+
+  test("a rewriter's whitespace and attribute order are NOT drift", () => {
+    const { drift, write } = driftFixture("drift-stable");
+    // The skeleton hashed the raw style string and source attribute order, so
+    // any tool that rewrites markup — Orbit's own CSS inliner included — moved
+    // the hash on every module of every real exported email. A store you must
+    // rekey after each build is a store people stop keeping.
+    const rewritten = composedFrom(MASTER)
+      .replace(
+        '<tr><td style="padding:32px" align="center">',
+        '<tr><td align="center" style="padding: 32px;">'
+      )
+      .replace('<h1 style="font-size:28px">', '<h1 style="font-size: 28px;">');
+    const res = runScript(drift, [write("rewritten.html", rewritten)]);
+    assert.equal(res.code, 0, `a reformat must not read as drift:\n${res.stdout}${res.stderr}`);
   });
 
   test("a bootstrapped brain is an actual git repo", () => {
@@ -605,5 +930,141 @@ describe("Template brain — sanitisation + MCP tool wrapper", () => {
     const rerunPayload = JSON.parse(rerun.content[0].text);
     assert.equal(rerunPayload.status, "partial", "re-run over a populated repo is a partial (skips)");
     assert.equal(rerunPayload.created.length, 0);
+  });
+});
+
+// ── Retention: three rules, and the two that shipped unreachable ────────────
+//
+// This module had ZERO behavioural coverage on its first ship: the scripts were
+// asserted to EXIST and never executed — not even `bash -n`. Both of its
+// enforcement paths turned out to be broken, in ways an existence check cannot
+// see and a single run would have caught immediately.
+
+describe("retention — the commit gate and the prune auditor", () => {
+  function repo(name) {
+    const root = tmpRoot(name);
+    bootstrapBrain({ path: root });
+    const git = (...args) =>
+      spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+        cwd: root,
+        encoding: "utf8",
+      });
+    git("add", "-A");
+    git("commit", "-qm", "seed", "--no-verify");
+    return { root, git };
+  }
+
+  test("every generated script parses under the SYSTEM shell, not just node --check", () => {
+    // The globstar defect shipped green because nothing ever ran these files.
+    // `bash -n` is two seconds and would have caught a whole class of it.
+    const { root } = repo("retention-parse");
+    generateBrainGate({ path: root });
+    for (const rel of [
+      "build/gate.sh",
+      "build/drift-check.sh",
+      "build/check-claims.sh",
+      "scripts/install-hooks.sh",
+      "scripts/prune-audit.sh",
+    ]) {
+      const res = spawnSync("/bin/bash", ["-n", path.join(root, rel)], { encoding: "utf8" });
+      assert.equal(res.status, 0, `${rel} does not parse:\n${res.stderr}`);
+    }
+  });
+
+  test("the commit hook blocks an oversized render AND a generated path", () => {
+    const { root, git } = repo("retention-hook");
+    assert.equal(spawnSync("bash", [path.join(root, "scripts", "install-hooks.sh")], { cwd: root }).status, 0);
+
+    fs.mkdirSync(path.join(root, "design"), { recursive: true });
+    fs.writeFileSync(path.join(root, "design", "big.png"), Buffer.alloc(1024 * 1024 + 1));
+    git("add", "-f", "design/big.png");
+    const big = git("commit", "-qm", "big");
+    assert.notEqual(big.status, 0, "a >=1MB file must not commit");
+    assert.match(big.stderr, /BLOCKED design\/big\.png/);
+
+    git("reset", "-q");
+    // *.compiled.html is the one non-directory pattern in .gitignore, and the
+    // hook's case arm used to omit it — so .gitignore and RETENTION.md both
+    // promised a block the hook did not perform.
+    fs.writeFileSync(path.join(root, "page.compiled.html"), "<html></html>", "utf8");
+    git("add", "-f", "page.compiled.html");
+    const gen = git("commit", "-qm", "gen");
+    assert.notEqual(gen.status, 0, "a generated path must not commit");
+    assert.match(gen.stderr, /BLOCKED page\.compiled\.html/);
+  });
+
+  test("the auditor can actually delete — and only when regenerability is proved", () => {
+    const { root, git } = repo("retention-prune");
+    const audit = (...args) =>
+      spawnSync("/bin/bash", [path.join(root, "scripts", "prune-audit.sh"), ...args], {
+        cwd: root,
+        encoding: "utf8",
+      });
+
+    fs.mkdirSync(path.join(root, "design", "welcome", "renders"), { recursive: true });
+    fs.writeFileSync(path.join(root, "design", "welcome", "renders", "hero.png"), "png", "utf8");
+    git("add", "-f", "design/welcome/renders/hero.png");
+    spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "old", "--no-verify"], {
+      cwd: root,
+      env: { ...process.env, GIT_AUTHOR_DATE: "2026-01-01T00:00:00", GIT_COMMITTER_DATE: "2026-01-01T00:00:00" },
+    });
+
+    // No source on disk yet → condition 3 unproved → REVIEW, never deleted.
+    const before = audit();
+    assert.equal(before.status, 0, before.stderr);
+    assert.match(before.stdout, /REVIEW\s+design\/welcome\/renders\/hero\.png/);
+    assert.doesNotMatch(before.stdout, /DELETABLE/);
+    // The bash-4-only globstar left two shell errors per governed file and made
+    // this path unreachable on the shell it ships to.
+    assert.doesNotMatch(before.stderr, /globstar/);
+
+    // Give the recipe a surviving source and it becomes provably regenerable.
+    // Tracked, not merely present: an untracked build artefact is not a source
+    // you can hand anyone, and counting it was how condition 3 started failing
+    // OPEN toward deletion.
+    fs.writeFileSync(path.join(root, "templates", "master-template.html"), "<html></html>", "utf8");
+    git("add", "-f", "templates/master-template.html");
+    git("commit", "-qm", "src", "--no-verify");
+    const after = audit();
+    assert.match(after.stdout, /DELETABLE design\/welcome\/renders\/hero\.png/);
+
+    // Removal is STAGED, never committed.
+    const applied = audit("--apply", "--yes");
+    assert.match(applied.stdout, /staged 1 removal/);
+    const status = spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" });
+    assert.match(status.stdout, /^D\s+design\/welcome\/renders\/hero\.png/m);
+  });
+
+  test("evidence is never deletable, at any age", () => {
+    const { root, git } = repo("retention-evidence");
+    fs.mkdirSync(path.join(root, "evidence"), { recursive: true });
+    fs.writeFileSync(path.join(root, "evidence", "esp-dashboard.png"), "png", "utf8");
+    git("add", "-f", "evidence/esp-dashboard.png");
+    spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "ev", "--no-verify"], {
+      cwd: root,
+      env: { ...process.env, GIT_AUTHOR_DATE: "2020-01-01T00:00:00", GIT_COMMITTER_DATE: "2020-01-01T00:00:00" },
+    });
+    const res = spawnSync("/bin/bash", [path.join(root, "scripts", "prune-audit.sh"), "--days", "1"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.match(res.stdout, /kept: evidence [1-9]/);
+    assert.doesNotMatch(res.stdout, /DELETABLE evidence/);
+  });
+
+  test("a policy row under a gitignored path is reported dead, not silently zero", () => {
+    const { root } = repo("retention-deadrow");
+    fs.appendFileSync(
+      path.join(root, "scripts", "retention-policy.tsv"),
+      `build/compiled/*.html\tsome compiler\ttemplates/*.html\n`,
+      "utf8"
+    );
+    const res = spawnSync("/bin/bash", [path.join(root, "scripts", "prune-audit.sh")], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    // A row that can never fire and a repo with nothing to prune both report
+    // zero. One of them is a bug in the policy, and it has to say which.
+    assert.match(res.stderr, /POLICY DEAD ROW/);
   });
 });

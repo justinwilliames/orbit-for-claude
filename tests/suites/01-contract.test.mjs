@@ -330,8 +330,36 @@ const SHAPED_RESPONSE_FLOOR = 45;
  *
  * The remaining 693 bytes of headroom are NOT a licence. The next tool
  * argues its own case here, in this comment, or it does not ship.
+ *
+ * ── 159,000 → 160,500. The brain gate's laws. ──
+ *
+ * No tool was added; the count is still 128. What grew is two descriptions
+ * and three parameters, and the argument is that both describe behaviour a
+ * model cannot infer and would otherwise get wrong in the destructive
+ * direction.
+ *
+ * `orbit_generate_brain_gate` went from four checks to seven. The three new
+ * ones — module drift against the master, compose-from-the-master, and the
+ * Gmail-first single tier — are the difference between a design system and a
+ * folder of files, and two of them are UNENFORCED until the user puts a
+ * master template on disk. A model that does not know a stage can report
+ * UNENFORCED will read PASS WITH WARNINGS as a pass, which is precisely the
+ * defect the stage exists to surface. That has to be in the description; it
+ * is not discoverable from the schema.
+ *
+ * `orbit_esp_push_template` now reads the template back and hashes it. Its
+ * four verdicts are the whole product of the change: `exact` is proof,
+ * `unverifiable` is NOT a pass, and the gap between them is where a silently
+ * CSS-inlined template ships. A verdict enum nobody explains is a verdict
+ * nobody acts on.
+ *
+ * Cost: 1,134 bytes, ~306 tokens, 0.7%. Measured, not estimated — the
+ * payload was 158,971 before, i.e. 29 bytes under the old ceiling, so this
+ * was never a case of spending headroom that existed. The new number leaves
+ * 395 bytes, and the rule above stands unchanged: the next tool, or the next
+ * paragraph, argues its case here or it does not ship.
  */
-const TOOLS_LIST_BYTE_BUDGET = 159_000;
+const TOOLS_LIST_BYTE_BUDGET = 160_500;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

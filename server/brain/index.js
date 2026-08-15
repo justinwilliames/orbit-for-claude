@@ -114,7 +114,7 @@ export const BRAIN_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Bootstrap Template Brain",
       description:
-        "Scaffold an LLM-first email template-brain repo at a path: the directory tree, a README carrying the four governing rules (git canonical / graph derived / comprehension ≠ enforcement / ESP derived), CONVENTIONS.md (frontmatter + cross-link + one-fact-one-file), and the two standing knowledge logs plus the verified-claims stub. Refuses to overwrite existing files.",
+        "Scaffold an LLM-first email template-brain repo at a path, and git-init it. Emits the tree (programs/<stage>/, knowledge/, templates/, build/, evidence/); a README carrying the four governing rules (git canonical / graph derived / comprehension ≠ enforcement / ESP derived); CONVENTIONS.md; the two knowledge logs; the verified-claims stub AND build/check-claims.sh, so the statistics law ships armed rather than UNENFORCED; templates/README.md, the master-is-canon contract drift diffs against; and the retention set — RETENTION.md, a policy TSV, a pure-bash commit hook blocking renders ≥1MB, and a prune auditor that deletes only what is aged out, unreferenced AND provably regenerable (evidence never). Never overwrites.",
       inputSchema: {
         path: z
           .string()
@@ -205,7 +205,7 @@ export const BRAIN_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Generate Brain Ship Gate",
       description:
-        "Emit build/gate.sh — the offline layout/structure ship gate — parameterised to your byte-clip limit, container width and master name. Covers byte-clip (bytes, master exempt by basename), overflow (no fixed width past the container), orphan-link (no empty hrefs) and CTA-parity (one label → one destination), and rejects an empty / body-less file before measuring it. Honest scope: layout only; render/inbox truth stays with the render gate. Re-running upgrades an older Orbit-generated gate in place; a hand-edited one is left alone.",
+        "Emit the offline ship gate — build/gate.sh, build/drift-check.sh and a seeded build/drift-allowlist.tsv — parameterised to your clip limit, container width and master path. Seven stages: precondition (an empty/body-less file is rejected, not passed), byte-clip, overflow, orphan-link, CTA-parity, module-drift (each module matches the master's skeleton or cites a ruling in the allowlist; a module the master lacks was composed from memory) and gmail-first (unsupported constructs dropped, not degraded). Also runs build/check-claims.sh when orbit_init_verified_claims wired one. A stage with no dependency reports UNENFORCED and downgrades the verdict to PASS WITH WARNINGS — never a clean pass over a law that never ran. Layout only; render truth stays with the render gate. Re-running upgrades Orbit's own gate; a hand-edited gate and the allowlist are left alone.",
       inputSchema: {
         path: z
           .string()
@@ -217,26 +217,37 @@ export const BRAIN_TOOL_DEFINITIONS = [
           .positive()
           .max(10_000)
           .optional()
-          .describe("Byte-clip threshold in KB. Defaults to 102 (Gmail)."),
+          .describe("Byte-clip threshold in KB. Default 102 (Gmail)."),
         mobile_width: z
           .number()
           .int()
           .positive()
           .max(2_000)
           .optional()
-          .describe("Mobile viewport width in px, reported for context. Defaults to 375."),
+          .describe("Mobile viewport px, reported for context. Default 375."),
         container_width: z
           .number()
           .int()
           .positive()
           .max(2_000)
           .optional()
-          .describe("Declared email container width in px — the bar the overflow check measures against. Defaults to 600."),
+          .describe("Declared container width px — the bar overflow measures against. Default 600."),
         master_name: z
           .string()
           .max(MAX_SHORT_STRING)
           .optional()
-          .describe("Filename token that exempts a file from the clip check (the module library). Defaults to 'master'."),
+          .describe("Filename token exempting a file from the clip check. Default 'master'."),
+        master_template: z
+          .string()
+          .max(MAX_SHORT_STRING)
+          .optional()
+          .describe(
+            "Repo-relative master the drift stage diffs against. Default 'templates/master-template.html'; until it exists drift reports UNENFORCED."
+          ),
+        gmail_first: z
+          .boolean()
+          .optional()
+          .describe("Enforce the single-tier rule. Default true; false makes the stage SKIP, not pass."),
       },
     },
     handler: async (args) =>
