@@ -124,6 +124,7 @@ const CATEGORY_GROUPS = {
   // rank braze-canvas-qa in the top five, confidently and with no
   // warning. `other` is no longer a legal category — see assertMapped().
   "braze-platform": [
+    "braze-canvas-conformance",
     "braze-canvas-creator",
     "braze-canvas-qa",
     "braze-canvas-reader",

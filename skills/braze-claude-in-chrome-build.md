@@ -1,6 +1,6 @@
 ---
 name: braze-claude-in-chrome-build
-description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, the three-rung escalation ladder (JS/fiber -> Claude-in-Chrome clicking -> OS-level Codex Computer Use), the proven one-change-Save-verify canvas-surgery loop, and the four things the REST API is structurally blind to (entry audience, audience-path filters, delay durations, template-vs-inline bodies)."
+description: "Operating manual for driving the Braze dashboard via Claude in Chrome — canvas flow editing, audience-path group edits/deletes, save semantics, validation checks, page-load quirks, and the API-vs-dashboard data split. Trigger on: 'edit the canvas in the browser', 'braze claude in chrome', 'drive braze', 'delete/change an audience group', 'fix the canvas in the dashboard', 'save the canvas', 'check braze validation', 'archive a segment', 'archive a campaign', 'rename a segment', 'rename a canvas', 'rename the steps', 'underscores not spaces', 'is this segment in use', or any Braze dashboard mutation (the public API is read-only for canvas config, and has no delete/archive/rename for segments or campaigns). Pairs with braze-canvas-qa (the WHAT-to-check checklist); this skill is the HOW-to-drive manual. Covers editing an existing canvas AND building a new one from scratch — the 6-step creation wizard (incl. conversion events, exit criteria, and live event-name verification), driving React widgets via javascript_exec when screenshots wedge, the three-rung escalation ladder (JS/fiber -> Claude-in-Chrome clicking -> OS-level Codex Computer Use), the proven one-change-Save-verify canvas-surgery loop, and the four things the REST API is structurally blind to (entry audience, audience-path filters, delay durations, template-vs-inline bodies)."
 ---
 
 # Braze via Claude in Chrome — Build & Edit Manual
@@ -463,6 +463,85 @@ like "clicks land near but not on", never like an error.
 
 **URL shapes / the three distinct identifiers** are documented in §9 — read them before concluding a
 canvas is missing.
+
+## 3d. ⭐ NAMING LAW — every name you type in this dashboard uses UNDERSCORES, never spaces
+
+**Justin, 20 Aug 2026, standing rule.** Applies to **canvas names AND step names**, on every canvas
+you create *and every canvas you edit* — if you touch a canvas, its step names get fixed before you
+leave. Enforced by `braze-canvas-conformance` (run it after; the re-run is the proof).
+
+**The reason, in his words:** *"for any tracking or analytics, they get labelled as percentage 20
+rather than readable. As well, it is difficult to utilise any analytics if there's not a strict
+character that can be used as a delimiter. Underscores are just best practise when building things
+that may, in future, need to be reviewed using data analytics."*
+
+Two costs, kept separate because they are fixed differently:
+
+- **Legibility** — a space becomes `%20` through any URL, query string, export filename or BI label
+  encoder. `T-7 Heads-up` reads back as `T-7%20Heads-up`. Straight space→underscore fixes this.
+- **Parseability** — analytics needs a **strict delimiter**. If spaces separate the fields inside a
+  name *and* appear inside values, there is nothing safe to split on. Underscore reserves one
+  character meaning "field boundary". This is only fixed if names share a **positional schema**
+  (`NN_arm_topic`, `APNN_wait_Nd_reason`), not by a character swap alone. When renaming in bulk,
+  propose the schema — do not silently invent one.
+
+Step names are what `/canvas/data_series?include_step_breakdown=true` returns, so an unnamed or
+space-named step is the difference between a readable funnel and a column of `Step%205`.
+
+`Control` steps are Braze-generated and exempt — they are not author-named and carry no analytics
+meaning.
+
+### ⭐⭐ REFINEMENT to §0, PROVEN 20 Aug 2026 — JS may STAGE, but the SAVE must be a real click
+
+§0's proof case says JS-driven work does not persist. **That is true of `onSave()` and the fiber
+step-store handlers. It is NOT true of a native-setter edit followed by a REAL Save click.**
+Established by discriminator on a draft canvas and then held across **83 step renames on 5
+canvases**, every one REST-verified:
+
+```js
+// STAGE via JS — dispatch real DOM events, use React's own value setter
+const sp=[...document.querySelectorAll('.db-step--name-display')].find(e=>e.textContent.trim()===from);
+for(const t of ['mousedown','mouseup','click','dblclick'])
+  sp.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window,detail:t==='dblclick'?2:1}));
+const inp=[...document.querySelectorAll('input.bcl-input')].filter(e=>e.offsetParent).find(e=>e.value===from);
+Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(inp,to);
+inp.dispatchEvent(new Event('input',{bubbles:true}));            // React sees a genuine input event
+inp.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true}));
+// then: REAL click on Save / Save and continue → Update Canvas → REST readback
+```
+
+**Why this is not a violation of §0.** The distinction is *whose* code commits the change. Calling
+`onSave()` or `setStepData` asks Braze's internals to do something they were not asked to do by the
+UI. A native-setter + dispatched `input` is indistinguishable from typing to React — it goes through
+the component's own onChange. The **commit is still a human-driven click**, which is what §0 is
+actually protecting.
+
+**Rules if you use it:**
+- **Double-click the step name** opens its inline editor. The pencil renders on hover only, so a
+  blind pencil-click misses — double-click is the reliable opener.
+- **`scrollIntoView` is unnecessary and expensive.** Synthetic events do not require the element to
+  be on screen. Dropping it took a 39-step canvas from ~10s per rename to ~3s.
+- **Batch 3–4 renames per `javascript_exec`.** Each rename triggers a full canvas re-render; more
+  than ~4 blows the 45s CDP timeout. **A CDP timeout does NOT mean failure** — the work continues in
+  the page. Re-query the DOM and continue from what is actually left rather than retrying blindly.
+- **Never trust the DOM as proof.** `DOM_OK` is not persistence. Only `/canvas/details` is.
+- **If it ever fails, drop to fully manual immediately** (§0). Do not debug the JS.
+
+### The three save traps (all cost real time on 20 Aug 2026)
+
+1. **A live canvas needs a PUBLISH, not a Save.** The Save dialog on an `enabled=true` canvas says
+   *"reflected in your Canvas draft, not your active Canvas"* — accepting it leaves the live canvas
+   unchanged **while the editor header shows your new value**. A screenshot there "proves" a change
+   that never shipped. Full path: `Save → Save and continue → Summary → Update Canvas → confirm`,
+   then REST-assert the change **and** `enabled=true`. A draft canvas skips all of it.
+2. **A rejected save rolls back tags created inside it.** Concurrent-edit rejection
+   (*"<name> has made changes to this Canvas"*) offers only Cancel or Refresh, and **Refresh
+   discards YOUR edit, not theirs.** Take Cancel. A tag created inline during the rejected session
+   **does not persist** — verified when a retry still offered `+ Create "Engagement & Expansion"`.
+3. **The canvas header is hidden under the in-app tab strip** and `scrollIntoView` will not move it.
+   Click **Expand** (top-left of the flow pane), then **hover** the name — the pencil renders on
+   hover only. The Analytics/details view has **no** rename control; `.db-canvas-name` does not
+   exist there.
 
 ## 4. What the API can/can't do (route accordingly)
 
@@ -1464,6 +1543,129 @@ by name. That is the §0 manual path, and it is available today.
   Overview), and feeding the internal 24-hex id to `/canvas/details` is rejected (400). Two
   vocabularies; map them by name, never by assumption. Harvest internal ids from the list page's
   `<a>` hrefs matching `/engagement/canvas/([0-9a-f]{24})`.
+
+## 8c. ⭐ Canvas surgery — what an 8-rung Action Path ladder actually cost (19 Aug 2026)
+
+Built and QA'd a 15-step failed-payment recovery ladder end to end. These are the things that were **not** in
+this manual and each cost real time. Several correct results read as failures first — that is
+the theme.
+
+### The read layer: what REST does and does not expose on a DRAFT canvas
+
+A whole verification pass was aimed at the wrong place because of this. On `/canvas/details`:
+
+| Field | On a draft |
+|---|---|
+| **`next_paths`** | ✅ **fully populated** — branch NAME + target id, e.g. `Paid → 08 Welcome Back`, `Everyone Else → 02 Day 3` |
+| `action_paths` | ❌ always `[]` |
+| `default_next_step_id` | ❌ always `null` |
+| duration / wait / seconds | ❌ **absent entirely** — an Action Path step exposes ONLY `['id','name','next_paths','type']` |
+| `reply_to`, `from`, `subject`, `preheader`, `body` | ✅ on message steps |
+
+So: **verify WIRING over REST via `next_paths`** — cheap, reliable, no browser. **Verify DURATIONS
+only in the dashboard.** Reading `action_paths`/`default_next_step_id` and concluding "REST is
+blind to wiring" is wrong and will send you to the UI for nothing.
+
+**Derive canvas entry without the UI:** it is the only step with no inbound edge across every
+step's `next_paths`.
+
+`?post_launch_draft_version=true` makes no difference to any of the above on a draft.
+
+### `steps[].id` is undefined — the id is on `step_id`
+
+In `getCanvasDataWithMessages()`, step objects carry **`step_id`**, not `id`. A name-map built
+from `s.id` returns `undefined` for every step, so a **correct** graph reads as a **failed**
+gate. This produced a false negative that nearly caused a good change to be redone.
+
+### Synthetic save is RETIRED for the Sending Info flow
+
+`__save()` via `__reactProps$.onClick` returned `FIRED`, the Save button left the DOM, and
+**nothing persisted**. Firing it immediately after the rail `Done` with no wait is the trigger.
+Use a **real mouse click on footer Save** and require the visible **"Save completed." toast**.
+(The synthetic dispatch still has its place for graph edits per §8b — it is the Sending Info
+panel specifically where it lies.)
+
+### Never click the Messages band dead-centre
+
+It **arms connection mode**, even on a freshly loaded tab — so "a node was left selected" is not
+the only cause. Click the **subject row (band + 36px)** instead; that opened the panel first try
+on every subsequent step. If you do arm it, press Esc and confirm no edge was created via
+`next_paths` before doing anything else.
+
+### The Sending Info panel hydrates progressively
+
+Subject and Preheader can first render as a **single character**. Wait for full text before
+touching anything — acting early risks committing a truncated subject to a live send.
+
+### `updated_at` can lag ~30s — but a frozen read past ~60s is a real failure
+
+Both readings have now been observed: a clean run where every save moved it within ~20s, and a
+run where a genuine save took two polls to appear while a genuinely failed save stayed frozen
+3+ minutes. **Rule that survives both: re-poll ONCE at ~60s before declaring a save dead.**
+
+### Each successful save destroys the MCP tab group
+
+`tabs_create_mcp` then errors with "tab group no longer exists". Recover with
+`tabs_context_mcp{createIfEmpty:true}`. **Bank each edit separately** — a wedge should cost one
+step, not eight.
+
+### The Summary/validator is not in the flow-editor DOM
+
+There is no stepper or Summary node to click. It lives at **`&step=summary`**, reached via
+**"Save and continue"** — which fires a real save and lands on the stepper **without launching**.
+Braze's own red *"Missing steps — one or more of your action groups is missing steps"* plus a
+greyed-out **Launch Canvas** is the cheapest independent check that every action group is wired.
+`Test Canvas` flipping from grey to active is an even earlier signal of the same thing.
+
+### Template picker
+
+Search is a **fuzzy OR** — one short token cut 490 results to 11 on a single page; longer
+queries make it worse. Sort by Name instead. Gate a bind on the **FULL row, not the MESSAGE
+row** — the MESSAGE row has no `messages` key, so a good bind reads as a failure;
+`email_body.length === 0` is the real "not applied yet" signal.
+
+### Changing the ENTRY step — the fiber API does NOT do this
+
+Four silent failures before the working move. The entry pointer is a **scalar**,
+`variations[0].first_canvas_step_id`, and the graph API never touches it:
+
+- `onConnectionAdd(variantId, stepId)` flips `is_disconnected` and draws an edge, and the
+  entry pointer **does not change**. It returns clean and saves nothing.
+- `onVariantUpsert` with a modified `first_canvas_step_id` is likewise **inert**.
+
+**The working move is a plain click.** Clicking the **connection line itself** removes that
+edge and re-arms connection mode from its source port; then clicking the new step's body
+makes it the entry. The connection's fiber at depth ~6 carries
+`{srcId, dstId, srcPortKey, canRemove}` — **`canRemove: true` is the readable signal** that
+the affordance is there.
+
+**You cannot connect INTO the current entry step** — it renders no ingress `+`, so any attempt
+to wire a branch into it fails silently. **Order is always: detach entry → set new entry →
+wire branches.** Getting this backwards burns attempts that all look like tooling failures.
+
+### Durations ARE readable pre-save (just not over REST)
+
+`getCanvasDataWithMessages()` uses `step_id` / `step_name`. An `ACTION_PATHS` step keeps
+Everyone Else in `next_step_ids`, named groups in `step_data.action_paths[]` (each with its
+own `next_step_id`) — **and `duration_in_seconds`**. So durations can be gated on from the
+live payload before saving, even though the public API omits them entirely.
+
+### Duplicate Step is the cheap way to build a rung
+
+It carries the group **name** and the trigger **event** intact; it does **not** carry either
+branch target. That skips the event picker entirely — usually the fiddliest part.
+
+### Wedge tell
+
+`visibilityState: "hidden"` **with `hasFocus() === true`** and a `setTimeout` probe that never
+fires means the Chrome window is not frontmost. Screenshots die while `javascript_tool` keeps
+answering, which is what makes a wedged tab look alive. Rotate and redo.
+
+### Two canvases can share a display name
+
+Observed in the wild: an archived predecessor and its rebuilt replacement carried the **same
+display name**, differing only in step count. **Always navigate and assert by canvas id**, never
+by name, and check the step count as a cheap confirmation you are on the right one.
 
 ## 9. ⭐ Codex Computer Use — rung 3, and the route that finished the build
 
