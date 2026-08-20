@@ -33,6 +33,9 @@
 
 /** The tool did the thing. */
 export const DELIVERED_STATUSES = new Set([
+  // Feedback loop: an idea landed in / was removed from the inbox.
+  "submitted",
+  "retracted",
   "ok",
   "success",
   "approved",
@@ -112,6 +115,8 @@ export const PROMPTED_STATUSES = new Set([
  * fresh-install outcome and the whole reason the classifier exists.
  */
 export const FAILED_STATUSES = new Set([
+  // Feedback loop: the idea inbox was unreachable — nothing recorded.
+  "send_failed",
   // Missing / rejected credentials — day one on a stranger's machine.
   "needs_setup",
   "needs_plugin_credentials",

@@ -79,7 +79,8 @@ import {
   generateLiquidSnippet
 } from "./calculators.js";
 import { attachQualityReport } from "./content-gate.js";
-import { trackSessionStart, trackSkillLoad, trackToolCall, trackToolError } from "./telemetry.js";
+import { trackSessionStart, trackSkillLoad, trackToolCall, trackToolError, trackFriction } from "./telemetry.js";
+import { registerIdeaTools } from "./idea-submit.js";
 import { isFailureStatus } from "./status-vocabulary.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
 import { annotationsFor } from "./tool-annotations.js";
@@ -1397,6 +1398,11 @@ function setupInterceptIfNeeded() {
 }
 
 function registerTools() {
+  // Feedback loop — explicit product-idea submission + retraction.
+  // Registered first so the pair is easy to find; annotated in
+  // tool-annotations.js (REMOTE_WRITE / IRREVERSIBLE).
+  registerIdeaTools({ registerToolSafe, z, version: ORBIT_VERSION, makeResponse: makeJsonToolResponse });
+
   // Wire the ESP tool family to live runtime config BEFORE any ESP/BRAIN tool
   // can be invoked (Ruling 4a): every network handler reads config through this
   // provider and errors loudly if it is missing. The getter form keeps handlers
@@ -1532,6 +1538,13 @@ function registerTools() {
         defaultPlatform: runtimeConfig.defaultPlatform,
         defaultGeography: runtimeConfig.defaultGeography
       });
+      // A request no skill matched is the purest "what do people need"
+      // signal there is. The redactor inside trackFriction strips
+      // emails/URLs/paths/keys/numbers before anything leaves the
+      // machine; opt-out via ORBIT_TELEMETRY like all telemetry.
+      if (result?.no_strong_match) {
+        trackFriction({ slug: "route_task_no_match", detail: request, version: ORBIT_VERSION }).catch(() => {});
+      }
       return makeJsonToolResponse(result);
     }
   );
