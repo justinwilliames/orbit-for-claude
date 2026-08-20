@@ -24,7 +24,14 @@ DEFAULT_CONFIG = {
         "message_class": ["Marketing", "Transactional"],
         "lifecycle_stage": ["Onboarding & Activation", "Engagement & Expansion", "Retention & Billing"],
     },
-    "program_tag_equals_canvas_name": True,
+    # The program tag is the canvas name with underscores restored to spaces.
+    # Names are underscored for analytics (a space becomes %20 in any label
+    # encoder, and analytics needs a delimiter that cannot occur inside a
+    # value). TAGS are a dashboard filter surface -- they never reach an
+    # analytics label -- so they stay human-readable. Justin, 20 Aug 2026:
+    # "make sure tags dont have underscores".
+    "program_tag_is_canvas_name_despaced": True,
+    "tags_forbid_underscore": True,
     "retired_tags": ["Action-Based", "All Markets", "Education", "English",
                      "GLOBAL", "Multi-Step", "Setup", "Welcome"],
     "step_pattern": "^[A-Za-z0-9][A-Za-z0-9_.\\-]*$",
@@ -68,7 +75,7 @@ def check_canvas(d, cfg):
 
     # --- C3 tag cardinality ----------------------------------------------
     axes = cfg["tag_axes"]
-    n_expected = len(axes) + (1 if cfg["program_tag_equals_canvas_name"] else 0)
+    n_expected = len(axes) + (1 if cfg.get("program_tag_is_canvas_name_despaced") else 0)
     if len(tags) != n_expected:
         f.append(("FAIL", "TAG_COUNT",
                   f"has {len(tags)} tags, convention requires exactly {n_expected}: {sorted(tags)}",
@@ -85,14 +92,24 @@ def check_canvas(d, cfg):
                       f"{len(hits)} {axis} tags: {hits} — the axis allows exactly one",
                       "remove all but one"))
 
-    # --- C5 program tag == canvas name ------------------------------------
-    if cfg["program_tag_equals_canvas_name"]:
+    # --- C5 program tag == canvas name, de-underscored ---------------------
+    if cfg.get("program_tag_is_canvas_name_despaced"):
+        expected = name.replace("_", " ")
         vocab = {v for vals in axes.values() for v in vals}
         prog = [t for t in tags if t not in vocab and t not in cfg["retired_tags"]]
-        if name not in tags:
+        if expected not in tags:
             f.append(("FAIL", "TAG_PROGRAM",
-                      f"program tag != canvas name (name={name!r}, candidates={prog})",
-                      f"add tag {name!r}"))
+                      f"no program tag {expected!r} (canvas is {name!r}, candidates={prog})",
+                      f"add tag {expected!r} — the canvas name with underscores as spaces"))
+
+    # --- C5b tags must never carry underscores ----------------------------
+    if cfg.get("tags_forbid_underscore"):
+        underscored = [t for t in tags if "_" in t]
+        if underscored:
+            f.append(("FAIL", "TAG_UNDERSCORE",
+                      f"tag(s) contain underscores: {underscored}",
+                      "tags are a filter surface, not an analytics label — use spaces: "
+                      + ", ".join(f"{t!r}->{t.replace('_',' ')!r}" for t in underscored)))
 
     # --- C6 retired tags --------------------------------------------------
     retired = [t for t in tags if t in cfg["retired_tags"]]
