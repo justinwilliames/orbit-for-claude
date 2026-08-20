@@ -11,13 +11,21 @@
  *     needs_plugin_credentials / ... (the full closed set is
  *     FAILED_STATUSES in status-vocabulary.js). Rejected before the
  *     handler ran: invalid_args / unknown_tool. Never the error message.
+ *   - type: "friction" — a bad-experience signal: a tool that failed
+ *     3x consecutively in one session, or a request that matched no
+ *     Orbit skill. Friction events may carry a `detail` string that is
+ *     REDACTED ON THIS MACHINE before sending (redact.js): emails,
+ *     URLs, file paths, key-shaped tokens, and 7+ digit runs become
+ *     placeholders, capped at 300 chars. This is the ONLY event type
+ *     that carries any free text, and never verbatim.
  *   - version: mcpb version from manifest
  *   - clientId: opaque per-install UUID (SHA-256 hashed — not correlatable to any identity)
  *
  * What we DON'T send:
- *   - User prompts, queries, tool arguments, or any content
+ *   - User prompts, tool arguments, or conversation content, verbatim —
+ *     the sole exception is the redacted friction summary above, which
+ *     exists so unmet needs are learnable without shipping content
  *   - IP addresses (server never logs them)
- *   - Anything derived from the actual conversation
  *
  * Opt-out:
  *   - Enabled by default. Set ORBIT_TELEMETRY=0 (or `false`/`no`)
@@ -34,6 +42,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import { redactSensitive } from "./redact.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -72,7 +81,7 @@ function logDisclosureOnce() {
   if (disclosureLogged) return;
   disclosureLogged = true;
   process.stderr.write(
-    "[orbit] anonymous usage telemetry enabled — set ORBIT_TELEMETRY=0 to opt out (no prompts, queries, or tool arguments are sent)\n",
+    "[orbit] anonymous usage telemetry enabled — set ORBIT_TELEMETRY=0 to opt out (content is never sent verbatim; failure signals carry only redacted, identifier-stripped summaries)\n",
   );
 }
 
@@ -80,7 +89,7 @@ function logDisclosureOnce() {
  * Get (or generate) the opaque client ID. SHA-256 of a random UUID
  * stored locally. Idempotent — generated once, reused across sessions.
  */
-function getClientId() {
+export function getClientId() {
   if (cachedClientId) return cachedClientId;
   try {
     if (existsSync(CLIENT_ID_FILE)) {
@@ -173,7 +182,14 @@ export async function trackSkillLoad({ slug, version } = {}) {
  * alongside its tool_error. Without that pair the subtraction above
  * would silently exclude the largest stranger-facing failure class.
  */
+// Consecutive-failure streaks per tool, this process only. Bounded by
+// the tool count. A streak emits ONE friction event at exactly 3 —
+// continued failure past 3 stays silent until a success resets it, so
+// a broken tool cannot flood the endpoint.
+const errorStreaks = new Map();
+
 export async function trackToolCall({ slug, version } = {}) {
+  errorStreaks.delete(slug);
   if (!slug) return;
   if (!isEnabled()) return;
   const clientId = getClientId();
@@ -198,6 +214,13 @@ export async function trackToolCall({ slug, version } = {}) {
  * raw message would.
  */
 export async function trackToolError({ slug, errorClass, version } = {}) {
+  const streak = (errorStreaks.get(slug) ?? 0) + 1;
+  errorStreaks.set(slug, streak);
+  if (streak === 3) {
+    // Three consecutive failures of one tool = someone having a bad
+    // time. No detail — the slug + class already say what hurts.
+    trackFriction({ slug, errorClass, version }).catch(() => {});
+  }
   if (!slug) return;
   if (!isEnabled()) return;
   const clientId = getClientId();
@@ -208,4 +231,19 @@ export async function trackToolError({ slug, errorClass, version } = {}) {
     version: version ?? null,
     clientId,
   });
+}
+
+/**
+ * Fire a friction event — the passive "someone is having a bad
+ * experience" signal. `detail`, when present, ALWAYS passes through
+ * redactSensitive here, unconditionally: no caller can ship raw text
+ * even by mistake. Same opt-out as all telemetry.
+ */
+export async function trackFriction({ slug, errorClass, detail, version } = {}) {
+  if (!isEnabled()) return;
+  const clientId = getClientId();
+  const payload = { type: "friction", slug, clientId, version };
+  if (errorClass) payload.errorClass = errorClass;
+  if (detail) payload.detail = redactSensitive(detail);
+  await postTelemetry(payload);
 }

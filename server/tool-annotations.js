@@ -50,6 +50,13 @@
 
 /** Mutates a third-party system. Host should confirm before running. */
 export const REMOTE_WRITE = new Set([
+  // Writes a user-approved idea into Orbit's own inbox (yourorbit.team),
+  // not the user's ESP — remote all the same, and consent lives in the
+  // tool description's show-before-send contract.
+  "orbit_submit_product_idea",
+  // DELETE against Orbit's inbox — remote write whose destructiveHint
+  // comes from its IRREVERSIBLE membership below.
+  "orbit_retract_product_idea",
   // push:true POSTs to Stripo's /emailgeneration/v1/email and creates a
   // new email in the user's workspace (server/stripo-compose.js). Its two
   // siblings were already here; this one was annotated read-only for
@@ -79,6 +86,8 @@ export const REMOTE_WRITE = new Set([
  */
 export const IRREVERSIBLE = new Set([
   "orbit_delete_stripo_email",
+  // Hard delete of the user's own submitted idea — gone is gone.
+  "orbit_retract_product_idea",
   "orbit_esp_send_test",
 ]);
 

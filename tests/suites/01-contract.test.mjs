@@ -318,6 +318,15 @@ const SHAPED_RESPONSE_FLOOR = 45;
  * that buys a new capability rather than absorbing an existing one, so it
  * is the one that has to justify itself.
  *
+ * 159_000 -> 161_000 (20 Aug 2026, +1_967 measured): TWO tools added —
+ * orbit_submit_product_idea and orbit_retract_product_idea, the feedback
+ * loop. The case: Orbit had no channel for "I needed something Orbit
+ * can't do" beyond a closed error class. The submit description is the
+ * expensive part and deliberately so — it carries the consent contract
+ * (compose with the user, show the exact text, approve before sending)
+ * that counsel required, and trimming it would trade bytes for a
+ * consent defect. Retract exists so "deletable" is true, not decorative.
+ *
  * The case: in Klaviyo, flows ARE lifecycle — welcome, abandoned cart,
  * browse abandon, winback are all flows, not campaigns. Orbit could read
  * a Braze Canvas step by step and was blind inside a Klaviyo flow:
@@ -331,7 +340,7 @@ const SHAPED_RESPONSE_FLOOR = 45;
  * The remaining 693 bytes of headroom are NOT a licence. The next tool
  * argues its own case here, in this comment, or it does not ship.
  */
-const TOOLS_LIST_BYTE_BUDGET = 159_000;
+const TOOLS_LIST_BYTE_BUDGET = 161_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

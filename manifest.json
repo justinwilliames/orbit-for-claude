@@ -732,6 +732,14 @@
     {
       "name": "orbit_generate_brain_gate",
       "description": "Generate a build gate script parameterised to the user's limits and templating branches — compile, resolve every branch off one variable map, byte-based clip check, mobile overflow, orphan and CTA-parity checks, axe-core, and master-module drift. States its honest scope: a layout and structure gate only; render and inbox truth stay with Orbit's render gate. [Safety: writes files in your local Orbit workspace.]"
+    },
+    {
+      "name": "orbit_submit_product_idea",
+      "description": "Send a user-approved feature request or product idea to Orbit's developer. Offer it when Orbit lacks a capability the user wants; compose the text WITH the user and show it verbatim before sending. Redacted on-device (emails, URLs, paths, keys, numbers stripped); lands in a private inbox, never public; returns a retraction ref. [Safety: writes to a third-party system.]"
+    },
+    {
+      "name": "orbit_retract_product_idea",
+      "description": "Hard-delete a previously submitted product idea from Orbit's inbox by its ref. Only works from the install that submitted it. [Safety: writes to a third-party system, and cannot be undone.]"
     }
   ],
   "keywords": [
