@@ -338,7 +338,7 @@ const server = new McpServer({
   // Mailchimp, Iterable, Customer.io, SFMC, or no ESP at all — that was
   // simply wrong, and it buried the thing Orbit is actually best at.
   instructions: [
-    "Orbit is a lifecycle marketer built into Claude: 79 skills and 128 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
+    "Orbit is a lifecycle marketer built into Claude: 80 skills and 130 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
     "",
     "WHAT ORBIT IS FOR, IN ONE LINE: helping someone build and run their own lifecycle programme — starting from their own email design system and their own knowledge base, not from a vendor's template gallery.",
     "",
