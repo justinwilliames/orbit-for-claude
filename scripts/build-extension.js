@@ -210,6 +210,81 @@ fs.copyFileSync(
   path.join(vendorDir, "index_bg.wasm")
 );
 
+// ---------------------------------------------------------------------
+// THIRD-PARTY-NOTICES.md — licence-compliance for the shipped bundle.
+//
+// The .mcpb is a redistribution: it carries the runtime dependency tree,
+// so every dependency's licence notice has to travel WITH it, not just
+// sit in the repo. `npm ci` above already places 300+ LICENSE files in
+// the bundle's node_modules, which quietly satisfies MIT/BSD for
+// everyone — EXCEPT @resvg/resvg-wasm, which is MPL-2.0, ships no LICENSE
+// of its own, and is the one dependency hand-copied out to vendor/ above.
+// MPL-2.0 §3.2 requires recipients be told the licence and where to get
+// source. The manifest also declared the whole artefact "MIT", full stop.
+//
+// This walks the bundle's own node_modules, concatenates every licence it
+// finds, and appends the MPL-2.0 notice for resvg by hand (since the
+// package omits it). Found by Meridian, 2026-08-21.
+// ---------------------------------------------------------------------
+function collectLicenseNotices(nodeModulesDir) {
+  const out = [];
+  if (!fs.existsSync(nodeModulesDir)) return out;
+  const entries = fs.readdirSync(nodeModulesDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    // Scoped packages: recurse one level into @scope/*.
+    if (entry.name.startsWith("@")) {
+      out.push(...collectLicenseNotices(path.join(nodeModulesDir, entry.name)));
+      continue;
+    }
+    const pkgDir = path.join(nodeModulesDir, entry.name);
+    let name = entry.name;
+    let license = "UNKNOWN";
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+      name = pkg.name || entry.name;
+      license = typeof pkg.license === "string" ? pkg.license : (pkg.license?.type || "UNKNOWN");
+    } catch { /* no package.json — still list any LICENSE we find */ }
+    const licenseFile = fs.readdirSync(pkgDir).find((f) => /^(LICENSE|LICENCE|COPYING|NOTICE)/i.test(f));
+    const body = licenseFile
+      ? fs.readFileSync(path.join(pkgDir, licenseFile), "utf8").trim()
+      : "(no licence file shipped by this package)";
+    out.push({ name, license, body });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const MPL2_RESVG_NOTICE = [
+  "## @resvg/resvg-wasm",
+  "",
+  "License: MPL-2.0",
+  "Source: https://github.com/thx/resvg-js",
+  "",
+  "This package is licensed under the Mozilla Public License 2.0. The",
+  "package does not ship its own LICENSE file; the full MPL-2.0 text is",
+  "available at https://www.mozilla.org/en-US/MPL/2.0/ . As required by",
+  "MPL-2.0 §3.2, the Source Code for this component is available at the",
+  "URL above. Only the compiled WebAssembly (index_bg.wasm) is",
+  "redistributed in this bundle.",
+].join("\n");
+
+const notices = collectLicenseNotices(path.join(BUILD_DIR, "node_modules"));
+const noticesDoc = [
+  "# Third-party notices",
+  "",
+  "Orbit's own code is MIT. This bundle redistributes the dependencies",
+  "below, each under its own licence. Generated at pack time from the",
+  "shipped node_modules by scripts/build-extension.js.",
+  "",
+  MPL2_RESVG_NOTICE,
+  "",
+  "---",
+  "",
+  ...notices.flatMap((n) => [`## ${n.name}`, "", `License: ${n.license}`, "", "```", n.body, "```", ""]),
+].join("\n");
+fs.writeFileSync(path.join(BUILD_DIR, "THIRD-PARTY-NOTICES.md"), noticesDoc + "\n");
+process.stdout.write(`Wrote THIRD-PARTY-NOTICES.md (${notices.length} packages + MPL-2.0 resvg notice).\n`);
+
 // Sanity check — ensure the bundled entry point was actually written.
 const bundledEntry = path.join(BUNDLE_SERVER_DIR, "index.js");
 if (!fs.existsSync(bundledEntry)) {

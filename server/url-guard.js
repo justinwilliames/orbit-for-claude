@@ -12,11 +12,15 @@
  *   - rejects bare IP literals in those same ranges.
  *
  * fetchGuarded() additionally pins redirect handling to "manual" so a
- * public URL cannot 30x-bounce into an internal target after the check.
+ * public URL cannot 30x-bounce into an internal target after the check,
+ * and pins the connection to the exact IP(s) validated above so a second,
+ * independent DNS resolution cannot rebind the hostname to an internal
+ * target between the check and the connect (DNS-rebinding / TOCTOU).
  */
 
 import dns from "node:dns/promises";
 import net from "node:net";
+import { Agent } from "undici";
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 
@@ -27,7 +31,7 @@ const METADATA_IPV4 = "169.254.169.254";
  * Classify an IP literal as private / disallowed for outbound fetches.
  * Returns a reason string if blocked, or null if the address is public.
  */
-function blockedIpReason(ip) {
+export function blockedIpReason(ip) {
   if (net.isIPv4(ip)) {
     const octets = ip.split(".").map((n) => parseInt(n, 10));
     const [a, b] = octets;
@@ -59,13 +63,48 @@ function blockedIpReason(ip) {
 }
 
 /**
- * Validate that a URL is safe to fetch from the server: a public
- * http(s) endpoint that does not resolve into a private/internal range.
+ * Build a net/tls-compatible `lookup` implementation that only ever
+ * returns the supplied, already-validated addresses — regardless of the
+ * hostname it is asked to resolve. Passed to undici's connector via a
+ * per-request Agent so the socket connects to the IP we checked, closing
+ * the DNS-rebinding window. The URL hostname is still used for the Host
+ * header and TLS SNI (undici's `servername`), so vhost routing and
+ * certificate validation are unaffected.
  *
- * Returns the parsed URL on success; throws an Error (code "ssrf_blocked")
- * otherwise. The caller is expected to surface a sanitised message.
+ * Handles both call shapes Node's connect path uses: `all: true`
+ * (autoSelectFamily, the Node 20+ default) expects an array of
+ * `{ address, family }`; otherwise the callback wants `(address, family)`.
  */
-export async function assertPublicHttpUrl(rawUrl) {
+export function pinnedLookup(addresses) {
+  const list = addresses.map(({ address, family }) => ({ address, family }));
+  return function lookup(_hostname, options, callback) {
+    // `options` may be omitted when called as lookup(hostname, callback).
+    if (typeof options === "function") {
+      callback = options;
+      options = {};
+    }
+    if (options && options.all) {
+      callback(null, list);
+      return;
+    }
+    const wantFamily = options && options.family ? options.family : 0;
+    const chosen = (wantFamily ? list.find((a) => a.family === wantFamily) : list[0]) || list[0];
+    callback(null, chosen.address, chosen.family);
+  };
+}
+
+/**
+ * Resolve + validate an externally-supplied URL.
+ *
+ * Returns { url, addresses } on success where `addresses` is the set of
+ * validated public IPs the connection may pin to ([] for bare-IP hosts —
+ * the literal is used directly — and for the test-only escape hatch).
+ * Throws an Error (code "ssrf_blocked") otherwise.
+ *
+ * `lookup` is injectable purely to make the resolve/validate/pin path
+ * unit-testable without real DNS; production always uses dns.lookup.
+ */
+async function resolveGuarded(rawUrl, { lookup = dns.lookup } = {}) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -86,12 +125,13 @@ export async function assertPublicHttpUrl(rawUrl) {
   // localhost mock server. Production NEVER sets this var, so the SSRF
   // protection below is unchanged in the real world.
   if (process.env.ORBIT_ALLOW_PRIVATE_HOSTS === "1") {
-    return parsed;
+    return { url: parsed, addresses: [] };
   }
 
   const host = parsed.hostname;
 
-  // Bare IP literal — classify directly without DNS.
+  // Bare IP literal — classify directly without DNS. Nothing to pin: the
+  // literal is what the connection uses, and we have just validated it.
   if (net.isIP(host)) {
     const reason = blockedIpReason(host);
     if (reason) {
@@ -99,13 +139,13 @@ export async function assertPublicHttpUrl(rawUrl) {
       err.code = "ssrf_blocked";
       throw err;
     }
-    return parsed;
+    return { url: parsed, addresses: [] };
   }
 
   // Hostname — resolve and reject if any answer is private/internal.
   let addresses;
   try {
-    addresses = await dns.lookup(host, { all: true });
+    addresses = await lookup(host, { all: true });
   } catch {
     const err = new Error(`Could not resolve host "${host}".`);
     err.code = "ssrf_blocked";
@@ -127,13 +167,29 @@ export async function assertPublicHttpUrl(rawUrl) {
     }
   }
 
-  return parsed;
+  // Every answer is public — pin the connection to exactly this set so the
+  // fetch below cannot re-resolve into an internal target (DNS rebinding).
+  return { url: parsed, addresses };
+}
+
+/**
+ * Validate that a URL is safe to fetch from the server: a public
+ * http(s) endpoint that does not resolve into a private/internal range.
+ *
+ * Returns the parsed URL on success; throws an Error (code "ssrf_blocked")
+ * otherwise. The caller is expected to surface a sanitised message.
+ */
+export async function assertPublicHttpUrl(rawUrl, options = {}) {
+  const { url } = await resolveGuarded(rawUrl, options);
+  return url;
 }
 
 /**
  * SSRF-guarded fetch. Validates the URL, then fetches with
  * redirect:"manual" so a public URL cannot 30x-bounce into an internal
- * target after the host check. If `init.fetchImpl` is supplied (e.g.
+ * target after the host check, and pins the socket to the pre-validated
+ * IP(s) so a second DNS resolution cannot rebind the host between the
+ * check and the connect. If `init.fetchImpl` is supplied (e.g.
  * fetchWithRetry) it is used instead of the global fetch, with the same
  * guarantees applied to its init.
  *
@@ -141,9 +197,15 @@ export async function assertPublicHttpUrl(rawUrl) {
  * rather than an opaquely-followed one.
  */
 export async function fetchGuarded(rawUrl, init = {}) {
-  const parsed = await assertPublicHttpUrl(rawUrl);
-  const { fetchImpl, fetchOptions, ...rest } = init;
+  const { fetchImpl, fetchOptions, lookup, ...rest } = init;
+  const { url: parsed, addresses } = await resolveGuarded(rawUrl, lookup ? { lookup } : {});
   const guardedInit = { ...rest, redirect: "manual" };
+  // Pin the connection to the validated IP(s). undici keeps the Host header
+  // and TLS SNI on the original hostname, so only the resolved address is
+  // fixed — TLS and vhost routing behave exactly as before.
+  if (addresses.length) {
+    guardedInit.dispatcher = new Agent({ connect: { lookup: pinnedLookup(addresses) } });
+  }
   if (typeof fetchImpl === "function") {
     return fetchImpl(parsed.href, guardedInit, fetchOptions ?? {});
   }

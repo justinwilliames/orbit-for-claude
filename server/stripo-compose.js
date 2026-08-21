@@ -31,6 +31,7 @@ import path from "node:path";
 import { load as cheerioLoad } from "cheerio";
 import { listLibraryItems, loadLibraryItem } from "./template-library.js";
 import { stripoRestPost, stripoRestGet, validateStripoRestSetup } from "./stripo-api.js";
+import { fetchGuarded } from "./url-guard.js";
 import { ensureDir } from "./config.js";
 
 const TAG_SYNCED = "stripo_synced";
@@ -446,7 +447,12 @@ async function applyHtmlOverrides({ config, emailId, previewUrl, overrides, outp
 
   if (previewUrl) {
     try {
-      const resp = await fetch(previewUrl, {
+      // previewUrl comes from the Stripo API response — untrusted input, so
+      // it goes through the SSRF guard (host validated + pinned, redirect
+      // manual) like every other externally-supplied URL. A previewUrl
+      // pointing at cloud-metadata or an RFC1918 host throws ssrf_blocked
+      // and is caught below, falling through to the authenticated REST read.
+      const resp = await fetchGuarded(previewUrl, {
         signal: AbortSignal.timeout(15_000),
         headers: { Accept: "text/html,application/xhtml+xml" },
       });

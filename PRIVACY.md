@@ -71,6 +71,26 @@ Either of these, both permanent:
 With it off, every telemetry call is a no-op before any network activity
 happens. Nothing is queued, nothing is sent later.
 
+## Feedback you send deliberately
+
+One thing the telemetry switch above does **not** cover, because it is
+not passive telemetry: when you ask Orbit to file a product idea (the
+`orbit_submit_product_idea` tool), the title and detail you approved are
+sent to the developer's inbox **regardless of the telemetry setting** —
+an explicit request is its own consent, and turning off passive analytics
+should not silently break a feature you asked for. What leaves:
+
+- The idea title and detail, exactly as you approved them (redacted
+  on your machine first — emails, URLs, paths, keys and long number
+  sequences are stripped).
+- Your install id, so you can retract the idea later. It is the same
+  opaque, per-install identifier telemetry uses; it is not tied to any
+  personal identity.
+
+Nothing else — never the surrounding conversation. To un-send an idea,
+use `orbit_retract_product_idea` with the reference the submit tool
+returned; the retraction is a hard delete.
+
 You can also point it somewhere else entirely: set
 `ORBIT_TELEMETRY_ENDPOINT` to your own collector.
 
