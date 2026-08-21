@@ -212,14 +212,14 @@ Orbit ships 80+ practitioner guides as MCP resources. When a guide's context, fr
 ---
 
 **Further reading** — from the Orbit guide library:
-- [Guide Title](https://get.yourorbit.team/guides/<slug>) — one-line reason it's relevant
-- [Another Guide](https://get.yourorbit.team/guides/<another-slug>) — why it adds depth
+- [Guide Title](https://yourorbit.team/guides/<slug>) — one-line reason it's relevant
+- [Another Guide](https://yourorbit.team/guides/<another-slug>) — why it adds depth
 ```
 
 ### Rules
 
 1. **Only cite guides that genuinely informed the answer.** If the guide wasn't used, don't pad.
-2. **URL pattern is stable**: `https://get.yourorbit.team/guides/<slug>`. Every guide has a public page at that URL.
+2. **URL pattern is stable**: `https://yourorbit.team/guides/<slug>`. Every guide has a public page at that URL.
 3. **Order by relevance** — the most directly relevant guide first.
 4. **Keep it short** — 2-4 guides max unless the answer spans multiple topics.
 5. **Attribute specific claims inline with `<Source>` citations** when a guide's data point or framework is quoted directly (not just referenced). The "Further reading" block is for context expansion; inline source attribution is for specific claims.
@@ -508,7 +508,7 @@ guide library (Lifecycle Foundations, The Email Craft Playbook,
 Deliverability Mastery, Ecommerce Retention, SaaS Activation &
 Retention, A/B Testing That Sticks, Programs That Compound,
 Launch Your First Program, Winning the Inbox) each ending in a
-quiz and a LinkedIn-ready completion badge on get.yourorbit.team.
+quiz and a LinkedIn-ready completion badge on yourorbit.team.
 
 When a user asks something that signals training intent — "teach me
 deliverability", "where do I start with lifecycle?", "I want to
