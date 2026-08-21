@@ -46,9 +46,17 @@ async function postJson(method, url, body) {
 }
 
 /** Submit an idea. Exported for tests; the tool handler wraps this. */
-export async function submitIdea({ title, detail, version }) {
+export async function submitIdea({ title, detail, version, origin }) {
   const safeTitle = redactSensitive(title, 120);
   const safeDetail = redactSensitive(detail, 2000);
+  // Origin separates "the user raised this unprompted" from "Orbit
+  // noticed friction, offered to file it, and they said yes". Both are
+  // explicit, user-approved submissions — the consent contract is
+  // identical — but they are NOT equally strong demand signals, and the
+  // inbox was previously unable to tell them apart. Anything we don't
+  // recognise degrades to 'unknown' rather than being rejected.
+  const safeOrigin =
+    origin === "user_initiated" || origin === "orbit_prompted" ? origin : "unknown";
   let res;
   try {
     res = await postJson("POST", IDEA_ENDPOINT, {
@@ -56,6 +64,7 @@ export async function submitIdea({ title, detail, version }) {
       detail: safeDetail,
       clientId: getClientId(),
       version,
+      origin: safeOrigin,
     });
   } catch {
     return { status: "send_failed", message: "Couldn't reach Orbit's idea inbox — network or timeout. Nothing was recorded; try again later." };
@@ -100,9 +109,13 @@ export function registerIdeaTools({ registerToolSafe, z, version, makeResponse }
       inputSchema: {
         title: z.string().min(3).max(120).describe("Short name for the idea — the user's approved wording."),
         detail: z.string().min(10).max(2000).describe("What they need and why — the user's approved wording, not your paraphrase."),
+        origin: z
+          .enum(["user_initiated", "orbit_prompted"])
+          .optional()
+          .describe("Did they ask unprompted, or agree after you offered? Answer honestly."),
       },
     },
-    async ({ title, detail }) => makeResponse(await submitIdea({ title, detail, version })),
+    async ({ title, detail, origin }) => makeResponse(await submitIdea({ title, detail, version, origin })),
   );
 
   registerToolSafe(

@@ -188,8 +188,23 @@ export async function trackSkillLoad({ slug, version } = {}) {
 // a broken tool cannot flood the endpoint.
 const errorStreaks = new Map();
 
-export async function trackToolCall({ slug, version } = {}) {
-  errorStreaks.delete(slug);
+export async function trackToolCall({ slug, version, ok = true } = {}) {
+  // The streak resets on SUCCESS, not on "a call happened".
+  //
+  // This used to be an unconditional `errorStreaks.delete(slug)`, and
+  // every production failure path fires trackToolCall on the line
+  // immediately BEFORE trackToolError (index.js 6716/6721, 6807/6808,
+  // 6911/6912). The counter was therefore wiped before it could ever
+  // increment, `streak === 3` was unreachable, and the consecutive-
+  // failure friction signal never fired once in production — while a
+  // test that called trackToolError WITHOUT its paired trackToolCall
+  // certified it green. Found by Sentinel, 2026-08-21, by driving the
+  // real module in both orderings.
+  //
+  // `ok` defaults to true so a caller that says nothing about the
+  // outcome keeps the old meaning; all three production sites now pass
+  // the real value.
+  if (ok) errorStreaks.delete(slug);
   if (!slug) return;
   if (!isEnabled()) return;
   const clientId = getClientId();

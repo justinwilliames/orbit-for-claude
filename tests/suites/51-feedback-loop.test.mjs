@@ -89,6 +89,53 @@ describe("friction telemetry", () => {
     assert.equal(received.filter((r) => r.body?.type === "friction" && r.body.slug === "orbit_sync_to_braze").length, 1, "reset streak can fire again");
   });
 
+  // THE GUARD. The test above models an ordering the server never emits:
+  // it calls trackToolError WITHOUT the trackToolCall that every
+  // production failure path fires on the line immediately before it
+  // (index.js 6716/6721, 6807/6808, 6911/6912).
+  //
+  // That gap let `errorStreaks.delete(slug)` sit unconditionally at the
+  // top of trackToolCall for four months, wiping the counter before it
+  // could increment, so `streak === 3` was unreachable and the friction
+  // signal never fired once in production — while this suite stayed
+  // green. Reverting the fix and re-running the file still passed 8/8,
+  // which is how we know the tests above cannot see this bug.
+  //
+  // This one drives the PRODUCTION ordering. `ok` defaults to true, so
+  // it also catches the likelier future regression: a caller that omits
+  // `ok` and silently restores the dead behaviour.
+  test("PRODUCTION ordering: call-then-error x3 fires exactly one friction, and a success resets", async () => {
+    received = [];
+    const slug = "orbit_probe_prod_order";
+    for (let i = 0; i < 5; i++) {
+      await telemetry.trackToolCall({ slug, version: "0.0.0", ok: false });
+      await telemetry.trackToolError({ slug, errorClass: "timeout", version: "0.0.0" });
+    }
+    await flush();
+    assert.equal(
+      received.filter((r) => r.body?.type === "friction" && r.body.slug === slug).length,
+      1,
+      "five call-then-error pairs must emit exactly one friction — zero means the streak reset bug is back",
+    );
+
+    // A recovered tool must not keep accumulating toward a friction event.
+    received = [];
+    const slug2 = "orbit_probe_recovers";
+    for (let i = 0; i < 2; i++) {
+      await telemetry.trackToolCall({ slug: slug2, version: "0.0.0", ok: false });
+      await telemetry.trackToolError({ slug: slug2, errorClass: "timeout", version: "0.0.0" });
+    }
+    await telemetry.trackToolCall({ slug: slug2, version: "0.0.0", ok: true }); // recovered
+    await telemetry.trackToolCall({ slug: slug2, version: "0.0.0", ok: false });
+    await telemetry.trackToolError({ slug: slug2, errorClass: "timeout", version: "0.0.0" });
+    await flush();
+    assert.equal(
+      received.filter((r) => r.body?.type === "friction" && r.body.slug === slug2).length,
+      0,
+      "a success between failures must reset the streak",
+    );
+  });
+
   test("ORBIT_TELEMETRY=0 silences friction entirely", async () => {
     process.env.ORBIT_TELEMETRY = "0";
     await telemetry.trackFriction({ slug: "route_task_no_match", detail: "anything" });

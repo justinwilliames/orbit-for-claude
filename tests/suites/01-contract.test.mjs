@@ -340,7 +340,25 @@ const SHAPED_RESPONSE_FLOOR = 45;
  * The remaining 693 bytes of headroom are NOT a licence. The next tool
  * argues its own case here, in this comment, or it does not ship.
  */
-const TOOLS_LIST_BYTE_BUDGET = 161_000;
+// Raised 161_000 → 161_500 on 2026-08-21, on purpose and with a reason,
+// which is what the assertion message asks for.
+//
+// What bought the 500 bytes: `origin` on orbit_submit_product_idea — an
+// optional enum separating an idea the user raised unprompted from one
+// they agreed to after Orbit offered to file it. Both are explicit,
+// user-approved submissions; they are not equally strong demand, and
+// the inbox previously could not tell them apart, so every accepted
+// offer read as unsolicited pull.
+//
+// The description was cut to the bone first (three rewrites, 340 chars
+// → 74) and the field still costs ~122 bytes in pure structure — name,
+// enum values, optional marker. That floor is not removable by editing
+// prose, so this is a raise rather than a trim.
+//
+// Headroom is deliberately small: 161_500 leaves ~380 bytes, which is
+// roughly one more optional parameter and nowhere near another tool.
+// Tool 131 still has to be a decision rather than a diff.
+const TOOLS_LIST_BYTE_BUDGET = 161_500;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

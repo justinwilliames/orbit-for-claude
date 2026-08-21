@@ -6713,7 +6713,7 @@ function withToolErrorHandling(toolName, handler) {
         duration_ms: Date.now() - startedAt,
         bytes: finalBytes, original_bytes: originalBytes, truncated
       });
-      trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
+      trackToolCall({ slug: toolName, version: ORBIT_VERSION, ok: !shapedFailure }).catch(() => {});
       // A handler that returned a shaped failure instead of throwing is
       // still a failure. Without this, "no credentials configured" — the
       // dominant fresh-install outcome — reads as a successful call.
@@ -6804,7 +6804,7 @@ function withToolErrorHandling(toolName, handler) {
       // vocabulary computed above — never the message, which can carry an
       // upstream credential. Without this pair the only failure record is
       // a stderr line in a log nobody reads.
-      trackToolCall({ slug: toolName, version: ORBIT_VERSION }).catch(() => {});
+      trackToolCall({ slug: toolName, version: ORBIT_VERSION, ok: false }).catch(() => {});
       trackToolError({ slug: toolName, errorClass: code, version: ORBIT_VERSION }).catch(() => {});
       return makeJsonToolResponse(payload);
     }
@@ -6908,7 +6908,7 @@ function instrumentSchemaRejections() {
         if (/Input validation error/i.test(text)) errorClass = "invalid_args";
         else if (/not found$|is disabled$|disabled$/i.test(text.trim())) errorClass = "unknown_tool";
         if (!errorClass) return result;
-        trackToolCall({ slug, version: ORBIT_VERSION }).catch(() => {});
+        trackToolCall({ slug, version: ORBIT_VERSION, ok: false }).catch(() => {});
         trackToolError({ slug, errorClass, version: ORBIT_VERSION }).catch(() => {});
       } catch { /* telemetry must never break a tool call */ }
       return result;
