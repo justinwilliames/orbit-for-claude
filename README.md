@@ -20,7 +20,7 @@ Orbit renders it at 640px and 390px in a real engine and measures what only a re
 
 Those are the real findings from the snippet above. Note the second one: `4.47:1 — #ffffff on #6366f1 at 13px`. That is Orbit's own brand indigo, missing AA by three hundredths. The gate does not make exceptions for the people who wrote it.
 
-Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 90 long-form guides bundled inside the extension, offline, with nothing to log into.
+Then try `orbit_sample_size`, `orbit_rfm_score`, `orbit_qa_email`, or ask Claude to "load Orbit's winback playbook." Or read the shelf it came with — "list Orbit's guides, then read me the one on dunning" pulls from 91 long-form guides bundled inside the extension, offline, with nothing to log into.
 
 ## Build your own lifecycle brain
 
@@ -56,7 +56,7 @@ Roughly two-thirds of the tool surface needs nothing beyond the install:
 - **QA and compliance lint** — accessibility (WCAG AA), dark-mode, Gmail clipping, GDPR consent, unsubscribe-page audits against the Gmail/Yahoo bulk-sender rules.
 - **The MJML build pipeline** — component-first generation, compile, preview.
 - **The skill library** — 80 protocols Claude loads and follows, on lifecycle design, deliverability, Braze mechanics, Stripo mechanics, experimentation, copy, and brand.
-- **A 178,000-word practitioner library, offline.** 90 long-form guides ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no network call and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing. A ten-course reading path indexes them by level; the courses themselves are slugs and links, so the lessons open on the site.
+- **A 178,000-word practitioner library, offline.** 91 long-form guides ship inside the extension as MCP resources — welcome series, dunning, win-back, deliverability, Liquid, segmentation, experiment design. Claude reads and cites them directly, with no network call and nothing to log into. Ask it to "read Orbit's guide on dunning" and it has the whole thing. A ten-course reading path indexes them by level; the courses themselves are slugs and links, so the lessons open on the site.
 
 ## What needs a credential
 
