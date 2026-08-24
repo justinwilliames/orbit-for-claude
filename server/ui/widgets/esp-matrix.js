@@ -146,6 +146,18 @@ body[data-ready] .when-empty { display: none !important; }
 
 /* Six columns will not fit a narrow pane. It scrolls, with the operation
    column pinned, rather than dropping columns at a breakpoint. */
+/* KNOWN DEFECT, evidence in the commit that added this note.
+   At a short pane (observed at 520px and below) the legend wraps to three
+   lines, the note panel takes its share, and flex:1 with min-height:0
+   leaves the grid 47px — column headers and not one data row. The grid is
+   the entire point of this widget, so that reads as broken.
+   Setting min-height:260px here was TRIED and REVERTED: the parent chain is
+   height-constrained by the host pane, so the child simply overflowed its
+   parent (grid-box bottom 499px inside a card ending at 299px) and the note
+   panel rendered ON TOP of the grid. Strictly worse.
+   The real fix is structural — let the widget body scroll instead of
+   fitting a fixed viewport — and needs verifying in the host pane, not
+   guessed at. Left as-is deliberately rather than shipped half-done. */
 .grid-box { flex: 1; min-height: 0; margin-top: 10px; overflow: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm); }
 table.grid { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
 table.grid th, table.grid td { padding: 8px 10px; text-align: left; vertical-align: top; }
