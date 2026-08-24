@@ -36,11 +36,12 @@
  * host round-trips do not.
  *
  * COVERAGE, as of 2026-08-24: `--live` boots the real MCP client and
- * populates 14 of the 23 widgets from actual tool output. The rest either
- * need credentials, need a file the harness has no fixture for, or take
- * inputs not yet in LIVE_ARGS — each is REPORTED by name in the summary
- * rather than skipped quietly, because "no fixture" and "tool refused"
- * are different facts.
+ * populates 21 of the 23 widgets from actual tool output. The two that do
+ * not are REPORTED by name with their reason rather than skipped quietly
+ * — orbit_lifecycle_diagram wants a spec_json its render action cannot
+ * synthesise, and orbit_review_creative returns no structuredContent for
+ * the minimal item shape. "No fixture" and "tool refused" are different
+ * facts and the summary keeps them apart.
  *
  * THE DEFECT SIGNATURE, for whoever automates this next. Load a populated
  * widget at ~900x520 and look for a scrollable element whose scrollHeight
@@ -54,10 +55,16 @@
  * cheerfully reported zero defects while the 71px case sat in front of
  * it; pick the threshold from the real measurement, not a round number.
  *
- * WHAT THE FIRST REAL SWEEP FOUND (14 populated widgets @ 900x520):
+ * WHAT THE FULL SWEEP FOUND (21 populated widgets @ 900x520, three checks:
+ * collapsed scrollers, horizontal document overflow, content clipped by an
+ * overflow:hidden ancestor). 18 clean on all three. Three flagged, all the
+ * same defect:
  *   orbit_esp_capabilities  .grid-box   71px /  592px   ratio 8.3  SEVERE
  *   orbit_client_sim        .rail-list 140px /  645px   ratio 4.6
  *   orbit_render_gate       .rail-list 104px /  379px   ratio 3.6
+ *
+ * No horizontal overflow and no hidden-clipping anywhere in the set, which
+ * is worth stating: the three below are the whole finding, not a sample.
  *
  * This is ONE systemic issue, not three bugs. Every one of them is a
  * `flex:1; min-height:0` primary content area inside a height-constrained
@@ -166,13 +173,40 @@ const LIVE_ARGS = {
   orbit_client_sim: { html: SAMPLE_HTML },
   orbit_qa_email: { html: SAMPLE_HTML, include_size_check: true },
   orbit_render_gate: { html: SAMPLE_HTML, label: "widget render check" },
+  // Field names read off the tool schema, not guessed: last_order_date /
+  // order_count / lifetime_value. A first pass used last_order_at/orders/
+  // revenue and the tool honestly returned scored_rows:0.
   orbit_rfm_score: {
     users_json: JSON.stringify([
-      { user_id: "u1", last_order_at: "2026-08-01", orders: 9, revenue: 940 },
-      { user_id: "u2", last_order_at: "2026-05-11", orders: 2, revenue: 120 },
-      { user_id: "u3", last_order_at: "2026-02-02", orders: 1, revenue: 40 },
+      { id: "u1", last_order_date: "2026-08-01", order_count: 9, lifetime_value: 940 },
+      { id: "u2", last_order_date: "2026-05-11", order_count: 2, lifetime_value: 120 },
+      { id: "u3", last_order_date: "2026-02-02", order_count: 1, lifetime_value: 40 },
+      { id: "u4", last_order_date: "2026-07-20", order_count: 5, lifetime_value: 505 },
     ]),
     reference_date: "2026-08-24",
+  },
+  orbit_learn_email_template: { html: SAMPLE_HTML, template_name: "widget-check" },
+  orbit_liquid_state_matrix: {
+    html: SAMPLE_HTML.replace(
+      "Your order is on its way",
+      "{% if loyalty_tier == 'gold' %}Your VIP order is on its way{% else %}Your order is on its way{% endif %}"
+    ),
+  },
+  orbit_check_email_auth: { domain: "yourorbit.team" },
+  orbit_list_growth_forecast: { current_list_size: 48000, monthly_acquisition: 3200, monthly_churn_pct: 2.4, months: 12 },
+  orbit_parse_test_readout: {
+    test_name: "Subject line — urgency vs clarity",
+    hypothesis: "A clearer subject beats an urgent one on click-through.",
+    control_visitors: 18400, control_conversions: 552,
+    variant_visitors: 18310, variant_conversions: 641,
+  },
+  orbit_parse_postmaster_signal: {
+    snapshot_json: JSON.stringify({ spam_rate_pct: 0.18, domain_reputation: "high", ip_reputation: "high" }),
+  },
+  orbit_lifecycle_diagram: { action: "render", request: "Welcome series: signup, then a value email 2 days later, then a nudge if no purchase in 7 days." },
+  orbit_review_creative: {
+    items: [{ name: "Welcome email", channel: "email", html: SAMPLE_HTML }],
+    programme: "Welcome series",
   },
   orbit_cohort_retention: {
     enrollments_json: JSON.stringify([
