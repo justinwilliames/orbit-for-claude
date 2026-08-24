@@ -142,11 +142,12 @@ The gate regenerates this matrix on every run to
 | Mailchimp | esp | **2** | `orbit_check_esp_auth` | 3 | — |
 | Salesforce Marketing Cloud | esp | **2** | `orbit_check_esp_auth` | 3 | — |
 | Stripo | builder | **2** | `orbit_check_stripo_auth` | 5 | — |
-| Figma | design | **1** | — (import is the read) | 1 | — |
+| Figma | design | **1** | — | 1 | — |
 | Google AI (Gemini) | media | **1** | — | 1 | — |
-| Amplitude | cdp | **0** | — (built, not registered) | 0 | — |
-| Databricks | cdp | **0** | — (built, not registered) | 0 | — |
-| Segment, RudderStack | cdp | **0** | — | 0 | — |
+| Segment | cdp | **2** | `orbit_check_data_auth` | 3 | — |
+| RudderStack | cdp | **2** | `orbit_check_data_auth` | 3 | — |
+| Amplitude | cdp | **2** | `orbit_check_data_auth` | 3 | — |
+| Databricks | cdp | **2** | `orbit_check_data_auth` | 3 | — |
 
 The five non-Braze ESPs read through the shared `orbit_esp_*` family
 (`orbit_esp_read`, `orbit_esp_templates`, `orbit_esp_capabilities`, plus
@@ -198,28 +199,23 @@ into an SSRF primitive that also posts the user's token wherever it points.
 - **Google AI → Tier 2 (or reclassify).** It is a generate capability, not a
   data source; the honest move may be to keep it Tier 1 and document it as a
   media enabler rather than force a read surface that does not exist.
-- **CDPs → Tier 1+.** When Segment/RudderStack/etc. get a config slot and a
-  connection check, move them off `roadmap` and the gate begins enforcing their
-  new tier.
-- **The tools/list budget is the binding constraint on parity, and it is
-  shared.** Suite 01 caps `tools/list` at 165,500 bytes, raised from 161,500 on
-  2026-08-24 to pay for the data family (Justin authorised the raise explicitly;
-  the arithmetic is in the suite's own comment). The committed tree measures
-  **165,278 bytes across 135 tools — 222 bytes of headroom**. That is below the
-  floor for a single registered tool (~300 bytes: name, title, annotations, an
-  empty JSON Schema, and a 20-character description), so no new integration of
-  any shape fits today without another decision.
-- **Amplitude and Databricks are LIVE at Tier 2** via the polymorphic
-  `orbit_data_*` family (3,838 bytes for four tools covering both platforms),
-  registered 2026-08-24 with manifest credential slots and annotation tiers.
-- **Segment and RudderStack are NOT built.** Both were prototyped and measured
-  on 2026-08-24 (Segment's read family 2,456 bytes standalone, RudderStack's
-  1,639) and then **reverted** — behind the shared family they would rejoin for
-  **252 bytes between them**, which is the whole point of the polymorphic shape.
-  But 252 > the 222 bytes now free, so they need either a further small raise or
-  ~30 bytes of retirement first. They are blocked on that one number, not on
-  their APIs: the adapters are a known quantity and the family already exists to
-  hold them.
+- **All four data platforms are LIVE at Tier 2** — Amplitude, Databricks,
+  Segment and RudderStack — through the polymorphic `orbit_data_*` family.
+  Amplitude and Databricks registered 2026-08-24 when the budget was raised to
+  pay for the family's 3,838 bytes; Segment and RudderStack joined the same day
+  for **+455 bytes between them**, which is the whole point of the polymorphic
+  shape: the fifth platform costs a registry row and an enum value, not a tool.
+- **The tools/list budget is no longer the binding constraint.** Suite 01 caps
+  `tools/list` at 200,000 bytes, raised from 153,000 on 2026-08-24 with the
+  argument recorded in the suite's own comment — including the part that argues
+  against itself, that only 66 of 135 tools had ever been called at the time.
+  Read that comment before quoting a number here; this file has been wrong
+  about the budget twice by paraphrasing it.
+- **The real constraint is selection, not bytes.** Anthropic documents tool-
+  selection accuracy degrading past 30-50 tools loaded in context, and Orbit
+  registers 135. A byte cap cannot measure that, which is why the next gate
+  here should be a tool COUNT assertion and a discoverability test rather than
+  a larger number.
 
 ---
 
