@@ -1378,8 +1378,19 @@ function ensureBootstrappedOnFirstRun() {
   return ensureHomeWorkspaceDirs({ rootDir: ROOT_DIR });
 }
 
-// For operational tools: check both bootstrap AND brand kit readiness.
-// Intercepts once per session if setup is incomplete.
+// For OPERATIONAL tools only: check both bootstrap AND brand kit readiness,
+// intercepting once per session if setup is incomplete.
+//
+// NOT for entry points. orbit_list_skills and orbit_route_task deliberately
+// call ensureBootstrappedOnFirstRun() instead: they are the two tools a new
+// user hits regardless of intent, and neither needs a brand kit to answer.
+// Intercepting them broke Orbit's own promise ("roughly two-thirds needs no
+// credentials at all", server instructions) on the very first call, and
+// deferred whatever the user actually asked. The six tools that keep the
+// intercept genuinely cannot produce correct output without brand tokens —
+// a message plan or an MJML template built on defaults is worse than a
+// prompt to set up. That is the line: does the OUTPUT need it, not is this
+// the first call.
 function setupInterceptIfNeeded() {
   if (_setupPrompted) return null;
 
@@ -1530,8 +1541,12 @@ function registerTools() {
       }
     },
     async ({ category }) => {
-      const firstRun = setupInterceptIfNeeded();
-      if (firstRun) return firstRun;
+      // Bootstrap the workspace, but NEVER intercept here. This is an entry
+      // point — "what can Orbit do?" — and answering it needs no brand kit,
+      // no credential, nothing. Hijacking it into setup contradicted Orbit's
+      // own instructions, which promise roughly two-thirds of the product
+      // works with nothing connected. See the note on setupInterceptIfNeeded.
+      ensureBootstrappedOnFirstRun();
       const skills = listSkills(library, category);
       const lines = [
         `Orbit skill count: ${skills.length}`,
@@ -1557,8 +1572,12 @@ function registerTools() {
       }
     },
     async ({ request, limit }) => {
-      const firstRun = setupInterceptIfNeeded();
-      if (firstRun) return firstRun;
+      // Bootstrap, but NEVER intercept. The server instructions tell Claude to
+      // call THIS tool first for any lifecycle work, so intercepting it meant
+      // a user whose opening question was "why did my last send underperform"
+      // got detoured into collecting a logo and a tone of voice before Orbit
+      // answered anything. Routing a question to a skill needs no brand kit.
+      ensureBootstrappedOnFirstRun();
       const result = routeTask(library, request, limit ?? 5, {
         defaultPlatform: runtimeConfig.defaultPlatform,
         defaultGeography: runtimeConfig.defaultGeography
