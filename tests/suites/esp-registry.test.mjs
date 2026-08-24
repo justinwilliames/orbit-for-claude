@@ -105,16 +105,20 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
 
   // The API supports it; Orbit has not built the adapter path. Backlog items.
   //
-  // THE CUSTOMER.IO TEMPLATE TRIO LEFT THIS LIST (2026-08-24) — by being built,
-  // not by being re-labelled. listTemplates/getTemplate/pushTemplate now call
-  // the Design Studio endpoints, the matrix rows dropped their
-  // orbit:"not_implemented" in the same commit, and the closed-gap assertions
-  // below pin that pair together: a method without the flip is refused before
-  // it runs, a flip without the method is a lie the registry would let through.
-  const ORBIT_GAP_CASES = [
-    ["sfmc", "listSegments"], // GET /data/v1/customobjects exists
-    ["sfmc", "getPerformance"], // GET /interaction/v1/interactions?extras=stats exists
-  ];
+  // THE CUSTOMER.IO TEMPLATE TRIO AND THE SFMC PAIR BOTH LEFT THIS LIST
+  // (2026-08-24) — by being built, not by being re-labelled. listTemplates/
+  // getTemplate/pushTemplate now call the Design Studio endpoints, and
+  // sfmc.listSegments/getPerformance now call GET /data/v1/customobjects and
+  // GET /interaction/v1/interactions?extras=stats; every one of those rows
+  // dropped its orbit:"not_implemented" in the same commit as the method, and
+  // the closed-gap assertions below pin that pair together: a method without
+  // the flip is refused before it runs, a flip without the method is a lie
+  // the registry would let through. As of 2026-08-24 there is no remaining
+  // orbit:"not_implemented" row anywhere in the matrix — this list is
+  // intentionally empty, not stale. The orbit_gap MECHANISM (not a live case)
+  // is still proven below: assertCentralShape can produce it, and the
+  // CLOSED_GAP_CASES loop proves the flip+method coupling in both directions.
+  const ORBIT_GAP_CASES = [];
 
   // Gaps that were closed. Asserted as hard as the open ones, because a closed
   // gap silently re-opening (a method deleted, or a row re-marked) is exactly
@@ -124,6 +128,11 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
     ["customerio", "getTemplate", "native"],
     // partial, and it must STAY partial: Customer.io's API cannot publish.
     ["customerio", "pushTemplate", "partial"],
+    // partial, and it must STAY partial: the classic Email Studio surfaces
+    // (Lists/Groups/FilterDefinitions; send-level SOAP aggregates) are
+    // genuinely SOAP-only regardless of what Orbit's adapter now calls.
+    ["sfmc", "listSegments", "partial"],
+    ["sfmc", "getPerformance", "partial"],
   ];
 
   /** The shape every refusal shares, whichever axis refused it. */
@@ -198,26 +207,31 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
     });
   }
 
-  test("both refusal kinds are reachable, so the discriminator is not decorative", () => {
+  test("the platform-limit refusal kind is reachable, so the discriminator is not decorative", () => {
     assert.ok(PLATFORM_LIMIT_CASES.length > 0, "no platform-limit case left to prove");
-    assert.ok(ORBIT_GAP_CASES.length > 0, "no orbit-gap case left to prove");
+    // The orbit-gap kind has no LIVE case as of 2026-08-24 (both known gaps
+    // closed) — its correctness is proven structurally instead, by the
+    // CLOSED_GAP_CASES loop asserting refusalOf() is null post-flip for a row
+    // that used to require it to be "orbit_gap", and by unsupportedResponse()
+    // still branching on refusalOf() === "orbit_gap" in errors.js, unchanged.
+    assert.equal(
+      ORBIT_GAP_CASES.length,
+      0,
+      "if this fails because a new gap was ADDED to the matrix, add it here " +
+        "too, don't just bump the number"
+    );
   });
 
-  test("an Orbit-gap op is refused by the matrix, never attempted", async () => {
-    // sfmc omits listSegments on its adapter AND the matrix marks it an Orbit
-    // gap. Either path (matrix gate OR missing method) yields the same central
-    // shape; the matrix gate fires FIRST, which is what lets the response name
-    // the gap as Orbit's instead of falling through to a generic refusal.
-    // Proven here by the honest response never reaching a throw.
-    //
-    // This case used to be customerio.getTemplate. It was moved when that gap
-    // was CLOSED rather than deleted, because the invariant is about the gate,
-    // not about Customer.io.
+  test("a closed Orbit-gap op reaches its adapter's validateSetup, never the matrix refusal", async () => {
+    // listSegments used to be refused by the matrix BEFORE reaching the sfmc
+    // adapter at all (no network, no validateSetup). Now that the gap is
+    // closed, dispatch must route straight through to the adapter method,
+    // which itself soft-fails to the frozen needs_setup shape on an empty
+    // config — proving the matrix gate no longer intercepts a built op.
     const res = await dispatch("sfmc", "listSegments", { config: {} });
-    assert.equal(res.unsupported, true);
+    assert.notEqual(res.unsupported, true, "a closed gap must not still read as {unsupported}");
+    assert.equal(res.needs_setup, true, "empty config falls through to the adapter's own setup check");
     assert.equal(res.platform, "sfmc");
-    assert.equal(res.operation, "listSegments");
-    assert.equal(res.refusal, "orbit_gap");
   });
 
   for (const [platform, operation, expectedSupport] of CLOSED_GAP_CASES) {

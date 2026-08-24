@@ -145,10 +145,12 @@ Insist on answering these before touching anything technical:
   move needs a full re-author.
 
 ### Moving to / from SFMC (Salesforce Marketing Cloud)
-- **REST-only in v1.** Orbit reads/writes Content Builder `htmlemail` assets and reads
-  Journeys via REST (`orbit_esp_templates` / `orbit_esp_push_template` / `orbit_esp_read`),
-  but **subscriber lists / data extensions and aggregate send metrics are SOAP-first and
-  unsupported** — plan the audience and reporting legs manually or via SFMC's own tooling.
+- **REST-only in v1.** Orbit reads/writes Content Builder `htmlemail` assets, reads
+  Journeys, lists data extensions, and reads journey performance stats, all via REST
+  (`orbit_esp_templates` / `orbit_esp_push_template` / `orbit_esp_read`) — but the
+  **classic Email Studio surfaces (subscriber lists/groups/filter definitions,
+  send-JOB aggregates, per-subscriber tracking events) are genuinely SOAP-only and
+  unsupported** — plan those legs manually or via SFMC's own tooling.
 - SFMC uses **AMPscript** (primary) — the biggest dialect gap of any lane. Every
   migrated template's personalisation must be rewritten in AMPscript; a straight token
   swap will not work.

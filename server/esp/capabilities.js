@@ -687,36 +687,38 @@ export const CAPABILITIES = Object.freeze({
         "Journeys. The two reads need DIFFERENT documented scopes: the collection read is Automation | Journeys | Read, the single read (/interactions/{id}) is Automation | Interactions | Read. The collection supports extras=activities|outcome|stats|all, status, tag, nameOrDescription, mostRecentVersionOnly and $pageSize max 50. Note /hub/v1/campaigns is a DIFFERENT object — SFMC 'Campaigns' are a tagging layer over assets, not sends (verified 2026-08-24).",
     },
     listSegments: {
-      // Was support:"unsupported" ("no clean REST listing"). OVERSTATED — data
-      // extensions, where most SFMC audiences actually live, list over plain
-      // REST. `partial` because the CLASSIC surfaces really are SOAP-only.
+      // Was support:"unsupported" ("no clean REST listing"), then corrected to
+      // partial + orbit:"not_implemented" — data extensions, where most SFMC
+      // audiences actually live, list over plain REST, but Orbit's adapter
+      // called none of it. It has (2026-08-24): listSegments now calls
+      // GET /data/v1/customobjects. `partial` is UNCHANGED and stays that way
+      // — the classic Email Studio surfaces really are SOAP-only; building
+      // the adapter must never be read as upgrading a claim about the vendor.
       support: "partial",
-      orbit: "not_implemented",
       label: "segments/lists read",
       endpoint:
         "GET /data/v1/customobjects, /data/v1/customobjects/category/{categoryId}, /data/v1/customobjects/{id}",
       doc_url:
         "https://developer.salesforce.com/docs/marketing/marketing-cloud/references/mc-custom_objects?meta=getDataExtensions",
-      reason:
-        "ORBIT BUILD GAP on a partially-supported platform capability. SFMC DOES publish a REST audience listing: GET /data/v1/customobjects returns data extensions — where the overwhelming majority of SFMC audiences are actually held — plus a by-folder variant and a single-DE read. Orbit's SFMC adapter calls none of them. The platform's genuine constraint (why partial, not native): classic Email Studio subscriber Lists, Groups and Filter/segment definitions are SOAP-only (List, ListSubscriber, FilterDefinition), and even the REST data-extension read returns the DE's SHAPE, never the query that populated it (verified 2026-08-24).",
-      nearest_alternative:
-        "Journey entry-source metadata via the interactions read; or the REST data-extension listing GET /data/v1/customobjects, which Orbit's adapter does not yet call. Classic lists/groups/filters need a SOAP client (out of v1 scope).",
+      notes:
+        "GET /data/v1/customobjects returns data extensions — where the overwhelming majority of SFMC audiences are actually held. The genuine constraint (why partial, not native): classic Email Studio subscriber Lists, Groups and Filter/segment definitions are SOAP-only (List, ListSubscriber, FilterDefinition), and even the REST data-extension read returns the DE's SHAPE, never the query that populated it. The endpoint documents a search-string listing rather than a $page/$pageSize collection, so Orbit's adapter applies an optional client-side limit rather than inventing undocumented paging params; member_count is always null (no row-count field on this read) (verified 2026-08-24).",
     },
     getPerformance: {
-      // Was support:"unsupported" ("no simple REST aggregate"). TOO BROAD —
-      // journey stats and transactional delivery metrics are plain REST.
-      // `partial` because send-level aggregates are genuinely SOAP-only.
+      // Was support:"unsupported" ("no simple REST aggregate"), then corrected
+      // to partial + orbit:"not_implemented" — journey stats and transactional
+      // delivery metrics are plain REST, but Orbit's adapter read none of it.
+      // It has (2026-08-24): getPerformance now calls
+      // GET /interaction/v1/interactions?extras=stats. `partial` is UNCHANGED
+      // — send-level aggregates are genuinely SOAP-only; building the adapter
+      // must never be read as upgrading a claim about the vendor.
       support: "partial",
-      orbit: "not_implemented",
       label: "performance metrics",
       endpoint:
-        "GET /interaction/v1/interactions?extras=stats, POST /interaction/v1/interactions/journeyhistory/download, GET /messaging/v1/email/definitions/{definitionKey}/queue",
+        "GET /interaction/v1/interactions?id={id}&extras=stats, POST /interaction/v1/interactions/journeyhistory/download, GET /messaging/v1/email/definitions/{definitionKey}/queue",
       doc_url:
         "https://developer.salesforce.com/docs/marketing/marketing-cloud/references/mc_rest_interaction/getInteractionCollection.html",
-      reason:
-        "ORBIT BUILD GAP on a partially-supported platform capability. SFMC DOES return performance over plain REST: GET /interaction/v1/interactions?extras=stats gives journey-level statistics, POST /interaction/v1/interactions/journeyhistory/download gives per-contact journey history as CSV/TSV, and the transactional queue/delivery-record endpoints report on messaging sends. Orbit's SFMC adapter reads none of them. The platform's genuine constraint (why partial, not native): classic Email Studio send-level aggregates and per-subscriber tracking events are SOAP-only (Retrieve on Send, SendSummary, TriggeredSendSummary, SentEvent/OpenEvent/ClickEvent/BounceEvent/UnsubEvent), and journey history is capped at 30 days' retention and 1 GB per download (verified 2026-08-24).",
-      nearest_alternative:
-        "Journey read with extras=stats, plus SFMC's in-app reports; full send-level aggregates need a SOAP client (revisit in v2).",
+      notes:
+        "GET /interaction/v1/interactions?extras=stats gives journey-level statistics over plain REST; Orbit's adapter filters the collection to one journey with id={campaign_id}. The genuine constraint (why partial, not native): classic Email Studio send-level aggregates and per-subscriber tracking events are SOAP-only (Retrieve on Send, SendSummary, TriggeredSendSummary, SentEvent/OpenEvent/ClickEvent/BounceEvent/UnsubEvent), and journey history export (journeyhistory/download, not yet called) is capped at 30 days' retention and 1 GB per download. Salesforce's OpenAPI reference does not publish a fixed field list for the nested stats object the collection returns with extras=stats, so each of the six shared metrics is matched defensively against the field spellings visible elsewhere in SFMC's own docs and left null — never fabricated — when nothing matches; esp_raw always carries the untranslated payload (verified 2026-08-24).",
     },
     sendTest: {
       support: "partial",

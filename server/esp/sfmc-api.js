@@ -689,6 +689,139 @@ async function listCampaigns({ config, kind, limit, cursor } = {}) {
   };
 }
 
+function normalizeDataExtension(de) {
+  return {
+    platform: PLATFORM,
+    id:
+      de?.customerKey != null
+        ? String(de.customerKey)
+        : de?.id != null
+          ? String(de.id)
+          : null,
+    name: de?.name ?? null,
+    kind: "segment",
+    // The data-extension listing does not return row/subscriber counts; a
+    // count needs a separate GET /data/v1/customobjectdata/.../rowset read
+    // per data extension, which is out of scope for a segment list.
+    member_count: null,
+    esp_raw: de
+  };
+}
+
+async function listSegments({ config, limit } = {}) {
+  const setup = validateSfmcSetup(config);
+  if (setup) return setup;
+
+  // GET /data/v1/customobjects returns data extensions — where the
+  // overwhelming majority of SFMC audiences actually live (verified
+  // 2026-08-24, docs/api-surveys/sfmc.md). Salesforce documents this as a
+  // search-string listing, not a $page/$pageSize collection, so — like
+  // Customer.io's /v1/segments, which has the same shape — there is no
+  // documented server cursor to page through; apply an optional client-side
+  // limit and report truncation honestly rather than inventing paging
+  // parameters the survey does not back.
+  const response = await sfmcGet({ config, endpoint: "/data/v1/customobjects" });
+  const all = (Array.isArray(response?.items) ? response.items : []).map(
+    normalizeDataExtension
+  );
+  const items = limit != null ? all.slice(0, Number(limit)) : all;
+  return {
+    items,
+    truncated: limit != null && all.length > items.length,
+    next_cursor: null
+  };
+}
+
+function pickNumber(...values) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+/**
+ * SFMC's `extras=stats` response nests journey-level counters under the
+ * interaction object; Salesforce's OpenAPI reference does not publish a fixed
+ * field list for that nested shape (verified 2026-08-24, docs/api-surveys/
+ * sfmc.md). Every stat is therefore looked up defensively against the field
+ * spellings visible elsewhere in SFMC's own docs (camelCase on REST journey
+ * fields, PascalCase on the SOAP Send/SentEvent objects the survey names) and
+ * left null — never fabricated — when nothing matches. esp_raw always carries
+ * the untranslated payload so a human can read the real keys SFMC returned.
+ */
+function extractJourneyStats(interaction) {
+  const nested =
+    (interaction?.stats && typeof interaction.stats === "object" && interaction.stats) ||
+    (interaction?.statistics && typeof interaction.statistics === "object" && interaction.statistics) ||
+    interaction ||
+    {};
+
+  const stats = {
+    sent: pickNumber(nested.sent, nested.Sent, nested.numberSent, nested.NumberSent),
+    delivered: pickNumber(
+      nested.delivered,
+      nested.Delivered,
+      nested.numberDelivered,
+      nested.NumberDelivered
+    ),
+    unique_opens: pickNumber(nested.uniqueOpens, nested.UniqueOpens, nested.opens, nested.Opens),
+    unique_clicks: pickNumber(
+      nested.uniqueClicks,
+      nested.UniqueClicks,
+      nested.clicks,
+      nested.Clicks
+    ),
+    bounces: pickNumber(nested.bounces, nested.Bounces, nested.hardBounces, nested.HardBounces),
+    unsubscribes: pickNumber(
+      nested.unsubscribes,
+      nested.Unsubscribes,
+      nested.optOuts,
+      nested.OptOuts
+    )
+  };
+  const unavailable = Object.entries(stats)
+    .filter(([, value]) => value == null)
+    .map(([key]) => key);
+  return { stats, unavailable };
+}
+
+async function getPerformance({ config, campaign_id: campaignId, window } = {}) {
+  const setup = validateSfmcSetup(config);
+  if (setup) return setup;
+  if (!clean(campaignId)) {
+    throw new EspApiError({
+      code: "not_found",
+      platform: PLATFORM,
+      status: null,
+      endpoint: "/interaction/v1/interactions",
+      detail: "campaign_id (the SFMC journey id or key) is required for a performance read."
+    });
+  }
+
+  // Journey Builder's collection read takes extras=stats and returns
+  // journey-level statistics over plain REST (verified 2026-08-24,
+  // docs/api-surveys/sfmc.md). Filtering the collection by id follows the
+  // same documented pattern the survey records for listJourneyVersions
+  // (GET /interaction/v1/interactions?id={id}&...).
+  const response = await sfmcGet({
+    config,
+    endpoint: "/interaction/v1/interactions",
+    params: { id: clean(campaignId), extras: "stats" }
+  });
+  const rawItems = Array.isArray(response?.items) ? response.items : [];
+  const interaction = rawItems[0] ?? null;
+  const { stats, unavailable } = extractJourneyStats(interaction);
+
+  return {
+    platform: PLATFORM,
+    campaign_id: String(campaignId),
+    window: window ?? null,
+    stats,
+    unavailable,
+    esp_raw: response
+  };
+}
+
 async function sendTest({ config, template_id: templateId, html, recipient } = {}) {
   const setup = validateSfmcSetup(config);
   if (setup) return setup;
@@ -745,5 +878,7 @@ export const adapter = {
   getTemplate,
   pushTemplate,
   listCampaigns,
+  listSegments,
+  getPerformance,
   sendTest
 };

@@ -224,7 +224,7 @@ export const INTEGRATIONS = Object.freeze([
     deepTools: [],
     roadmap: false,
     notes:
-      "OAuth2 client-credentials; templates and campaigns read via the generic family (AMPscript templating). Segment and performance reads return {unsupported} as ORBIT build gaps, not platform limits: SFMC publishes REST paths for both — GET /data/v1/customobjects for data extensions, and GET /interaction/v1/interactions?extras=stats for journey stats — and this adapter does not call them yet. Classic Email Studio lists/filters and send-level aggregates are genuinely SOAP-only (surveyed 2026-08-24).",
+      "OAuth2 client-credentials; templates, campaigns, segments and performance all read via the generic family (AMPscript templating). Segment reads list data extensions (GET /data/v1/customobjects) and performance reads journey stats (GET /interaction/v1/interactions?extras=stats) — both marked partial, not native: classic Email Studio lists/filters and send-level aggregates are genuinely SOAP-only, which a REST-only v1 cannot reach (surveyed 2026-08-24, built 2026-08-24).",
   },
   {
     id: "stripo",

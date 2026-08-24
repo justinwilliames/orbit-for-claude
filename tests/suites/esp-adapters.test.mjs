@@ -237,6 +237,159 @@ describe("SFMC — token cache, single-flight and 401 replay-once", () => {
   });
 });
 
+// ── SFMC — listSegments / getPerformance (closed 2026-08-24) ──────
+// GET /data/v1/customobjects (data extensions) and GET /interaction/v1/
+// interactions?extras=stats both exist per docs/api-surveys/sfmc.md; these
+// two ops used to be omitted from the adapter entirely (matrix gate refused
+// them before any network call). They are built now — this block proves the
+// happy path, an auth failure, a not-found, and that no credential survives
+// into a thrown error, matching the house pattern used above.
+describe("SFMC — listSegments (data extensions) / getPerformance (journey extras=stats)", () => {
+  test("listSegments maps GET /data/v1/customobjects into NormalizedSegment[]", async () => {
+    const config = { sfmcClientId: "id", sfmcClientSecret: "sec", sfmcSubdomain: "sf-segments" };
+    const calls = mockFetch((u) => {
+      if (isSfmcToken(u)) return sfmcTokenResponse(1);
+      return makeResponse(200, {
+        items: [
+          { customerKey: "DE-NEWSLETTER", name: "Newsletter Subscribers", categoryId: 12345 },
+          { id: 999, name: "VIP Customers" },
+        ],
+      });
+    });
+
+    const res = await sfmc.listSegments({ config });
+
+    const dataCall = calls.find((c) => c.url.includes("/data/v1/customobjects"));
+    assert.ok(dataCall, "listSegments must call GET /data/v1/customobjects");
+
+    assert.equal(res.items.length, 2);
+    assert.equal(res.items[0].platform, "sfmc");
+    // customerKey is preferred over a numeric id when both could apply.
+    assert.equal(res.items[0].id, "DE-NEWSLETTER");
+    assert.equal(res.items[0].name, "Newsletter Subscribers");
+    assert.equal(res.items[0].kind, "segment");
+    // No row-count field on this read — never a fabricated 0.
+    assert.equal(res.items[0].member_count, null);
+    assert.equal(res.items[1].id, "999");
+    assert.equal(res.items[1].name, "VIP Customers");
+    assert.equal(res.truncated, false);
+    assert.equal(res.next_cursor, null);
+  });
+
+  test("listSegments: a persistent 401 surfaces as auth_failed (no infinite loop)", async () => {
+    const config = { sfmcClientId: "id", sfmcClientSecret: "sec", sfmcSubdomain: "sf-seg-401" };
+    let mints = 0;
+    let rest = 0;
+    mockFetch((u) => {
+      if (isSfmcToken(u)) return sfmcTokenResponse(++mints);
+      rest++;
+      return makeResponse(401, "");
+    });
+
+    await assert.rejects(
+      () => sfmc.listSegments({ config }),
+      (err) => {
+        assert.ok(err instanceof EspApiError);
+        assert.equal(err.code, "auth_failed");
+        assert.ok(ESP_ERROR_CODES.includes(err.code));
+        return true;
+      }
+    );
+    assert.equal(rest, 2, "one replay after re-mint, then the failure surfaces — no loop");
+  });
+
+  test("getPerformance maps extras=stats into NormalizedMetrics, filtered by id", async () => {
+    const config = { sfmcClientId: "id", sfmcClientSecret: "sec", sfmcSubdomain: "sf-perf" };
+    const calls = mockFetch((u) => {
+      if (isSfmcToken(u)) return sfmcTokenResponse(1);
+      return makeResponse(200, {
+        items: [
+          {
+            id: "journey-123",
+            name: "Win-back",
+            stats: { sent: 4000, delivered: 3900, uniqueOpens: 1200, uniqueClicks: 300 },
+          },
+        ],
+      });
+    });
+
+    const res = await sfmc.getPerformance({ config, campaign_id: "journey-123" });
+
+    const perfCall = calls.find((c) => c.url.includes("/interaction/v1/interactions"));
+    assert.ok(perfCall, "getPerformance must call GET /interaction/v1/interactions");
+    const url = new URL(perfCall.url);
+    assert.equal(url.searchParams.get("id"), "journey-123");
+    assert.equal(url.searchParams.get("extras"), "stats");
+
+    assert.equal(res.platform, "sfmc");
+    assert.equal(res.campaign_id, "journey-123");
+    assert.equal(res.stats.sent, 4000);
+    assert.equal(res.stats.delivered, 3900);
+    assert.equal(res.stats.unique_opens, 1200);
+    assert.equal(res.stats.unique_clicks, 300);
+    // bounces/unsubscribes were absent from the mocked stats object — null,
+    // never a fabricated 0, and named in `unavailable`.
+    assert.equal(res.stats.bounces, null);
+    assert.equal(res.stats.unsubscribes, null);
+    assert.deepEqual(res.unavailable.sort(), ["bounces", "unsubscribes"]);
+  });
+
+  test("getPerformance requires campaign_id and fails closed with not_found, no fetch", async () => {
+    const config = { sfmcClientId: "id", sfmcClientSecret: "sec", sfmcSubdomain: "sf-perf-nf" };
+    const calls = mockFetch(() => makeResponse(200, { items: [] }));
+
+    await assert.rejects(
+      () => sfmc.getPerformance({ config }),
+      (err) => {
+        assert.ok(err instanceof EspApiError);
+        assert.equal(err.code, "not_found");
+        return true;
+      }
+    );
+    assert.equal(calls.length, 0, "a missing campaign_id must fail before any network call");
+  });
+
+  test("CANARY: no SFMC access token survives into a thrown listSegments/getPerformance error", async () => {
+    const sentinel = "SFMC-DE-LEAK-SENTINEL";
+    const config = { sfmcClientId: "id", sfmcClientSecret: "sec", sfmcSubdomain: "sf-seg-redact" };
+    let calls;
+
+    calls = mockFetch((u) => {
+      if (isSfmcToken(u)) return sfmcTokenResponse(1);
+      return makeResponse(500, { message: `upstream saw Authorization: Bearer ${sentinel}` });
+    });
+    await assert.rejects(
+      () => sfmc.listSegments({ config }),
+      (err) => {
+        const serialized = JSON.stringify(err.toResponse());
+        const stderrForm = err.stack ?? err.message;
+        assert.doesNotMatch(serialized, new RegExp(sentinel), "leaked into the tool response");
+        assert.doesNotMatch(stderrForm, new RegExp(sentinel), "leaked into stderr");
+        assert.match(serialized, /REDACTED/);
+        return true;
+      }
+    );
+    const dataCall = calls.find((c) => c.url.includes("/data/v1/customobjects"));
+    assert.ok(dataCall?.init?.headers?.Authorization, "the real request did carry a bearer token");
+
+    calls = mockFetch((u) => {
+      if (isSfmcToken(u)) return sfmcTokenResponse(1);
+      return makeResponse(500, { message: `upstream saw Authorization: Bearer ${sentinel}` });
+    });
+    await assert.rejects(
+      () => sfmc.getPerformance({ config: { ...config, sfmcSubdomain: "sf-perf-redact" }, campaign_id: "j-1" }),
+      (err) => {
+        const serialized = JSON.stringify(err.toResponse());
+        const stderrForm = err.stack ?? err.message;
+        assert.doesNotMatch(serialized, new RegExp(sentinel), "leaked into the tool response");
+        assert.doesNotMatch(stderrForm, new RegExp(sentinel), "leaked into stderr");
+        assert.match(serialized, /REDACTED/);
+        return true;
+      }
+    );
+  });
+});
+
 // ── Security + correctness canaries ─────────────────────────────────
 describe("ESP security and correctness canaries", () => {
   test("CANARY: Iterable rejects poisoned endpoints before an Api-Key fetch", async () => {
