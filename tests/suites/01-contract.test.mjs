@@ -386,7 +386,24 @@ const SHAPED_RESPONSE_FLOOR = 45;
 // Headroom stays deliberately thin — 222 bytes at the time of the raise (135 tools, 165,278 bytes measured),
 // which is one optional parameter and nowhere near another tool. Tool 135
 // still has to be a decision rather than a diff.
-const TOOLS_LIST_BYTE_BUDGET = 165_500;
+// LOWERED 165_500 -> 153_000 on 2026-08-24. A budget has only ever gone
+// up in this file; this is the first cut, and it is the point of the
+// exercise. server/tools-list-slim.js removed 12,420 bytes of SDK
+// boilerplate — $schema and execution, stamped identically on all 135
+// tools, neither of them Orbit's and neither carrying meaning a client
+// can act on. Measured payload is now 152,769.
+//
+// The saving is BANKED rather than left as headroom on purpose. Leaving
+// 12KB free would quietly fund twelve tools that never had to argue for
+// themselves, which is exactly the discipline this number exists to
+// impose. 231 bytes of headroom keeps the next tool a decision.
+//
+// Not taken, and recorded so nobody re-proposes them as free: 3,338
+// bytes of spec-default annotations (rejected — it blinds suite 27's
+// per-tool safety assertions) and 5,341 bytes of maxLength caps
+// (rejected — it turns a client-side validation catch into a
+// server-side error). Both are argued in server/tools-list-slim.js.
+const TOOLS_LIST_BYTE_BUDGET = 153_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

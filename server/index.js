@@ -40,6 +40,7 @@ import {
   checkTemplateCollisionForPlatform,
 } from "./esp/tools.js";
 import { DATA_TOOL_DEFINITIONS, setDataRuntimeConfig } from "./data/tools.js";
+import { installSlimToolsList } from "./tools-list-slim.js";
 import { BRAIN_TOOL_DEFINITIONS } from "./brain/index.js";
 import { REGISTERED_PLATFORMS } from "./esp/registry.js";
 
@@ -6447,6 +6448,14 @@ function registerTools() {
   ]) {
     registerToolSafe(def.name, def.inputSchema, def.handler);
   }
+
+  // LAST, after every tool exists: strip the SDK's per-tool boilerplate
+  // from tools/list. ~15.7KB of the payload is the same three fields
+  // repeated 135 times, none of them Orbit's and none of them carrying
+  // meaning a client can act on. See server/tools-list-slim.js for what
+  // is taken, what is deliberately left (maxLength, _meta, title), and
+  // why this fails open rather than risking the tool list.
+  installSlimToolsList(server);
 }
 
 function requireSkill(name) {
