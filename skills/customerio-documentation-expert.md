@@ -97,7 +97,7 @@ Reference: https://docs.customer.io/integrations/api/app/ and https://docs.custo
 
 This is the single most important thing to state plainly to any user working Customer.io through Orbit:
 
-**Customer.io exposes no public API to list, fetch, or create/update reusable templates or layouts.** Message content is authored inside the Customer.io app. Orbit can therefore:
+**Customer.io's Design Studio API DOES publish reusable templates — list, get and CRUD — and Orbit calls it (built 2026-08-24).** This file previously said the opposite, and said it emphatically, fifteen lines below its own table listing the working endpoints. The real constraint is narrower and still worth stating plainly: content can be WRITTEN via the API but not PUBLISHED, so a pushed template lands unpublished until someone publishes it in the workspace. Orbit can therefore:
 
 - **Read** the program — campaigns, newsletters, segments, and their metrics.
 - **Send proofs** — a real transactional email with a full inline body (to/from/subject/body supplied per request) to any address via `POST /v1/send/email`.
