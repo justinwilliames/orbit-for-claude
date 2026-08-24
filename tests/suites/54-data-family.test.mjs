@@ -860,3 +860,54 @@ describe("Amplitude adapter — read-only by construction", () => {
     setDataRuntimeConfig(null);
   });
 });
+
+/* ── the new reads are reachable through the TOOL, not just the adapter ── */
+
+describe("getFunnel / getRetention are reachable through orbit_data_read", () => {
+  // These shipped as adapter methods first and were briefly dispatchable but
+  // NOT callable: orbit_data_read's `operation` is a closed z.enum that
+  // serialises into tools/list, so an adapter method missing from that enum
+  // is dead weight no user can reach. That is the built-but-unregistered
+  // trap at operation granularity, and this suite is what keeps it shut.
+  const readTool = () =>
+    DATA_TOOL_DEFINITIONS.find((d) => d.name === "orbit_data_read");
+
+  test("both operations are in the published enum", () => {
+    const op = readTool().inputSchema.inputSchema.operation;
+    const values = op._def?.values ?? op.options;
+    for (const name of ["getFunnel", "getRetention"]) {
+      assert.ok(values.includes(name), `${name} is not selectable on orbit_data_read`);
+    }
+  });
+
+  test("each dispatches rather than falling through to listCohorts", async () => {
+    setDataRuntimeConfig(() => ({}));
+    const tool = readTool();
+    for (const operation of ["getFunnel", "getRetention"]) {
+      const res = await tool.handler({
+        platform: "amplitude",
+        operation,
+        subject: "_new,_active",
+        start: "20260801",
+        end: "20260810",
+      });
+      const text = res?.content?.[0]?.text ?? JSON.stringify(res);
+      // With no credentials the honest answer is needs_setup. What matters is
+      // that it is NOT an unknown-operation error and NOT a silent listCohorts.
+      assert.match(text, /needs_setup/, `${operation} did not reach the adapter`);
+      assert.ok(!/cohorts/i.test(text), `${operation} fell through to listCohorts`);
+    }
+  });
+
+  test("retention requires both literal tokens in subject", async () => {
+    setDataRuntimeConfig(() => ({ amplitudeApiKey: "k", amplitudeSecretKey: "s" }));
+    const res = await readTool().handler({
+      platform: "amplitude",
+      operation: "getRetention",
+      start: "20260801",
+      end: "20260810",
+    });
+    const text = res?.content?.[0]?.text ?? JSON.stringify(res);
+    assert.match(text, /subject/i, "a missing subject must name the field, not throw");
+  });
+});

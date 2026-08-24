@@ -226,16 +226,16 @@ export const DATA_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Data Read (cohorts / series / SQL)",
       description:
-        "Read real data from a data platform, read-only. listCohorts/getCohort: Amplitude cohort metadata and membership COUNTS — member rows are deliberately not built. getSeries: a bounded aggregate series (<=365 days, 1/7/30-day buckets) of active or new users, or one event's uniques/totals. runQuery: ONE Databricks SELECT/SHOW/DESCRIBE — writes, DDL, chained statements and comment-hidden DML are refused before the request is built, rows and bytes capped. What a platform cannot do returns {unsupported, reason, nearest_alternative}, never a guess.",
+        "Read real data from a data platform, read-only. listCohorts/getCohort: Amplitude cohort metadata and membership COUNTS, never member rows. getSeries: bounded aggregate series (<=365d, 1/7/30d buckets). getFunnel: ordered conversion, `subject` = comma-separated events (max 10). getRetention: `subject` = \"_new|_active,_all|_active\" — Amplitude documents no custom-event retention. runQuery: ONE Databricks SELECT/SHOW/DESCRIBE; writes, DDL, chained and comment-hidden DML refused before the request is built. What a platform cannot do returns {unsupported, reason, nearest_alternative}, never a guess.",
       inputSchema: {
         platform: platformArg,
         operation: z
-          .enum(["listCohorts", "getCohort", "getSeries", "runQuery"]),
+          .enum(["listCohorts","getCohort","getSeries","getFunnel","getRetention","runQuery"]),
         subject: z
           .string()
           .max(MAX_LONG_STRING)
           .optional()
-          .describe("Cohort id, event name, or the SQL statement."),
+          .describe("Cohort id, event name, funnel/retention event list, or SQL."),
         start: z
           .string()
           .regex(/^\d{8}$/)
@@ -293,6 +293,37 @@ export const DATA_TOOL_DEFINITIONS = [
             end: need(end, "`end` (YYYYMMDD)"),
             event: subject,
             metric,
+            interval: interval ? Number(interval) : undefined,
+          });
+        }
+        if (operation === "getFunnel") {
+          return dispatch(p, "getFunnel", {
+            config,
+            events: need(subject, "`subject` (comma-separated ordered events)")
+              .split(",")
+              .map((e) => e.trim())
+              .filter(Boolean),
+            start: need(start, "`start` (YYYYMMDD)"),
+            end: need(end, "`end` (YYYYMMDD)"),
+            metric,
+            interval: interval ? Number(interval) : undefined,
+          });
+        }
+        if (operation === "getRetention") {
+          // subject carries both literal tokens: "<start>,<return>". Amplitude
+          // documents no custom-event retention, so these are not event names.
+          const [startEvent, returnEvent] = need(
+            subject,
+            '`subject` as "<startEvent>,<returnEvent>", e.g. "_new,_active"'
+          )
+            .split(",")
+            .map((e) => e.trim());
+          return dispatch(p, "getRetention", {
+            config,
+            startEvent,
+            returnEvent,
+            start: need(start, "`start` (YYYYMMDD)"),
+            end: need(end, "`end` (YYYYMMDD)"),
             interval: interval ? Number(interval) : undefined,
           });
         }
