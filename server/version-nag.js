@@ -114,6 +114,21 @@ export function getVersionNag() {
   // never set — so the nag could not fire, ever, on any install. Dead
   // for the whole life of the feature, and it's the only channel that
   // reaches somebody who already has Orbit installed.
+  //
+  // A static sweep for OTHER gates of this shape was run on 2026-08-24
+  // and found none: the only two snake_case fields gated-on-but-never-
+  // assigned anywhere in server/ are `next_page` (Braze's own pagination
+  // field) and `baseline_notes` (user-supplied performance data), both
+  // legitimately produced outside this codebase.
+  //
+  // A regression test for the CLASS was attempted and deliberately NOT
+  // shipped, because it could not catch this very bug: `update_available`
+  // is assigned in this file — in the object returned below — so any
+  // heuristic asking "is this field ever written?" answers yes and passes.
+  // Telling the producer from the consumer needs cross-module dataflow,
+  // not a grep. A gate that goes green on its own motivating case is
+  // worse than no gate, so the sweep stays a manual exercise and this
+  // comment is the record of it.
   if (cached.status !== "update_available" || !cached.latest_version) return null;
   // Already surfaced this session — stay silent.
   if (surfacedThisSession) return null;
