@@ -24,7 +24,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -122,6 +122,17 @@ describe("the key is optional, and Orbit says so", () => {
       Number(claim[2]),
       manifest.tools.length,
       `instructions claim ${claim[2]} tools, manifest lists ${manifest.tools.length}`
+    );
+
+    // The SKILLS half was not pinned, and drifted exactly as you would
+    // predict: the tool count stayed correct because this test watched it,
+    // while the skill count sat at 80 against 81 files on disk. Half a
+    // guard is how you get half a drift.
+    const skillCount = readdirSync(join(ROOT, "skills")).filter((f) => f.endsWith(".md")).length;
+    assert.equal(
+      Number(claim[1]),
+      skillCount,
+      `instructions claim ${claim[1]} skills, skills/ holds ${skillCount}`
     );
   });
 });

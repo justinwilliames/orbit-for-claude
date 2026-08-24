@@ -339,6 +339,14 @@ const railList = $("#rail-list");
 const current = () => items.find((i) => i.id === currentId) || null;
 
 function renderRail() {
+  // Empty rail. Without this the loop below simply never runs and the rail
+  // is bare dead space beside a stage that correctly says "Waiting for
+  // creatives" — half an empty state, which reads as a broken panel rather
+  // than an idle one. Every sibling rail-driven widget already does this.
+  if (!items.length) {
+    railList.innerHTML = '<div class="o-empty">Waiting for creatives \u2014 pass items to orbit_review_creative to review them here.</div>';
+    return;
+  }
   const groups = new Map();
   for (const it of items) {
     const g = it.group || "All";
