@@ -29,6 +29,11 @@ const juice = require("juice/client.js");
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-export-braze.js");
+// The Stripo half of the bridge (CSS merge, id coercion, subject/preheader
+// extraction) lives in a shared module so every destination ESP gets the same
+// body. The sandbox strips imports, so concatenate that source ahead of the
+// Braze exporter's — the two together are what used to be one file.
+const SHARED_PATH = path.join(TEST_DIR, "..", "..", "server", "stripo-export-shared.js");
 
 function loadModule({
   stripoGet,
@@ -38,10 +43,13 @@ function loadModule({
   stripoSetup = () => null,
   brazeSetup = () => null,
 } = {}) {
-  const source = fs
-    .readFileSync(SOURCE_PATH, "utf8")
-    .replace(/^import .*;\n/gm, "")
-    .replace(/^export /gm, "");
+  const strip = (file) =>
+    fs
+      .readFileSync(file, "utf8")
+      .replace(/^import .*;\n/gm, "")
+      .replace(/^import \{[\s\S]*?\} from ".*";\n/gm, "")
+      .replace(/^export /gm, "");
+  const source = `${strip(SHARED_PATH)}\n${strip(SOURCE_PATH)}`;
 
   const calls = { stripoGet: [], brazePost: [], brazeList: [], brazeGet: [] };
   const context = {

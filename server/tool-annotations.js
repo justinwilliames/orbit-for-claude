@@ -71,6 +71,7 @@ export const REMOTE_WRITE = new Set([
   "orbit_esp_push_template",
   "orbit_esp_send_test",
   "orbit_export_stripo_email_to_braze",
+  "orbit_export_stripo_email_to_esp",
   "orbit_import_stripo_template",
   "orbit_sync_to_braze",
   "orbit_upload_image_to_braze",
@@ -165,6 +166,12 @@ export const READ_ONLY_NETWORKED = new Set([
   "orbit_audit_stripo_modules",
   "orbit_audit_unsubscribe_page",
   "orbit_braze_performance",
+  // NOTE: the data-platform family (server/data/ — Amplitude + Databricks) is
+  // read-only by construction but is NOT registered today, so its tool names
+  // are deliberately absent: this file may only name tools the server
+  // registers (tests/suites/27-tool-annotations.test.mjs). Add
+  // orbit_data_read / orbit_data_schema / orbit_data_capabilities /
+  // orbit_check_data_auth here in the same commit that registers them.
   "orbit_check_bimi",
   "orbit_check_deliverability",
   "orbit_check_email_auth",

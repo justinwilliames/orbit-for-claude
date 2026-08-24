@@ -34,12 +34,17 @@
  *   read-op bar. Do NOT down-declare to match an out-of-date assumption, and do
  *   NOT up-declare a platform that hasn't built the tools.
  *
- * ROADMAP ENTRIES: the CDPs (Segment, RudderStack, Amplitude, Databricks) are
- *   named in Orbit's guide content as the plumbing a program needs, but have
- *   NO config slot and NO tool in this codebase. They are declared Tier 0 with
- *   `roadmap:true` and EMPTY credential/tool sets, and the gate asserts they
- *   claim nothing more — so tracking them here can never silently inflate into
- *   an unbuilt "Connected" promise.
+ * ROADMAP ENTRIES: the data platforms (Segment, RudderStack, Amplitude,
+ *   Databricks) are declared Tier 0 with `roadmap:true` and EMPTY
+ *   credential/tool sets, and the gate asserts they claim nothing more — so
+ *   tracking them here can never silently inflate into an unbuilt "Connected"
+ *   promise. Segment and RudderStack are unbuilt. Amplitude and Databricks
+ *   are NOT: both have working, tested READ-ONLY adapters in server/data/,
+ *   which are not REGISTERED because the polymorphic family that surfaces
+ *   them costs 3,838 bytes of tools/list and suite 01's budget has 53. A tier
+ *   is derived from what a user can REACH, not from what exists on disk, so
+ *   built-but-unreachable declares Tier 0 — with the arithmetic in its notes
+ *   so the next reader knows this is a budget decision, not a missing adapter.
  */
 
 /**
@@ -249,7 +254,6 @@ export const INTEGRATIONS = Object.freeze([
     notes:
       "A build/compose route, not an ESP. Dedicated read-only auth probe plus list/get tools for emails, modules, folders and templates.",
   },
-
   // ---------------------------------------------------------------------------
   // Tier 1 — Connected. A credential slot exists and is used, but the surface
   // is a single import/generate action, not a >=3 read family.
@@ -307,7 +311,14 @@ export const INTEGRATIONS = Object.freeze([
     readTools: [],
     deepTools: [],
     roadmap: true,
-    notes: "Referenced in guide content as event plumbing. No integration built yet.",
+    notes:
+      "Referenced in guide content as event plumbing. No integration built yet. " +
+      "Attempted 2026-08-24 and stopped at the tools/list byte budget, not at the API: " +
+      "a Tier 2 Segment read family (token probe + sources + destinations + tracking plans, " +
+      "tight one-sentence descriptions) measures 2,456 bytes against the 378 bytes suite 01 " +
+      "leaves under its 161,500-byte cap; even a degenerate 3-tool, zero-argument, " +
+      "20-character-description floor measures 1,043 bytes and lands 665 over. Building it " +
+      "needs a deliberate budget decision (raise the cap, or retire tools) BEFORE the adapter.",
   },
   {
     id: "rudderstack",
@@ -322,7 +333,16 @@ export const INTEGRATIONS = Object.freeze([
     readTools: [],
     deepTools: [],
     roadmap: true,
-    notes: "Referenced in guide content as a Segment alternative. No integration built yet.",
+    notes:
+      "Referenced in guide content as a Segment alternative. No integration built yet. " +
+      "Built and reverted 2026-08-24, stopped by the tools/list byte budget rather than by " +
+      "the API: a read-only Management API client (GET-only request helper, closed error " +
+      "taxonomy, credential redaction) plus a token probe and sources / destinations / " +
+      "connection-graph reads measured 1,639 bytes against the 378 bytes suite 01 leaves " +
+      "under its 161,500-byte cap. Trimming does not close it — a degenerate 3-tool, " +
+      "zero-argument, 20-character-description floor still measures 1,057 bytes and lands " +
+      "679 over. Same wall Segment hit. Raise the cap on purpose, or retire tools, BEFORE " +
+      "rebuilding the adapter.",
   },
   {
     id: "amplitude",
@@ -337,7 +357,15 @@ export const INTEGRATIONS = Object.freeze([
     readTools: [],
     deepTools: [],
     roadmap: true,
-    notes: "Referenced in guide content as a cohort/analytics surface. No integration built yet.",
+    notes:
+      "READ-ONLY adapter BUILT and covered by tests (server/data/amplitude-api.js, " +
+      "tests/suites/54-data-family.test.mjs): cohort metadata + membership counts and bounded " +
+      "aggregate active/new-user and event series, with no member export, no raw Export API and " +
+      "no ingestion. NOT REGISTERED, and so declared Tier 0: it reaches the user through the " +
+      "polymorphic orbit_data_* family, which measures 3,838 bytes of tools/list against the 53 " +
+      "bytes suite 01 leaves under its 161,500-byte cap. That is the collapsed, four-tool shape " +
+      "already — the nine flat per-platform tools it replaced measured 4,809. Registering it is a " +
+      "three-line change in server/index.js once ~3,800 bytes exist to pay for it.",
   },
   {
     id: "databricks",
@@ -352,8 +380,15 @@ export const INTEGRATIONS = Object.freeze([
     readTools: [],
     deepTools: [],
     roadmap: true,
-    notes: "Named as a warehouse destination. No integration built yet.",
-  },
+    notes:
+      "READ-ONLY adapter BUILT and covered by tests (server/data/databricks-api.js, " +
+      "server/data/sql-guard.js): Unity Catalog catalogs, schemas, tables and columns, plus a " +
+      "guarded SQL path that accepts a single SELECT/SHOW/DESCRIBE and refuses DML, DDL, " +
+      "semicolon-chained statements and comment-hidden writes before the request is built. No " +
+      "write path exists in the adapter. NOT REGISTERED for the same byte-budget reason as " +
+      "Amplitude above — the two share the orbit_data_* family, so they are one 3,838-byte " +
+      "decision, not two.",
+  }
 ]);
 
 /** Look one integration up by id. */

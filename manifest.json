@@ -4,7 +4,7 @@
   "display_name": "Orbit",
   "version": "0.31.1",
   "icon": "icon.png",
-  "description": "Free lifecycle marketing in Claude — no licence key, no payment, every tool unlocked. Build your own email design system and lifecycle brain from the emails you already send, then gate every send before it ships. 80 skills and 130 tools across email, SMS, push, retention, deliverability, segmentation and experimentation, with native Braze, Iterable, Customer.io, Klaviyo, Mailchimp, Salesforce Marketing Cloud, Stripo and Figma integration.",
+  "description": "Free lifecycle marketing in Claude — no licence key, no payment, every tool unlocked. Build your own email design system and lifecycle brain from the emails you already send, then gate every send before it ships. 80 skills and 131 tools across email, SMS, push, retention, deliverability, segmentation and experimentation, with native Braze, Iterable, Customer.io, Klaviyo, Mailchimp, Salesforce Marketing Cloud, Stripo and Figma integration.",
   "long_description": "Most lifecycle programmes fail the same way: the knowledge lives in someone's head and the templates drift. Orbit's flagship path fixes that, and needs no credentials at all. It scaffolds a lifecycle brain — a repo that is the single source of truth for your programme, with its operating rules, conventions and stage folders. It learns your email design system from an email you already send, turning it into a module catalogue and brand tokens derived from your real email rather than invented. It generates a pre-send gate parameterised to your own byte limits, container width and templating branches, which is the difference between a design system and a folder of files. And it frames one PRD stub per programme, so AI drafts never build unreviewed.\n\nAround that: 91 long-form practitioner guides on lifecycle marketing, deliverability, Braze, email craft and experimentation, exposed as MCP resources for inline citation; a component-first MJML pipeline with HTML previews, accessibility linting and a render gate that measures in a real browser engine rather than guessing; Liquid validation, segmentation maths, LTV, RFM, cohort-retention and sample-size calculators; brand-kit intake, Figma and PDF design import, and brand-safe header generation; and a local ~/Orbit workspace created on first run so nothing depends on a folder you had to set up.\n\nConnect an ESP when you have one — Braze, Iterable, Customer.io, Klaviyo, Mailchimp and Salesforce Marketing Cloud read and write natively, and Stripo is one optional route for building. Roughly two-thirds of Orbit needs no credentials, and everything it makes is written to your own machine.",
   "author": {
     "name": "Justin Williames",
@@ -363,7 +363,11 @@
     },
     {
       "name": "orbit_export_stripo_email_to_braze",
-      "description": "Turn one or more finished STRIPO emails into Braze email templates so a Braze Canvas can reference them — fully programmatic, no GUI exports. By default it overwrites rather than duplicates: it UPDATES any Braze template whose name matches the Stripo email's name in place (each row reports operation + matched_by). Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). For emails compiled LOCALLY by Orbit (not built in Stripo), use orbit_sync_to_braze instead. [Safety: writes to a third-party system.]"
+      "description": "Braze-only alias of orbit_export_stripo_email_to_esp (platform:\"braze\"), kept for compatibility — see that tool for the full contract. STRIPO emails → Braze email templates, updating the same-named template in place rather than duplicating it. [Safety: writes to a third-party system.]"
+    },
+    {
+      "name": "orbit_export_stripo_email_to_esp",
+      "description": "Turn finished STRIPO emails into email templates on your ESP — no GUI export. Stripo's separate stylesheet is merged in, so CTAs and padding render. Works on braze, iterable, klaviyo, mailchimp and sfmc; customerio returns {unsupported} (no public template API — author in-app). Braze updates the same-named template in place; elsewhere pass template_map (each run returns one) to update instead of creating a duplicate. [Safety: writes to a third-party system.]"
     },
     {
       "name": "orbit_create_braze_canvas",

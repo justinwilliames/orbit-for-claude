@@ -144,7 +144,9 @@ The gate regenerates this matrix on every run to
 | Stripo | builder | **2** | `orbit_check_stripo_auth` | 5 | — |
 | Figma | design | **1** | — (import is the read) | 1 | — |
 | Google AI (Gemini) | media | **1** | — | 1 | — |
-| Segment, RudderStack, Amplitude, Databricks | cdp | **0** | — | 0 | — |
+| Amplitude | cdp | **0** | — (built, not registered) | 0 | — |
+| Databricks | cdp | **0** | — (built, not registered) | 0 | — |
+| Segment, RudderStack | cdp | **0** | — | 0 | — |
 
 The five non-Braze ESPs read through the shared `orbit_esp_*` family
 (`orbit_esp_read`, `orbit_esp_templates`, `orbit_esp_capabilities`, plus
@@ -152,6 +154,34 @@ The five non-Braze ESPs read through the shared `orbit_esp_*` family
 support (which reads each ESP's public API actually offers) is recorded in
 `server/esp/capabilities.js` and surfaced honestly as `{unsupported}` where a
 path does not exist.
+
+Amplitude is the first analytics platform on the bar, and the only one whose
+useful surface is mostly *not* readable: its per-cohort route and its Export API
+both return per-user rows, and its ingestion API is a write. So the adapter
+(`server/data/amplitude-api.js`) implements exactly the aggregate reads — cohort metadata
+with membership **counts**, and bounded active/new-user and event series — and
+has no write method at all, which suite 54 asserts structurally rather than by
+convention. Every window is capped at 365 days because the Dashboard API is
+cost- and concurrency-limited; a 429 surfaces as `rate_limited` carrying
+Retry-After.
+
+Databricks is the first *warehouse* on the bar, and the only integration whose
+most useful surface is an arbitrary string. Unity Catalog reads (catalogs,
+schemas, tables, columns) are plain GETs and need no argument; the SQL
+operation runs a statement through the Statement Execution API, which is a POST that could
+execute a DROP. So the statement is not keyword-filtered — it is tokenised by
+`server/data/sql-guard.js`, which strips comments, string literals and
+quoted identifiers first and then decides on the code that survives: an
+allow-list of five openers (SELECT, WITH, SHOW, DESCRIBE, DESC), one statement
+per call, and a deny-list applied to the WHOLE statement so a write wrapped in a
+CTE is refused despite opening with an allowed keyword. Suite 56 asserts the
+three attacks that beat naive matching — comment-hidden DML, semicolon-chained
+statements, CTE-wrapped writes — plus zero-width keyword splitting, and proves a
+refused statement never reaches the network. The adapter has no write method at
+all. Rows and bytes are capped on the request AND again on the response, and the
+workspace host is user-supplied so it is validated against a host allow-list
+before any request is built — an unvalidated host would turn a credential slot
+into an SSRF primitive that also posts the user's token wherever it points.
 
 ### The parity gaps, named
 
@@ -164,6 +194,93 @@ path does not exist.
 - **CDPs → Tier 1+.** When Segment/RudderStack/etc. get a config slot and a
   connection check, move them off `roadmap` and the gate begins enforcing their
   new tier.
+- **The tools/list budget is the binding constraint on parity, and it is
+  shared.** Suite 01 caps `tools/list` at 161,500 bytes. The committed tree
+  measures 161,122 across 130 tools — **378 bytes of headroom**, or 53 once the
+  Stripo→ESP export tool lands. That is less than the floor for a single
+  registered tool (~300 bytes: name, title, annotations, an empty JSON Schema,
+  and a 20-character description). No new integration of any shape fits today.
+- **Segment, RudderStack, Amplitude and Databricks are all blocked on that one
+  number, not on their APIs.** Each was built and measured (2026-08-24):
+  Segment's read family 2,456 bytes, RudderStack's 1,639, and the shared
+  Amplitude + Databricks polymorphic family 3,838 — after which Segment and
+  RudderStack would join it for 252 bytes between them. Segment and RudderStack were
+  reverted; Amplitude's and Databricks' adapters survive under `server/data/`,
+  fully tested, with the four-tool family written and unregistered. Registering
+  it is three lines in `server/index.js`, four names in
+  `server/tool-annotations.js`, and four manifest entries — after somebody
+  decides, in one place, whether the cap moves to ~165,300 or ~3,800 bytes of
+  tools retire.
+
+---
+
+## The polymorphic family rule
+
+**New platforms extend a polymorphic tool family. They do not add flat
+per-platform tools.** This is not style; it is arithmetic.
+
+A registered tool costs roughly 300 bytes of `tools/list` before it says
+anything — name, title, annotations, an empty JSON Schema envelope, a minimum
+description — and a useful one costs 400–700. `tools/list` is a fixed tax every
+host with eager schema loading pays on every conversation, lifecycle work or
+not, which is why suite 01 caps it and why the cap has to be defended.
+
+Compare the two shapes on the same two platforms, both measured 2026-08-24:
+
+| Shape | Tools | tools/list bytes | Cost of platform N+1 |
+|-------|:-----:|-----------------:|---------------------:|
+| Flat, per-platform (`orbit_amplitude_*`, `orbit_databricks_*`) | 9 | 4,809 | +2,400 or so, every time |
+| Polymorphic (`orbit_data_*`) | 4 | 3,838 | **126 bytes**, measured |
+
+That last column is measured, not estimated: adding Segment AND RudderStack to
+the family — two platform-enum members plus three new operations
+(`listSources`, `listDestinations`, `listTrackingPlans`) and a clause in one
+description — moved `tools/list` from 165,285 to 165,537. **252 bytes for two
+platforms.** The same two as flat Tier 2 families measured 2,456 and 1,639.
+
+The flat shape is not merely more expensive — its cost is **linear in
+platforms**, and the phase-D API survey found 38 further operations available on
+Braze, 44 on Klaviyo and 27 on Iterable. A tool-per-operation model cannot
+survive numbers like those. The polymorphic shape pays once and then charges
+almost nothing per platform, which is why `server/esp/` covers six ESPs and
+eight operations — 48 platform-operation combinations — in five tools.
+
+### What a family looks like
+
+`server/esp/` is the reference; `server/data/` is the same shape applied to
+analytics and warehouses. Four files, and only the last one costs bytes:
+
+- **`capabilities.js`** — the matrix, as pure data. `{platform: {operation:
+  {support, endpoint, doc_url, reason?, nearest_alternative?}}}`, where
+  `support` is `native | partial | unsupported`. This is the single source of
+  truth; the tiers, the docs and the runtime all read it.
+- **`errors.js`** — the family's own errors, plus `unsupportedResponse()`, which
+  manufactures `{unsupported, reason, nearest_alternative, doc_url}` **centrally
+  from the matrix**. An adapter never hand-writes a refusal.
+- **`registry.js`** — lazy per-platform loaders and `dispatch()`. The gate order
+  matters: unknown platform → matrix says unsupported → adapter missing →
+  adapter omits the method → adapter's own `validateSetup` → run it. Two
+  properties fall out of that order for free: an unsupported operation never
+  touches the network, and an adapter refuses a capability by **not having the
+  method**, so the refusal is structural rather than a promise in prose.
+- **`tools.js`** — the few parameterised tools. Keep descriptions to what the
+  model needs to choose correctly, and let `orbit_*_capabilities` carry the
+  detail instead of repeating it in every schema.
+
+### Adding a platform to an existing family
+
+1. Write the adapter, exporting an `adapter` object whose method names are the
+   matrix's operation keys. Omit every method the platform cannot honestly do.
+2. Add its block to `capabilities.js` — every operation, with a `reason` on
+   anything short of `native`.
+3. Add one loader line to `registry.js`.
+4. Add the platform to the family's `platform` enum.
+
+Step 4 is the only one that touches `tools/list`, and it costs about the length
+of the platform's name. **If you find yourself writing a new
+`orbit_<platform>_<thing>` tool, stop** — you are about to spend 400+ bytes on
+something the family already dispatches, and you are about to make platform N+2
+cost the same again.
 
 ---
 

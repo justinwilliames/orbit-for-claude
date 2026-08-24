@@ -155,6 +155,37 @@ export async function dispatch(platform, operation, args = {}) {
   return adapter[operation](args);
 }
 
+/**
+ * Ask ONE platform's adapter whether its credentials are configured, WITHOUT
+ * dispatching an operation (which would hit the network).
+ *
+ * Same single-source-of-truth rule as dispatch: the adapter owns its setup
+ * rule, this never re-implements one. Used by the Stripo→ESP exporter so a
+ * missing destination key is reported as needs_setup BEFORE a batch of Stripo
+ * reads is spent, and so a dry run can surface the same gap.
+ *
+ * @param {string} platform  a resolved platform key.
+ * @param {object} config    runtimeConfig.
+ * @returns {Promise<object|null>} the adapter's needs_setup object, or null
+ *          when the platform is ready to be written to.
+ */
+export async function checkSetup(platform, config) {
+  const adapter = await loadAdapter(platform);
+  if (!adapter) {
+    return {
+      needs_setup: true,
+      platform,
+      missing: [],
+      message:
+        `The ${platform} integration could not be loaded in this build of Orbit. ` +
+        `Update or re-install the extension; other platforms are unaffected.`,
+    };
+  }
+  return typeof adapter.validateSetup === "function"
+    ? adapter.validateSetup(config) ?? null
+    : null;
+}
+
 // Re-export the central unsupported builder so callers can reach it via the
 // registry without importing errors.js directly.
 export { unsupportedResponse } from "./errors.js";

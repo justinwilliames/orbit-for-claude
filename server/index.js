@@ -175,6 +175,7 @@ import {
   getStripoLimits
 } from "./stripo-workspace.js";
 import { exportStripoEmailsToBraze } from "./stripo-export-braze.js";
+import { exportStripoEmailsToEsp } from "./stripo-export-esp.js";
 import { importStripoTemplateFromMjml } from "./stripo-import.js";
 import { auditStripoModules, fixStripoModule } from "./stripo-audit.js";
 import { probeStripoValues } from "./stripo-values-probe.js";
@@ -338,7 +339,7 @@ const server = new McpServer({
   // Mailchimp, Iterable, Customer.io, SFMC, or no ESP at all — that was
   // simply wrong, and it buried the thing Orbit is actually best at.
   instructions: [
-    "Orbit is a lifecycle marketer built into Claude: 80 skills and 130 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
+    "Orbit is a lifecycle marketer built into Claude: 80 skills and 131 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
     "",
     "WHAT ORBIT IS FOR, IN ONE LINE: helping someone build and run their own lifecycle programme — starting from their own email design system and their own knowledge base, not from a vendor's template gallery.",
     "",
@@ -1408,6 +1409,12 @@ function registerTools() {
   // provider and errors loudly if it is missing. The getter form keeps handlers
   // reading the live config, never a snapshot captured before bootstrap.
   setEspRuntimeConfig(() => runtimeConfig);
+  // NOTE: server/data/ (Amplitude + Databricks, polymorphic) is deliberately
+  // NOT registered here. Its four tools measure 3,838 bytes of tools/list and
+  // the budget in tests/suites/01-contract.test.mjs has 53 bytes of headroom.
+  // Registering it is `setDataRuntimeConfig(() => runtimeConfig)` plus
+  // `...DATA_TOOL_DEFINITIONS` in the loop below, once ~3,800 bytes exist to
+  // pay for it. See docs/INTEGRATION-STANDARD.md §"The polymorphic family rule".
 
   registerToolSafe(
     "orbit_review_creative",
@@ -5154,64 +5161,66 @@ function registerTools() {
       //   • Returns IDs/names/Braze template IDs/dashboard URLs/byte counts
       //     only — never raw HTML, to stay inside the tool-result size cap.
       description:
-        "Turn one or more finished STRIPO emails into Braze email templates so a Braze Canvas can reference them — fully programmatic, no GUI exports. " +
-        "By default it overwrites rather than duplicates: it UPDATES any Braze template whose name matches the Stripo email's name in place (each row reports operation + matched_by). " +
-        "Requires BOTH the Stripo REST API token (read) and Braze API credentials (write). " +
-        "For emails compiled LOCALLY by Orbit (not built in Stripo), use orbit_sync_to_braze instead.",
+        "Braze-only alias of orbit_export_stripo_email_to_esp (platform:\"braze\"), kept for compatibility — see that tool for the full contract. " +
+        "STRIPO emails → Braze email templates, updating the same-named template in place rather than duplicating it.",
       inputSchema: {
         email_ids: z
           .union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))])
-          .describe("A single numeric Stripo email ID, or an array of them, to export to Braze. Max 100 per call."),
+          .describe("One Stripo email ID, or an array. Max 100 per call."),
         braze_template_map: z
           .preprocess(
             // Some MCP client/harness layers serialise object/array params to a JSON
             // string before they reach the server (confirmed 2026-06-17: an array map
-            // arrived as a string and Zod rejected it). Accept that case by parsing a
-            // string input back to its object/array form before validation.
+            // arrived as a string and Zod rejected it). Parse that back first, then
+            // normalise the legacy array-of-pairs form to the record shape so the
+            // schema can stay a plain record — the union cost ~450 bytes of the
+            // tools/list budget for a form no caller has to stop using.
             (v) => {
-              if (typeof v === "string") {
+              let out = v;
+              if (typeof out === "string") {
                 try {
-                  return JSON.parse(v);
+                  out = JSON.parse(out);
                 } catch {
-                  return v;
+                  return out;
                 }
               }
-              return v;
+              if (Array.isArray(out)) {
+                const asRecord = {};
+                for (const entry of out) {
+                  const sid = entry?.stripo_email_id ?? entry?.stripoEmailId;
+                  const bid = entry?.braze_email_template_id ?? entry?.brazeEmailTemplateId;
+                  if (sid != null && bid) asRecord[String(sid)] = String(bid);
+                }
+                return asRecord;
+              }
+              return out;
             },
-            z.union([
-              z.record(z.string(), z.string()),
-              z.array(
-                z.object({
-                  stripo_email_id: z.union([z.number(), z.string()]),
-                  braze_email_template_id: z.string()
-                })
-              )
-            ])
+            z.record(z.string(), z.string())
           )
           .optional()
           .describe(
-            "Optional mapping of Stripo email ID → existing Braze email_template_id. Matched entries UPDATE that Braze template instead of creating a new one (idempotent re-export). Either an object {\"11949287\":\"abc-guid\"} or an array of {stripo_email_id, braze_email_template_id}. Also accepts a JSON string of either form (parsed server-side) for MCP clients that stringify structured params."
+            "Stripo email ID → existing Braze email_template_id; matched entries UPDATE that template."
           ),
         dedupe_by_name: z
           .boolean()
           .optional()
-          .describe("Default true. Before creating, look up an existing Braze template with the SAME name and UPDATE it in place (overwrite) instead of creating a duplicate. Set false to skip the lookup and always create."),
+          .describe("Default true. Update the same-named template instead of duplicating it."),
         force_create: z
           .boolean()
           .optional()
-          .describe("Default false. When true, bypass name-dedupe entirely and create a brand-new Braze template for every email, even if a same-named one already exists."),
+          .describe("Always create a new template."),
         name_prefix: z
           .string()
           .optional()
-          .describe("Optional prefix prepended to each Braze template name (the Stripo email's own name is used as the base)."),
+          .describe("Prefix for each template name."),
         tags: z
           .array(z.string())
           .optional()
-          .describe("Optional Braze tags applied to every created/updated template."),
+          .describe("Braze tags for each template."),
         dry_run: z
           .boolean()
           .optional()
-          .describe("If true, fetch each Stripo email and report the planned Braze write (name/subject/byte count) WITHOUT writing anything to Braze.")
+          .describe("Plan only; write nothing.")
       }
     },
     async ({ email_ids, braze_template_map, dedupe_by_name, force_create, name_prefix, tags, dry_run }) => {
@@ -5223,6 +5232,76 @@ function registerTools() {
         forceCreate: force_create ?? false,
         namePrefix: name_prefix ?? null,
         tags: tags ?? [],
+        dryRun: dry_run ?? false
+      });
+      return makeJsonToolResponse(result);
+    }
+  );
+
+  registerToolSafe(
+    "orbit_export_stripo_email_to_esp",
+    {
+      title: "Export Stripo Email(s) to an ESP as Templates",
+      // Implementation notes (kept out of the model-facing description to
+      // keep the tools/list payload small):
+      //   • Stripo has NO native export-to-ESP API (verified: OPTIONS
+      //     /emails/<id> allows only DELETE/GET/HEAD/OPTIONS). This reads
+      //     GET /emails/<id>, merges Stripo's separate `css` field into the
+      //     html (inlined onto elements, @media folded into <head>), then
+      //     calls the destination adapter's pushTemplate through the ESP
+      //     registry — so adding an ESP means adding pushTemplate, not
+      //     touching this tool.
+      //   • platform=braze delegates to the Braze path, which keeps
+      //     dedupe-by-name and the provenance guard that refuses to
+      //     overwrite a template Orbit did not create.
+      //   • Customer.io returns the central {unsupported} shape — no public
+      //     template API — never a faked success and never an error.
+      //   • Returns ids/names/byte counts only, never raw HTML.
+      description:
+        "Turn finished STRIPO emails into email templates on your ESP — no GUI export. Stripo's separate stylesheet is merged in, so CTAs and padding render. " +
+        "Works on braze, iterable, klaviyo, mailchimp and sfmc; customerio returns {unsupported} (no public template API — author in-app). " +
+        "Braze updates the same-named template in place; elsewhere pass template_map (each run returns one) to update instead of creating a duplicate.",
+      inputSchema: {
+        email_ids: z
+          .union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))])
+          .describe("One numeric Stripo email ID, or an array. Max 100 per call."),
+        platform: z
+          .enum(["braze", "iterable", "customerio", "klaviyo", "mailchimp", "sfmc"])
+          .optional()
+          .describe("Destination ESP. Omit for ORBIT_DEFAULT_PLATFORM, then braze."),
+        template_map: z
+          .preprocess(
+            (v) => {
+              if (typeof v === "string") {
+                try {
+                  return JSON.parse(v);
+                } catch {
+                  return v;
+                }
+              }
+              return v;
+            },
+            z.record(z.string(), z.string())
+          )
+          .optional()
+          .describe("Stripo email ID → existing ESP template id; matched entries UPDATE that template."),
+        name_prefix: z
+          .string()
+          .optional()
+          .describe("Prefix prepended to each template name."),
+        dry_run: z
+          .boolean()
+          .optional()
+          .describe("Fetch each email and report the planned write, without writing.")
+      }
+    },
+    async ({ email_ids, platform, template_map, name_prefix, dry_run }) => {
+      const result = await exportStripoEmailsToEsp({
+        config: runtimeConfig,
+        emailIds: email_ids,
+        platform,
+        templateMap: template_map,
+        namePrefix: name_prefix ?? null,
         dryRun: dry_run ?? false
       });
       return makeJsonToolResponse(result);
@@ -6359,7 +6438,10 @@ function registerTools() {
   // Multi-ESP + template-brain tools. Each definition is
   // `{ name, inputSchema, handler }`, so registration is a uniform loop over
   // registerToolSafe — additive, no per-tool wiring in the monolith.
-  for (const def of [...ESP_TOOL_DEFINITIONS, ...BRAIN_TOOL_DEFINITIONS]) {
+  for (const def of [
+    ...ESP_TOOL_DEFINITIONS,
+    ...BRAIN_TOOL_DEFINITIONS,
+  ]) {
     registerToolSafe(def.name, def.inputSchema, def.handler);
   }
 }
