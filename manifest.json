@@ -44,9 +44,18 @@
         "ORBIT_SFMC_CLIENT_SECRET": "${user_config.sfmc_client_secret}",
         "ORBIT_SFMC_SUBDOMAIN": "${user_config.sfmc_subdomain}",
         "ORBIT_SFMC_ACCOUNT_ID": "${user_config.sfmc_account_id}",
+        "ORBIT_SEGMENT_API_TOKEN": "${user_config.segment_api_token}",
+        "ORBIT_SEGMENT_REGION": "${user_config.segment_region}",
+        "ORBIT_RUDDERSTACK_ACCESS_TOKEN": "${user_config.rudderstack_access_token}",
+        "ORBIT_RUDDERSTACK_REGION": "${user_config.rudderstack_region}",
         "ORBIT_TELEMETRY": "${user_config.enable_telemetry}",
         "ORBIT_UPDATE_CHECK": "${user_config.enable_update_check}",
-        "ORBIT_DEBUG_TRACE": "${user_config.enable_debug_trace}"
+        "ORBIT_DEBUG_TRACE": "${user_config.enable_debug_trace}",
+        "ORBIT_AMPLITUDE_API_KEY": "${user_config.amplitude_api_key}",
+        "ORBIT_AMPLITUDE_SECRET_KEY": "${user_config.amplitude_secret_key}",
+        "ORBIT_AMPLITUDE_REGION": "${user_config.amplitude_region}",
+        "ORBIT_DATABRICKS_HOST": "${user_config.databricks_host}",
+        "ORBIT_DATABRICKS_TOKEN": "${user_config.databricks_token}"
       }
     }
   },
@@ -253,6 +262,34 @@
       "description": "Databricks personal access token (dapi…) used to list catalogs, schemas and tables and to run guarded read-only SELECTs. Generate it under Settings → Developer → Access tokens. Orbit refuses any non-SELECT statement before it is sent.",
       "sensitive": true,
       "default": ""
+    },
+    "segment_api_token": {
+      "type": "string",
+      "title": "Segment API Token",
+      "description": "Segment Public API access token, used to read sources, destinations and tracking plans. Create one in Segment under Settings → API Access → Public API tokens. Orbit only ever reads.",
+      "sensitive": true,
+      "default": ""
+    },
+    "segment_region": {
+      "type": "string",
+      "title": "Segment Region",
+      "description": "Data residency for your Segment workspace: us (default) or eu.",
+      "sensitive": false,
+      "default": "us"
+    },
+    "rudderstack_access_token": {
+      "type": "string",
+      "title": "RudderStack Access Token",
+      "description": "RudderStack workspace-level Service Access Token, used to read tracking plans and their connected sources. Create one in RudderStack under Settings → Access Management → Service Access Tokens. Orbit only ever reads.",
+      "sensitive": true,
+      "default": ""
+    },
+    "rudderstack_region": {
+      "type": "string",
+      "title": "RudderStack Region",
+      "description": "Data residency for your RudderStack workspace: us (default) or eu.",
+      "sensitive": false,
+      "default": "us"
     }
   },
   "tools": [

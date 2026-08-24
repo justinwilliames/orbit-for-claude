@@ -34,17 +34,19 @@
  *   read-op bar. Do NOT down-declare to match an out-of-date assumption, and do
  *   NOT up-declare a platform that hasn't built the tools.
  *
- * ROADMAP ENTRIES: the data platforms (Segment, RudderStack, Amplitude,
- *   Databricks) are declared Tier 0 with `roadmap:true` and EMPTY
- *   credential/tool sets, and the gate asserts they claim nothing more — so
- *   tracking them here can never silently inflate into an unbuilt "Connected"
- *   promise. Segment and RudderStack are unbuilt. Amplitude and Databricks
- *   are NOT: both have working, tested READ-ONLY adapters in server/data/,
- *   which are not REGISTERED because the polymorphic family that surfaces
- *   them costs 3,838 bytes of tools/list and suite 01's budget has 53. A tier
- *   is derived from what a user can REACH, not from what exists on disk, so
- *   built-but-unreachable declares Tier 0 — with the arithmetic in its notes
- *   so the next reader knows this is a budget decision, not a missing adapter.
+ * FORMER ROADMAP ENTRIES, NOW LIVE: Segment and RudderStack were Tier 0
+ *   `roadmap:true` entries (empty credential/tool sets) until 2026-08-24,
+ *   when the tools/list budget was raised 153,000 -> 200,000 and both joined
+ *   the already-registered polymorphic orbit_data_* family (Amplitude +
+ *   Databricks) for a fraction of what a standalone tool surface would have
+ *   cost. Neither ships exactly what its earlier roadmap note assumed —
+ *   read each entry's `notes` for the live-docs delta, particularly
+ *   RudderStack, whose public API has no sources/destinations/connections
+ *   list endpoints at all. The pattern this section used to document — a
+ *   roadmap entry claims Tier 0 with EMPTY credential/tool sets, and the
+ *   gate enforces that so tracking an unbuilt platform here can never
+ *   silently inflate into an unbuilt "Connected" promise — still applies to
+ *   any future roadmap addition.
  */
 
 /**
@@ -293,43 +295,54 @@ export const INTEGRATIONS = Object.freeze([
       "Gemini key for brand-header image generation. A generate capability, not a data read — it enables one tool rather than exposing the user's data.",
   },
 
-  // ---------------------------------------------------------------------------
-  // Tier 0 — Roadmap. Named in Orbit's guides as the CDP plumbing a program
-  // needs; NO config slot, NO tool in this codebase. Owns nothing, claims
-  // nothing — the gate enforces that so tracking them can never inflate.
-  // ---------------------------------------------------------------------------
   {
     id: "segment",
     name: "Segment",
     kind: "cdp",
-    declaredTier: 0,
-    configKeys: [],
-    secretKeys: [],
-    connectionCheckTool: null,
+    declaredTier: 2,
+    configKeys: ["segment_api_token", "segment_region"],
+    secretKeys: ["segment_api_token"],
+    connectionCheckTool: "orbit_check_data_auth",
     connectionCheckOutcomes: CONNECTION_CHECK_OUTCOMES,
-    sharedToolFamily: false,
-    readTools: [],
+    sharedToolFamily: true,
+    readTools: ["orbit_data_read", "orbit_data_schema", "orbit_data_capabilities"],
     deepTools: [],
-    roadmap: true,
+    roadmap: false,
     notes:
-      "Referenced in guide content as event plumbing. Not built. Attempted 2026-08-24 and stopped at the tools/list byte budget, not at the API: a standalone Tier 2 Segment read family (token probe + sources + destinations + tracking plans) measures 2,456 bytes. The picture changed on 2026-08-24 when the polymorphic orbit_data_* family was registered (Amplitude + Databricks, Tier 2): Segment now joins that family for roughly 126 bytes — a registry row, an enum value, and an adapter — rather than paying for its own tool surface. The remaining blocker is arithmetic: Segment and RudderStack together need ~252 bytes and only 222 are free under the 165,500-byte cap, so one more small decision (a raise, or ~30 bytes retired) unblocks both.",
+      "READ-ONLY Public API, LIVE since 2026-08-24 through the polymorphic orbit_data_* family: " +
+      "workspace sources, destinations, tracking plans and one plan's rules (GET /sources, " +
+      "/destinations, /tracking-plans, /tracking-plans/{id}/rules — verified against " +
+      "https://docs.segmentapis.com 2026-08-24). No connections endpoint exists on Segment's " +
+      "Public API (a destination already carries its sourceId), so listConnections is honestly " +
+      "unsupported rather than guessed at. No write path exists in the adapter. The prior two " +
+      "attempts (2026-08-24) stopped at the tools/list byte budget with a standalone tool surface; " +
+      "the family shape and the 200,000-byte raise both landed the same day, closing the gap.",
   },
   {
     id: "rudderstack",
     name: "RudderStack",
     kind: "cdp",
-    declaredTier: 0,
-    configKeys: [],
-    secretKeys: [],
-    connectionCheckTool: null,
+    declaredTier: 2,
+    configKeys: ["rudderstack_access_token", "rudderstack_region"],
+    secretKeys: ["rudderstack_access_token"],
+    connectionCheckTool: "orbit_check_data_auth",
     connectionCheckOutcomes: CONNECTION_CHECK_OUTCOMES,
-    sharedToolFamily: false,
-    readTools: [],
+    sharedToolFamily: true,
+    readTools: ["orbit_data_read", "orbit_data_schema", "orbit_data_capabilities"],
     deepTools: [],
-    roadmap: true,
+    roadmap: false,
     notes:
-      "Referenced in guide content as a Segment alternative. No integration built yet. " +
-      "Built and reverted 2026-08-24, stopped by the tools/list byte budget rather than by the API: a read-only Management API client (GET-only request helper, closed error taxonomy, credential redaction) plus a token probe and sources / destinations / connection-graph reads measured 1,639 bytes standalone. Same wall Segment hit, and the same escape: behind the now-registered polymorphic orbit_data_* family it costs roughly 126 bytes instead. Needs the same ~252-byte decision as Segment (222 free today), then the adapter can be restored from history.",
+      "READ-ONLY Public API, LIVE since 2026-08-24 through the polymorphic orbit_data_* family — " +
+      "but NOT the sources/destinations/connections surface originally planned. Live docs " +
+      "(https://www.rudderstack.com/docs/api/, surveyed 2026-08-24) publish no workspace-wide " +
+      "list-sources or list-destinations endpoint, and the Reverse ETL Connections API only returns " +
+      "sync history for a connection id you already have — it cannot list connections. What is " +
+      "genuinely built from the Data Catalog / Tracking Plan API: listTrackingPlans, " +
+      "listTrackingPlanRules (a plan's events), and listConnections repurposed honestly as the " +
+      "sources wired to one tracking plan (GET /catalog/tracking-plans[, /{id}/events, /{id}/sources]) " +
+      "— the nearest real connection-graph read RudderStack's public API exposes. listSources and " +
+      "listDestinations are marked unsupported with the real reason, not built against a guessed " +
+      "endpoint. No write path exists in the adapter.",
   },
   {
     id: "amplitude",

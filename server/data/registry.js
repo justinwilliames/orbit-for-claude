@@ -26,6 +26,8 @@ import { refusalOf, PLATFORMS } from "./capabilities.js";
 const ADAPTER_LOADERS = Object.freeze({
   amplitude: () => import("./amplitude-api.js"),
   databricks: () => import("./databricks-api.js"),
+  segment: () => import("./segment-api.js"),
+  rudderstack: () => import("./rudderstack-api.js"),
 });
 
 /** The registered platform keys, asserted against the matrix below. */

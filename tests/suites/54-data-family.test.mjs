@@ -764,12 +764,14 @@ describe("Amplitude adapter — read-only by construction", () => {
     }
   });
 
-  test("four tools cover two platforms x ten operations", () => {
-    // The point of the collapse: operations grow without tools growing. If this
-    // ratio ever inverts, someone has added a flat tool. Went 8 -> 10 ops
-    // 2026-08-24 when getFunnel/getRetention were added; still four tools.
+  test("four tools cover four platforms x fifteen operations", () => {
+    // The point of the collapse: operations and platforms grow without tools
+    // growing. If this ratio ever inverts, someone has added a flat tool.
+    // Went 8 -> 10 ops 2026-08-24 when getFunnel/getRetention were added;
+    // 2 -> 4 platforms and 10 -> 15 ops the same day when Segment and
+    // RudderStack joined the family. Still four tools.
     const combinations = REGISTERED_PLATFORMS.length * OPERATIONS.length;
-    assert.equal(combinations, 20);
+    assert.equal(combinations, 60);
     assert.ok(
       DATA_TOOL_DEFINITIONS.length < combinations,
       "a tool-per-operation surface is exactly what this family exists to avoid"
@@ -826,7 +828,7 @@ describe("Amplitude adapter — read-only by construction", () => {
   });
 
   test("an unknown or missing platform is a loud error, never a silent default", () => {
-    assert.throws(() => resolvePlatform("segment"), /Unknown data platform/);
+    assert.throws(() => resolvePlatform("mixpanel"), /Unknown data platform/);
     assert.throws(() => resolvePlatform(undefined), /platform is required/);
   });
 

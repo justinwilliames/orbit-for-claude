@@ -142,7 +142,7 @@ export const DATA_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Data Capabilities",
       description:
-        "The honest what-works-where grid for every data platform Orbit reads (Amplitude, Databricks), or one if `platform` is given: each operation as native / partial / unsupported, with the endpoint and, short of native, the real constraint and nearest alternative. No network, no credentials.",
+        "The honest what-works-where grid for every data platform Orbit reads (Amplitude, Databricks, Segment, RudderStack), or one if `platform` is given: each operation as native / partial / unsupported, with the endpoint and, short of native, the real constraint and nearest alternative. No network, no credentials.",
       inputSchema: { platform: optionalPlatformArg },
     },
     handler: async ({ platform } = {}) =>
@@ -158,7 +158,7 @@ export const DATA_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "Check Data Auth",
       description:
-        "Probe your Amplitude and Databricks credentials with one cheap read-only call each. Returns ok, auth_failed, or a needs_setup naming the missing slot and where to find it — never the credential. Omit `platform` to check both.",
+        "Probe your Amplitude, Databricks, Segment and RudderStack credentials with one cheap read-only call each. Returns ok, auth_failed, or a needs_setup naming the missing slot and where to find it — never the credential. Omit `platform` to check all four.",
       inputSchema: { platform: optionalPlatformArg },
     },
     handler: async ({ platform } = {}) =>
@@ -224,18 +224,29 @@ export const DATA_TOOL_DEFINITIONS = [
   {
     name: "orbit_data_read",
     inputSchema: {
-      title: "Data Read (cohorts / series / SQL)",
+      title: "Data Read (cohorts / series / SQL / CDP)",
       description:
-        "Read real data from a data platform, read-only. listCohorts/getCohort: Amplitude cohort metadata and membership COUNTS, never member rows. getSeries: bounded aggregate series (<=365d, 1/7/30d buckets). getFunnel: ordered conversion, `subject` = comma-separated events (max 10). getRetention: `subject` = \"_new|_active,_all|_active\" — Amplitude documents no custom-event retention. runQuery: ONE Databricks SELECT/SHOW/DESCRIBE; writes, DDL, chained and comment-hidden DML refused before the request is built. What a platform cannot do returns {unsupported, reason, nearest_alternative}, never a guess.",
+        "Read real data from a data platform, read-only. listCohorts/getCohort: Amplitude cohort metadata and membership COUNTS, never member rows. getSeries: bounded aggregate series (<=365d, 1/7/30d buckets). getFunnel: ordered conversion, `subject` = comma-separated events (max 10). getRetention: `subject` = \"_new|_active,_all|_active\" — Amplitude documents no custom-event retention. runQuery: ONE Databricks SELECT/SHOW/DESCRIBE; writes, DDL, chained and comment-hidden DML refused before the request is built. listSources/listDestinations: Segment workspace lists. listTrackingPlans: Segment or RudderStack. listTrackingPlanRules/listConnections: `subject` = a tracking plan id from listTrackingPlans. What a platform cannot do returns {unsupported, reason, nearest_alternative}, never a guess.",
       inputSchema: {
         platform: platformArg,
-        operation: z
-          .enum(["listCohorts","getCohort","getSeries","getFunnel","getRetention","runQuery"]),
+        operation: z.enum([
+          "listCohorts",
+          "getCohort",
+          "getSeries",
+          "getFunnel",
+          "getRetention",
+          "runQuery",
+          "listSources",
+          "listDestinations",
+          "listTrackingPlans",
+          "listTrackingPlanRules",
+          "listConnections",
+        ]),
         subject: z
           .string()
           .max(MAX_LONG_STRING)
           .optional()
-          .describe("Cohort id, event name, funnel/retention event list, or SQL."),
+          .describe("Cohort id, event name, funnel/retention event list, tracking plan id, or SQL."),
         start: z
           .string()
           .regex(/^\d{8}$/)
@@ -333,6 +344,29 @@ export const DATA_TOOL_DEFINITIONS = [
             statement: need(subject, "`subject` (the SQL statement)"),
             warehouseId: warehouse_id,
             rowLimit: limit,
+          });
+        }
+        if (operation === "listSources") {
+          return dispatch(p, "listSources", { config, limit });
+        }
+        if (operation === "listDestinations") {
+          return dispatch(p, "listDestinations", { config, limit });
+        }
+        if (operation === "listTrackingPlans") {
+          return dispatch(p, "listTrackingPlans", { config, limit });
+        }
+        if (operation === "listTrackingPlanRules") {
+          return dispatch(p, "listTrackingPlanRules", {
+            config,
+            tracking_plan_id: need(subject, "`subject` (a tracking plan id from listTrackingPlans)"),
+            limit,
+          });
+        }
+        if (operation === "listConnections") {
+          return dispatch(p, "listConnections", {
+            config,
+            tracking_plan_id: need(subject, "`subject` (a tracking plan id from listTrackingPlans)"),
+            limit,
           });
         }
         return dispatch(p, "listCohorts", { config, limit });

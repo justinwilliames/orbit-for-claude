@@ -90,6 +90,20 @@ export function loadRuntimeConfig(rootDir) {
     databricksHost: cleanString(process.env.ORBIT_DATABRICKS_HOST),
     databricksToken: cleanString(process.env.ORBIT_DATABRICKS_TOKEN),
     databricksWarehouseId: cleanString(process.env.ORBIT_DATABRICKS_WAREHOUSE_ID),
+    // Segment — READ-ONLY Public API. Bearer token; LIVE since 2026-08-24
+    // through the same polymorphic orbit_data_* family as Amplitude/Databricks.
+    // region picks the residency host (us | eu) and ORBIT_SEGMENT_API_BASE_URL
+    // overrides the host wholesale for a proxy or the test harness.
+    segmentApiToken: cleanString(process.env.ORBIT_SEGMENT_API_TOKEN),
+    segmentRegion:
+      (cleanString(process.env.ORBIT_SEGMENT_REGION)?.toLowerCase() === "eu" ? "eu" : "us"),
+    segmentApiBaseUrl: cleanString(process.env.ORBIT_SEGMENT_API_BASE_URL),
+    // RudderStack — READ-ONLY Public API (Data Catalog / Tracking Plan reads).
+    // Bearer Service Access Token; LIVE alongside Segment, same family.
+    rudderstackAccessToken: cleanString(process.env.ORBIT_RUDDERSTACK_ACCESS_TOKEN),
+    rudderstackRegion:
+      (cleanString(process.env.ORBIT_RUDDERSTACK_REGION)?.toLowerCase() === "eu" ? "eu" : "us"),
+    rudderstackApiBaseUrl: cleanString(process.env.ORBIT_RUDDERSTACK_API_BASE_URL),
     brandProfile,
     brandProfileError,
     homeWorkspace,

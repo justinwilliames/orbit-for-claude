@@ -75,6 +75,15 @@ export const OPERATIONS = Object.freeze([
   "listTables",
   "describeTable",
   "runQuery",
+  // CDP-shaped reads, added 2026-08-24 when Segment and RudderStack joined
+  // the family. Neither analytics nor lakehouse platform can do any of
+  // these — they get explicit `unsupported` rows below rather than a
+  // missing one, per refusalOf()'s "no row = not refused" contract.
+  "listSources",
+  "listDestinations",
+  "listTrackingPlans",
+  "listTrackingPlanRules",
+  "listConnections",
 ]);
 
 /** Human-facing labels — the "Operation" column of the docs table. */
@@ -89,6 +98,11 @@ export const OPERATION_LABELS = Object.freeze({
   listTables: "list schemas/tables",
   describeTable: "describe table",
   runQuery: "read-only SQL",
+  listSources: "list sources",
+  listDestinations: "list destinations",
+  listTrackingPlans: "list tracking plans",
+  listTrackingPlanRules: "list tracking-plan rules",
+  listConnections: "list connections",
 });
 
 /** Per-platform metadata — display name, auth mechanism, base URL. */
@@ -105,6 +119,18 @@ export const PLATFORM_META = Object.freeze({
     base_url: "https://<workspace>.cloud.databricks.com",
     kind: "lakehouse",
   },
+  segment: {
+    displayName: "Segment",
+    auth: "Bearer Public API access token",
+    base_url: "https://api.segmentapis.com (EU: https://eu1.api.segmentapis.com)",
+    kind: "cdp",
+  },
+  rudderstack: {
+    displayName: "RudderStack",
+    auth: "Bearer workspace Service Access Token",
+    base_url: "https://api.rudderstack.com/v2 (EU: https://api.eu.rudderstack.com/v2)",
+    kind: "cdp",
+  },
 });
 
 const AMPLITUDE_DOCS = "https://amplitude.com/docs/apis/analytics";
@@ -115,6 +141,26 @@ const AMPLITUDE_DOCS = "https://amplitude.com/docs/apis/analytics";
 const AMPLITUDE_DASHBOARD_REST_DOCS =
   "https://amplitude.com/docs/apis/analytics/dashboard-rest";
 const DATABRICKS_DOCS = "https://docs.databricks.com/api/workspace/introduction";
+const SEGMENT_DOCS = "https://docs.segmentapis.com";
+const RUDDERSTACK_DOCS = "https://www.rudderstack.com/docs/api/";
+// The Tracking Plan API specifically — the one sub-page actually re-read to
+// build the listTrackingPlans*/listConnections rows below.
+const RUDDERSTACK_CATALOG_DOCS =
+  "https://www.rudderstack.com/docs/api/data-catalog-api/tracking-plans/";
+
+/** A CDP-shaped operation on a platform that simply is not a CDP. Shared
+ *  wording so Amplitude and Databricks' five new "unsupported" rows below
+ *  read identically rather than five hand-varied near-duplicates. */
+function notACdp(label, kind, docUrl) {
+  return {
+    support: "unsupported",
+    label,
+    endpoint: null,
+    doc_url: docUrl,
+    reason: `${kind} — it has no source/destination/tracking-plan concept.`,
+    nearest_alternative: 'platform:"segment" or platform:"rudderstack" for CDP plumbing.',
+  };
+}
 
 /**
  * The matrix. `{ [platform]: { [operation]: row } }`.
@@ -244,6 +290,27 @@ export const CAPABILITIES = Object.freeze({
         "Dashboard REST API this adapter speaks.",
       nearest_alternative: 'operation:"getSeries" for aggregate counts, or run the SQL in Databricks.',
     },
+    listSources: notACdp("list sources", "Amplitude is a product-analytics platform", AMPLITUDE_DOCS),
+    listDestinations: notACdp(
+      "list destinations",
+      "Amplitude is a product-analytics platform",
+      AMPLITUDE_DOCS
+    ),
+    listTrackingPlans: notACdp(
+      "list tracking plans",
+      "Amplitude is a product-analytics platform",
+      AMPLITUDE_DOCS
+    ),
+    listTrackingPlanRules: notACdp(
+      "list tracking-plan rules",
+      "Amplitude is a product-analytics platform",
+      AMPLITUDE_DOCS
+    ),
+    listConnections: notACdp(
+      "list connections",
+      "Amplitude is a product-analytics platform",
+      AMPLITUDE_DOCS
+    ),
   },
 
   // ---------------------------------------------------------------------------
@@ -335,6 +402,165 @@ export const CAPABILITIES = Object.freeze({
         "(server/data/sql-guard.js), and rows and bytes are capped.",
       nearest_alternative:
         "Split a multi-statement script into one call per statement; run writes in Databricks itself.",
+    },
+    listSources: notACdp("list sources", "Databricks is a lakehouse", DATABRICKS_DOCS),
+    listDestinations: notACdp("list destinations", "Databricks is a lakehouse", DATABRICKS_DOCS),
+    listTrackingPlans: notACdp("list tracking plans", "Databricks is a lakehouse", DATABRICKS_DOCS),
+    listTrackingPlanRules: notACdp(
+      "list tracking-plan rules",
+      "Databricks is a lakehouse",
+      DATABRICKS_DOCS
+    ),
+    listConnections: notACdp("list connections", "Databricks is a lakehouse", DATABRICKS_DOCS),
+  },
+
+  // ---------------------------------------------------------------------------
+  // Segment — CDP. Public API (api.segmentapis.com), Bearer token. Verified
+  // against https://docs.segmentapis.com 2026-08-24 — see server/data/segment-api.js.
+  // ---------------------------------------------------------------------------
+  segment: {
+    checkAuth: {
+      support: "native",
+      label: "auth-check",
+      endpoint: "GET /",
+      doc_url: SEGMENT_DOCS,
+      verified: "2026-08-24",
+    },
+    listCohorts: notACdp("list cohorts", "Segment is a CDP, not a product-analytics platform", SEGMENT_DOCS),
+    getCohort: notACdp("get cohort", "Segment is a CDP, not a product-analytics platform", SEGMENT_DOCS),
+    getSeries: notACdp("aggregate series", "Segment is a CDP, not a product-analytics platform", SEGMENT_DOCS),
+    getFunnel: notACdp("funnel analysis", "Segment is a CDP, not a product-analytics platform", SEGMENT_DOCS),
+    getRetention: notACdp(
+      "retention analysis",
+      "Segment is a CDP, not a product-analytics platform",
+      SEGMENT_DOCS
+    ),
+    listCatalogs: notACdp("list catalogs", "Segment is a CDP, not a lakehouse", SEGMENT_DOCS),
+    listTables: notACdp("list schemas/tables", "Segment is a CDP, not a lakehouse", SEGMENT_DOCS),
+    describeTable: notACdp("describe table", "Segment is a CDP, not a lakehouse", SEGMENT_DOCS),
+    runQuery: notACdp("read-only SQL", "Segment is a CDP, not a lakehouse", SEGMENT_DOCS),
+    listSources: {
+      support: "native",
+      label: "list sources",
+      endpoint: "GET /sources",
+      doc_url: SEGMENT_DOCS,
+      verified: "2026-08-24",
+    },
+    listDestinations: {
+      support: "native",
+      label: "list destinations",
+      endpoint: "GET /destinations",
+      doc_url: SEGMENT_DOCS,
+      verified: "2026-08-24",
+    },
+    listTrackingPlans: {
+      support: "native",
+      label: "list tracking plans",
+      endpoint: "GET /tracking-plans",
+      doc_url: SEGMENT_DOCS,
+      verified: "2026-08-24",
+    },
+    listTrackingPlanRules: {
+      support: "native",
+      label: "list tracking-plan rules",
+      endpoint: "GET /tracking-plans/{id}/rules",
+      doc_url: SEGMENT_DOCS,
+      verified: "2026-08-24",
+    },
+    listConnections: {
+      support: "unsupported",
+      label: "list connections",
+      endpoint: null,
+      doc_url: SEGMENT_DOCS,
+      reason:
+        "Segment's Public API has no separate connections resource — each destination object " +
+        "already carries the sourceId it is wired to.",
+      nearest_alternative: 'operation:"listDestinations" and read each destination\'s source_id.',
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // RudderStack — CDP. Public API (api.rudderstack.com/v2), Bearer token.
+  // Verified against https://www.rudderstack.com/docs/api/ 2026-08-24 — see
+  // server/data/rudderstack-api.js for the delta between what the build brief
+  // assumed and what RudderStack's live docs actually publish.
+  // ---------------------------------------------------------------------------
+  rudderstack: {
+    checkAuth: {
+      support: "native",
+      label: "auth-check",
+      endpoint: "GET /catalog/tracking-plans",
+      doc_url: RUDDERSTACK_CATALOG_DOCS,
+      verified: "2026-08-24",
+    },
+    listCohorts: notACdp("list cohorts", "RudderStack is a CDP, not a product-analytics platform", RUDDERSTACK_DOCS),
+    getCohort: notACdp("get cohort", "RudderStack is a CDP, not a product-analytics platform", RUDDERSTACK_DOCS),
+    getSeries: notACdp(
+      "aggregate series",
+      "RudderStack is a CDP, not a product-analytics platform",
+      RUDDERSTACK_DOCS
+    ),
+    getFunnel: notACdp(
+      "funnel analysis",
+      "RudderStack is a CDP, not a product-analytics platform",
+      RUDDERSTACK_DOCS
+    ),
+    getRetention: notACdp(
+      "retention analysis",
+      "RudderStack is a CDP, not a product-analytics platform",
+      RUDDERSTACK_DOCS
+    ),
+    listCatalogs: notACdp("list catalogs", "RudderStack is a CDP, not a lakehouse", RUDDERSTACK_DOCS),
+    listTables: notACdp("list schemas/tables", "RudderStack is a CDP, not a lakehouse", RUDDERSTACK_DOCS),
+    describeTable: notACdp("describe table", "RudderStack is a CDP, not a lakehouse", RUDDERSTACK_DOCS),
+    runQuery: notACdp("read-only SQL", "RudderStack is a CDP, not a lakehouse", RUDDERSTACK_DOCS),
+    listSources: {
+      support: "unsupported",
+      label: "list sources",
+      endpoint: null,
+      doc_url: RUDDERSTACK_DOCS,
+      reason:
+        "RudderStack's public API surface (Audit Logs, Organization Usage, Data Catalog, Event " +
+        "Audit, HTTP, Pixel, Profiles, Reverse ETL Connections, Transformation) has no documented " +
+        "workspace-wide list-sources endpoint.",
+      nearest_alternative:
+        'operation:"listConnections" lists the sources connected to one tracking plan — the ' +
+        "nearest public read to a source list.",
+    },
+    listDestinations: {
+      support: "unsupported",
+      label: "list destinations",
+      endpoint: null,
+      doc_url: RUDDERSTACK_DOCS,
+      reason: "Same gap as listSources — no documented workspace-wide list-destinations endpoint.",
+      nearest_alternative: "Check the RudderStack dashboard directly.",
+    },
+    listTrackingPlans: {
+      support: "native",
+      label: "list tracking plans",
+      endpoint: "GET /catalog/tracking-plans",
+      doc_url: RUDDERSTACK_CATALOG_DOCS,
+      verified: "2026-08-24",
+    },
+    listTrackingPlanRules: {
+      support: "native",
+      label: "list tracking-plan rules",
+      endpoint: "GET /catalog/tracking-plans/{id}/events",
+      doc_url: RUDDERSTACK_CATALOG_DOCS,
+      verified: "2026-08-24",
+    },
+    listConnections: {
+      support: "partial",
+      label: "list connections",
+      endpoint: "GET /catalog/tracking-plans/{id}/sources",
+      doc_url: RUDDERSTACK_CATALOG_DOCS,
+      verified: "2026-08-24",
+      reason:
+        "Scoped to one tracking plan's connected sources — RudderStack's public API does not " +
+        "expose a workspace-wide Reverse ETL connection list (only per-connection sync history for " +
+        "a connection id you already have).",
+      nearest_alternative:
+        'operation:"listTrackingPlans" to find a plan id first, then read this operation for it.',
     },
   },
 });
