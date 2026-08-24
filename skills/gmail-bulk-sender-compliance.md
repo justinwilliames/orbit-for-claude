@@ -29,7 +29,7 @@ to Gmail users in a single day triggers enforcement regardless of your total sen
 - **SPF** — published, valid, single record, under 10 DNS lookups, ends with `-all` or
   `~all`.
 - **DKIM** — valid selector published, signing every message, at least 1024-bit key.
-- **DMARC** — `p=quarantine` or stronger. `p=none` is insufficient for bulk senders.
+- **DMARC** — a published record is required; `p=none` satisfies it. Google's guidelines say verbatim, under the 5,000+ requirements: "Your DMARC enforcement policy can be set to none." Yahoo asks for "at least p=none". Progressing to `p=quarantine` then `p=reject` is the right destination for spoofing protection, but it is NOT a bulk-sender requirement and rushing it quarantines your own mail — see `deliverability-management` for the sequencing (verified against support.google.com/a/answer/81126, 2026-08-25).
 - **Alignment** — SPF AND DKIM must align with the From domain. Relaxed alignment
   (subdomain → parent) is acceptable.
 
@@ -106,7 +106,7 @@ The volume threshold is measured per day to Gmail users specifically. A sender w
 
 ## Common mistakes
 
-- **Thinking `p=none` DMARC is enough.** It isn't for bulk — must be `p=quarantine`
+- **Jumping straight to `p=quarantine` to "be compliant".** `p=none` IS enough for the Gmail and Yahoo bulk rules. Moving to enforcement before your aggregate reports show clean alignment quarantines legitimate mail — the failure this skill used to cause by asserting the opposite
   or stronger.
 - **One-click unsub URL that loads a page and requires "confirm".** That's not
   one-click. The POST must process immediately.

@@ -218,8 +218,19 @@ async function resolveDmarc(domain, resolveTxt = resolveTxtSafe) {
   const policy = (tags.p ?? "").toLowerCase();
   if (!policy) issues.push('Missing required "p=" tag.');
   if (policy === "none") {
+    // NOT an issue against the bulk-sender rules, and saying so was wrong.
+    // Google's sender guidelines, under "Requirements for sending 5,000 or
+    // more messages", state verbatim: "Your DMARC enforcement policy can be
+    // set to none." Yahoo asks for "at least p=none". Orbit reported p=none
+    // as a compliance FAILURE and told people to move to p=quarantine —
+    // a production DNS change that silently quarantines legitimate mail if
+    // alignment is not yet clean. Orbit's own deliverability-management
+    // skill says to run p=none for 2-4 weeks first, so the product was
+    // contradicting its own advice while claiming to be the defensible
+    // reading of the spec. Verified against support.google.com/a/answer/81126
+    // on 2026-08-25.
     issues.push(
-      'Policy is p=none (monitor-only). Gmail / Yahoo bulk-sender rules require at least p=quarantine for senders >5k/day.',
+      'Policy is p=none — monitor-only. This DOES satisfy the Gmail and Yahoo bulk-sender requirements, so it is not a compliance failure. It does not stop anyone spoofing you, though: nothing is quarantined or rejected. Once your aggregate reports show your own mail passing cleanly, p=quarantine is the next step.',
     );
   }
   if (!tags.rua) {
