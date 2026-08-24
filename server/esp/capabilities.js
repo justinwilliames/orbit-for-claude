@@ -43,8 +43,8 @@
  *
  * THE DEFAULT IS STATED, NOT IMPLIED — an implicit default is exactly how the
  * first ambiguity got in. A row that OMITS `orbit` means "implemented". Only
- * the gaps are marked, so the field appears on a handful of rows rather than
- * all 48; read every unmarked row as orbit: "implemented", and go through
+ * the gaps are marked, so the field appears on a subset of rows rather than
+ * all 60; read every unmarked row as orbit: "implemented", and go through
  * orbitStatusOf() rather than reading `row.orbit` directly so the default is
  * applied in exactly one place.
  *
@@ -72,7 +72,7 @@
  */
 
 /**
- * The eight logical operations every adapter is measured against, in the order
+ * The ten logical operations every adapter is measured against, in the order
  * they appear in the matrix. Adapters OMIT the methods they cannot support; the
  * registry manufactures the unsupported response from this matrix.
  */
@@ -85,6 +85,8 @@ export const OPERATIONS = Object.freeze([
   "listSegments",
   "getPerformance",
   "sendTest",
+  "createSegment",
+  "createBroadcast",
 ]);
 
 /**
@@ -100,6 +102,8 @@ export const OPERATION_LABELS = Object.freeze({
   listSegments: "segments/lists read",
   getPerformance: "performance metrics",
   sendTest: "test send",
+  createSegment: "create segment/audience",
+  createBroadcast: "create one-off broadcast",
 });
 
 /**
@@ -231,6 +235,31 @@ export const CAPABILITIES = Object.freeze({
       notes:
         "Send to named test users. DO NOT AUTOMATE BEYOND THEM: the same POST /messages/send also accepts segment_id, audience and broadcast: true, and Braze's own docs warn that setting broadcast may cause a send to a larger-than-expected audience. Orbit must hard-refuse any sendTest payload carrying segment_id, audience or broadcast (verified 2026-08-24).",
     },
+    createSegment: {
+      support: "unsupported",
+      orbit: "not_implemented",
+      label: "create segment/audience",
+      endpoint: null,
+      doc_url:
+        "https://www.braze.com/docs/api/endpoints/export/segments/get_segment",
+      reason:
+        "PLATFORM LIMIT, and the sharpest differentiator in this row. Braze publishes no POST/PUT/PATCH on /segments anywhere in its endpoint index — segments are dashboard-authored, full stop. It goes deeper than a missing create call: Braze segments are COMPUTED from user attributes rather than held as membership lists, so there is also no add/remove-a-user-from-a-segment endpoint (unlike Mailchimp and Iterable list membership). Nothing Orbit could build changes this (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /users/track to write the attribute a segment filters on (https://www.braze.com/docs/api/endpoints/user_data/post_user_track), then author the segment once in the dashboard and read it with GET /segments/list. For a one-off audience, POST /users/export/segment exports an existing segment's members.",
+    },
+    createBroadcast: {
+      support: "partial",
+      orbit: "not_implemented",
+      label: "create one-off broadcast",
+      endpoint:
+        "POST /campaigns/duplicate, POST /canvas/duplicate, POST /messages/send, POST /campaigns/trigger/send",
+      doc_url:
+        "https://www.braze.com/docs/api/endpoints/messaging/duplicate_messages/post_duplicate_campaigns",
+      reason:
+        "ORBIT BUILD GAP on a partially-supported platform capability, and the `partial` is the vendor's own constraint: Braze can SEND a broadcast but cannot CREATE the campaign that wraps it. The only campaign/Canvas writes are trigger, schedule, duplicate and translation updates — there is no create/update of campaign or Canvas STRUCTURE. POST /campaigns/duplicate and POST /canvas/duplicate clone an existing one into a draft, which is the real API path to a new send. A campaign-less blast is POST /messages/send with broadcast: true, and Braze's own docs warn that setting broadcast may cause a send to a larger-than-expected audience — Orbit hard-refuses that key on sendTest and any build here must refuse it too (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /campaigns/duplicate to clone a live campaign into a draft, then finish it in the dashboard; POST /campaigns/trigger/send (https://www.braze.com/docs/api/endpoints/messaging/send_messages/post_send_triggered_campaigns) fires an existing API-triggered campaign at a named audience.",
+    },
   },
 
   // -------------------------------------------------------------------------
@@ -300,6 +329,29 @@ export const CAPABILITIES = Object.freeze({
       doc_url: "https://api.iterable.com/api/docs#!/templates/emailProof",
       notes:
         "Proofs a saved template to a designated recipient (templateId + recipientEmail); 20 req/s per API key. /api/email/target requires a campaignId and cannot proof by template — verified against the live OpenAPI spec 2026-07-21, re-verified 2026-08-24. Matching proofs exist for push, SMS and in-app.",
+    },
+    createSegment: {
+      support: "partial",
+      orbit: "not_implemented",
+      label: "create segment/audience",
+      endpoint: "POST /api/lists",
+      doc_url: "https://api.iterable.com/api/docs#!/lists",
+      reason:
+        "ORBIT BUILD GAP on a partially-supported platform capability. Iterable can create a STATIC list over the API — which is what a manually-assembled audience is here — but the true segment analogue, a listType: \"Dynamic\" list, is authored in the UI and cannot be created from the API. The asymmetry is already documented on the read side: ListDetails for a Dynamic list returns id/name/description/createdAt/listType and never the segmentation criteria, so the API can neither write the rule nor read it back. VERIFICATION CAVEAT, stated because this file does not launder confidence: the list-create path is confirmed through Iterable's lists resource and its published clients, but Iterable's support articles 403 machine clients and the API Explorer renders no static spec page — the same machine-hostile doc surface already noted on checkAuth (2026-08-24).",
+      nearest_alternative:
+        "POST /api/lists for a static list, then POST /api/lists/subscribe to populate it (bulk membership mutation — do not automate); dynamic segments must be authored in the Iterable UI.",
+    },
+    createBroadcast: {
+      support: "native",
+      orbit: "not_implemented",
+      label: "create one-off broadcast",
+      endpoint:
+        "POST /api/campaigns/create, then POST /api/campaigns/{campaignId}/send or /schedule",
+      doc_url: "https://api.iterable.com/api/docs#!/campaigns/create_campaign",
+      reason:
+        "ORBIT BUILD GAP — the API does this natively. POST /api/campaigns/create takes {name, templateId, listIds, suppressionListIds, sendMode, sendAt, scheduleSend, defaultTimeZone, labelIds, dataFields} and returns {campaignId}. SAFETY NOTE any build must carry: Iterable's own spec warns that global suppression lists are NOT automatically added to campaigns created from this endpoint, so an API-created campaign can mail people the account globally suppresses — suppressionListIds has to be passed explicitly. Send and schedule are separate, irreversible calls (verified 2026-08-24).",
+      nearest_alternative:
+        "Create the campaign in the Iterable UI, where the global suppression list is applied for you; Orbit's proof path stays POST /api/templates/email/proof.",
     },
   },
 
@@ -393,6 +445,29 @@ export const CAPABILITIES = Object.freeze({
       notes:
         "Transactional send with an inline body to any address, or a saved transactional_message_id. Customer.io recommends always supplying transactional_message_id — otherwise the metrics roll up under id 1. Two flags matter when proofing: send_to_unsubscribed and queue_draft (verified 2026-08-24).",
     },
+    createSegment: {
+      support: "partial",
+      orbit: "not_implemented",
+      label: "create segment/audience",
+      endpoint: "POST /v1/segments",
+      doc_url: "https://docs.customer.io/api/app/#tag/segments",
+      reason:
+        "ORBIT BUILD GAP on a partially-supported platform capability, Customer.io can create an audience over the API — five of the six platforms here can, Braze being the sole exception. `partial` is the vendor's constraint, not a hedge: POST /v1/segments takes {segment: {name, description}} and the docs state it CREATES AN EMPTY SEGMENT — the response comes back type: \"manual\". Data-driven segments (the ones with filter logic) cannot be created from the API. Populating it is a different API and a DIFFERENT CREDENTIAL: POST /api/v1/segments/{segment_id}/add_customers is the Track API, not the App API (verified live against docs.customer.io 2026-08-24).",
+      nearest_alternative:
+        "POST /v1/segments for an empty manual segment, then the Track API's /api/v1/segments/{id}/add_customers to seed it (bulk membership mutation — do not automate); data-driven segments are authored in the workspace.",
+    },
+    createBroadcast: {
+      support: "native",
+      orbit: "not_implemented",
+      label: "create one-off broadcast",
+      endpoint:
+        "POST /v1/newsletters, POST /v1/newsletters/{id}/send, POST /v1/newsletters/{id}/schedule, POST /v1/campaigns/{broadcast_id}/triggers",
+      doc_url: "https://docs.customer.io/api/app/#tag/newsletters",
+      reason:
+        "ORBIT BUILD GAP — the API does this natively, and Customer.io splits it across two primitives worth keeping straight. A NEWSLETTER is the one-time broadcast to a group of people: POST /v1/newsletters creates it, with separate send and schedule calls. An API-TRIGGERED BROADCAST is a pre-built campaign fired at a live audience via POST /v1/campaigns/{broadcast_id}/triggers, and it carries the tightest rate limit on the whole App API — 1 request every 10 seconds against 10/s elsewhere. Media in newsletter content must be hosted in the workspace assets or at a public URL (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /v1/newsletters to create, then a human sends from the workspace; note that a Design Studio email pushed by Orbit cannot be linked to a newsletter over the API (the same publish gap recorded on pushTemplate).",
+    },
   },
 
   // -------------------------------------------------------------------------
@@ -466,6 +541,29 @@ export const CAPABILITIES = Object.freeze({
       nearest_alternative:
         "POST /api/template-render + Orbit's local render/QA gate (orbit_render_email_preview, orbit_qa_email).",
     },
+    createSegment: {
+      support: "native",
+      orbit: "not_implemented",
+      label: "create segment/audience",
+      endpoint: "POST /api/segments, POST /api/lists",
+      doc_url: "https://developers.klaviyo.com/en/reference/create_segment",
+      reason:
+        "ORBIT BUILD GAP — Klaviyo is the strongest platform in this row. POST /api/segments takes a real condition-group definition, so the SEGMENT LOGIC ITSELF is writable over the API, not just the container — the thing Braze cannot do at all and Customer.io/Iterable can only do for a manual or static audience. POST /api/lists creates a static list. The one hard constraint: segment create is capped at 100 per DAY, so a bulk migration has to be paced across days rather than retried (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /api/lists for a static audience (no daily cap of this kind), or author the segment in Klaviyo and read it with GET /api/segments.",
+    },
+    createBroadcast: {
+      support: "native",
+      orbit: "not_implemented",
+      label: "create one-off broadcast",
+      endpoint:
+        "POST /api/campaigns, POST /api/campaign-messages, POST /api/campaign-send-jobs",
+      doc_url: "https://developers.klaviyo.com/en/reference/create_campaign",
+      reason:
+        "ORBIT BUILD GAP — the API does this natively. POST /api/campaigns accepts name, audiences, send_strategy, send_options and tracking_options; POST /api/campaign-send-jobs then triggers a REAL SEND TO THE CAMPAIGN AUDIENCE (it is not, and must never be presented as, a test send — Klaviyo publishes no proof endpoint at all, which is why sendTest above is unsupported). Documented shape limit: there is no campaign-level experiment/variation object, so A/B variants cannot be CONFIGURED here — the only experiment schema in the spec belongs to flow actions (verified 2026-08-24).",
+      nearest_alternative:
+        "Build the campaign in Klaviyo and read it with GET /api/campaigns; variants surface as multiple campaign-messages under one campaign (GET /api/campaigns/{id}/campaign-messages).",
+    },
   },
 
   // -------------------------------------------------------------------------
@@ -537,6 +635,31 @@ export const CAPABILITIES = Object.freeze({
       doc_url: "https://mailchimp.com/developer/marketing/api/campaigns/",
       notes:
         "Test send exists but is campaign-scoped, not template-scoped; requires a draft campaign wrapping the template, and a body carrying test_emails[] + send_type ('html' | 'plaintext'). GET /campaigns/{campaign_id}/send-checklist is Mailchimp's own pre-send blocker list and pairs naturally with it (re-verified 2026-08-24).",
+    },
+    createSegment: {
+      support: "native",
+      orbit: "not_implemented",
+      label: "create segment/audience",
+      endpoint: "POST /lists/{list_id}/segments",
+      doc_url:
+        "https://mailchimp.com/developer/marketing/api/list-segments/add-segment/",
+      reason:
+        "ORBIT BUILD GAP — the API does this natively, per audience. THE TRAP TO CARRY INTO ANY BUILD is the same one already recorded on listSegments: in Mailchimp a TAG IS A SEGMENT of type \"static\", so this one endpoint creates both, and which one you get depends on whether the body carries static_segment (a member-address list) or options.conditions (a saved conditional segment). A build that always posts static_segment silently manufactures tags rather than segments. Segments are per-audience, never account-wide — list_id is part of the path (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /lists/{list_id}/segments with options.conditions for a true segment; tags are written per member (POST /lists/{list_id}/members/{subscriber_hash}/tags) and discovered with GET /lists/{list_id}/tag-search. Read back with GET /lists/{list_id}/segments?exclude_type=static.",
+    },
+    createBroadcast: {
+      support: "native",
+      orbit: "not_implemented",
+      label: "create one-off broadcast",
+      endpoint:
+        "POST /campaigns, PUT /campaigns/{campaign_id}/content, POST /campaigns/{campaign_id}/actions/send (or /schedule)",
+      doc_url:
+        "https://mailchimp.com/developer/marketing/api/campaigns/add-campaign/",
+      reason:
+        "ORBIT BUILD GAP — the API does this natively, in three calls rather than one: POST /campaigns (type + recipients.list_id + settings) creates the draft, PUT /campaigns/{id}/content attaches the HTML or a template_id, and POST /campaigns/{id}/actions/send is the irreversible mass send. This is also the path Mailchimp's own docs point at for a template proof, since a test send is campaign-scoped rather than template-scoped — the draft campaign Orbit's sendTest row already says you need (verified 2026-08-24).",
+      nearest_alternative:
+        "GET /campaigns/{campaign_id}/send-checklist is Mailchimp's own pre-send blocker list and should gate any send build; POST /campaigns/{id}/actions/schedule delays rather than fires.",
     },
   },
 
@@ -630,6 +753,31 @@ export const CAPABILITIES = Object.freeze({
         "https://developer.salesforce.com/docs/marketing/marketing-cloud/guide/transactional-messaging-api.html",
       notes:
         "Transactional Messaging API sends via a pre-created send definition (/messaging/v1/email/definitions), then POST /messaging/v1/email/messages/{messageKey}; requires definition setup, not a one-call proof. The send status is then readable via GET /messaging/v1/email/messages/{messageKey} (EmailSent / EmailQueued / EmailNotSent), which no other ESP in this matrix offers. Scopes: email_write to create the definition, email_send to send. A SOAP test-send path exists (Perform on an EmailSendDefinition) but only targets a pre-configured test audience, not an arbitrary address (re-verified 2026-08-24).",
+    },
+    createSegment: {
+      support: "partial",
+      orbit: "not_implemented",
+      label: "create segment/audience",
+      endpoint: "POST /data/v1/customobjects",
+      doc_url:
+        "https://developer.salesforce.com/docs/marketing/marketing-cloud/references/mc-custom_objects?meta=getDataExtensions",
+      reason:
+        "ORBIT BUILD GAP on a partially-supported platform capability. The Custom Object REST API (Summer '24) added data-extension MANAGEMENT over plain REST, so the audience CONTAINER is now creatable without SOAP — a genuine change from the SOAP-only era most SFMC guidance still describes. `partial` is the platform's own constraint and it is the same one recorded on listSegments: a data extension is a SHAPE, never the query that populates it. The populating logic is a SOAP QueryDefinition or FilterDefinition, and classic Email Studio subscriber Lists, Groups and Filters have no REST resource at all. DOC CAVEAT: the reference's createDataExtension anchor 404s, so the doc_url points at the resolving getDataExtensions page for the same resource and the create verb is corroborated by the Summer '24 release notes rather than a live operation page (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /data/v1/customobjects for the data extension, then a SOAP QueryDefinition (or an Automation Studio query activity) to populate it; classic lists/groups/filters need a SOAP client, which is out of v1 scope.",
+    },
+    createBroadcast: {
+      support: "partial",
+      orbit: "not_implemented",
+      label: "create one-off broadcast",
+      endpoint:
+        "POST /interaction/v1/interactions, POST /messaging/v1/email/definitions",
+      doc_url:
+        "https://developer.salesforce.com/docs/marketing/marketing-cloud/references/mc_rest_interaction/postCreateInteraction.html",
+      reason:
+        "ORBIT BUILD GAP on a partially-supported platform capability. SFMC does publish journey creation over REST — POST /interaction/v1/interactions takes key (UUID), name and workflowApiVersion (0.5 or 1.0), with id, status, definitionId and the date fields assigned by Journey Builder and never passed in. `partial` because SFMC has no one-off blast primitive matching the other five: a true Email Studio send is a Send/EmailSendDefinition driven over SOAP, and the REST alternative (Transactional Messaging) requires a pre-created send definition rather than a single create-and-send call. So the API can build the automated path natively and the one-off path only obliquely (verified 2026-08-24).",
+      nearest_alternative:
+        "POST /interaction/v1/interactions for a journey (the closest REST-native send construct), or POST /messaging/v1/email/definitions once and then POST /messaging/v1/email/messages/{messageKey} per recipient; a classic Email Studio blast needs a SOAP client.",
     },
   },
 });

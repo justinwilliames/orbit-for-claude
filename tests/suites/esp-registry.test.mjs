@@ -101,6 +101,10 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
   // The API genuinely has no door. Nothing Orbit could build would change it.
   const PLATFORM_LIMIT_CASES = [
     ["klaviyo", "sendTest"], // no public test-send endpoint, confirmed in the survey
+    // Braze publishes no POST/PUT/PATCH on /segments anywhere in its endpoint
+    // index, and segments are COMPUTED from attributes rather than held as
+    // membership lists — so there is no create call and no add/remove call.
+    ["braze", "createSegment"],
   ];
 
   // The API supports it; Orbit has not built the adapter path. Backlog items.
@@ -114,6 +118,10 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
   const ORBIT_GAP_CASES = [
     ["sfmc", "listSegments"], // GET /data/v1/customobjects exists
     ["sfmc", "getPerformance"], // GET /interaction/v1/interactions?extras=stats exists
+    ["klaviyo", "createSegment"], // POST /api/segments writes the condition groups
+    ["mailchimp", "createSegment"], // POST /lists/{list_id}/segments
+    ["customerio", "createBroadcast"], // POST /v1/newsletters
+    ["iterable", "createBroadcast"], // POST /api/campaigns/create
   ];
 
   // Gaps that were closed. Asserted as hard as the open ones, because a closed
@@ -320,5 +328,91 @@ describe("ESP registry — degrades when an adapter module cannot load", () => {
     assert.match(res.message, /could not be loaded|re-install|update/i);
 
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * createSegment / createBroadcast — added 2026-08-24.
+ *
+ * These two operations exist in the matrix and in NO adapter, which is the
+ * whole reason they are worth recording: they are the axis on which these six
+ * platforms differ most, and before the two-axis split the matrix could not
+ * have carried them at all without libelling every vendor as incapable.
+ * Braze genuinely cannot create a segment; Klaviyo can write the segment LOGIC.
+ * That is a real procurement-grade difference, and it is now readable.
+ * -------------------------------------------------------------------------- */
+describe("ESP matrix — audience-create and broadcast-create rows", () => {
+  const NEW_OPS = ["createSegment", "createBroadcast"];
+  const ALL = ["braze", "iterable", "customerio", "klaviyo", "mailchimp", "sfmc"];
+
+  test("both operations are registered in OPERATIONS, so the tool renders them", async () => {
+    const { OPERATIONS } = await import(espUrl("capabilities.js"));
+    for (const op of NEW_OPS) {
+      assert.ok(OPERATIONS.includes(op), `${op} must be in OPERATIONS or no consumer sees it`);
+    }
+  });
+
+  test("every platform carries both rows — a partial matrix is a misleading one", () => {
+    for (const platform of ALL) {
+      for (const op of NEW_OPS) {
+        assert.ok(CAPABILITIES[platform][op], `${platform}.${op} is missing`);
+      }
+    }
+  });
+
+  test("no adapter implements them yet, and every row says so honestly", async () => {
+    for (const platform of ALL) {
+      for (const op of NEW_OPS) {
+        const row = CAPABILITIES[platform][op];
+        assert.equal(
+          orbitStatusOf(platform, op),
+          "not_implemented",
+          `${platform}.${op}: the matrix claims Orbit built this — the adapter has not`
+        );
+        // The file's own rule: a not_implemented row must name the gap and a way round it.
+        assert.ok(row.reason, `${platform}.${op} refuses with no reason`);
+        assert.ok(row.nearest_alternative, `${platform}.${op} refuses with no way round it`);
+        assert.ok(row.doc_url, `${platform}.${op} makes a support claim with no doc URL`);
+        if (row.support !== "unsupported") {
+          assert.ok(row.endpoint, `${platform}.${op} claims support but names no endpoint`);
+        }
+        // Braze's adapter predates the -api.js naming the other five use.
+        const file = platform === "braze" ? "braze-adapter.js" : `${platform}-api.js`;
+        const adapter = (await import(espUrl(file))).adapter;
+        assert.equal(
+          typeof adapter[op],
+          "undefined",
+          `${platform} adapter has ${op} but the matrix still marks it not_implemented`
+        );
+      }
+    }
+  });
+
+  test("the differentiator is preserved, not flattened", () => {
+    // The one true platform limit in this pair.
+    assert.equal(CAPABILITIES.braze.createSegment.support, "unsupported");
+    // The platforms that genuinely can. Flattening these to "unsupported"
+    // because Orbit has not built them is the exact regression the two-axis
+    // matrix exists to prevent.
+    assert.equal(CAPABILITIES.klaviyo.createSegment.support, "native");
+    assert.equal(CAPABILITIES.mailchimp.createSegment.support, "native");
+    // And the ones with a real, named constraint.
+    for (const p of ["iterable", "customerio", "sfmc"]) {
+      assert.equal(CAPABILITIES[p].createSegment.support, "partial");
+      assert.ok(
+        CAPABILITIES[p].createSegment.reason,
+        `${p}.createSegment is partial and names no constraint`
+      );
+    }
+  });
+
+  test("every broadcast-create row is refused before it can send anything", async () => {
+    // These are mass-send paths. Until an adapter deliberately implements one
+    // behind a gate, dispatch must refuse without a network call.
+    for (const platform of ALL) {
+      const res = await dispatch(platform, "createBroadcast", { config: {} });
+      assert.equal(res.unsupported, true, `${platform}.createBroadcast reached an adapter`);
+      assert.ok(["orbit_gap", "platform_limit"].includes(res.refusal));
+    }
   });
 });
