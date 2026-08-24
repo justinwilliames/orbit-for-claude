@@ -35,14 +35,12 @@
  * overflow, empty states and baked data all verify correctly here. Live
  * host round-trips do not.
  *
- * HONEST LIMIT 2, the bigger one: only ONE of the 23 widgets has a data
- * fixture below, so 22 are verified only in their EMPTY state — and an
- * empty widget has no content to collapse, so a clean sweep across them
- * proves close to nothing. The defect found on 2026-08-24 was only
- * visible with data loaded. Most widget-bearing tools live in the
- * server/index.js monolith and need the MCP client harness
- * (tests/harness/mcp-client.mjs) to exercise; wiring that in is the work
- * that would make this script honest across the whole set.
+ * COVERAGE, as of 2026-08-24: `--live` boots the real MCP client and
+ * populates 14 of the 23 widgets from actual tool output. The rest either
+ * need credentials, need a file the harness has no fixture for, or take
+ * inputs not yet in LIVE_ARGS — each is REPORTED by name in the summary
+ * rather than skipped quietly, because "no fixture" and "tool refused"
+ * are different facts.
  *
  * THE DEFECT SIGNATURE, for whoever automates this next. Load a populated
  * widget at ~900x520 and look for a scrollable element whose scrollHeight
@@ -55,6 +53,25 @@
  * 592px of content, a ratio of 8.3. A first pass at this used h < 70 and
  * cheerfully reported zero defects while the 71px case sat in front of
  * it; pick the threshold from the real measurement, not a round number.
+ *
+ * WHAT THE FIRST REAL SWEEP FOUND (14 populated widgets @ 900x520):
+ *   orbit_esp_capabilities  .grid-box   71px /  592px   ratio 8.3  SEVERE
+ *   orbit_client_sim        .rail-list 140px /  645px   ratio 4.6
+ *   orbit_render_gate       .rail-list 104px /  379px   ratio 3.6
+ *
+ * This is ONE systemic issue, not three bugs. Every one of them is a
+ * `flex:1; min-height:0` primary content area inside a height-constrained
+ * column, so the content the widget exists to show gets whatever is left
+ * after the chrome — and at a 520px pane that is nearly nothing. The ESP
+ * matrix is worst because it drops to column headers with zero data rows;
+ * the other two remain usable but show a fraction of their content (the
+ * client matrix reports 7 client classes and shows about one and a half).
+ *
+ * Do NOT fix these with min-height on the child. That was tried on the ESP
+ * matrix and reverted: the parent cannot grow, so the child overflows it
+ * and the panel below renders ON TOP of the content. The fix is structural
+ * — let the widget body scroll rather than fit a fixed viewport — and it
+ * wants verifying in the real host pane, which Claude cannot drive.
  */
 
 import fs from "node:fs";
@@ -112,4 +129,111 @@ if (failures.length) {
   console.log(`\nFAILED (${failures.length}):`);
   for (const f of failures) console.log(`  ${f}`);
   process.exitCode = 1;
+}
+
+/* ── LIVE MODE ────────────────────────────────────────────────────────────
+ * `--live` boots a real MCP client (the same harness the contract suite
+ * uses), calls every widget-bearing tool, and renders each widget with
+ * whatever structuredContent the tool actually returned. That is the only
+ * way to populate the 20-odd widgets whose tools live in the
+ * server/index.js monolith and cannot be imported directly.
+ *
+ * Tools that need credentials return needs_setup and are reported as such
+ * rather than skipped silently — "no fixture" and "tool refused" are
+ * different facts and the summary keeps them apart.
+ */
+/**
+ * Minimal REAL inputs per widget-bearing tool, so live mode can populate
+ * widgets whose tools legitimately refuse an empty call. Called with {} these
+ * return no structuredContent — not a bug, they are "score this subject
+ * line" tools with nothing to score. Required params were read off the live
+ * tool list rather than guessed; add a row when a widget renders empty.
+ */
+const SAMPLE_HTML =
+  '<html><body style="margin:0;background:#fff"><table width="100%"><tr><td style="padding:24px;font-family:Arial;font-size:16px;color:#222">' +
+  '<h1 style="font-size:24px;margin:0 0 12px">Your order is on its way</h1>' +
+  '<p style="margin:0 0 16px">Tracking updates land here as soon as the carrier scans it.</p>' +
+  '<a href="https://example.com/track" style="background:#4338ca;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block">Track my order</a>' +
+  '<p style="margin:16px 0 0;font-size:12px;color:#777">You are receiving this because you shop with us. <a href="https://example.com/u">Unsubscribe</a></p>' +
+  '</td></tr></table></body></html>';
+
+const LIVE_ARGS = {
+  orbit_score_subject_line: { subject: "Your order is on its way", preheader: "Tracking inside" },
+  orbit_score_preheader: { preheader: "Tracking updates inside", subject: "Your order is on its way" },
+  orbit_check_push_copy: { title: "Order shipped", body: "Tap to track your delivery in real time." },
+  orbit_compose_sms: { body: "Your order shipped. Track it: example.com/t", region: "US", brand: "ACME" },
+  orbit_dark_mode_check: { html: SAMPLE_HTML },
+  orbit_client_sim: { html: SAMPLE_HTML },
+  orbit_qa_email: { html: SAMPLE_HTML, include_size_check: true },
+  orbit_render_gate: { html: SAMPLE_HTML, label: "widget render check" },
+  orbit_rfm_score: {
+    users_json: JSON.stringify([
+      { user_id: "u1", last_order_at: "2026-08-01", orders: 9, revenue: 940 },
+      { user_id: "u2", last_order_at: "2026-05-11", orders: 2, revenue: 120 },
+      { user_id: "u3", last_order_at: "2026-02-02", orders: 1, revenue: 40 },
+    ]),
+    reference_date: "2026-08-24",
+  },
+  orbit_cohort_retention: {
+    enrollments_json: JSON.stringify([
+      { user_id: "u1", enrolled_at: "2026-06-01" },
+      { user_id: "u2", enrolled_at: "2026-06-01" },
+      { user_id: "u3", enrolled_at: "2026-06-08" },
+    ]),
+    events_json: JSON.stringify([
+      { user_id: "u1", occurred_at: "2026-06-09" },
+      { user_id: "u2", occurred_at: "2026-06-15" },
+    ]),
+    period_days: 7,
+    periods_to_track: 4,
+    reference_date: "2026-08-24",
+  },
+};
+
+if (process.argv.includes("--live")) {
+  const { spawnMcpClient } = await import("../tests/harness/mcp-client.mjs");
+  const { startMockApiServer } = await import("../tests/harness/mock-api-server.mjs");
+  const { makeTempWorkspace } = await import("../tests/harness/fixtures.mjs");
+
+  const mock = await startMockApiServer();
+  const client = await spawnMcpClient({
+    env: { ...mock.env, ORBIT_HOME_ROOT: makeTempWorkspace() },
+  });
+
+  const tools = await client.listTools();
+  const META_KEY = "ui/resourceUri";
+  const widgetTools = tools.filter((t) => t._meta?.[META_KEY]);
+
+  let populated = 0;
+  const refused = [];
+  const noData = [];
+
+  for (const tool of widgetTools) {
+    const uri = tool._meta[META_KEY];
+    const widget = ORBIT_WIDGETS.find((w) => w.uri === uri);
+    if (!widget) continue;
+    const slug = uri.replace(/^ui:\/\//, "").replace(/[^a-z0-9]+/gi, "-");
+
+    const result = await client.callToolLenient(tool.name, LIVE_ARGS[tool.name] ?? {});
+    const data = result?.raw?.structuredContent ?? null;
+
+    if (!data) {
+      const why = JSON.stringify(result?.parsed ?? {}).slice(0, 60);
+      (/needs_setup|needs_inputs|auth/i.test(why) ? refused : noData).push(`${tool.name} ${why}`);
+      continue;
+    }
+    fs.writeFileSync(path.join(OUT, `${slug}.live.html`), await widget.render(data));
+    populated++;
+  }
+
+  await client.close();
+  await mock.close();
+
+  console.log(`\nLIVE MODE`);
+  console.log(`  widget-bearing tools: ${widgetTools.length}`);
+  console.log(`  populated from live calls: ${populated}`);
+  console.log(`  refused (needs setup/inputs): ${refused.length}`);
+  console.log(`  returned no structuredContent: ${noData.length}`);
+  for (const r of refused) console.log(`    refused: ${r}`);
+  for (const n of noData) console.log(`    nodata:  ${n}`);
 }
