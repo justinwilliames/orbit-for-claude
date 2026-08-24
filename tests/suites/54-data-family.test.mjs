@@ -46,6 +46,10 @@ const {
   US_BASE_URL,
   EU_BASE_URL,
   MAX_WINDOW_DAYS,
+  MIN_FUNNEL_STEPS,
+  MAX_FUNNEL_STEPS,
+  RETENTION_START_EVENTS,
+  RETENTION_RETURN_EVENTS,
   baseUrl,
   scrubAmplitudeDetail,
   validateSetup,
@@ -53,6 +57,8 @@ const {
   listCohorts,
   getCohort,
   readSeries,
+  getFunnel,
+  getRetention,
 } = amplitude;
 const { DATA_TOOL_DEFINITIONS, setDataRuntimeConfig } = await import(
   srvUrl("data/tools.js")
@@ -112,6 +118,32 @@ const SEGMENTATION_BODY = {
     series: [[5, 7]],
     seriesLabels: [["Checkout Completed"]],
     xValues: ["2026-08-01", "2026-08-02"],
+  },
+};
+
+// One group (no `g` group-by sent), three steps. cumulative is Amplitude's
+// own (unlabelled-precision) field and deliberately unread by the adapter —
+// only cumulativeRaw's counts are trusted; see normaliseFunnel's docblock.
+const FUNNEL_BODY = {
+  data: [
+    {
+      meta: { segmentIndex: 0 },
+      cumulativeRaw: [1000, 400, 150],
+      cumulative: [1, 0.4, 0.15],
+    },
+  ],
+};
+
+const RETENTION_BODY = {
+  data: {
+    series: [
+      {
+        dates: ["Aug 20", "Aug 21"],
+        values: { "Aug 20": [1, 0.5, 0.3], "Aug 21": [1, 0.4] },
+        combined: [1, 0.45, 0.3],
+      },
+    ],
+    seriesMeta: [{ segmentIndex: 0 }],
   },
 };
 
@@ -486,6 +518,186 @@ describe("Amplitude reads — cohorts, one cohort, and a bounded series", () => 
   });
 });
 
+/* ── funnel analysis ──────────────────────────────────────────── */
+
+describe("Amplitude reads — funnel analysis", () => {
+  test("getFunnel sends one repeated `e` per ordered step and returns step counts", async () => {
+    const calls = mockFetch(() => makeResponse(200, FUNNEL_BODY));
+    const result = await getFunnel({
+      config: config(),
+      events: ["Signed Up", "Activated", "Purchased"],
+      start: "20260801",
+      end: "20260814",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/2/funnels");
+    // Repeated `e`, not a JSON array — exactly the shape the docs show.
+    assert.deepEqual(
+      url.searchParams.getAll("e").map((v) => JSON.parse(v)),
+      [
+        { event_type: "Signed Up" },
+        { event_type: "Activated" },
+        { event_type: "Purchased" },
+      ]
+    );
+    assert.equal(url.searchParams.get("n"), "active", "metric defaults to active users");
+    assert.equal(url.searchParams.get("i"), "1");
+
+    assert.equal(result.status, "ok");
+    assert.equal(result.aggregate_only, true);
+    assert.equal(result.steps.length, 3);
+    assert.deepEqual(result.steps[0], {
+      step: 1,
+      event: "Signed Up",
+      count: 1000,
+      conversion_from_start: 1,
+      conversion_from_previous_step: null,
+    });
+    assert.equal(result.steps[1].count, 400);
+    assert.equal(result.steps[1].conversion_from_start, 0.4);
+    assert.equal(result.steps[1].conversion_from_previous_step, 0.4);
+    assert.equal(result.steps[2].conversion_from_previous_step, 150 / 400);
+    assert.equal(result.overall_conversion, 0.15);
+  });
+
+  test("getFunnel honours metric:new as Amplitude's `n` param", async () => {
+    const calls = mockFetch(() => makeResponse(200, FUNNEL_BODY));
+    await getFunnel({
+      config: config(),
+      events: ["A", "B"],
+      start: "20260801",
+      end: "20260802",
+      metric: "new",
+    });
+    assert.equal(new URL(calls[0].url).searchParams.get("n"), "new");
+  });
+
+  test("getFunnel rejects too few steps, too many steps, and an out-of-bounds window before any request goes out", async () => {
+    const calls = mockFetch(() => makeResponse(200, FUNNEL_BODY));
+    const reject = async (args, pattern) => {
+      const err = await getFunnel({ config: config(), ...args }).then(() => null, (e) => e);
+      assert.ok(err instanceof AmplitudeApiError, `${JSON.stringify(args)} was accepted`);
+      assert.match(err.detail, pattern);
+    };
+
+    await reject(
+      { events: ["Only One"], start: "20260801", end: "20260802" },
+      new RegExp(String(MIN_FUNNEL_STEPS))
+    );
+    await reject(
+      {
+        events: Array.from({ length: MAX_FUNNEL_STEPS + 1 }, (_, i) => `Step ${i}`),
+        start: "20260801",
+        end: "20260802",
+      },
+      new RegExp(String(MAX_FUNNEL_STEPS))
+    );
+    await reject(
+      { events: ["A", "B"], start: "20250101", end: "20260601" },
+      new RegExp(String(MAX_WINDOW_DAYS))
+    );
+
+    assert.equal(calls.length, 0, "an invalid funnel request must never reach Amplitude");
+  });
+
+  test("getFunnel surfaces auth_failed like every other read, with no credential in the payload", async () => {
+    mockFetch(() => makeResponse(401, { error: `rejected for api_key=${API_KEY}` }));
+    const err = await getFunnel({
+      config: config(),
+      events: ["A", "B"],
+      start: "20260801",
+      end: "20260802",
+    }).then(() => null, (e) => e);
+    assert.ok(err instanceof AmplitudeApiError);
+    assert.equal(err.code, "auth_failed");
+    assert.ok(ALL_STATUSES.has(err.toResponse().status));
+    assert.ok(!JSON.stringify(err.toResponse()).includes(API_KEY));
+  });
+});
+
+/* ── retention analysis ───────────────────────────────────────── */
+
+describe("Amplitude reads — retention analysis", () => {
+  test("getRetention sends se/re and returns a combined curve plus per-cohort rows", async () => {
+    const calls = mockFetch(() => makeResponse(200, RETENTION_BODY));
+    const result = await getRetention({
+      config: config(),
+      startEvent: "_new",
+      returnEvent: "_active",
+      start: "20260801",
+      end: "20260814",
+    });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/2/retention");
+    assert.equal(url.searchParams.get("se"), "_new");
+    assert.equal(url.searchParams.get("re"), "_active");
+    assert.equal(url.searchParams.get("rm"), null, "no rm sent unless retentionType is given");
+
+    assert.equal(result.status, "ok");
+    assert.equal(result.start_event, "_new");
+    assert.equal(result.return_event, "_active");
+    assert.equal(result.aggregate_only, true);
+    assert.deepEqual(result.combined, [
+      { period: 0, retention: 1 },
+      { period: 1, retention: 0.45 },
+      { period: 2, retention: 0.3 },
+    ]);
+    assert.equal(result.by_cohort_date.length, 2);
+    assert.deepEqual(result.by_cohort_date[0], {
+      cohort_date: "Aug 20",
+      retention: [1, 0.5, 0.3],
+    });
+  });
+
+  test("getRetention only accepts the documented se/re tokens — not a custom event", async () => {
+    const calls = mockFetch(() => makeResponse(200, RETENTION_BODY));
+    for (const bad of [{ startEvent: "checkout", returnEvent: "_active" }, { startEvent: "_new", returnEvent: "signed_up" }]) {
+      const err = await getRetention({
+        config: config(),
+        start: "20260801",
+        end: "20260802",
+        ...bad,
+      }).then(() => null, (e) => e);
+      assert.ok(err instanceof AmplitudeApiError, `${JSON.stringify(bad)} was accepted`);
+      assert.match(err.detail, /must be one of/);
+    }
+    assert.equal(calls.length, 0);
+    // The exported token lists match what was validated above.
+    assert.deepEqual([...RETENTION_START_EVENTS], ["_new", "_active"]);
+    assert.deepEqual([...RETENTION_RETURN_EVENTS], ["_all", "_active"]);
+  });
+
+  test("getRetention rejects an out-of-bounds window before any request goes out", async () => {
+    const calls = mockFetch(() => makeResponse(200, RETENTION_BODY));
+    const err = await getRetention({
+      config: config(),
+      startEvent: "_new",
+      returnEvent: "_active",
+      start: "20250101",
+      end: "20260601",
+    }).then(() => null, (e) => e);
+    assert.ok(err instanceof AmplitudeApiError);
+    assert.match(err.detail, new RegExp(String(MAX_WINDOW_DAYS)));
+    assert.equal(calls.length, 0);
+  });
+
+  test("getRetention surfaces auth_failed like every other read, with no credential in the payload", async () => {
+    mockFetch(() => makeResponse(401, { error: `rejected for secret_key=${SECRET_KEY}` }));
+    const err = await getRetention({
+      config: config(),
+      startEvent: "_new",
+      returnEvent: "_active",
+      start: "20260801",
+      end: "20260802",
+    }).then(() => null, (e) => e);
+    assert.ok(err instanceof AmplitudeApiError);
+    assert.equal(err.code, "auth_failed");
+    assert.ok(!JSON.stringify(err.toResponse()).includes(SECRET_KEY));
+  });
+});
+
 /* ── read-only, structurally ──────────────────────────────────── */
 
 describe("Amplitude adapter — read-only by construction", () => {
@@ -499,6 +711,8 @@ describe("Amplitude adapter — read-only by construction", () => {
       "checkConnection",
       "displayName",
       "getCohort",
+      "getFunnel",
+      "getRetention",
       "getSeries",
       "listCohorts",
       "platform",
@@ -550,11 +764,12 @@ describe("Amplitude adapter — read-only by construction", () => {
     }
   });
 
-  test("four tools cover two platforms x eight operations", () => {
+  test("four tools cover two platforms x ten operations", () => {
     // The point of the collapse: operations grow without tools growing. If this
-    // ratio ever inverts, someone has added a flat tool.
+    // ratio ever inverts, someone has added a flat tool. Went 8 -> 10 ops
+    // 2026-08-24 when getFunnel/getRetention were added; still four tools.
     const combinations = REGISTERED_PLATFORMS.length * OPERATIONS.length;
-    assert.equal(combinations, 16);
+    assert.equal(combinations, 20);
     assert.ok(
       DATA_TOOL_DEFINITIONS.length < combinations,
       "a tool-per-operation surface is exactly what this family exists to avoid"
@@ -587,6 +802,27 @@ describe("Amplitude adapter — read-only by construction", () => {
     assert.ok(result.reason, "an unsupported answer must say why");
     assert.ok(result.nearest_alternative, "and where to go instead");
     assert.equal(fetched, false, "an unsupported operation must not reach the network");
+  });
+
+  test("Databricks refuses getFunnel and getRetention as a platform limit, not an Orbit gap", async () => {
+    let fetched = false;
+    mockFetch(() => { fetched = true; return makeResponse(200, {}); });
+
+    for (const operation of ["getFunnel", "getRetention"]) {
+      const result = await dispatch("databricks", operation, { config: { databricksToken: "x", databricksWorkspaceUrl: "https://example.cloud.databricks.com" } });
+      assert.equal(result.unsupported, true);
+      assert.equal(result.platform, "databricks");
+      assert.equal(result.operation, operation);
+      assert.equal(
+        result.refusal,
+        "platform_limit",
+        `${operation} should read as a warehouse-conceptual limit, not an Orbit build gap`
+      );
+      assert.match(result.reason, /warehouse|SQL|concept/i);
+      assert.ok(result.nearest_alternative, `${operation} should point somewhere real (runQuery)`);
+      assert.match(result.nearest_alternative, /runQuery/);
+    }
+    assert.equal(fetched, false, "a platform-limit refusal must never reach the network");
   });
 
   test("an unknown or missing platform is a loud error, never a silent default", () => {

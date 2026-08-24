@@ -69,6 +69,8 @@ export const OPERATIONS = Object.freeze([
   "listCohorts",
   "getCohort",
   "getSeries",
+  "getFunnel",
+  "getRetention",
   "listCatalogs",
   "listTables",
   "describeTable",
@@ -81,6 +83,8 @@ export const OPERATION_LABELS = Object.freeze({
   listCohorts: "list cohorts",
   getCohort: "get cohort",
   getSeries: "aggregate series",
+  getFunnel: "funnel analysis",
+  getRetention: "retention analysis",
   listCatalogs: "list catalogs",
   listTables: "list schemas/tables",
   describeTable: "describe table",
@@ -104,13 +108,23 @@ export const PLATFORM_META = Object.freeze({
 });
 
 const AMPLITUDE_DOCS = "https://amplitude.com/docs/apis/analytics";
+// Funnel/Retention are verified against the specific Dashboard REST page and
+// section, not the general analytics-APIs index the other Amplitude rows
+// point at — worth the more precise link since that's the doc that was
+// actually re-read to build these two operations.
+const AMPLITUDE_DASHBOARD_REST_DOCS =
+  "https://amplitude.com/docs/apis/analytics/dashboard-rest";
 const DATABRICKS_DOCS = "https://docs.databricks.com/api/workspace/introduction";
 
 /**
  * The matrix. `{ [platform]: { [operation]: row } }`.
  *
  * Row shape:
- *   { support, orbit?, label, endpoint, doc_url, reason?, nearest_alternative? }
+ *   { support, orbit?, label, endpoint, doc_url, reason?, nearest_alternative?, verified? }
+ *
+ * `verified` is an optional ISO date: the day the row was last checked
+ * against the vendor's live docs (WebFetch, not memory). Not every row
+ * carries one yet — add it when you re-verify a row, don't backfill guesses.
  *
  * `orbit` is OMITTED on the implemented majority (omitted means "implemented")
  * and present only where Orbit has a build gap. Every row that carries
@@ -121,11 +135,20 @@ const DATABRICKS_DOCS = "https://docs.databricks.com/api/workspace/introduction"
  * was checked for whether it was actually blaming the vendor for Orbit's own
  * build backlog (the exact defect the ESP matrix had). None were — Amplitude's
  * warehouse-shaped refusals (listCatalogs/listTables/describeTable) and its
- * paid-add-on runQuery refusal, and Databricks' cohort/series refusals, are
- * all genuine platform-conceptual limits with no adapter path that building
- * more Orbit code would open. No row was flipped, and none carries `orbit`
- * today — both platforms' `native`/`partial` cells are exactly what their
- * adapters implement.
+ * paid-add-on runQuery refusal, and Databricks' cohort/series/funnel/retention
+ * refusals, are all genuine platform-conceptual limits with no adapter path
+ * that building more Orbit code would open. No row was flipped, and none
+ * carries `orbit` today — both platforms' `native`/`partial` cells are exactly
+ * what their adapters implement.
+ *
+ * getFunnel/getRetention added the same day, closing the gap between what the
+ * /mcp-for-amplitude page promises (funnels, retention curves) and what the
+ * adapter shipped. Both are doc-backed against
+ * https://amplitude.com/docs/apis/analytics/dashboard-rest, re-read the same
+ * day (`verified` on each row) — getFunnel is a clean native read; getRetention
+ * is `partial` because the endpoint's `se`/`re` accept only literal action
+ * tokens, not a custom event, which is a real Amplitude-side constraint, not
+ * an Orbit gap.
  */
 export const CAPABILITIES = Object.freeze({
   // ---------------------------------------------------------------------------
@@ -165,6 +188,27 @@ export const CAPABILITIES = Object.freeze({
         "or new users or one event's uniques/totals. The raw Export API (per-user event rows) is not built.",
       nearest_alternative:
         "Narrow the window, or model the same question as a cohort and read its size.",
+    },
+    getFunnel: {
+      support: "native",
+      label: "funnel analysis",
+      endpoint: "GET /2/funnels",
+      doc_url: AMPLITUDE_DASHBOARD_REST_DOCS,
+      verified: "2026-08-24",
+    },
+    getRetention: {
+      support: "partial",
+      label: "retention analysis",
+      endpoint: "GET /2/retention",
+      doc_url: AMPLITUDE_DASHBOARD_REST_DOCS,
+      verified: "2026-08-24",
+      reason:
+        "Amplitude's documented `se`/`re` values are literal action tokens only " +
+        "(_new/_active starting, _all/_active returning) — the endpoint has no path " +
+        "for a custom behavioural start or return event.",
+      nearest_alternative:
+        "Model a custom-event retention question as two getSeries reads instead " +
+        "(who did the start event, who came back and did the return event).",
     },
     listCatalogs: {
       support: "unsupported",
@@ -237,6 +281,30 @@ export const CAPABILITIES = Object.freeze({
         "There is no pre-built series endpoint — a time series is something you write, not something " +
         "the workspace serves.",
       nearest_alternative: 'operation:"runQuery" with a GROUP BY over a date column.',
+    },
+    getFunnel: {
+      support: "unsupported",
+      label: "funnel analysis",
+      endpoint: null,
+      doc_url: DATABRICKS_DOCS,
+      reason:
+        "A SQL warehouse has no funnel concept — ordered-step conversion is a query " +
+        "you write over event rows, not an object or endpoint Databricks serves.",
+      nearest_alternative:
+        'operation:"runQuery" with a self-JOIN or window-function SELECT expressing the ' +
+        'steps, or platform:"amplitude" for the same funnel as a native read.',
+    },
+    getRetention: {
+      support: "unsupported",
+      label: "retention analysis",
+      endpoint: null,
+      doc_url: DATABRICKS_DOCS,
+      reason:
+        "Same gap as getFunnel: retention curves are not a warehouse-native concept — " +
+        "there is no endpoint that returns one, only rows you can compute one from.",
+      nearest_alternative:
+        'operation:"runQuery" with a cohort-and-return-date SELECT, or platform:"amplitude" ' +
+        "for a native retention curve.",
     },
     listCatalogs: {
       support: "native",

@@ -130,6 +130,11 @@ export async function startMockApiServer() {
       message: "success",
       canvas_id: "mock-canvas-id"
     });
+    // Real Braze behaviour: 202, async, and the response body carries no
+    // canvas_id for the copy (see docs/api-surveys/braze.md). A mock that
+    // handed back an id here would hide the exact gotcha the tool has to
+    // document honestly.
+    setResponse("POST", "/canvas/duplicate", { status: 202, body: { message: "success" } });
 
     // --- Figma endpoints
     setResponse("GET", "/files/mock-file", loadFixture("figma", "file-tree"));

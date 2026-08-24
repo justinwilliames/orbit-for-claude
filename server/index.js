@@ -3355,22 +3355,23 @@ function registerTools() {
     {
       title: "Create Braze Canvas",
       description:
-        "Create a Braze Canvas from an Orbit braze pack and message plan. " +
-        "Maps Orbit program steps, messages, delays, audience, and entry criteria to a valid Braze Canvas API payload. " +
-        "Needs NO Braze key: Braze has no public canvas-create endpoint, so this validates the payload and hands it to you to build in the dashboard. dry_run=true (default) also saves it to disk. " +
-        "Requires: message_plan_json (from orbit_build_message_plan). Optional: braze_pack_json (from orbit_build_braze_pack), workspace_json.",
+        "No source_canvas_id: keyless payload preview from message_plan_json, for a manual dashboard build (Braze has no canvas-structure API). " +
+        "source_canvas_id set: LIVE POST /canvas/duplicate of a dashboard-built template (needs Braze credentials), steered via /canvas/trigger/send — " +
+        "configures runtime inputs, not \"builds a canvas.\" See skills/braze-parameterized-canvas.",
       inputSchema: {
-        braze_pack_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of the braze pack from orbit_build_braze_pack"),
-        message_plan_json: z.string().min(1).max(MAX_LONG_STRING).describe("JSON string of the message plan from orbit_build_message_plan"),
-        workspace_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of the program workspace"),
-        canvas_name: z.string().max(MAX_SHORT_STRING).optional().describe("Override Canvas name (defaults to program name from pack/plan)"),
-        canvas_description: z.string().max(MAX_MEDIUM_STRING).optional().describe("Override Canvas description"),
-        entry_schedule_type: z.enum(["scheduled", "action_based", "api_triggered"]).optional().describe("Canvas entry schedule type (default: scheduled)"),
-        entry_segment_id: z.string().max(MAX_SHORT_STRING).optional().describe("Braze segment ID for Canvas entry audience"),
-        entry_filters_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of additional Braze entry audience filters"),
+        braze_pack_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON braze pack from orbit_build_braze_pack"),
+        message_plan_json: z.string().max(MAX_LONG_STRING).optional().describe("Message plan JSON; required unless source_canvas_id set"),
+        workspace_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON program workspace"),
+        canvas_name: z.string().max(MAX_SHORT_STRING).optional().describe("Canvas/duplicate name (defaults from pack/plan)"),
+        canvas_description: z.string().max(MAX_MEDIUM_STRING).optional().describe("Canvas description"),
+        entry_schedule_type: z.enum(["scheduled", "action_based", "api_triggered"]).optional().describe("Harness schedule type (default: scheduled)"),
+        entry_segment_id: z.string().max(MAX_SHORT_STRING).optional().describe("Harness segment ID for entry audience"),
+        entry_filters_json: z.string().max(MAX_LONG_STRING).optional().describe("Harness JSON of extra entry filters"),
         tags: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional().describe("Additional tags for the Canvas"),
-        dry_run: z.boolean().optional().describe("If true (default), also save the payload to disk. No Braze call happens either way"),
-        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Directory to write the Canvas payload JSON file")
+        dry_run: z.boolean().optional().describe("Harness only: default true, saves payload to disk"),
+        output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Directory to write the Canvas payload JSON file"),
+        source_canvas_id: z.string().max(MAX_SHORT_STRING).optional().describe("Braze canvas id to duplicate live via POST /canvas/duplicate. Needs Braze credentials"),
+        entry_properties_json: z.string().max(MAX_LONG_STRING).optional().describe("Entry properties JSON, validated: 50KB cap, first-step-only reachability")
       }
     },
     async ({
@@ -3384,12 +3385,16 @@ function registerTools() {
       entry_filters_json: entryFiltersJson,
       tags,
       dry_run: dryRun,
-      output_dir: outputDir
+      output_dir: outputDir,
+      source_canvas_id: sourceCanvasId,
+      entry_properties_json: entryPropertiesJson
     }) => {
       const { value: brazePack, error: packError } = parseToolJson(brazePackJson, "braze_pack_json", null);
       if (packError) return packError;
       const { value: entryFilters, error: filtersError } = parseToolJson(entryFiltersJson, "entry_filters_json", null);
       if (filtersError) return filtersError;
+      const { value: entryProperties, error: entryPropsError } = parseToolJson(entryPropertiesJson, "entry_properties_json", null);
+      if (entryPropsError) return entryPropsError;
       let resolvedOutputDir;
       try {
         resolvedOutputDir = outputDir ? resolveUserOutputDir(runtimeConfig, outputDir) : undefined;
@@ -3412,7 +3417,9 @@ function registerTools() {
         entryFilters,
         tags: tags ?? [],
         dryRun: dryRun !== false,
-        outputDir: resolvedOutputDir
+        outputDir: resolvedOutputDir,
+        sourceCanvasId,
+        entryProperties
       });
       return makeJsonToolResponse(result);
     }

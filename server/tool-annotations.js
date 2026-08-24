@@ -50,6 +50,14 @@
 
 /** Mutates a third-party system. Host should confirm before running. */
 export const REMOTE_WRITE = new Set([
+  // Reclassified 2026-08-24, BACK UP from LOCAL_WRITE (moved down that same
+  // morning on the grounds that "it cannot mutate anything, anywhere" — true
+  // then, false now). source_canvas_id switches this tool to a live
+  // POST /canvas/duplicate against the user's real Braze workspace. The
+  // harness path (source_canvas_id absent) is still a local, keyless payload
+  // build — but a tool is classified by the most it can do, not the default
+  // branch, and this one can now write to Braze.
+  "orbit_create_braze_canvas",
   // Writes a user-approved idea into Orbit's own inbox (yourorbit.team),
   // not the user's ESP — remote all the same, and consent lives in the
   // tool description's show-before-send contract.
@@ -93,13 +101,6 @@ export const IRREVERSIBLE = new Set([
 
 /** Writes files in the user's workspace / Orbit library. Local only. */
 export const LOCAL_WRITE = new Set([
-  // Reclassified 2026-08-24, DOWN from REMOTE_WRITE. It reads like a live
-  // Braze write and is not one: Braze publishes no canvas-create endpoint,
-  // so the handler validates a payload, writes it to disk, and returns
-  // "unsupported" with dashboard instructions. It cannot mutate anything,
-  // anywhere. Hosts were prompting for confirmation on a tool with no
-  // remote effect, which trains people to click through prompts.
-  "orbit_create_braze_canvas",
   "orbit_assemble_email_template_from_components",
   "orbit_assemble_template_variation",
   "orbit_bootstrap_brain",

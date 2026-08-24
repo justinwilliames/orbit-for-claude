@@ -29,10 +29,20 @@
  * overridable wholesale with ORBIT_AMPLITUDE_API_BASE_URL (the test harness and
  * self-hosted proxies use this; it is env-only, never model-supplied).
  *
- * Endpoints used (verified against Amplitude's Dashboard REST API docs):
+ * Endpoints used (verified against Amplitude's Dashboard REST API docs,
+ * https://amplitude.com/docs/apis/analytics/dashboard-rest, 2026-08-24):
  *   GET /3/cohorts                  — cohort metadata list (id, name, size, …)
  *   GET /2/users?m=active|new       — active / new user counts, bounded window
  *   GET /2/events/segmentation      — one event's counts/uniques, bounded window
+ *   GET /2/funnels                  — ordered event steps in, per-step counts out
+ *   GET /2/retention                — start/return event in, a retention curve out
+ *
+ * Funnels and retention are cost-metered on Amplitude's side (funnel cost is
+ * step_count*2; retention is a flat 8), on top of the org-wide 1000-cost/5min
+ * and 108,000-cost/hour caps documented for the whole Dashboard REST surface.
+ * MAX_FUNNEL_STEPS bounds the query the same way MAX_WINDOW_DAYS already does
+ * for every other read here — Orbit does not let a single call ask for more
+ * than a small, predictable slice of that budget.
  *
  * These are expensive queries on Amplitude's side (the Dashboard API is
  * concurrency- and cost-limited, and answers 429 when a project runs hot), so
@@ -55,6 +65,18 @@ export const EU_BASE_URL = "https://analytics.eu.amplitude.com/api";
 export const MAX_WINDOW_DAYS = 365;
 export const MAX_COHORTS = 500;
 export const DEFAULT_COHORTS = 100;
+
+/** A funnel needs at least two ordered steps; more than this is not bounded
+ *  by Amplitude's docs, but every step doubles the query's cost budget, so
+ *  Orbit caps it the way it caps everything else here. */
+export const MIN_FUNNEL_STEPS = 2;
+export const MAX_FUNNEL_STEPS = 10;
+
+/** The only `se` (starting event) and `re` (returning event) values the
+ *  Retention Analysis docs describe — literal action tokens, not arbitrary
+ *  custom events. See the module docblock's verified-doc note. */
+export const RETENTION_START_EVENTS = Object.freeze(["_new", "_active"]);
+export const RETENTION_RETURN_EVENTS = Object.freeze(["_all", "_active"]);
 
 /** The intervals Amplitude's Dashboard API accepts on `i`. */
 export const INTERVALS = Object.freeze([1, 7, 30]);
@@ -231,7 +253,15 @@ async function amplitudeGet({ config, endpoint, params = {} }) {
 
   const url = new URL(`${baseUrl(config)}${endpoint}`);
   for (const [key, value] of Object.entries(params)) {
-    if (value != null && value !== "") url.searchParams.set(key, String(value));
+    if (value == null || value === "") continue;
+    // Funnels repeat `e` once per step (Amplitude's documented shape is
+    // `?e=<json>&e=<json>`, not a JSON array) — an array value appends one
+    // entry per element instead of overwriting.
+    if (Array.isArray(value)) {
+      for (const v of value) if (v != null && v !== "") url.searchParams.append(key, String(v));
+    } else {
+      url.searchParams.set(key, String(value));
+    }
   }
 
   // Basic auth, built here and nowhere else. The header never leaves this
@@ -336,6 +366,40 @@ function normaliseInterval(interval) {
   return i;
 }
 
+/** Validate an ordered funnel step list: MIN_FUNNEL_STEPS..MAX_FUNNEL_STEPS
+ *  non-empty event names, trimmed. */
+function normaliseFunnelEvents(events) {
+  const list = (Array.isArray(events) ? events : [])
+    .map((e) => String(e ?? "").trim())
+    .filter(Boolean);
+  if (list.length < MIN_FUNNEL_STEPS) {
+    throw new AmplitudeApiError({
+      code: "error",
+      detail: `A funnel needs at least ${MIN_FUNNEL_STEPS} ordered event steps; got ${list.length}.`,
+    });
+  }
+  if (list.length > MAX_FUNNEL_STEPS) {
+    throw new AmplitudeApiError({
+      code: "error",
+      detail: `A funnel is capped at ${MAX_FUNNEL_STEPS} steps (each step doubles Amplitude's query cost); got ${list.length}.`,
+    });
+  }
+  return list;
+}
+
+/** Validate se/re against the ONLY values the Retention Analysis docs
+ *  describe — literal action tokens, not arbitrary custom events. */
+function normaliseRetentionEvent(value, allowed, label) {
+  const v = String(value ?? "").trim();
+  if (!allowed.includes(v)) {
+    throw new AmplitudeApiError({
+      code: "error",
+      detail: `${label} must be one of ${allowed.join(", ")} (Amplitude's Retention Analysis endpoint does not accept a custom event here); got "${v}".`,
+    });
+  }
+  return v;
+}
+
 /* -------------------------------------------------------------------------- *
  * Normalisers. Anything Amplitude does not give us stays null — never zeroed,
  * because a fake 0 is a number a marketer will act on.
@@ -396,6 +460,91 @@ function normaliseSeries({ data, metric, window, interval }) {
     interval,
     series,
     // Aggregate only, by construction — the shape carries counts per bucket.
+    aggregate_only: true,
+  };
+}
+
+/**
+ * Fold an Amplitude `GET /2/funnels` answer into ordered step counts and
+ * conversion rates.
+ *
+ * The response's top-level `data` is an array with one element per group;
+ * Orbit does not send a `g` group-by, so it always reads element 0. Both
+ * `cumulativeRaw` (raw per-step counts) and `cumulative` are documented on
+ * the response, but only `cumulativeRaw`'s name is unambiguous — Orbit reads
+ * counts from it and derives its own conversion percentages from those
+ * counts rather than surface `cumulative` unlabelled and risk presenting a
+ * number under a guessed meaning.
+ */
+function normaliseFunnel({ data, events, window, metric, interval }) {
+  const groups = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+  const group = groups[0] ?? {};
+  const counts = Array.isArray(group.cumulativeRaw) ? group.cumulativeRaw : [];
+  const first = typeof counts[0] === "number" ? counts[0] : null;
+
+  const steps = events.map((event, index) => {
+    const count = typeof counts[index] === "number" ? counts[index] : null;
+    const prev = typeof counts[index - 1] === "number" ? counts[index - 1] : null;
+    return {
+      step: index + 1,
+      event,
+      count,
+      conversion_from_start: count != null && first ? count / first : null,
+      conversion_from_previous_step:
+        index === 0 ? null : count != null && prev ? count / prev : null,
+    };
+  });
+
+  return {
+    status: "ok",
+    platform: PLATFORM,
+    metric,
+    window,
+    interval,
+    steps,
+    overall_conversion:
+      first && typeof counts[counts.length - 1] === "number"
+        ? counts[counts.length - 1] / first
+        : null,
+    // Aggregate step counts and derived rates only — no user rows exist in
+    // this payload and none are synthesised here.
+    aggregate_only: true,
+  };
+}
+
+/**
+ * Fold an Amplitude `GET /2/retention` answer into a retention curve.
+ *
+ * `data.data.series` holds one element per group (Orbit sends no `g`, so
+ * element 0); `combined` is the blended curve across every cohort start
+ * date, `values` keyed by start date is the per-cohort breakdown. Both are
+ * passed through as Amplitude returns them — never zeroed, never re-derived.
+ */
+function normaliseRetention({ data, startEvent, returnEvent, window, interval }) {
+  const block = data?.data ?? data ?? {};
+  const groups = Array.isArray(block.series) ? block.series : [];
+  const group = groups[0] ?? {};
+  const dates = Array.isArray(group.dates) ? group.dates : [];
+  const values = group.values && typeof group.values === "object" ? group.values : {};
+
+  return {
+    status: "ok",
+    platform: PLATFORM,
+    start_event: startEvent,
+    return_event: returnEvent,
+    window,
+    interval,
+    // Period 0 = the start date itself; period N = N intervals later.
+    combined: (Array.isArray(group.combined) ? group.combined : []).map((v, period) => ({
+      period,
+      retention: typeof v === "number" ? v : null,
+    })),
+    by_cohort_date: dates.map((date) => ({
+      cohort_date: date,
+      retention: (Array.isArray(values[date]) ? values[date] : []).map((v) =>
+        typeof v === "number" ? v : null
+      ),
+    })),
     aggregate_only: true,
   };
 }
@@ -549,6 +698,97 @@ export async function readSeries({ config, event, metric, start, end, interval }
   };
 }
 
+/**
+ * Ordered-funnel conversion. GET /2/funnels — `events` (2..MAX_FUNNEL_STEPS,
+ * in order) becomes one repeated `e={"event_type":...}` per step, exactly
+ * the shape the docs show. `metric` selects Amplitude's `n` (new vs active
+ * users); no other documented param (mode, s, g, cs, limit) is exposed here
+ * — a deliberate ceiling, same discipline as readSeries omitting mode/g/s.
+ */
+export async function getFunnel({ config, events, start, end, metric, interval } = {}) {
+  const window = normaliseWindow({ start, end });
+  const i = normaliseInterval(interval);
+  const steps = normaliseFunnelEvents(events);
+  if (metric != null && metric !== "active" && metric !== "new") {
+    throw new AmplitudeApiError({
+      code: "error",
+      detail: `getFunnel's metric must be "active" or "new" (Amplitude's \`n\` param); got "${metric}".`,
+    });
+  }
+  const n = metric === "new" ? "new" : "active";
+
+  const { data, rate_limit } = await amplitudeGet({
+    config,
+    endpoint: "/2/funnels",
+    params: {
+      e: steps.map((eventType) => JSON.stringify({ event_type: eventType })),
+      start: window.start,
+      end: window.end,
+      n,
+      i,
+    },
+  });
+  return {
+    ...normaliseFunnel({ data, events: steps, window, metric: `${n}_users`, interval: i }),
+    ...(rate_limit ? { rate_limit } : {}),
+  };
+}
+
+/**
+ * A retention curve. GET /2/retention — `startEvent`/`returnEvent` are
+ * restricted to the literal tokens the docs document (_new/_active and
+ * _all/_active); `retentionType`/`bracket` map to `rm`/`rb` and are accepted
+ * for completeness but left undefined by default so Amplitude applies its
+ * own "n-day" default — the polymorphic tool (server/data/tools.js) does not
+ * currently pass either.
+ */
+export async function getRetention({
+  config,
+  startEvent,
+  returnEvent,
+  start,
+  end,
+  interval,
+  retentionType,
+  bracket,
+} = {}) {
+  const window = normaliseWindow({ start, end });
+  const i = normaliseInterval(interval);
+  const se = normaliseRetentionEvent(startEvent, RETENTION_START_EVENTS, "startEvent");
+  const re = normaliseRetentionEvent(returnEvent, RETENTION_RETURN_EVENTS, "returnEvent");
+
+  let rm;
+  if (retentionType != null) {
+    if (!["bracket", "rolling", "n-day"].includes(retentionType)) {
+      throw new AmplitudeApiError({
+        code: "error",
+        detail: `retentionType must be one of bracket, rolling, n-day; got "${retentionType}".`,
+      });
+    }
+    rm = retentionType;
+  }
+  let rb;
+  if (rm === "bracket") {
+    if (bracket == null) {
+      throw new AmplitudeApiError({
+        code: "error",
+        detail: 'retentionType "bracket" requires `bracket`, e.g. "[[0,4]]".',
+      });
+    }
+    rb = String(bracket);
+  }
+
+  const { data, rate_limit } = await amplitudeGet({
+    config,
+    endpoint: "/2/retention",
+    params: { se, re, start: window.start, end: window.end, i, rm, rb },
+  });
+  return {
+    ...normaliseRetention({ data, startEvent: se, returnEvent: re, window, interval: i }),
+    ...(rate_limit ? { rate_limit } : {}),
+  };
+}
+
 export const adapter = {
   platform: PLATFORM,
   displayName: "Amplitude",
@@ -557,6 +797,8 @@ export const adapter = {
   listCohorts,
   getCohort,
   readSeries,
+  getFunnel,
+  getRetention,
   // Normalised operation names for the polymorphic data family
   // (server/data/registry.js dispatches on these, and
   // server/data/capabilities.js keys its matrix off the same strings).

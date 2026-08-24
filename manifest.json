@@ -434,7 +434,7 @@
     },
     {
       "name": "orbit_create_braze_canvas",
-      "description": "Create a Braze Canvas from an Orbit braze pack and message plan. [Safety: writes files in your local Orbit workspace.]"
+      "description": "Create a Braze Canvas from an Orbit braze pack and message plan. [Safety: writes to a third-party system.]"
     },
     {
       "name": "orbit_dark_mode_check",

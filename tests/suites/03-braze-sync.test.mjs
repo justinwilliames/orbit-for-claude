@@ -263,6 +263,142 @@ describe("Braze sync suite — write operations produce correct API calls", () =
     }
   });
 
+  // ── source_canvas_id: the live duplicate-then-steer path ──────────────────
+
+  test("create_braze_canvas: source_canvas_id duplicates live (mock 202) and posts the right body", async () => {
+    mock.clearRequests();
+    const res = await client.callToolLenient("orbit_create_braze_canvas", {
+      source_canvas_id: "canvas-template-1",
+      canvas_name: "winback_instance_20260824",
+      canvas_description: "Q3 appliance win-back instance",
+      tags: ["winback-template"]
+    });
+    assertNotHandlerCrash(res, "create_braze_canvas(live)");
+    assert.equal(res.kind, "response", `Expected a response, got ${res.kind}`);
+    assert.equal(res.parsed.status, "duplicated");
+    assert.equal(res.parsed.source_canvas_id, "canvas-template-1");
+    assert.equal(res.parsed.name, "winback_instance_20260824");
+    // buildDashboardUrl derives the dashboard host from the rest endpoint's
+    // cluster subdomain (rest.<cluster>.braze.com); the mock server's
+    // 127.0.0.1 host doesn't match that pattern, so it legitimately returns
+    // null here — just assert the field is present (see 02-braze-read.test.mjs
+    // for the same mock-hostname limitation).
+    assert.ok("source_dashboard_url" in res.parsed, "should carry a source_dashboard_url field");
+    // Braze returns 202 with no canvas_id for the copy — the response must
+    // say so rather than inventing one.
+    assert.match(res.parsed.message ?? "", /async|202/i);
+
+    const calls = mock.getRequests().filter((r) => r.method === "POST" && r.path === "/canvas/duplicate");
+    assert.equal(calls.length, 1, "must call POST /canvas/duplicate exactly once");
+    const body = calls[0].body;
+    assert.equal(body.canvas_id, "canvas-template-1");
+    assert.equal(body.name, "winback_instance_20260824");
+    assert.ok(Array.isArray(body.tag_names) && body.tag_names.includes("winback-template"));
+  });
+
+  test("create_braze_canvas: live path needs_setup with no Braze credentials configured", async () => {
+    const keylessClient = await spawnMcpClient({
+      env: {
+        ORBIT_BRAZE_API_KEY: "",
+        ORBIT_BRAZE_REST_ENDPOINT: "",
+        ORBIT_HOME_ROOT: makeTempWorkspace()
+      }
+    });
+    try {
+      const res = await keylessClient.callToolLenient("orbit_create_braze_canvas", {
+        source_canvas_id: "canvas-template-1"
+      });
+      assertNotHandlerCrash(res, "create_braze_canvas(live, no creds)");
+      assert.equal(res.kind, "response");
+      assert.equal(res.parsed.status, "needs_setup");
+    } finally {
+      await keylessClient.close();
+    }
+  });
+
+  test("create_braze_canvas: harness path (no source_canvas_id) stays keyless — no credential gate", async () => {
+    const keylessClient = await spawnMcpClient({
+      env: {
+        ORBIT_BRAZE_API_KEY: "",
+        ORBIT_BRAZE_REST_ENDPOINT: "",
+        ORBIT_HOME_ROOT: makeTempWorkspace()
+      }
+    });
+    try {
+      const messagePlan = {
+        program_name: "Keyless Harness Test",
+        messages: [
+          { id: "m1", name: "Welcome", channel: "email", sequence_order: 1, timing: "immediately" }
+        ]
+      };
+      const res = await keylessClient.callToolLenient("orbit_create_braze_canvas", {
+        message_plan_json: JSON.stringify(messagePlan),
+        dry_run: true
+      });
+      assertNotHandlerCrash(res, "create_braze_canvas(harness, no creds)");
+      assert.equal(res.kind, "response");
+      assert.notEqual(
+        res.parsed.status,
+        "needs_setup",
+        "the harness path (no source_canvas_id) must never gate on Braze credentials"
+      );
+      assert.ok(["dry_run", "unsupported", "validation_failed"].includes(res.parsed.status));
+    } finally {
+      await keylessClient.close();
+    }
+  });
+
+  // ── entry_properties_json validator (shared by both paths) ────────────────
+
+  test("create_braze_canvas: entry_properties_json over 50KB is rejected before any Braze call", async () => {
+    mock.clearRequests();
+    const oversized = { blob: "x".repeat(52 * 1024) };
+    const res = await client.callToolLenient("orbit_create_braze_canvas", {
+      source_canvas_id: "canvas-template-1",
+      entry_properties_json: JSON.stringify(oversized)
+    });
+    assertNotHandlerCrash(res, "create_braze_canvas(entry_properties too big)");
+    assert.equal(res.kind, "response");
+    assert.equal(res.parsed.status, "validation_failed");
+    assert.ok(
+      res.parsed.errors.some((e) => /50KB|bytes/i.test(e)),
+      `Expected a byte-size error, got ${JSON.stringify(res.parsed.errors)}`
+    );
+    const calls = mock.getRequests().filter((r) => r.path === "/canvas/duplicate");
+    assert.equal(calls.length, 0, "an oversized entry_properties payload must block the live call");
+  });
+
+  test("create_braze_canvas: entry_properties_json warns about first-step reachability on the harness path too", async () => {
+    const messagePlan = {
+      program_name: "Entry Props Harness Test",
+      messages: [
+        { id: "m1", name: "Welcome", channel: "email", sequence_order: 1, timing: "immediately" }
+      ]
+    };
+    const res = await client.callToolLenient("orbit_create_braze_canvas", {
+      message_plan_json: JSON.stringify(messagePlan),
+      entry_properties_json: JSON.stringify({ discount_pct: 10 }),
+      dry_run: true
+    });
+    assertNotHandlerCrash(res, "create_braze_canvas(harness + entry props)");
+    assert.equal(res.kind, "response");
+    assert.ok(
+      res.parsed.warnings.some((w) => /first step/i.test(w)),
+      `Expected a first-step reachability warning, got ${JSON.stringify(res.parsed.warnings)}`
+    );
+  });
+
+  test("create_braze_canvas: description names the live source_canvas_id path and no longer claims Braze is never called", async () => {
+    const tools = await client.listTools();
+    const tool = tools.find((t) => t.name === "orbit_create_braze_canvas");
+    assert.ok(tool, "orbit_create_braze_canvas must be registered");
+    assert.ok(
+      !/never call/i.test(tool.description ?? ""),
+      "description must not claim the tool never calls Braze"
+    );
+    assert.match(tool.description, /source_canvas_id/, "description must name the live path");
+  });
+
   test("build_braze_pack produces a structured package skeleton", async () => {
     const res = await client.callToolLenient("orbit_build_braze_pack", {
       program_name: "Test Program"

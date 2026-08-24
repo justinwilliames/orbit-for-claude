@@ -128,6 +128,7 @@ const CATEGORY_GROUPS = {
     "braze-canvas-creator",
     "braze-canvas-qa",
     "braze-canvas-reader",
+    "braze-parameterized-canvas",
     "braze-claude-in-chrome-build",
     "braze-content-block-audit",
     "braze-data-validation",

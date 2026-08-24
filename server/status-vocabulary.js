@@ -40,6 +40,9 @@ export const DELIVERED_STATUSES = new Set([
   "success",
   "approved",
   "archived",
+  // A Braze canvas was duplicated via POST /canvas/duplicate — a completed
+  // remote write, same tier as the other terminal successes here.
+  "duplicated",
   "collision_found",       // the collision check ran and found one — that IS the answer
   "no_collision",          // ...and so is this
   "composed",

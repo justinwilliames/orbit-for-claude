@@ -1,14 +1,69 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildDashboardUrl } from "./braze-api.js";
+import { buildDashboardUrl, brazePost, validateBrazeSetup } from "./braze-api.js";
 import { BRAZE_CANVAS_SYNC_SCHEMA } from "./production-specs.js";
 import { parseJsonInput, slugify, writeJson } from "./utils.js";
 
+// Braze's documented cap on the `context` object of POST /canvas/trigger/send
+// is "50 KB" — no byte-vs-kibibyte clarification given, so the conservative
+// (smaller) reading is used: 50 * 1024, not 50 * 1000.
+const MAX_ENTRY_PROPERTIES_BYTES = 50 * 1024;
+
 /**
- * Create a Braze Canvas from an Orbit braze pack and message plan.
+ * Validate entry properties destined for POST /canvas/trigger/send's
+ * `context` object (the field Braze's live docs use today — the feature is
+ * still named "canvas entry properties" and read back via the Liquid tag
+ * `{{context.${key}}}`, but the wire field is `context`, not
+ * `canvas_entry_properties`; verified against braze.com/docs 2026-08-24).
  *
- * Maps Orbit program structure (steps, messages, delays, audience, entry
- * criteria) to a valid Braze Canvas API payload (POST /canvas/create).
+ * Two footguns, both from the same source page:
+ *   1. The object is capped at 50KB, measured on the serialised JSON.
+ *   2. Without persistent entry properties (a separate dashboard setting),
+ *      the values are only readable in the canvas's first step — every
+ *      later step sees nothing, silently.
+ *
+ * Used by both the live duplicate path and the harness path, so a payload
+ * gets the same size check whether or not a Braze key is configured.
+ */
+export function validateEntryProperties(entryProperties) {
+  if (entryProperties == null) return { errors: [], warnings: [], bytes: 0 };
+
+  let parsed;
+  try {
+    parsed =
+      typeof entryProperties === "string"
+        ? parseJsonInput(entryProperties, "entry properties")
+        : entryProperties;
+  } catch (err) {
+    return { errors: [err.message], warnings: [], bytes: 0 };
+  }
+
+  const bytes = Buffer.byteLength(JSON.stringify(parsed ?? {}), "utf8");
+  const errors = [];
+  if (bytes > MAX_ENTRY_PROPERTIES_BYTES) {
+    errors.push(
+      `Entry properties are ${bytes} bytes — over Braze's ${MAX_ENTRY_PROPERTIES_BYTES}-byte (50KB) cap on the \`context\` object of POST /canvas/trigger/send.`
+    );
+  }
+  const warnings = [
+    "Entry properties are reachable via the Liquid tag {{context.${key}}} in the canvas's first step only, " +
+      "unless persistent entry properties are turned on for this canvas in the Braze dashboard — a later step " +
+      "referencing an un-persisted key renders nothing, with no error."
+  ];
+  return { errors, warnings, bytes };
+}
+
+/**
+ * Create a Braze Canvas from an Orbit braze pack and message plan — or, given
+ * `sourceCanvasId`, duplicate a real Braze canvas live via POST
+ * /canvas/duplicate.
+ *
+ * These are two different jobs wearing one tool. Braze's API cannot author a
+ * canvas's step structure (no create/update on that shape exists), but it CAN
+ * clone an existing one and steer its runtime behaviour: duplicate a
+ * dashboard-authored "template" canvas per campaign instance, then trigger it
+ * with entry properties. Selling that as "build a canvas" would be dishonest —
+ * this configures a template's runtime inputs. See skills/braze-parameterized-canvas.md.
  */
 export async function createBrazeCanvas({
   config,
@@ -22,7 +77,9 @@ export async function createBrazeCanvas({
   entryFilters,
   tags = [],
   dryRun = false,
-  outputDir
+  outputDir,
+  sourceCanvasId,
+  entryProperties
 }) {
   const pack =
     typeof brazePack === "string"
@@ -37,13 +94,84 @@ export async function createBrazeCanvas({
       ? parseJsonInput(workspace, "workspace")
       : workspace;
 
-  // --- No credential gate. Deliberately. ---
-  // This tool never calls Braze: canvas authoring is dashboard-only and the
-  // public REST API has no create endpoint (see the return below). It used to
-  // demand a Braze key whenever dry_run was false — rejecting unconfigured
-  // users on behalf of a request that does not exist, then returning
-  // "unsupported" to everyone who did have a key. Pure theatre, and it made a
-  // key look required for a tool that is fully functional without one.
+  let entryPropsCheck;
+  try {
+    entryPropsCheck = validateEntryProperties(entryProperties);
+  } catch (err) {
+    return { status: "error", code: "invalid_entry_properties", message: err.message };
+  }
+
+  // --- LIVE PATH: sourceCanvasId given -> real POST /canvas/duplicate. ---
+  // Everything below this block is the harness path and stays keyless.
+  if (sourceCanvasId) {
+    const setupError = validateBrazeSetup(config);
+    if (setupError) return setupError;
+
+    if (entryPropsCheck.errors.length > 0) {
+      return {
+        status: "validation_failed",
+        errors: entryPropsCheck.errors,
+        warnings: entryPropsCheck.warnings
+      };
+    }
+
+    const liveName =
+      canvasName ?? pack?.program_name ?? plan?.program_name ?? ws?.program_name ?? "Orbit Canvas Copy";
+    const liveDescription =
+      canvasDescription ?? `Duplicated by Orbit from canvas ${sourceCanvasId}.`;
+    const liveTags = [...new Set(["orbit-generated", ...tags])];
+
+    const body = {
+      canvas_id: sourceCanvasId,
+      name: liveName,
+      description: liveDescription,
+      tag_names: liveTags
+    };
+
+    let apiResponse;
+    try {
+      apiResponse = await brazePost({ config, endpoint: "/canvas/duplicate", body });
+    } catch (err) {
+      return { status: "error", code: "braze_api_error", message: err.message };
+    }
+
+    return {
+      status: "duplicated",
+      source_canvas_id: sourceCanvasId,
+      name: liveName,
+      api_response: apiResponse,
+      source_dashboard_url: buildDashboardUrl(config.brazeRestEndpoint, "canvas", sourceCanvasId),
+      warnings: entryPropsCheck.warnings,
+      message:
+        "POST /canvas/duplicate returned 202 — Braze creates the copy asynchronously and does NOT hand back its canvas id in this response. " +
+        `Find "${liveName}" in the dashboard by name or the "orbit-generated" tag (or re-list canvases via orbit_read_braze_canvas), ` +
+        "then use that id for POST /canvas/trigger/send with a `context` object for entry-property steering."
+    };
+  }
+
+  if (!plan) {
+    return {
+      status: "needs_inputs",
+      missing: ["message_plan_json"],
+      message:
+        "The harness path needs a message plan (orbit_build_message_plan). To duplicate an existing " +
+        "canvas live instead, pass source_canvas_id."
+    };
+  }
+
+  // --- No credential gate on the harness path. Deliberately. ---
+  // This branch never calls Braze: canvas STRUCTURE authoring is dashboard-only
+  // and the public REST API has no create/update endpoint for it TODAY (see
+  // the return below). The payload builder is deliberately kept complete and
+  // schema-valid rather than trimmed to a stub — if Braze publishes a
+  // canvas-create endpoint, this becomes a live POST and a small diff, not a
+  // rebuild. Flagged to the user as "not available yet", never as "impossible
+  // forever". It used to demand a Braze key whenever dry_run was false —
+  // rejecting unconfigured users on behalf of a request that does not exist,
+  // then returning "unsupported" to everyone who did have a key. Pure
+  // theatre, and it made a key look required for a tool that is fully
+  // functional without one. (The sourceCanvasId branch above is the real
+  // credential-gated write; this comment covers only the branch below it.)
 
   // --- Resolve program metadata ---
   const programName =
@@ -105,17 +233,22 @@ export async function createBrazeCanvas({
 
   // --- Validate ---
   const validation = validateCanvasPayload(canvasPayload, messages);
+  const combinedErrors = [...validation.errors, ...entryPropsCheck.errors];
 
-  if (validation.errors.length > 0 && !dryRun) {
+  if (combinedErrors.length > 0 && !dryRun) {
     return {
       status: "validation_failed",
-      errors: validation.errors,
-      warnings: [...validation.warnings, ...mappingWarnings],
+      errors: combinedErrors,
+      warnings: [...validation.warnings, ...mappingWarnings, ...entryPropsCheck.warnings],
       payload: canvasPayload
     };
   }
 
-  const allWarnings = [...validation.warnings, ...mappingWarnings];
+  const allWarnings = [
+    ...validation.warnings,
+    ...mappingWarnings,
+    ...(entryProperties != null ? entryPropsCheck.warnings : [])
+  ];
 
   // --- Dry run: write payload to disk and return ---
   if (dryRun) {
@@ -142,28 +275,33 @@ export async function createBrazeCanvas({
       payload: canvasPayload,
       payload_path: payloadPath,
       warnings: allWarnings,
-      errors: validation.errors,
+      errors: combinedErrors,
       message: `Dry-run complete. ${steps.length} step(s) mapped. ${allWarnings.length} warning(s). Review the payload before sending to Braze.`
     };
   }
 
-  // --- Live create is UNSUPPORTED by Braze ---
-  // Braze's public REST API has no canvas-create endpoint. Canvas authoring is
-  // dashboard-only; the REST surface is read-only (/canvas/list, /canvas/details).
+  // --- Creating NEW canvas structure from this payload is UNSUPPORTED. ---
+  // Braze's public REST API has no create/update for a canvas's step
+  // structure. It CAN duplicate an existing one (POST /canvas/duplicate —
+  // the sourceCanvasId branch above) and steer it at send time, but that is
+  // a different job from authoring the structure this payload describes.
   // Earlier this POSTed to a nonexistent /canvas/create and reported "created
-  // successfully" off a null canvas_id. We now build + validate the payload and
-  // hand it back for the dashboard instead of pretending a live write happened.
+  // successfully" off a null canvas_id. We now build + validate the payload
+  // and hand it back for the dashboard instead of pretending a live write
+  // happened.
   return {
     status: "unsupported",
     schema: BRAZE_CANVAS_SYNC_SCHEMA,
     payload: canvasPayload,
     steps_planned: steps.length,
     warnings: allWarnings,
-    errors: validation.errors,
+    errors: combinedErrors,
     message:
-      `Braze has no public API to create a Canvas — canvas authoring is dashboard-only. ` +
-      `Orbit built and validated the ${steps.length}-step payload (returned above); create the Canvas in the Braze dashboard from it, ` +
-      `or re-run with dry_run to save the payload to disk. Use orbit_read_braze_canvas to import an existing Canvas.`
+      `NOT AVAILABLE YET: Braze's public API exposes no endpoint for authoring a Canvas's step structure, so Orbit cannot push this for you today. ` +
+      `The ${steps.length}-step payload above is built and validated against Braze's own schema and is ready to submit the moment such an endpoint is published — ` +
+      `that is why this builder exists rather than being deleted. ` +
+      `Until then: build it in the Braze dashboard once as a reusable template, then pass its id as source_canvas_id to duplicate it live per campaign instance and steer it with entry properties. ` +
+      `Or re-run with dry_run to save this payload to disk. Use orbit_read_braze_canvas to import an existing Canvas.`
   };
 }
 
@@ -491,10 +629,5 @@ function validateCanvasPayload(payload, messages) {
   return { errors, warnings };
 }
 
-// Braze API: uses shared braze-api.js (buildDashboardUrl only — this tool makes no API call)
-
-// Dashboard URL builder: uses shared buildDashboardUrl from braze-api.js
-
-function buildCanvasDashboardUrl(restEndpoint, canvasId) {
-  return buildDashboardUrl(restEndpoint, "canvas", canvasId);
-}
+// Braze API: uses shared braze-api.js — brazePost + validateBrazeSetup for the
+// live sourceCanvasId path, buildDashboardUrl for the source-canvas link.
