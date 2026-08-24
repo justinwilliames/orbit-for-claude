@@ -844,6 +844,13 @@ function registerResources() {
       if (!skill) {
         throw new Error(`Unknown platform resource: ${variables.platform}`);
       }
+      // Count it. A skill read through the RESOURCE surface is a skill
+      // load — the reader got the full protocol text either way. Only the
+      // orbit_load_skill TOOL was tracked, so every resource read was
+      // invisible and the skill_load number under-counted by however much
+      // this path is used. Same slug the tool would emit, so the two
+      // surfaces aggregate cleanly.
+      trackSkillLoad({ slug: skill.name ?? `${platform}-documentation-expert`, version: ORBIT_VERSION }).catch(() => {});
       return makeMarkdownResource(uri, skill.title, skill.raw);
     }
   );
@@ -1584,7 +1591,11 @@ function registerTools() {
     async ({ skill, mode }) => {
       const record = requireSkill(skill);
       const text = mode === "full" ? record.raw : buildSkillSummary(record);
-      // Opt-in telemetry — silent no-op unless ORBIT_TELEMETRY=1.
+      // Opt-OUT telemetry: on by default, silent no-op if ORBIT_TELEMETRY
+      // is 0/false/no/off. (This comment said "opt-in ... unless
+      // ORBIT_TELEMETRY=1" for months, which is the opposite of what
+      // isEnabled() does — a stale comment about a privacy default is
+      // exactly the kind nobody should have to read the code to check.)
       trackSkillLoad({ slug: skill, version: ORBIT_VERSION }).catch(() => {});
       return {
         content: [

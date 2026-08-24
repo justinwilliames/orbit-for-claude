@@ -386,24 +386,40 @@ const SHAPED_RESPONSE_FLOOR = 45;
 // Headroom stays deliberately thin — 222 bytes at the time of the raise (135 tools, 165,278 bytes measured),
 // which is one optional parameter and nowhere near another tool. Tool 135
 // still has to be a decision rather than a diff.
-// LOWERED 165_500 -> 153_000 on 2026-08-24. A budget has only ever gone
-// up in this file; this is the first cut, and it is the point of the
-// exercise. server/tools-list-slim.js removed 12,420 bytes of SDK
-// boilerplate — $schema and execution, stamped identically on all 135
-// tools, neither of them Orbit's and neither carrying meaning a client
-// can act on. Measured payload is now 152,769.
+// RAISED 153_000 -> 200_000 on 2026-08-24, authorised by Justin after
+// seeing the usage data rather than before it.
 //
-// The saving is BANKED rather than left as headroom on purpose. Leaving
-// 12KB free would quietly fund twelve tools that never had to argue for
-// themselves, which is exactly the discipline this number exists to
-// impose. 231 bytes of headroom keeps the next tool a decision.
+// The history matters, because this number has moved four times today and
+// each move meant something different: 161_500 -> 165_500 bought the data
+// family; 165_500 -> 153_000 BANKED a 12,420-byte saving from stripping SDK
+// boilerplate, deliberately refusing to leave it as spendable headroom.
+// This raise is the opposite kind of decision from that one, and it is
+// taken with eyes open.
 //
-// Not taken, and recorded so nobody re-proposes them as free: 3,338
-// bytes of spec-default annotations (rejected — it blinds suite 27's
-// per-tool safety assertions) and 5,341 bytes of maxLength caps
-// (rejected — it turns a client-side validation catch into a
-// server-side error). Both are argued in server/tools-list-slim.js.
-const TOOLS_LIST_BYTE_BUDGET = 153_000;
+// What it buys: ~47,000 bytes, which is roughly 41 more average-sized tools
+// (measured mean 1,135 b/tool), or ~373 more platforms behind an existing
+// polymorphic family at ~126 b each. Concretely it unblocks Segment and
+// RudderStack, which needed 168 bytes more than the 84 that were free.
+//
+// WHAT THE EVIDENCE SAYS, recorded here because a budget comment is where
+// the argument belongs: real telemetry (5,233 tool_calls, 2026-05-07 to
+// 2026-08-19, dev-machine client excluded via mcp_telemetry_real) shows
+// only 66 of 135 registered tools have EVER been called. The other 69 cost
+// 88,259 bytes — 58% of the payload — with zero recorded invocations.
+//
+// So this raise is not evidence that Orbit needs more room; it is a
+// deliberate decision to stop the cap blocking work while the real question
+// gets answered. That question is NOT "how many bytes" but "why are 69
+// tools never called" — unwanted, or never surfaced by tool search? Those
+// have opposite fixes, and adding tools makes the second one worse.
+//
+// The binding constraint was never bytes anyway. Anthropic documents tool-
+// selection accuracy degrading past 30-50 tools loaded in context, and
+// Cursor hard-caps around 40 — at 135 registered, Orbit is already past
+// both. A byte budget cannot measure that, which is why the next gate here
+// should be a tool COUNT assertion and a discoverability test, not a bigger
+// number. Recorded as the follow-on, not done in this commit.
+const TOOLS_LIST_BYTE_BUDGET = 200_000;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.
