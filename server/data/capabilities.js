@@ -133,7 +133,12 @@ export const PLATFORM_META = Object.freeze({
   },
 });
 
-const AMPLITUDE_DOCS = "https://amplitude.com/docs/apis/analytics";
+// Verified 200 on 2026-08-24. The previous value —
+// https://amplitude.com/docs/apis/analytics — was a 404, cited on 14 rows:
+// every Amplitude capability handed the user a broken link. Amplitude has
+// no bare /analytics index page; only the sub-pages exist. Curl the URL
+// before changing it, and prefer the endpoint-specific page over an index.
+const AMPLITUDE_DOCS = "https://amplitude.com/docs/apis/analytics/dashboard-rest";
 // Funnel/Retention are verified against the specific Dashboard REST page and
 // section, not the general analytics-APIs index the other Amplitude rows
 // point at — worth the more precise link since that's the doc that was
@@ -383,7 +388,9 @@ export const CAPABILITIES = Object.freeze({
       support: "native",
       label: "list schemas/tables",
       endpoint: "GET /api/2.1/unity-catalog/schemas, GET /api/2.1/unity-catalog/tables",
-      doc_url: DATABRICKS_DOCS,
+      doc_url: "https://docs.databricks.com/api/workspace/tables/list",
+      notes:
+        "Databricks caps tables/list at max_results <= 50 per page, where catalogs and schemas allow <= 1000. Orbit clamps all three identically, so asking for 500 tables silently yields 50 per page — not an error, and has_more signals it correctly, but a quarter of what the same request returns for catalogs (verified 2026-08-24).",
     },
     describeTable: {
       support: "native",
