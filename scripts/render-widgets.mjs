@@ -30,10 +30,31 @@
  *                        stressed. Only produced where a fixture exists
  *                        below; add more as they are needed.
  *
- * HONEST LIMIT: a widget's interactive path talks to the host's ext-apps
+ * HONEST LIMIT 1: a widget's interactive path talks to the host's ext-apps
  * bridge, which does not exist in a plain browser. Layout, contrast,
  * overflow, empty states and baked data all verify correctly here. Live
  * host round-trips do not.
+ *
+ * HONEST LIMIT 2, the bigger one: only ONE of the 23 widgets has a data
+ * fixture below, so 22 are verified only in their EMPTY state — and an
+ * empty widget has no content to collapse, so a clean sweep across them
+ * proves close to nothing. The defect found on 2026-08-24 was only
+ * visible with data loaded. Most widget-bearing tools live in the
+ * server/index.js monolith and need the MCP client harness
+ * (tests/harness/mcp-client.mjs) to exercise; wiring that in is the work
+ * that would make this script honest across the whole set.
+ *
+ * THE DEFECT SIGNATURE, for whoever automates this next. Load a populated
+ * widget at ~900x520 and look for a scrollable element whose scrollHeight
+ * dwarfs its clientHeight:
+ *
+ *   sh > 150 && h < 150 && sh > h * 3
+ *
+ * That is "the user is peering at data through a slot". Calibrate against
+ * the known case — .grid-box in the ESP matrix reads 71px visible against
+ * 592px of content, a ratio of 8.3. A first pass at this used h < 70 and
+ * cheerfully reported zero defects while the 71px case sat in front of
+ * it; pick the threshold from the real measurement, not a round number.
  */
 
 import fs from "node:fs";
