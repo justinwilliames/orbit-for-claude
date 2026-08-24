@@ -66,7 +66,6 @@ export const REMOTE_WRITE = new Set([
   // truncated job — including, potentially, one of the writes above. It
   // is classified by the worst thing it can do, not the average one.
   "orbit_continue_job",
-  "orbit_create_braze_canvas",
   "orbit_delete_stripo_email",
   "orbit_esp_push_template",
   "orbit_esp_send_test",
@@ -94,6 +93,13 @@ export const IRREVERSIBLE = new Set([
 
 /** Writes files in the user's workspace / Orbit library. Local only. */
 export const LOCAL_WRITE = new Set([
+  // Reclassified 2026-08-24, DOWN from REMOTE_WRITE. It reads like a live
+  // Braze write and is not one: Braze publishes no canvas-create endpoint,
+  // so the handler validates a payload, writes it to disk, and returns
+  // "unsupported" with dashboard instructions. It cannot mutate anything,
+  // anywhere. Hosts were prompting for confirmation on a tool with no
+  // remote effect, which trains people to click through prompts.
+  "orbit_create_braze_canvas",
   "orbit_assemble_email_template_from_components",
   "orbit_assemble_template_variation",
   "orbit_bootstrap_brain",
@@ -107,7 +113,6 @@ export const LOCAL_WRITE = new Set([
   "orbit_generate_email_components",
   "orbit_export_notion_bundle",
   "orbit_generate_brain_gate",
-  "orbit_import_design",
   "orbit_init_verified_claims",
   "orbit_learn_email_template",
   // action="save" persists an item into the Orbit library.
@@ -125,8 +130,6 @@ export const LOCAL_WRITE = new Set([
   "orbit_review_creative",
   "orbit_save_logo_file",
   "orbit_scaffold_brain_program",
-  "orbit_setup_stripo",
-  "orbit_sync_stripo_modules",
   "orbit_update_brand_guidelines",
   "orbit_write_brand_kit",
 ]);
@@ -142,6 +145,10 @@ export const LOCAL_WRITE = new Set([
  */
 export const LOCAL_WRITE_NETWORKED = new Set([
   "orbit_brand_header",
+  // Reclassified 2026-08-24. Was LOCAL_WRITE (openWorldHint:false), but the
+  // Figma path fetches api.figma.com before writing its 8 local outputs.
+  // The PDF path really is local — a tool is classified by the most it does.
+  "orbit_import_design",
 ]);
 
 /**
@@ -151,6 +158,12 @@ export const LOCAL_WRITE_NETWORKED = new Set([
  * system Orbit doesn't control.
  */
 export const READ_ONLY_NETWORKED = new Set([
+  // Reclassified 2026-08-24 by handler audit. Both were LOCAL_WRITE, which
+  // claims openWorldHint:false — a lie: neither writes a single file
+  // (0 writeFileSync/mkdirSync in either module) and both call Stripo.
+  // Wrong on BOTH axes, in the direction that under-reports network reach.
+  "orbit_setup_stripo",
+  "orbit_sync_stripo_modules",
   // Reads /purchases/revenue_series plus the two list endpoints and the
   // two data_series endpoints. Joins them into a share; writes nothing.
   "orbit_audit_attributed_revenue",
@@ -163,7 +176,6 @@ export const READ_ONLY_NETWORKED = new Set([
   // GETs the subscriber's own page and never submits its form.
   "orbit_audit_preference_centre",
   "orbit_audit_send_calendar",
-  "orbit_audit_stripo_modules",
   "orbit_audit_unsubscribe_page",
   "orbit_braze_performance",
   // NOTE: the data-platform family (server/data/ — Amplitude + Databricks) is
@@ -198,7 +210,6 @@ export const READ_ONLY_NETWORKED = new Set([
   "orbit_list_braze_templates",
   "orbit_list_stripo_emails",
   "orbit_list_stripo_folders",
-  "orbit_list_stripo_modules",
   "orbit_list_stripo_templates",
   "orbit_probe_stripo_inline_html",
   "orbit_probe_stripo_smart_element",
@@ -220,6 +231,12 @@ export const READ_ONLY_NETWORKED = new Set([
  * request before it went in.
  */
 export const READ_ONLY_LOCAL = new Set([
+  // Reclassified 2026-08-24, DOWN from READ_ONLY_NETWORKED. Both read the
+  // LOCAL Orbit library and never call Stripo — orbit_list_stripo_modules's
+  // own description already said "does NOT call Stripo's API" while its
+  // annotation claimed open-world. The description was right.
+  "orbit_list_stripo_modules",
+  "orbit_audit_stripo_modules",
   "orbit_accessibility_lint",
   "orbit_analyse_segments",
   "orbit_braze_namer",

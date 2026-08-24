@@ -26,7 +26,7 @@
  */
 
 import { EspApiError, unsupportedResponse } from "./errors.js";
-import { refusalOf, PLATFORMS } from "./capabilities.js";
+import { refusalOf, PLATFORMS, vendorMcpHint } from "./capabilities.js";
 
 /**
  * Lazy loaders, one per registered platform. Each returns the module's promise;
@@ -163,7 +163,20 @@ export async function dispatch(platform, operation, args = {}) {
     typeof adapter.validateSetup === "function"
       ? adapter.validateSetup(args.config)
       : null;
-  if (setup) return setup;
+  if (setup) {
+    // An Orbit key is OPTIONAL, and this is the exact moment to say so —
+    // enriched HERE rather than in six adapters so the message cannot drift
+    // between platforms. If the vendor publishes its own MCP server, the
+    // user may already have a perfectly good path that needs no credential
+    // from us; nagging for a key while a working alternative sits connected
+    // is how a tool earns a reputation for being needy.
+    //
+    // Orbit cannot DETECT that server — an MCP server sees only its own
+    // transport to the host. It can only state the alternative and let
+    // Claude, which does see every connected server, do the routing.
+    const alternative = vendorMcpHint(platform);
+    return alternative ? { ...setup, key_optional: true, alternative } : setup;
+  }
 
   return adapter[operation](args);
 }

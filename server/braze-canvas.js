@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { validateBrazeSetup, brazePost, buildDashboardUrl } from "./braze-api.js";
+import { buildDashboardUrl } from "./braze-api.js";
 import { BRAZE_CANVAS_SYNC_SCHEMA } from "./production-specs.js";
 import { parseJsonInput, slugify, writeJson } from "./utils.js";
 
@@ -37,11 +37,13 @@ export async function createBrazeCanvas({
       ? parseJsonInput(workspace, "workspace")
       : workspace;
 
-  // --- Validate Braze credentials (skip for dry-run) ---
-  if (!dryRun) {
-    const setupError = validateBrazeSetup(config);
-    if (setupError) return setupError;
-  }
+  // --- No credential gate. Deliberately. ---
+  // This tool never calls Braze: canvas authoring is dashboard-only and the
+  // public REST API has no create endpoint (see the return below). It used to
+  // demand a Braze key whenever dry_run was false — rejecting unconfigured
+  // users on behalf of a request that does not exist, then returning
+  // "unsupported" to everyone who did have a key. Pure theatre, and it made a
+  // key look required for a tool that is fully functional without one.
 
   // --- Resolve program metadata ---
   const programName =
@@ -489,7 +491,7 @@ function validateCanvasPayload(payload, messages) {
   return { errors, warnings };
 }
 
-// Braze API: uses shared braze-api.js (validateBrazeSetup, brazePost, buildDashboardUrl)
+// Braze API: uses shared braze-api.js (buildDashboardUrl only — this tool makes no API call)
 
 // Dashboard URL builder: uses shared buildDashboardUrl from braze-api.js
 

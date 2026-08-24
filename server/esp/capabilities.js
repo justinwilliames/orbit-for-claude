@@ -103,6 +103,102 @@ export const OPERATION_LABELS = Object.freeze({
 });
 
 /**
+ * Does the VENDOR publish a first-party MCP server for this platform?
+ *
+ * WHY ORBIT CARRIES THIS. An Orbit API key is OPTIONAL, and Orbit should say
+ * so at the exact moment it would otherwise ask for one. If the user already
+ * runs the platform's own MCP server, that is a perfectly good way to reach
+ * their data and Orbit should point at it rather than nag for a credential.
+ *
+ * WHAT ORBIT CANNOT DO, stated plainly so nobody builds on a false premise:
+ * an MCP server cannot see, enumerate, or call another MCP server. Orbit has
+ * one transport, to the host. It CANNOT detect that a Braze MCP is connected
+ * and it CANNOT route a call into it. Only the HOST (Claude) sees every
+ * connected server and chooses the tool. So Orbit's job is not routing — it
+ * is telling the host the alternative exists, in the response and in the
+ * server instructions, and letting the host route. That is the whole
+ * mechanism, and it is enough.
+ *
+ * WHY ORBIT'S OWN ADAPTERS STILL EARN THEIR PLACE (the reason these are not
+ * simply deleted): a vendor's MCP moves at the vendor's pace. When a platform
+ * ships a new API capability, Orbit can support it the same day. Waiting for
+ * someone else's MCP roadmap is not a strategy for a product whose whole
+ * point is depth. The key is the fast path; the vendor MCP is the no-key
+ * path; both are legitimate.
+ *
+ * Verified 2026-08-24. Re-check before quoting — MCP servers are young and
+ * these move. `null` means no first-party server existed on that date.
+ */
+export const VENDOR_MCP = Object.freeze({
+  braze: {
+    exists: true,
+    maturity: "early access",
+    url: "https://www.braze.com/docs/user_guide/brazeai/mcp_server",
+    covers:
+      "campaign/canvas/segment reads, email templates, content blocks, catalogs, analytics. No canvas creation and no user-level PII.",
+    caveat:
+      "Needs account-manager enrolment plus a 'Use MCP Server' admin permission — not self-serve.",
+  },
+  klaviyo: {
+    exists: true,
+    maturity: "GA",
+    url: "https://developers.klaviyo.com/en/docs/klaviyo_mcp_server",
+    covers: "templates (incl. render), campaigns, flows, segments, profiles — read and write.",
+    caveat: "The remote server is OAuth, so no key to paste; the local one still wants a private key.",
+  },
+  iterable: {
+    exists: true,
+    maturity: "beta",
+    url: "https://github.com/Iterable/mcp-server",
+    covers: "templates, campaigns, lists/segments, catalogs, journeys, users/events.",
+    caveat:
+      "Iterable's own docs say it may change, be suspended, or be discontinued at any time without notice. Do not build a workflow that cannot survive it vanishing.",
+  },
+  customerio: {
+    exists: true,
+    maturity: "GA",
+    url: "https://docs.customer.io/ai/mcp/get-started/",
+    covers:
+      "generic HTTP dispatch (cio_read_api / cio_write_api) over the full Journeys and CDP APIs, plus schema discovery.",
+    caveat: "Per-user OAuth, no API-key alternative.",
+  },
+  mailchimp: {
+    exists: false,
+    maturity: null,
+    url: null,
+    covers: null,
+    caveat:
+      "No first-party MCP exists for the Mailchimp MARKETING API — only for Transactional (Mandrill), which is a different product. Orbit's adapter is the only integrated path.",
+  },
+  sfmc: {
+    exists: true,
+    maturity: "GA",
+    url: "https://developer.salesforce.com/docs/marketing/mce-mcp/overview",
+    covers: "data extensions, journeys, automations, content — read and write.",
+    caveat: "Requires installing a managed package in the MCE tenant first, then OAuth.",
+  },
+});
+
+/**
+ * The sentence Orbit adds when it is about to ask for a credential: here is
+ * the no-key alternative, if one exists. Returns null when there is none, so
+ * callers never print an empty promise.
+ */
+export function vendorMcpHint(platform) {
+  const v = VENDOR_MCP[platform];
+  if (!v) return null;
+  const name = PLATFORM_META[platform]?.displayName ?? platform;
+  if (!v.exists) {
+    return `An Orbit key is optional in general, but ${name} is the exception: ${v.caveat}`;
+  }
+  return (
+    `An Orbit key is OPTIONAL. ${name} publishes its own MCP server (${v.maturity}) — ` +
+    `if you have it connected, ask Claude to use it instead and Orbit needs no credential for this. ` +
+    `It covers ${v.covers} ${v.caveat} Details: ${v.url}`
+  );
+}
+
+/**
  * Per-platform metadata (display name, auth mechanism, base URL, templating
  * dialect) sourced from §1's per-ESP preamble. Feeds the website "How to
  * connect" framing and the documentation-expert skills.

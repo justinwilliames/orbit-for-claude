@@ -38,6 +38,7 @@ import { resolvePlatform, dispatch, REGISTERED_PLATFORMS } from "./registry.js";
 import {
   CAPABILITIES,
   PLATFORM_META,
+  VENDOR_MCP,
   OPERATIONS,
   OPERATION_LABELS,
   orbitStatusOf,
@@ -185,6 +186,13 @@ function capabilityBlock(platform) {
     auth: meta.auth ?? null,
     base_url: meta.base_url ?? null,
     templating: meta.templating ?? null,
+    // Whether the VENDOR ships its own MCP server. Reported so the caller can
+    // route to it instead of asking for an Orbit key — Orbit cannot see or
+    // call another MCP server, but the host can, and this is how it learns
+    // the option exists. `orbit_key_required` is the honest headline: true
+    // only where no first-party server exists (Mailchimp Marketing today).
+    vendor_mcp: VENDOR_MCP[platform] ?? null,
+    orbit_key_required: !(VENDOR_MCP[platform]?.exists ?? false),
     operations: OPERATIONS.map((operation) => {
       const row = rows[operation] ?? {};
       const refusal = refusalOf(platform, operation);

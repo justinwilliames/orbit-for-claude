@@ -434,7 +434,7 @@
     },
     {
       "name": "orbit_create_braze_canvas",
-      "description": "Create a Braze Canvas from an Orbit braze pack and message plan. [Safety: writes to a third-party system.]"
+      "description": "Create a Braze Canvas from an Orbit braze pack and message plan. [Safety: writes files in your local Orbit workspace.]"
     },
     {
       "name": "orbit_dark_mode_check",
@@ -550,7 +550,7 @@
     },
     {
       "name": "orbit_import_design",
-      "description": "Import an email design into Orbit as a structured design record. [Safety: writes files in your local Orbit workspace.]"
+      "description": "Import an email design into Orbit as a structured design record. [Safety: sends data to a third-party API and writes files on this machine.]"
     },
     {
       "name": "orbit_import_stripo_template",
@@ -726,7 +726,7 @@
     },
     {
       "name": "orbit_setup_stripo",
-      "description": "Connect Stripo to Orbit. Reports which Stripo credentials are present (Plugin ID + Secret Key, REST API token, Master Template ID), runs live probes against Stripo's APIs, and returns a step-by-step markdown checklist. Run this first before any other Stripo API integration tool. [Safety: writes files in your local Orbit workspace.]"
+      "description": "Connect Stripo to Orbit. Reports which Stripo credentials are present (Plugin ID + Secret Key, REST API token, Master Template ID), runs live probes against Stripo's APIs, and returns a step-by-step markdown checklist. Run this first before any other Stripo API integration tool."
     },
     {
       "name": "orbit_start_brand_guidelines_intake",
@@ -742,7 +742,7 @@
     },
     {
       "name": "orbit_sync_stripo_modules",
-      "description": "Pull all custom saved modules from the user's Stripo workspace via the REST API into Orbit's local library. Classifies via Stripo's own category taxonomy (header / hero / content / footer). Stale modules are tagged archived, never hard-deleted. Re-run any time saved modules change in Stripo. [Safety: writes files in your local Orbit workspace.]"
+      "description": "Pull all custom saved modules from the user's Stripo workspace via the REST API into Orbit's local library. Classifies via Stripo's own category taxonomy (header / hero / content / footer). Stale modules are tagged archived, never hard-deleted. Re-run any time saved modules change in Stripo."
     },
     {
       "name": "orbit_sync_to_braze",

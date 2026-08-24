@@ -341,7 +341,7 @@ const server = new McpServer({
   // Mailchimp, Iterable, Customer.io, SFMC, or no ESP at all — that was
   // simply wrong, and it buried the thing Orbit is actually best at.
   instructions: [
-    "Orbit is a lifecycle marketer built into Claude: 80 skills and 131 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
+    "Orbit is a lifecycle marketer built into Claude: 80 skills and 135 tools carrying production-tested knowledge that generic reasoning does not have — render traps that only appear in Gmail, Braze canvas QA, segmentation maths, deliverability rules, Liquid branch coverage, and the naming conventions that keep a programme legible a year later.",
     "",
     "WHAT ORBIT IS FOR, IN ONE LINE: helping someone build and run their own lifecycle programme — starting from their own email design system and their own knowledge base, not from a vendor's template gallery.",
     "",
@@ -367,7 +367,17 @@ const server = new McpServer({
     "",
     "BEFORE ANYTHING SHIPS: `orbit_render_gate` measures what only a real render reveals — single-word last lines, CTA rows that wrap on mobile, tap targets under 44px, computed contrast, and bytes against Gmail's clipping limit. A byte check alone is not a verdict on an email.",
     "",
-    "Run `orbit_check_setup` when a task needs credentials, and only for the integration that task actually uses. Calculators, validators, the MJML pipeline, the brain tools and every skill run with no setup whatsoever."
+    "IF ORBIT DOES NOT HAVE THE RIGHT TOOL, LOOK AT WHAT ELSE IS CONNECTED BEFORE GIVING UP OR ASKING FOR A KEY. "
+      + "Orbit is one MCP server among however many the user has installed, and it cannot see any of the others — an MCP server has one transport, to you. "
+      + "YOU see every connected server, so the routing is YOURS. When a task needs something Orbit lacks, or needs a credential Orbit does not have, "
+      + "check the other connected servers for a tool that does it and use that instead. Say which one you used and why. "
+      + "This is not a fallback for failures — prefer a first-party server for plain reads and writes on its own platform. "
+      + "YOUR OWN API KEY IS OPTIONAL. Two ways to reach the user's real data, both legitimate: (a) a key in Orbit's settings — the FAST path, because when a "
+      + "platform ships a new API capability Orbit can support it the same day rather than waiting on someone else's MCP roadmap; or (b) the platform's own MCP "
+      + "server if they already run it. Reach for Orbit's integration when no vendor MCP exists (Mailchimp Marketing has none at all), when the vendor's is "
+      + "missing what you need, or when the user has already given Orbit a key. `orbit_esp_capabilities` reports which platforms publish their own MCP and what each covers. "
+      + "Never imply a key is required — roughly two-thirds of Orbit never touches one.",
+      "Run `orbit_check_setup` when a task needs credentials, and only for the integration that task actually uses. Calculators, validators, the MJML pipeline, the brain tools and every skill run with no setup whatsoever."
   ].join("\n")
 });
 
@@ -3347,7 +3357,7 @@ function registerTools() {
       description:
         "Create a Braze Canvas from an Orbit braze pack and message plan. " +
         "Maps Orbit program steps, messages, delays, audience, and entry criteria to a valid Braze Canvas API payload. " +
-        "Use dry_run=true (default) to preview the payload without calling the Braze API. " +
+        "Needs NO Braze key: Braze has no public canvas-create endpoint, so this validates the payload and hands it to you to build in the dashboard. dry_run=true (default) also saves it to disk. " +
         "Requires: message_plan_json (from orbit_build_message_plan). Optional: braze_pack_json (from orbit_build_braze_pack), workspace_json.",
       inputSchema: {
         braze_pack_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of the braze pack from orbit_build_braze_pack"),
@@ -3359,7 +3369,7 @@ function registerTools() {
         entry_segment_id: z.string().max(MAX_SHORT_STRING).optional().describe("Braze segment ID for Canvas entry audience"),
         entry_filters_json: z.string().max(MAX_LONG_STRING).optional().describe("JSON string of additional Braze entry audience filters"),
         tags: z.array(z.string().max(MAX_SHORT_STRING)).max(MAX_SHORT_ARRAY).optional().describe("Additional tags for the Canvas"),
-        dry_run: z.boolean().optional().describe("If true (default), preview the payload without calling the Braze API"),
+        dry_run: z.boolean().optional().describe("If true (default), also save the payload to disk. No Braze call happens either way"),
         output_dir: z.string().max(MAX_PATH_STRING).optional().describe("Directory to write the Canvas payload JSON file")
       }
     },
