@@ -779,7 +779,7 @@ export async function checkTemplateCollision({ config, templateName }) {
       created_at: existing.created_at,
       ...existingContent
     },
-    message: `Template "${templateName}" already exists in Braze (ID: ${templateId}). Use orbit_sync_braze_email_template to update it, or choose a different name.`
+    message: `Template "${templateName}" already exists in Braze (ID: ${templateId}). Use orbit_sync_to_braze with target:"email_template" to update it, or choose a different name.`
   };
 }
 

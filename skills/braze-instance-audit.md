@@ -64,7 +64,7 @@ The full-fidelity audit above is **Braze-specific** — Canvases, Content Blocks
 
 For the **portable slice of an inventory** — templates, campaigns/flows, and segments/lists — the generic ESP tools give a comparable read against any supported platform:
 
-- `orbit_esp_templates` (`action: "list"`) — template inventory (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io unsupported** — no public template listing).
-- `orbit_esp_read` (`resource: "campaigns"` / `"segments"`) — programs and audiences, normalized across ESPs (SFMC segments are SOAP-first → `{unsupported}` in v1).
+- `orbit_esp_templates` (`action: "list"`) — template inventory (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io supported** — Design Studio list/get, built 2026-08-24).
+- `orbit_esp_read` (`resource: "campaigns"` / `"segments"`) — programs and audiences, normalized across ESPs (SFMC segments read data extensions via REST; classic Lists/Groups stay SOAP-only).
 
 Call `orbit_esp_capabilities` first for the honest per-ESP matrix — it distinguishes "the ESP's API doesn't offer this" from "not built yet". Each ESP's object model differs; consult the matching `*-documentation-expert` skill (`iterable-`, `klaviyo-`, `mailchimp-`, `customerio-`, `sfmc-`) before interpreting the inventory.

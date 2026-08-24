@@ -343,7 +343,7 @@ export function assembleTemplateVariation({
       html_length: assembledHtml.length
     },
     files,
-    message: `Assembled variation "${spec.name}" (${assembledHtml.length} chars). Use orbit_sync_braze_email_template to publish to Braze.`
+    message: `Assembled variation "${spec.name}" (${assembledHtml.length} chars). Use orbit_sync_to_braze with target:"email_template" to publish to Braze.`
   };
 }
 

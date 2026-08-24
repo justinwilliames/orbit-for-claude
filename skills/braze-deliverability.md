@@ -53,6 +53,6 @@ For deliverability on another supported ESP, the signal lives in that platform's
 
 - **Mailchimp / Customer.io** — bounce and unsubscribe counts surface in their native campaign reports (reachable via `orbit_esp_read` `resource: "performance"` where the ESP includes them in the metrics series).
 - **Iterable / Klaviyo** — engagement and suppression reporting is native to each platform (mind the rate limits noted in `braze-performance`).
-- **SFMC** — send-level tracking is SOAP-first and unsupported in v1.
+- **SFMC** — journey-level stats read via `?extras=stats`; classic send-level tracking stays SOAP-first and unread.
 
 Call `orbit_esp_capabilities` for the per-ESP matrix, and consult the matching `*-documentation-expert` skill for how that platform handles bounces, complaints, and suppression. The channel-agnostic deliverability fundamentals (domain auth, complaint-rate thresholds, list hygiene) apply everywhere regardless of ESP.

@@ -90,8 +90,9 @@ Returns the final HTML with all content and images populated.
 ### Step 7: Publish to Braze
 
 ```
-orbit_sync_braze_email_template
-  template_payload: <assembled HTML>
+orbit_sync_to_braze
+  target: "email_template"
+  template_payload_json: <assembled HTML>
 ```
 
 ---

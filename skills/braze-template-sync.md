@@ -69,6 +69,6 @@ This skill's protocol is Braze-specific because **Content Blocks are a Braze con
 **Publishing a final HTML template, however, is a portable operation.** To push a compiled template to another supported ESP, use the generic tool `orbit_esp_push_template` with the target `platform` (`iterable`, `klaviyo`, `mailchimp`, `sfmc`). Honest constraints per platform:
 
 - **Iterable / Klaviyo / Mailchimp / SFMC** — native template create/update (upsert on Iterable; `htmlemail` Content Builder asset on SFMC).
-- **Customer.io** — **no template push**. Customer.io exposes no public template CRUD; `orbit_esp_push_template` returns `{unsupported}`. Author content in-app and verify with a transactional proof send. See `customerio-documentation-expert`.
+- **Customer.io** — **template push works.** Customer.io templates ARE supported: its Design Studio API publishes list, get and CRUD, and Orbit calls them (built 2026-08-24). The one real limit is that content can be written but NOT published via API — a pushed template lands unpublished and someone must publish it in the workspace. Author content in-app and verify with a transactional proof send. See `customerio-documentation-expert`.
 
 Before pushing to any non-Braze ESP, call `orbit_esp_capabilities` for the exact what-works-where matrix. The per-platform templating dialect differs (Braze Liquid vs Iterable Handlebars vs Klaviyo Django vs Mailchimp merge tags vs SFMC AMPscript) — validate the template against the target ESP's dialect, not Braze Liquid. See the matching `*-documentation-expert` skill.

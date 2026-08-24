@@ -142,7 +142,7 @@ and which were skipped (and why).
 
 Learning, module classification, brand-token extraction, and assembly are all **ESP-neutral** — they operate on the HTML itself, not on any ESP's API. A template learned from a Stripo export (or any HTML) can therefore be composed once and published to whichever ESP the brand sends from.
 
-To publish learned/assembled HTML to a non-Braze ESP, pass the output to `orbit_esp_push_template` with the target `platform` (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io unsupported** — no public template CRUD). Honest caveats:
+To publish learned/assembled HTML to a non-Braze ESP, pass the output to `orbit_esp_push_template` with the target `platform` (Iterable, Klaviyo, Mailchimp, SFMC native; **Customer.io supported** — Design Studio CRUD, though a pushed template lands unpublished). Honest caveats:
 
 - **Stripo round-trip stays Braze-flavoured.** The Stripo export path today lands via the Braze bridge; the `es-*`/`esd-*` preservation guarantees editability when pasted back into Stripo, but the direct "export to ESP" convenience is Braze-only. For other ESPs, take the assembled HTML and push it with `orbit_esp_push_template`.
 - **Personalisation dialect is not translated.** Learned templates preserve their original merge syntax verbatim. If the source used Braze Liquid and the target is Iterable (Handlebars), Klaviyo (Django), Mailchimp (merge tags), or SFMC (AMPscript), the personalisation tokens must be re-authored for the target dialect — this skill does not convert them. Consult the matching `*-documentation-expert` skill.

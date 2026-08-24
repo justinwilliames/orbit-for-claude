@@ -71,6 +71,6 @@ For a **portable, normalized send-performance readout** against another ESP, use
 - **Klaviyo** — Reporting API is heavily capped (**burst 1/s, steady 2/min, 225/day**) and needs a conversion metric; responses are cached. Do not poll.
 - **Mailchimp** — native reports, straightforward.
 - **Customer.io** — native per-campaign and per-newsletter metric series.
-- **SFMC** — **unsupported in v1**: send-level stats live in SOAP Tracking Events with no simple REST aggregate; `orbit_esp_read` returns `{unsupported}`. Use SFMC's in-app reports until a v2 SOAP client ships.
+- **SFMC** — **partial.** SFMC segments and performance are `partial`, not unsupported: Orbit reads data extensions via `GET /data/v1/customobjects` and journey stats via `?extras=stats` (built 2026-08-24). The classic Email Studio Lists/Groups and send-level aggregates remain SOAP-only. Use SFMC's in-app reports for anything the SOAP surface still owns.
 
 Call `orbit_esp_capabilities` for the exact matrix. Do not promise a single cross-ESP comparable dashboard — normalisation is lossy and rate-fragile; report per-ESP with `unavailable[]` honoured.

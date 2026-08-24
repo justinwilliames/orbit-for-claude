@@ -134,7 +134,7 @@ Insist on answering these before touching anything technical:
   export so you don't carry double-billing structure into the new ESP.
 
 ### Moving to / from Customer.io
-- **The honesty-critical lane.** Customer.io exposes **no public template CRUD** —
+- **The honesty-critical lane.** Customer.io templates ARE supported: its Design Studio API publishes list, get and CRUD, and Orbit calls them (built 2026-08-24). The one real limit is that content can be written but NOT published via API — a pushed template lands unpublished and someone must publish it in the workspace. Formerly recorded here as no-CRUD, which blamed the vendor for an Orbit gap —
   Orbit cannot pull or push Customer.io templates via API. When Customer.io is the
   *source*, the template bodies must be exported from the app manually (they are not
   API-listable); when it is the *target*, content is authored in-app and verified with

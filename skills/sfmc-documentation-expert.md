@@ -65,7 +65,9 @@ SFMC has **two** API stacks, and the split defines what Orbit can and cannot do:
 - **REST API** — modern, JSON. Content Builder assets, Journey (interaction) reads, Transactional Messaging. **This is Orbit's v1 surface.**
 - **SOAP API** — older, XML. Subscriber lists, data extensions, filters, and send-level tracking (Tracking Events / tracking extracts) are **SOAP-first** with no clean REST equivalent.
 
-**v1 ships no SOAP client.** That is a deliberate, load-bearing scope cut — a SOAP client is a project, not a bolt-on. Anything SOAP-gated (classic subscriber lists/groups/filter definitions, Email Studio send aggregates, per-subscriber tracking events) is honestly reported as unsupported in v1 rather than half-built. The REST surface is not empty, and Orbit's adapter calls it: data extensions list over `GET /data/v1/customobjects` and journey stats over `?extras=stats` (verified 2026-08-24, built 2026-08-24) — both `partial`, not `native`, because the classic surfaces above have no REST equivalent at all.
+**v1 ships no SOAP client** — still true, and still the right scope cut. What HAS changed: the REST surface now covers more than it did. `listSegments` reads data extensions via `GET /data/v1/customobjects` and `getPerformance` reads journey stats via `?extras=stats`, both built 2026-08-24 and both `partial`. Only the classic Email Studio Lists/Groups/FilterDefinitions and send-level aggregates remain SOAP-gated.
+
+**The scope cut itself:** That is a deliberate, load-bearing scope cut — a SOAP client is a project, not a bolt-on. Anything SOAP-gated (classic subscriber lists/groups/filter definitions, Email Studio send aggregates, per-subscriber tracking events) is honestly reported as unsupported in v1 rather than half-built. The REST surface is not empty, and Orbit's adapter calls it: data extensions list over `GET /data/v1/customobjects` and journey stats over `?extras=stats` (verified 2026-08-24, built 2026-08-24) — both `partial`, not `native`, because the classic surfaces above have no REST equivalent at all.
 
 ---
 

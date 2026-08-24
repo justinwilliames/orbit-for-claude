@@ -47,7 +47,7 @@ When this skill is active, apply this sequence before diving into the user's spe
    credentials, not two: Plugin ID, Secret Key, AND a separate per-project REST API token.
 2. **Sync modules.** Run `orbit_sync_stripo_modules`. If the result is empty (`total_fetched: 0`),
    stop and tell the user to save modules in Stripo's editor first (right-click any block → Save
-   as module). Custom modules require Business or Enterprise plan tier in Stripo.
+   as module). Custom modules are typically a Business or Enterprise tier feature in Stripo — Orbit's own code hedges this the same way (server/stripo-api.js), because the evidence is a 402/403 response, not a published entitlement matrix. Report what the API returns; do not tell someone their plan is the problem.
 3. **Document the system.** Run `orbit_document_stripo_design_system` and read the generated
    markdown before composing. It contains the inferred composition rules, brand tokens, and risks
    (duplicate names, missing footer Liquid vars, etc.) that should inform every subsequent
