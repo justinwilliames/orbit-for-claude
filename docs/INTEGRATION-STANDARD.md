@@ -151,9 +151,9 @@ The gate regenerates this matrix on every run to
 The five non-Braze ESPs read through the shared `orbit_esp_*` family
 (`orbit_esp_read`, `orbit_esp_templates`, `orbit_esp_capabilities`, plus
 `orbit_check_esp_auth`); Klaviyo adds `orbit_klaviyo_flow_audit`. Per-operation
-support (which reads each ESP's public API actually offers) is recorded in
-`server/esp/capabilities.js` and surfaced honestly as `{unsupported}` where a
-path does not exist.
+capability is recorded in `server/esp/capabilities.js` on two axes — what each
+ESP's public API offers, and what Orbit has built — and surfaced honestly as
+`{unsupported, refusal}` where either is missing, naming which of the two it is.
 
 Amplitude is the first analytics platform on the bar, and the only one whose
 useful surface is mostly *not* readable: its per-cohort route and its Export API
@@ -253,18 +253,66 @@ eight operations — 48 platform-operation combinations — in five tools.
 analytics and warehouses. Four files, and only the last one costs bytes:
 
 - **`capabilities.js`** — the matrix, as pure data. `{platform: {operation:
-  {support, endpoint, doc_url, reason?, nearest_alternative?}}}`, where
-  `support` is `native | partial | unsupported`. This is the single source of
+  {support, orbit?, endpoint, doc_url, reason?, nearest_alternative?}}}`. See
+  **the two-axis rule** below — it is not optional, and getting it wrong is how
+  a capability matrix turns into a biased one. This is the single source of
   truth; the tiers, the docs and the runtime all read it.
 - **`errors.js`** — the family's own errors, plus `unsupportedResponse()`, which
-  manufactures `{unsupported, reason, nearest_alternative, doc_url}` **centrally
-  from the matrix**. An adapter never hand-writes a refusal.
+  manufactures `{unsupported, refusal, message, reason, nearest_alternative,
+  doc_url}` **centrally from the matrix**. An adapter never hand-writes a
+  refusal.
 - **`registry.js`** — lazy per-platform loaders and `dispatch()`. The gate order
-  matters: unknown platform → matrix says unsupported → adapter missing →
-  adapter omits the method → adapter's own `validateSetup` → run it. Two
-  properties fall out of that order for free: an unsupported operation never
+  matters: unknown platform → matrix refuses on **either axis** → adapter
+  missing → adapter omits the method → adapter's own `validateSetup` → run it.
+  Two properties fall out of that order for free: a refused operation never
   touches the network, and an adapter refuses a capability by **not having the
   method**, so the refusal is structural rather than a promise in prose.
+
+### The two-axis rule (non-negotiable)
+
+**A capability cell answers two questions, so it needs two fields.** Every cell
+carries `support` and `orbit`, and they are never collapsed:
+
+| Field | Answers | Values |
+|---|---|---|
+| `support` | What the **provider's public API** can do. Doc-backed, vendor-neutral. | `native` · `partial` · `unsupported` |
+| `orbit` | Whether **Orbit has built** an adapter path. Omitted means `implemented`. | `implemented` · `not_implemented` |
+
+The combination `support: "native", orbit: "not_implemented"` is legitimate and
+common: *the API does this, we haven't built it.* That is a backlog item.
+
+**Why this is a rule and not a preference.** These were one field until
+2026-08-24, and the single field was silently used for both questions. When they
+diverged, the matrix lied: Customer.io's three template rows read `unsupported`
+with a reason blaming Customer.io for having "no public template API" — false,
+since Design Studio publishes template read *and* CRUD. Two SFMC rows had the
+same defect. Anyone comparing ESPs through Orbit would have ruled out a platform
+for something it does. A matrix that reports Orbit's build backlog as vendor
+limitations is structurally biased toward **whatever Orbit happened to build
+first**, which is Braze — the exact opposite of what a comparison surface is for.
+
+Four obligations follow, and they are cheap:
+
+1. **Never downgrade `support` because Orbit is behind.** If the vendor
+   publishes it, `support` says so, whatever the adapter does. Mark the gap on
+   the `orbit` axis instead.
+2. **No `native` or `partial` without a doc URL** from `docs/api-surveys/*.md`
+   backing it. A support claim with no citation is a guess wearing a data
+   structure.
+3. **Every `orbit: "not_implemented"` row carries a `reason` naming the gap as
+   ORBIT's, plus a `nearest_alternative`.** A refusal with no way round it is
+   where a user gives up.
+4. **Refuse on the union, and say which it is.** `refusalOf()` unions both axes,
+   and the response's `refusal` field is `platform_limit` or `orbit_gap`.
+   "Customer.io cannot do this" and "Customer.io can, Orbit hasn't built it yet"
+   lead to opposite decisions — one rules out a vendor, the other files a
+   feature request — so they must never share a message. Anything reporting the
+   *cause* to a human reads `message`/`refusal`, never the `unsupported` flag,
+   which names the shape rather than the cause.
+
+When you later build a not_implemented operation, flip its `orbit` field (or
+delete it, which means the same thing) **in the same commit**. A built method
+behind a stale `not_implemented` row is refused before it runs.
 - **`tools.js`** — the few parameterised tools. Keep descriptions to what the
   model needs to choose correctly, and let `orbit_*_capabilities` carry the
   detail instead of repeating it in every schema.
@@ -273,8 +321,14 @@ analytics and warehouses. Four files, and only the last one costs bytes:
 
 1. Write the adapter, exporting an `adapter` object whose method names are the
    matrix's operation keys. Omit every method the platform cannot honestly do.
-2. Add its block to `capabilities.js` — every operation, with a `reason` on
-   anything short of `native`.
+2. Add its block to `capabilities.js` — every operation, on **both axes**
+   (see the two-axis rule). `support` records what the vendor's API does,
+   doc-backed from a survey in `docs/api-surveys/`; `orbit: "not_implemented"`
+   marks each operation the adapter omits. A `reason` is required on anything
+   short of `native`, and on every not_implemented row. A brand-new platform
+   will legitimately have many `native` + `not_implemented` cells on day one —
+   that is the shape of an honest backlog, and it is not a reason to write
+   `unsupported`.
 3. Add one loader line to `registry.js`.
 4. Add the platform to the family's `platform` enum.
 

@@ -8,7 +8,7 @@
  * nested objects of eight rows carrying four to seven keys each: forty
  * eight cells and roughly three hundred lines of JSON. Nobody compares
  * six platforms by reading that. They read Braze, form an impression,
- * and never learn that Customer.io cannot accept a template at all.
+ * and never learn where the other five actually differ.
  *
  * The grid is the whole point: one glance answers "which of these can
  * I push a template into", which is the question that decides whether
@@ -16,11 +16,24 @@
  *
  * FOUR RULES THIS FILE IS BUILT AROUND
  *
+ *   0. EVERY CELL CARRIES TWO FACTS, AND THEY ARE NEVER MERGED. What the
+ *      provider's public API supports is one axis; whether Orbit has
+ *      built it is another. They were one field until 2026-08-24, and
+ *      the grid drew Customer.io's template rows as "None" — reading as
+ *      "Customer.io can't accept a template", which is false; Design
+ *      Studio publishes read and CRUD, and Orbit simply hasn't built it.
+ *      The comment two paragraphs above this one repeated that error in
+ *      prose. So: the WORD is always the provider's capability, and an
+ *      Orbit gap is a separate visible tag on the same cell. Never
+ *      downgrade the provider's word because Orbit is behind.
+ *
  *   1. Support level is never colour alone. Every cell carries a glyph
  *      AND a word — Native / Partial / None — because the entire value
  *      of this surface is the difference between three states, and a
  *      grid that encodes them only as three washes is unusable in
  *      greyscale, in a screenshot, and to a large minority of readers.
+ *      The Orbit-gap tag follows the same rule: a bordered word, not a
+ *      wash.
  *
  *   2. The honest rows are the point, so they are not hidden. Partial
  *      and unsupported cells carry the reason and the nearest real
@@ -52,20 +65,30 @@ import { buildWidgetHtml, WIDGET_PRELUDE } from "../shell.js";
  */
 export const ESP_CELL_JS = `
 /**
- * Glyph + word + class for one support level.
+ * Glyph + word + class for one support level, plus the SECOND axis.
  *
  * The default arm matters: the matrix is hand-maintained data, and a
  * typo'd or newly-added support level rendering as an empty cell is a
  * grid that lies by omission. It renders as an explicit "unknown".
+ *
+ * The orbit argument is optional and defaults to implemented, matching the matrix's
+ * own documented default. When it is "not_implemented" the word does NOT
+ * change — the grid's word is the PLATFORM's capability, and downgrading
+ * it because Orbit is behind is precisely the conflation this widget was
+ * corrected to stop. Instead the cell carries notBuilt, which the grid
+ * renders as a visible tag beside the word. A reader must be able to see
+ * "the API does this, Orbit hasn't built it" without opening the detail.
  */
-function cellFor(support) {
-  if (support === "native") return { glyph: "\\u2713", word: "Native", cls: "ok" };
-  if (support === "partial") return { glyph: "\\u25B3", word: "Partial", cls: "active" };
-  if (support === "unsupported") return { glyph: "\\u2715", word: "None", cls: "warn" };
-  return { glyph: "\\u25CB", word: "Unknown", cls: "pending" };
+function cellFor(support, orbit) {
+  var c = support === "native" ? { glyph: "\\u2713", word: "Native", cls: "ok" }
+    : support === "partial" ? { glyph: "\\u25B3", word: "Partial", cls: "active" }
+    : support === "unsupported" ? { glyph: "\\u2715", word: "None", cls: "warn" }
+    : { glyph: "\\u25CB", word: "Unknown", cls: "pending" };
+  c.notBuilt = orbit === "not_implemented";
+  return c;
 }
 
-/** Per-platform tally, used for the column subheads. */
+/** Per-platform tally of the PLATFORM axis, used for the column subheads. */
 function tally(ops) {
   var t = { native: 0, partial: 0, unsupported: 0, other: 0 };
   (ops || []).forEach(function (o) {
@@ -73,6 +96,18 @@ function tally(ops) {
     else t[o.support]++;
   });
   return t;
+}
+
+/**
+ * Per-platform tally of the ORBIT axis. Deliberately a SEPARATE counter
+ * rather than a fifth key on tally(): the two axes are independent, and a
+ * single tally object mixing "what the vendor supports" with "what Orbit
+ * built" would re-create the exact ambiguity the matrix was split to end.
+ */
+function notBuiltCount(ops) {
+  var n = 0;
+  (ops || []).forEach(function (o) { if (o.orbit === "not_implemented") n++; });
+  return n;
 }
 `;
 
@@ -146,6 +181,19 @@ table.grid td { background: var(--card); }
 .cell[data-cls="active"]  { background: var(--active-wash); color: var(--active-strong); border-color: var(--active-line); }
 .cell[data-cls="warn"]    { background: var(--warn-wash);   color: var(--warn);          border-color: var(--warn-line); }
 .cell[data-cls="pending"] { background: var(--sunk);        color: var(--ink-3);         border-color: var(--rule); }
+/* The second axis, drawn INSIDE the cell. It must survive greyscale and a
+   screenshot, so it is a bordered word — never a tint on the existing pill,
+   which would read as a fourth support level rather than a second fact. It
+   sits on its own line at the cell's foot so it cannot be mistaken for part
+   of the support word beside it. */
+.cell { flex-wrap: wrap; }
+.nb {
+  flex-basis: 100%; margin-top: 2px; padding: 0 4px;
+  border: 1px solid var(--rule); border-radius: 3px;
+  background: var(--card);
+  font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.02em; text-transform: uppercase; color: var(--ink-3);
+}
 .cell:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .cell[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brand-strong); }
 .cell .g { font-size: 12px; }
@@ -280,14 +328,21 @@ function renderGrid() {
       '<span class="col-sub">' + esc(op) + "</span></th>" +
       data.platforms.map(function (p) {
         var r = rowFor(p, op);
-        var c = cellFor(r && r.support);
+        var c = cellFor(r && r.support, r && r.orbit);
         var on = picked && picked.platform === p.platform && picked.operation === op;
+        // The "not built" tag is inside the button and inside the aria-label,
+        // not a colour or a tooltip: a screen-reader user and a greyscale
+        // reader must both learn that this cell is a backlog item rather than
+        // a capability they can call today.
+        var lab = (p.display_name || p.platform) + " \\u2014 " + labelFor(op) + " \\u2014 " + c.word +
+          (c.notBuilt ? " \\u2014 not built in Orbit yet" : "");
         return "<td>" +
           '<button class="cell" data-cls="' + c.cls + '"' +
           ' data-platform="' + esc(p.platform) + '" data-operation="' + esc(op) + '"' +
           ' aria-pressed="' + (on ? "true" : "false") + '"' +
-          ' aria-label="' + esc((p.display_name || p.platform) + " \\u2014 " + labelFor(op) + " \\u2014 " + c.word) + '">' +
+          ' aria-label="' + esc(lab) + '">' +
           '<span class="g" aria-hidden="true">' + c.glyph + "</span>" + esc(c.word) +
+          (c.notBuilt ? '<span class="nb" aria-hidden="true">not built</span>' : "") +
           "</button></td>";
       }).join("") + "</tr>";
   }).join("");
@@ -301,8 +356,9 @@ function renderDetail() {
   // how each platform connects. A panel that says only "pick a cell" is a
   // permanently wasted third of the surface for anyone who never clicks.
   if (!picked) {
-    box.innerHTML = '<div class="detail-empty">Pick any cell to read the endpoint Orbit calls, ' +
-      "the documentation it was verified against, and \\u2014 where support is partial or absent \\u2014 " +
+    box.innerHTML = '<div class="detail-empty">Pick any cell to read two separate answers \\u2014 ' +
+      "what the provider's own API supports, and whether Orbit has built it \\u2014 plus the endpoint, " +
+      "the documentation it was verified against, and where either falls short, " +
       "the real constraint and the nearest thing that does work.</div>" +
       '<div class="plat">' + platformCards() + "</div>";
     return;
@@ -310,12 +366,29 @@ function renderDetail() {
   var p = data.platforms.filter(function (x) { return x.platform === picked.platform; })[0];
   var r = p ? rowFor(p, picked.operation) : null;
   if (!p || !r) { box.innerHTML = '<div class="detail-empty">That cell is no longer in the matrix.</div>'; return; }
-  var c = cellFor(r.support);
+  var c = cellFor(r.support, r.orbit);
   var parts = [
     '<div class="d-top"><span class="d-title">' + esc(p.display_name || p.platform) + " \\u00b7 " +
       esc(r.label || picked.operation) + "</span>" +
-      '<span class="o-pill o-pill--' + c.cls + '">' + c.glyph + " " + esc(c.word) + "</span></div>"
+      '<span class="o-pill o-pill--' + c.cls + '">' + c.glyph + " " + esc(c.word) + "</span>" +
+      (c.notBuilt ? '<span class="o-pill o-pill--pending">Not built in Orbit</span>' : "") +
+      "</div>"
   ];
+  // The two axes, named as two answers, before anything else. A reader who
+  // stops here must still leave with the right conclusion about the VENDOR.
+  parts.push('<span class="d-row"><b>' + esc(p.display_name || p.platform) +
+    "'s public API</b>" + esc(
+      r.support === "native" ? "Supports this — first-class public endpoint."
+        : r.support === "partial" ? "Supports this, with the named constraint below."
+        : r.support === "unsupported" ? "Has no path for this."
+        : "The matrix records no level."
+    ) + "</span>");
+  parts.push('<span class="d-row"><b>Orbit</b>' + esc(
+    c.notBuilt
+      ? "Has not built this yet, so the call is refused today. An Orbit backlog item \\u2014 not a limit of " +
+        (p.display_name || p.platform) + "."
+      : "Implements this \\u2014 the call runs."
+  ) + "</span>");
   if (r.endpoint) {
     parts.push('<span class="d-row"><b>Endpoint</b><code>' +
       (p.base_url ? esc(p.base_url) + " " : "") + esc(r.endpoint) + "</code></span>");
@@ -346,10 +419,12 @@ function platformCards() {
 function render() {
   var ops = operations();
   var totals = { native: 0, partial: 0, unsupported: 0, other: 0 };
+  var notBuilt = 0;
   data.platforms.forEach(function (p) {
     var t = tally(p.operations);
     totals.native += t.native; totals.partial += t.partial;
     totals.unsupported += t.unsupported; totals.other += t.other;
+    notBuilt += notBuiltCount(p.operations);
   });
   var cells = data.platforms.length * ops.length;
 
@@ -363,14 +438,20 @@ function render() {
     "<span>Cells <b>" + cells + "</b></span>",
     "<span>Native <b>" + totals.native + "</b></span>",
     "<span>Partial <b>" + totals.partial + "</b></span>",
-    "<span>Not possible <b>" + totals.unsupported + "</b></span>"
+    "<span>Not possible <b>" + totals.unsupported + "</b></span>",
+    "<span>Not built in Orbit <b>" + notBuilt + "</b></span>"
   ].join("");
 
+  // The legend has to teach the two axes, because the grid encodes two facts
+  // per cell. The first four entries read the provider's API; the fifth reads
+  // Orbit's build state, and its gloss says out loud that it is not a mark
+  // against the provider — that sentence is the entire correction.
   $("#legend").innerHTML = [
-    ["ok", "\\u2713", "Native", "a first-class public endpoint"],
-    ["active", "\\u25B3", "Partial", "works, with a named constraint"],
+    ["ok", "\\u2713", "Native", "the provider's API: a first-class public endpoint"],
+    ["active", "\\u25B3", "Partial", "the provider's API: works, with a named constraint"],
     ["warn", "\\u2715", "None", "the provider's public API has no door"],
-    ["pending", "\\u25CB", "Unknown", "the matrix records no level"]
+    ["pending", "\\u25CB", "Unknown", "the matrix records no level"],
+    ["pending", "\\u25C7", "Not built", "the API does this; Orbit hasn't built it yet \\u2014 an Orbit gap, not the provider's"]
   ].map(function (l) {
     return '<span class="o-pill o-pill--' + l[0] + '">' + l[1] + " " + l[2] +
       '<span class="why">\\u2014 ' + l[3] + "</span></span>";
@@ -388,8 +469,9 @@ function reportText() {
     lines.push(p.display_name || p.platform);
     ops.forEach(function (op) {
       var r = rowFor(p, op);
-      var c = cellFor(r && r.support);
+      var c = cellFor(r && r.support, r && r.orbit);
       lines.push("    " + (r && r.label ? r.label : op) + ": " + c.word +
+        (c.notBuilt ? " (provider supports it; NOT BUILT in Orbit yet)" : "") +
         (r && r.endpoint ? " \\u2014 " + r.endpoint : ""));
       if (r && r.reason) lines.push("        why: " + r.reason);
       if (r && r.nearest_alternative) lines.push("        instead: " + r.nearest_alternative);

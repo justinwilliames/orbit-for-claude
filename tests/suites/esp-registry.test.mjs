@@ -81,55 +81,123 @@ describe("ESP registry — resolvePlatform fallback chain", () => {
 });
 
 describe("ESP registry — central unsupported-shape manufacture", () => {
-  // Every "unsupported" cell in the matrix must produce the SAME honest shape,
-  // manufactured centrally (errors.js) from the matrix reason/nearest_alternative
-  // — never hand-written by an adapter (the adapter simply omits the method).
-  const UNSUPPORTED_CASES = [
-    ["customerio", "pushTemplate"], // no public template CRUD
-    ["klaviyo", "sendTest"], // no public test-send endpoint
-    ["sfmc", "listSegments"], // SOAP-first, no clean REST listing
-    ["sfmc", "getPerformance"], // send-level stats are SOAP-only in v1
+  // Every REFUSED cell must produce the SAME honest shape, manufactured
+  // centrally (errors.js) from the matrix reason/nearest_alternative — never
+  // hand-written by an adapter (the adapter simply omits the method).
+  //
+  // WHY THESE EXPECTED VALUES CHANGED (2026-08-24). This list used to assert
+  // support === "unsupported" for four cells, which hard-wired a claim about
+  // the VENDORS that was false for three of them: Customer.io's Design Studio
+  // publishes template CRUD, and SFMC publishes both a REST data-extension
+  // listing and REST journey stats. The matrix now carries two axes — `support`
+  // (what the platform's API does) and `orbit` (whether Orbit built it) — so
+  // those three are platform-supported cells with an ORBIT build gap. The
+  // invariant worth keeping is unchanged and still asserted below: the registry
+  // REFUSES what Orbit cannot do, cleanly and without a network call. What is
+  // new is that the refusal must now say WHICH kind of gap it is.
+
+  // The API genuinely has no door. Nothing Orbit could build would change it.
+  const PLATFORM_LIMIT_CASES = [
+    ["klaviyo", "sendTest"], // no public test-send endpoint, confirmed in the survey
   ];
 
-  for (const [platform, operation] of UNSUPPORTED_CASES) {
-    test(`${platform}.${operation} → central {unsupported} shape`, async () => {
-      // Sanity: the matrix really does mark this unsupported, so the test is
+  // The API supports it; Orbit has not built the adapter path. Backlog items.
+  const ORBIT_GAP_CASES = [
+    ["customerio", "listTemplates"], // GET /v1/design_studio/emails exists
+    ["customerio", "getTemplate"], // GET /v1/design_studio/emails/{id} exists
+    ["customerio", "pushTemplate"], // POST/PUT design_studio CRUD exists (partial: no publish)
+    ["sfmc", "listSegments"], // GET /data/v1/customobjects exists
+    ["sfmc", "getPerformance"], // GET /interaction/v1/interactions?extras=stats exists
+  ];
+
+  /** The shape every refusal shares, whichever axis refused it. */
+  async function assertCentralShape(platform, operation, expectedRefusal) {
+    const res = await dispatch(platform, operation, { config: {} });
+
+    assert.equal(res.unsupported, true, "must be flagged unsupported");
+    assert.equal(res.platform, platform);
+    assert.equal(res.operation, operation);
+    assert.equal(res.refusal, expectedRefusal, "wrong kind of refusal");
+    assert.equal(typeof res.reason, "string");
+    assert.ok(res.reason.length > 0, "reason must be a non-empty explanation");
+    // reason + nearest_alternative are copied from the matrix row verbatim.
+    assert.equal(res.reason, CAPABILITIES[platform][operation].reason);
+    assert.ok(
+      "nearest_alternative" in res,
+      "the honest response always carries a nearest_alternative field (may be null)"
+    );
+    assert.equal(
+      res.nearest_alternative,
+      CAPABILITIES[platform][operation].nearest_alternative
+    );
+    // No throw, no crash — a refused op is a structured answer.
+    return res;
+  }
+
+  for (const [platform, operation] of PLATFORM_LIMIT_CASES) {
+    test(`${platform}.${operation} → refused as a PLATFORM limit`, async () => {
+      // Sanity: the matrix really does say the API has no path, so the test is
       // asserting the gate — not a stale assumption.
       assert.equal(
         CAPABILITIES[platform][operation].support,
         "unsupported",
         `${platform}.${operation} must be an unsupported cell in the matrix`
       );
-
-      const res = await dispatch(platform, operation, { config: {} });
-
-      assert.equal(res.unsupported, true, "must be flagged unsupported");
-      assert.equal(res.platform, platform);
-      assert.equal(res.operation, operation);
-      assert.equal(typeof res.reason, "string");
-      assert.ok(res.reason.length > 0, "reason must be a non-empty explanation");
-      // reason + nearest_alternative are copied from the matrix row verbatim.
-      assert.equal(res.reason, CAPABILITIES[platform][operation].reason);
-      assert.ok(
-        "nearest_alternative" in res,
-        "the honest response always carries a nearest_alternative field (may be null)"
+      const res = await assertCentralShape(platform, operation, "platform_limit");
+      // The message must blame the platform, because the platform is at fault.
+      assert.match(res.message, /platform limitation/i);
+      assert.doesNotMatch(
+        res.message,
+        /Orbit has not built/i,
+        "a genuine platform limit must never be described as an Orbit backlog item"
       );
-      assert.equal(
-        res.nearest_alternative,
-        CAPABILITIES[platform][operation].nearest_alternative
-      );
-      // No throw, no crash — an unsupported op is a structured answer.
     });
   }
 
-  test("an omitted adapter method degrades to the same {unsupported} shape", async () => {
-    // customerio genuinely omits listTemplates AND the matrix marks it
-    // unsupported — either path (matrix gate OR missing method) yields the same
-    // central shape. Proven here by the honest response never reaching a throw.
+  for (const [platform, operation] of ORBIT_GAP_CASES) {
+    test(`${platform}.${operation} → refused as an ORBIT build gap`, async () => {
+      // The correction, asserted directly: the PLATFORM axis must NOT say
+      // "unsupported" for any of these. If someone re-flattens the matrix and
+      // marks one of them unsupported again, this fails — which is the whole
+      // point of writing it this way round.
+      const row = CAPABILITIES[platform][operation];
+      assert.notEqual(
+        row.support,
+        "unsupported",
+        `${platform}.${operation}: the vendor's API DOES support this — marking it ` +
+          `unsupported reports Orbit's backlog as a platform limitation`
+      );
+      assert.ok(
+        ["native", "partial"].includes(row.support),
+        `${platform}.${operation} must record a real platform support level`
+      );
+      assert.equal(row.orbit, "not_implemented", "the Orbit axis must name the gap");
+      assert.ok(row.endpoint, "a supported op must name the endpoint the vendor publishes");
+      assert.ok(row.doc_url, "no support claim without a doc URL");
+
+      const res = await assertCentralShape(platform, operation, "orbit_gap");
+      // The distinction that IS the deliverable.
+      assert.match(res.message, /Orbit has not built it yet/i);
+      assert.match(res.message, /not a .* limitation/i);
+    });
+  }
+
+  test("both refusal kinds are reachable, so the discriminator is not decorative", () => {
+    assert.ok(PLATFORM_LIMIT_CASES.length > 0, "no platform-limit case left to prove");
+    assert.ok(ORBIT_GAP_CASES.length > 0, "no orbit-gap case left to prove");
+  });
+
+  test("an Orbit-gap op is refused by the matrix, never attempted", async () => {
+    // customerio omits getTemplate on its adapter AND the matrix marks it an
+    // Orbit gap. Either path (matrix gate OR missing method) yields the same
+    // central shape; the matrix gate fires FIRST, which is what lets the
+    // response name the gap as Orbit's instead of falling through to a generic
+    // refusal. Proven here by the honest response never reaching a throw.
     const res = await dispatch("customerio", "getTemplate", { config: {} });
     assert.equal(res.unsupported, true);
     assert.equal(res.platform, "customerio");
     assert.equal(res.operation, "getTemplate");
+    assert.equal(res.refusal, "orbit_gap");
   });
 });
 

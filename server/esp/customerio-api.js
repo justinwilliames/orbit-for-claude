@@ -7,12 +7,23 @@
  * (Basic auth, site_id:api_key) is intentionally NOT used here — one credential,
  * one client.
  *
- * Capability note (honesty-critical): Customer.io exposes NO public CRUD for
- * reusable email templates or layouts — message content is authored in-app — so
- * this adapter deliberately OMITS listTemplates / getTemplate / pushTemplate.
- * The registry manufactures the {unsupported} response for those operations from
- * capabilities.js, so that shape lives in exactly one place. Do not add template
- * methods here.
+ * Capability note (honesty-critical, CORRECTED 2026-08-24): this adapter omits
+ * listTemplates / getTemplate / pushTemplate, and the reason is an ORBIT BUILD
+ * GAP — NOT a Customer.io limitation. The note that stood here previously said
+ * Customer.io "exposes NO public CRUD for reusable email templates", which is
+ * false: Design Studio publishes GET /v1/design_studio/emails, GET
+ * /v1/design_studio/emails/{id} and POST/PUT/DELETE on the same resource. The
+ * matrix now records support:"native"/"partial" with orbit:"not_implemented",
+ * and the registry manufactures the {unsupported, refusal:"orbit_gap"} response
+ * from capabilities.js so that shape lives in exactly one place.
+ *
+ * These three methods SHOULD be built — this is a backlog item, not a closed
+ * door. When they are, flip the `orbit` field on those matrix rows to
+ * "implemented" (or delete it, which means the same thing) in the same commit;
+ * a built method with a stale not_implemented row is refused before it runs.
+ * One real constraint survives on the write path and must be surfaced: the
+ * Design Studio API stores content but cannot PUBLISH it, so a 200 does not
+ * mean the template can send.
  *
  * What it can do: read campaigns + newsletters + segments, read per-campaign
  * and per-newsletter performance metrics, and send a transactional proof email
@@ -374,7 +385,8 @@ export const adapter = {
   listSegments,
   getPerformance,
   sendTest,
-  // NOTE: listTemplates / getTemplate / pushTemplate are omitted on purpose —
-  // Customer.io has no public template CRUD. The registry emits the
-  // {unsupported} response for those operations.
+  // NOTE: listTemplates / getTemplate / pushTemplate are omitted because ORBIT
+  // has not built them — Customer.io's Design Studio API does publish all
+  // three. The registry emits {unsupported, refusal:"orbit_gap"} meanwhile.
+  // See the capability note at the top of this file before "fixing" this.
 };

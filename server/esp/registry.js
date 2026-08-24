@@ -11,8 +11,9 @@
  * Design decisions honoured here:
  *   - The unsupported response is manufactured centrally (errors.js), driven by
  *     capabilities.js. Adapters simply OMIT methods they can't support; the
- *     registry turns both an "unsupported" matrix row AND a missing method into
- *     the same honest {unsupported, reason, nearest_alternative} shape.
+ *     registry turns a REFUSED matrix row — on EITHER axis, a platform limit or
+ *     an Orbit build gap — AND a missing method into one honest
+ *     {unsupported, refusal, message, reason, nearest_alternative} shape.
  *   - Sibling adapters are LAZY-REQUIRED via dynamic import, each wrapped in
  *     try/catch and cached. A missing or broken adapter degrades that ONE
  *     platform (its ops return a friendly needs_setup) instead of throwing at
@@ -25,7 +26,7 @@
  */
 
 import { EspApiError, unsupportedResponse } from "./errors.js";
-import { capabilityOf, PLATFORMS } from "./capabilities.js";
+import { refusalOf, PLATFORMS } from "./capabilities.js";
 
 /**
  * Lazy loaders, one per registered platform. Each returns the module's promise;
@@ -104,7 +105,9 @@ export function resolvePlatform(explicit, config) {
  *
  * Order of gates (all honest, none crash):
  *   1. Unknown platform -> EspApiError (caller should have resolvePlatform'd).
- *   2. Matrix says "unsupported" -> centrally-manufactured {unsupported}.
+ *   2. Matrix refuses on EITHER axis (support:"unsupported" -> platform_limit,
+ *      or orbit:"not_implemented" -> orbit_gap) -> centrally-manufactured
+ *      {unsupported} carrying which of the two it is.
  *   3. Adapter missing/broken -> friendly needs_setup for that platform only.
  *   4. Adapter omits the method -> centrally-manufactured {unsupported}.
  *   5. Adapter's validateSetup returns an object -> that needs_setup, returned.
@@ -123,8 +126,18 @@ export async function dispatch(platform, operation, args = {}) {
     });
   }
 
-  // Matrix gate first — an "unsupported" op never touches an adapter.
-  if (capabilityOf(platform, operation) === "unsupported") {
+  // Matrix gate first — a refused op never touches an adapter.
+  //
+  // BOTH axes gate here, and gating on `support` alone was a real bug: the
+  // matrix's support field is the PLATFORM's capability, so a cell reading
+  // support:"native", orbit:"not_implemented" (Customer.io listTemplates —
+  // Design Studio publishes it, Orbit hasn't built it) would sail past a
+  // support-only gate and reach an adapter that omits the method. That still
+  // lands on the omitted-method arm below, so it never crashed — but it
+  // reached it by accident, and the refusal it produced could not say which
+  // kind of gap it was. refusalOf() unions the axes and the response carries
+  // the discriminator.
+  if (refusalOf(platform, operation)) {
     return unsupportedResponse(platform, operation);
   }
 

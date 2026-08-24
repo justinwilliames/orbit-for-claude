@@ -262,8 +262,8 @@ describe("customerio is honestly unsupported, not an error", () => {
   });
 
   test("the unsupported answer beats the credential gates, on a keyless install too", async () => {
-    // Order matters: "Customer.io has no public template API" is the useful
-    // answer. Reporting a missing Stripo token first would send the user to
+    // Order matters: the capability answer is the useful one.
+    // Reporting a missing Stripo token first would send the user to
     // fix a credential that could never have made this push work.
     const calls = mockFetch(() => makeResponse(200, {}));
     const res = await exportStripoEmailsToEsp({ config: {}, emailIds: 1, platform: "customerio" });

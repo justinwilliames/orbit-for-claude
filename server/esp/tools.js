@@ -40,6 +40,8 @@ import {
   PLATFORM_META,
   OPERATIONS,
   OPERATION_LABELS,
+  orbitStatusOf,
+  refusalOf,
 } from "./capabilities.js";
 import { EspApiError } from "./errors.js";
 import { widgetMeta } from "../ui/register.js";
@@ -164,9 +166,15 @@ function flowAuditWidgetPayload(payload) {
 
 /**
  * Render one platform's capability matrix as an ordered, website-ready block:
- * its connection metadata plus every operation row in OPERATIONS order, each
- * carrying support level, endpoint, doc URL, and (for partial/unsupported) the
- * honest reason + nearest real alternative.
+ * its connection metadata plus every operation row in OPERATIONS order.
+ *
+ * BOTH AXES ARE EMITTED, always. `support` is what the PLATFORM's public API
+ * does — the only axis on which two ESPs can be fairly compared — and `orbit`
+ * is whether Orbit has built it. Emitting `support` alone is what let this tool
+ * report Orbit's backlog as vendor limitations; emitting `orbit` alone would
+ * make every ESP look identical. `available` is the derived convenience answer
+ * to "will this call work for me today" (both axes must clear), so a reader
+ * never has to AND the two fields together and get it wrong.
  */
 function capabilityBlock(platform) {
   const meta = PLATFORM_META[platform] ?? {};
@@ -179,10 +187,14 @@ function capabilityBlock(platform) {
     templating: meta.templating ?? null,
     operations: OPERATIONS.map((operation) => {
       const row = rows[operation] ?? {};
+      const refusal = refusalOf(platform, operation);
       return {
         operation,
         label: row.label ?? OPERATION_LABELS[operation] ?? operation,
         support: row.support ?? "unsupported",
+        orbit: orbitStatusOf(platform, operation) ?? "not_implemented",
+        available: refusal === null,
+        ...(refusal ? { refusal } : {}),
         endpoint: row.endpoint ?? null,
         doc_url: row.doc_url ?? null,
         ...(row.reason ? { reason: row.reason } : {}),
@@ -419,7 +431,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Capabilities",
       description:
-        "The honest what-works-where matrix for every supported ESP (Braze, Iterable, Customer.io, Klaviyo, Mailchimp, SFMC) — or one, if `platform` is given. Each operation row reports native / partial / unsupported, the endpoint, the doc URL, and for partial/unsupported the real constraint and the nearest alternative. Reads the capability matrix directly (no network, no credentials). Drawn in a widget as the whole grid at once, every cell carrying a glyph and a word rather than a colour. Notable honesty rows: Customer.io cannot push templates (send inline transactional proofs instead); Klaviyo has no test-send (render + QA-gate instead); Mailchimp get-template returns metadata only (no stored HTML); SFMC segments + performance are SOAP-gated and unsupported in v1.",
+        "The honest what-works-where matrix for every supported ESP (Braze, Iterable, Customer.io, Klaviyo, Mailchimp, SFMC) — or one, if `platform` is given. TWO AXES per row: `support` is what the provider's public API does (native/partial/unsupported — the comparison axis), `orbit` is whether Orbit built it (implemented/not_implemented), `available` is both. A row can read native + not_implemented: the API does this, Orbit hasn't built it — a backlog item, not a vendor limit. Each row carries the endpoint, doc URL, constraint and nearest alternative. No network, no credentials. Drawn as one grid, every cell a glyph and a word, not a colour. Honest rows: Klaviyo has no test-send (render + QA-gate instead); Mailchimp get-template returns metadata only (no stored HTML); Customer.io templates and SFMC segments/performance are ORBIT gaps, not platform limits.",
       inputSchema: {
         platform: platformArg,
       },
@@ -463,7 +475,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Templates (read)",
       description:
-        "Read email templates from the target ESP, normalized. action:\"list\" returns { items, truncated, next_cursor } (subject/preheader where the ESP gives them; html is null in lists); action:\"get\" returns one full template with html populated. `esp_raw` always carries the untranslated payload. Honest gaps surface as {unsupported}: Customer.io has no public template listing/read (content is authored in-app — use orbit_esp_read for newsletter/campaign metadata). Mailchimp get returns metadata only (html is null — its API does not return stored template HTML). This is the READ side only; writes go through orbit_esp_push_template.",
+        "Read email templates from the target ESP, normalized. action:\"list\" returns { items, truncated, next_cursor } (subject/preheader where the ESP gives them; html is null in lists); action:\"get\" returns one full template with html populated. `esp_raw` always carries the untranslated payload. Gaps surface as {unsupported} naming `refusal`: Customer.io list/get are an ORBIT build gap, not a platform limit — its Design Studio API does publish both (use orbit_esp_read meanwhile). Mailchimp get returns metadata only (html is null — its API does not return stored template HTML). This is the READ side only; writes go through orbit_esp_push_template.",
       inputSchema: {
         platform: platformArg,
         action: z
@@ -511,7 +523,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Push Template (write)",
       description:
-        "Create or update an email template on the target ESP. Pass template_id to update an existing template, omit it to create one; returns { id, action: \"created\"|\"updated\", url }. This is a WRITE path, kept separate from the read tools on purpose — approving a read must never silently approve a write. Klaviyo additionally renders server-side on push (the created template can be proofed via its render endpoint, since Klaviyo has no test-send). {unsupported} where the ESP has no public template CRUD: Customer.io (author in-app; send inline proofs via orbit_esp_send_test instead). Note for Mailchimp: pushes accept HTML normally, but reads return metadata only — keep your canonical HTML in your own repo / template brain.",
+        "Create or update an email template on the target ESP. Pass template_id to update an existing template, omit it to create one; returns { id, action: \"created\"|\"updated\", url }. This is a WRITE path, kept separate from the read tools on purpose — approving a read must never silently approve a write. Klaviyo additionally renders server-side on push (the created template can be proofed via its render endpoint, since Klaviyo has no test-send). Customer.io returns {unsupported} as an ORBIT build gap, not a platform limit — its Design Studio API does publish CRUD (send inline proofs via orbit_esp_send_test meanwhile). Note for Mailchimp: pushes accept HTML normally, but reads return metadata only — keep your canonical HTML in your own repo / template brain.",
       inputSchema: {
         platform: platformArg,
         name: z
@@ -561,7 +573,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Read (campaigns / segments / performance)",
       description:
-        "Read programs, audiences, and metrics from the target ESP, normalized with `esp_raw` attached. resource:\"campaigns\" lists campaigns/flows/journeys/newsletters (kind filters where supported); resource:\"segments\" lists segments/lists/audiences; resource:\"performance\" returns a NormalizedMetrics series for one campaign_id — stats an ESP cannot provide are null and named in `unavailable` (never zero-filled). Provider notes: Klaviyo performance REQUIRES a conversion_metric_id (pass it, or the tool returns an honest no-metric response explaining how to find it) and is hard-rate-limited (burst 1/s, 225 reports/day); Iterable performance is CSV-sourced and capped at 10 req/min; SFMC segments + performance are SOAP-gated and return {unsupported} in v1 (use resource:\"campaigns\" for journey reads).",
+        "Read programs, audiences, and metrics from the target ESP, normalized with `esp_raw` attached. resource:\"campaigns\" lists campaigns/flows/journeys/newsletters (kind filters where supported); resource:\"segments\" lists segments/lists/audiences; resource:\"performance\" returns a NormalizedMetrics series for one campaign_id — stats an ESP cannot provide are null and named in `unavailable` (never zero-filled). Provider notes: Klaviyo performance REQUIRES a conversion_metric_id (pass it, or the tool returns an honest no-metric response explaining how to find it) and is hard-rate-limited (burst 1/s, 225 reports/day); Iterable performance is CSV-sourced and capped at 10 req/min; SFMC segments + performance return {unsupported} in v1 as ORBIT gaps, not platform limits — REST paths exist, unbuilt (use resource:\"campaigns\" for journey reads).",
       inputSchema: {
         platform: platformArg,
         resource: z

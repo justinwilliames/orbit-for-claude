@@ -5254,12 +5254,14 @@ function registerTools() {
       //   • platform=braze delegates to the Braze path, which keeps
       //     dedupe-by-name and the provenance guard that refuses to
       //     overwrite a template Orbit did not create.
-      //   • Customer.io returns the central {unsupported} shape — no public
-      //     template API — never a faked success and never an error.
+      //   • Customer.io returns the central {unsupported} shape — refusal:
+      //     "orbit_gap", because its Design Studio API DOES publish template
+      //     CRUD and Orbit has not built the adapter path. Never a faked
+      //     success, never an error, and never blamed on Customer.io.
       //   • Returns ids/names/byte counts only, never raw HTML.
       description:
         "Turn finished STRIPO emails into email templates on your ESP — no GUI export. Stripo's separate stylesheet is merged in, so CTAs and padding render. " +
-        "Works on braze, iterable, klaviyo, mailchimp and sfmc; customerio returns {unsupported} (no public template API — author in-app). " +
+        "Works on braze, iterable, klaviyo, mailchimp and sfmc; customerio returns {unsupported} (an Orbit build gap, not a platform limit). " +
         "Braze updates the same-named template in place; elsewhere pass template_map (each run returns one) to update instead of creating a duplicate.",
       inputSchema: {
         email_ids: z

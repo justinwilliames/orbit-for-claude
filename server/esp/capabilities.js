@@ -20,11 +20,46 @@
  *      distinguishing "the ESP's public API doesn't offer this" from
  *      "Orbit hasn't built it yet".
  *
- * `support` is one of: "native" | "partial" | "unsupported".
+ * TWO AXES, NEVER ONE — the rule this file exists to enforce.
+ *
+ * Every cell answers two independent questions, and they are kept in two
+ * separate fields on purpose. They were ONE field until 2026-08-24, and the
+ * consequence was a matrix that reported Orbit's build backlog as vendor
+ * limitations: Customer.io's three template rows read "no public template API"
+ * while Design Studio publishes template read AND CRUD. Someone comparing ESPs
+ * through Orbit would have ruled out a platform for something it does. A single
+ * field cannot answer two questions without lying about one of them.
+ *
+ * `support` — WHAT THE PLATFORM'S PUBLIC API CAN DO. Doc-backed, vendor-neutral,
+ * and the ONLY axis fit for comparing one ESP against another. It says nothing
+ * whatever about Orbit, and must never be downgraded because Orbit is behind.
  *   native      — first-class public endpoint.
  *   partial     — achievable with a real, named constraint (CSV, rate cap, scope).
- *   unsupported — no public API path; the op returns {unsupported, reason,
- *                 nearest_alternative} manufactured by unsupportedResponse().
+ *   unsupported — no public API path at all.
+ *
+ * `orbit` — WHETHER ORBIT HAS BUILT AN ADAPTER PATH FOR IT.
+ *   "implemented"     — the adapter implements this operation.
+ *   "not_implemented" — the adapter does not, whatever the platform supports.
+ *
+ * THE DEFAULT IS STATED, NOT IMPLIED — an implicit default is exactly how the
+ * first ambiguity got in. A row that OMITS `orbit` means "implemented". Only
+ * the gaps are marked, so the field appears on a handful of rows rather than
+ * all 48; read every unmarked row as orbit: "implemented", and go through
+ * orbitStatusOf() rather than reading `row.orbit` directly so the default is
+ * applied in exactly one place.
+ *
+ * The legitimate — and, before the split, INEXPRESSIBLE — combination is
+ * `support: "native", orbit: "not_implemented"`: the API does this, Orbit has
+ * not built it. That is a backlog item, and it must never be reported as a
+ * vendor limitation.
+ *
+ * REFUSAL is the union of the two axes: an operation is refused when the
+ * platform cannot do it OR Orbit has not built it (refusalOf()). Both refusals
+ * return the same {unsupported, ...} shape — that field is the SHAPE's name and
+ * is kept for every caller that branches on `.unsupported` — but they carry
+ * different `refusal` discriminators and different `message` sentences, because
+ * "Customer.io cannot do this" and "Customer.io can, Orbit hasn't built it yet"
+ * are different facts about the world and only one of them is the vendor's.
  *
  * The operation KEYS below are the adapter method names (checkAuth, listTemplates,
  * …) so `capabilityOf(platform, operation)` keys off the exact string dispatch
@@ -113,7 +148,15 @@ export const PLATFORM_META = Object.freeze({
 
 /**
  * The capability matrix. `{ [platform]: { [operation]: row } }`.
- * Row shape: { support, label, endpoint, doc_url, reason?, nearest_alternative?, notes? }.
+ *
+ * Row shape:
+ *   { support, orbit?, label, endpoint, doc_url, reason?, nearest_alternative?, notes? }
+ *
+ * `orbit` is OMITTED on the implemented majority (see the header: omitted means
+ * "implemented") and present only where Orbit has a build gap. Every row that
+ * carries orbit: "not_implemented" must also carry a `reason` naming the gap as
+ * ORBIT's and a `nearest_alternative`, because a refusal with no way round it
+ * is where a user gives up.
  */
 export const CAPABILITIES = Object.freeze({
   // -------------------------------------------------------------------------
@@ -273,31 +316,45 @@ export const CAPABILITIES = Object.freeze({
         "No dedicated App-API ping. The cheapest canonical probe is GET /v1/workspaces — it returns the workspaces the key can see and so proves region + workspace scope in one call; GET /v1/campaigns?limit=1 is the fallback (verified 2026-08-24).",
     },
     listTemplates: {
-      support: "unsupported",
+      // Was support:"unsupported" with a reason blaming Customer.io for having
+      // "no public template listing". FALSE — Design Studio publishes one. The
+      // platform axis is native; the gap is Orbit's, and now says so.
+      support: "native",
+      orbit: "not_implemented",
       label: "list templates",
-      endpoint: null,
+      endpoint:
+        "GET /v1/design_studio/emails (params incl. is_template, parent_folder_id, updated_after)",
       doc_url: "https://docs.customer.io/api/app/#tag/design-studio",
       reason:
-        "Orbit's Customer.io adapter implements no template listing. This is an ORBIT gap, not a platform one: Customer.io's Design Studio publishes GET /v1/design_studio/emails (params incl. is_template, parent_folder_id, updated_after), plus GET /v1/design_studio/components and GET /v1/snippets (verified 2026-08-24) — the previously recorded claim that no public template listing exists is no longer true.",
+        "ORBIT BUILD GAP, not a Customer.io limitation. Customer.io's Design Studio publishes a full template listing — GET /v1/design_studio/emails, with an is_template filter that isolates genuine reusable templates, plus GET /v1/design_studio/components and GET /v1/snippets. Orbit's Customer.io adapter does not call any of them yet (verified 2026-08-24).",
       nearest_alternative:
         "List transactional messages + newsletters as the closest content inventory Orbit can read today.",
     },
     getTemplate: {
-      support: "unsupported",
+      // Was support:"unsupported" ("message content is authored in-app").
+      // FALSE — the read returns full content. Orbit simply doesn't call it.
+      support: "native",
+      orbit: "not_implemented",
       label: "get template",
-      endpoint: null,
+      endpoint:
+        "GET /v1/design_studio/emails/{id}, GET /v1/campaigns/{campaign_id}/actions/{action_id}",
       doc_url: "https://docs.customer.io/api/app/#tag/design-studio",
       reason:
-        "Orbit's Customer.io adapter implements no template read. This is an ORBIT gap, not a platform one: GET /v1/design_studio/emails/{id} returns content.subject, content.preheader_text, content.html, content.amp and content.text, and non-Design-Studio message bodies are readable via GET /v1/campaigns/{campaign_id}/actions/{action_id} (verified 2026-08-24).",
+        "ORBIT BUILD GAP, not a Customer.io limitation. GET /v1/design_studio/emails/{id} returns content.subject, content.preheader_text, content.html, content.amp and content.text, and non-Design-Studio message bodies are readable via GET /v1/campaigns/{campaign_id}/actions/{action_id}. Orbit's Customer.io adapter implements neither yet (verified 2026-08-24).",
       nearest_alternative: "Newsletter/campaign metadata reads.",
     },
     pushTemplate: {
-      support: "unsupported",
+      // Was support:"unsupported" ("no public template CRUD"). FALSE — CRUD
+      // exists. It is `partial`, not `native`, for a constraint Customer.io
+      // documents itself: the API stores content but cannot PUBLISH it.
+      support: "partial",
+      orbit: "not_implemented",
       label: "create/update template",
-      endpoint: null,
+      endpoint:
+        "POST /v1/design_studio/emails, PUT /v1/design_studio/emails/{id}, DELETE /v1/design_studio/emails/{id}",
       doc_url: "https://docs.customer.io/integrations/api/integrate-with-ds/",
       reason:
-        "Orbit's Customer.io adapter implements no template CRUD. Design Studio does expose POST/PUT/DELETE /v1/design_studio/emails, but with a named constraint Customer.io states itself: those endpoints only manage design studio content — via the API you cannot publish changes, cannot connect an email to a campaign/broadcast/transactional message, cannot manage global styles, and cannot touch content authored in the older drag-and-drop or rich-text editors; a human must publish in the workspace before sending (verified 2026-08-24).",
+        "ORBIT BUILD GAP on a platform capability that is real but constrained. Design Studio does expose POST/PUT/DELETE /v1/design_studio/emails — Orbit's adapter calls none of them. The platform's OWN documented constraint (why this is partial, not native): those endpoints only manage design studio content, so via the API you cannot PUBLISH changes, cannot connect an email to a campaign/broadcast/transactional message, cannot manage global styles, and cannot touch content authored in the older drag-and-drop or rich-text editors. A 200 means the content is stored, not live — a human must publish it in the workspace before it can send (verified 2026-08-24).",
       nearest_alternative:
         "Send via POST /v1/send/email with full inline body (to/from/subject/body supplied per-request).",
     },
@@ -533,24 +590,34 @@ export const CAPABILITIES = Object.freeze({
         "Journeys. The two reads need DIFFERENT documented scopes: the collection read is Automation | Journeys | Read, the single read (/interactions/{id}) is Automation | Interactions | Read. The collection supports extras=activities|outcome|stats|all, status, tag, nameOrDescription, mostRecentVersionOnly and $pageSize max 50. Note /hub/v1/campaigns is a DIFFERENT object — SFMC 'Campaigns' are a tagging layer over assets, not sends (verified 2026-08-24).",
     },
     listSegments: {
-      support: "unsupported",
+      // Was support:"unsupported" ("no clean REST listing"). OVERSTATED — data
+      // extensions, where most SFMC audiences actually live, list over plain
+      // REST. `partial` because the CLASSIC surfaces really are SOAP-only.
+      support: "partial",
+      orbit: "not_implemented",
       label: "segments/lists read",
-      endpoint: null,
+      endpoint:
+        "GET /data/v1/customobjects, /data/v1/customobjects/category/{categoryId}, /data/v1/customobjects/{id}",
       doc_url:
         "https://developer.salesforce.com/docs/marketing/marketing-cloud/references/mc-custom_objects?meta=getDataExtensions",
       reason:
-        "Orbit's SFMC adapter implements no audience listing, and the classic surfaces are genuinely SOAP-first: subscriber Lists, Groups and Filter/segment definitions are SOAP-only (List, ListSubscriber, FilterDefinition). But 'no clean REST listing' over-stated the gap: DATA EXTENSIONS — where the overwhelming majority of SFMC audiences actually live — are listable over REST via GET /data/v1/customobjects, with a by-folder variant and a single-DE read (verified 2026-08-24).",
+        "ORBIT BUILD GAP on a partially-supported platform capability. SFMC DOES publish a REST audience listing: GET /data/v1/customobjects returns data extensions — where the overwhelming majority of SFMC audiences are actually held — plus a by-folder variant and a single-DE read. Orbit's SFMC adapter calls none of them. The platform's genuine constraint (why partial, not native): classic Email Studio subscriber Lists, Groups and Filter/segment definitions are SOAP-only (List, ListSubscriber, FilterDefinition), and even the REST data-extension read returns the DE's SHAPE, never the query that populated it (verified 2026-08-24).",
       nearest_alternative:
         "Journey entry-source metadata via the interactions read; or the REST data-extension listing GET /data/v1/customobjects, which Orbit's adapter does not yet call. Classic lists/groups/filters need a SOAP client (out of v1 scope).",
     },
     getPerformance: {
-      support: "unsupported",
+      // Was support:"unsupported" ("no simple REST aggregate"). TOO BROAD —
+      // journey stats and transactional delivery metrics are plain REST.
+      // `partial` because send-level aggregates are genuinely SOAP-only.
+      support: "partial",
+      orbit: "not_implemented",
       label: "performance metrics",
-      endpoint: null,
+      endpoint:
+        "GET /interaction/v1/interactions?extras=stats, POST /interaction/v1/interactions/journeyhistory/download, GET /messaging/v1/email/definitions/{definitionKey}/queue",
       doc_url:
         "https://developer.salesforce.com/docs/marketing/marketing-cloud/references/mc_rest_interaction/getInteractionCollection.html",
       reason:
-        "Orbit's SFMC adapter reads no send statistics, and classic Email Studio send-level aggregates plus per-subscriber tracking events are SOAP-only (Retrieve on Send, SendSummary, TriggeredSendSummary, SentEvent/OpenEvent/ClickEvent/BounceEvent/UnsubEvent). 'No simple REST aggregate' was too broad, though: GET /interaction/v1/interactions?extras=stats returns journey-level statistics over plain REST, POST /interaction/v1/interactions/journeyhistory/download returns per-contact journey history as CSV/TSV (30-day retention, 1 GB cap), and the transactional queue/delivery-record endpoints report on messaging sends — none of which Orbit calls today (verified 2026-08-24).",
+        "ORBIT BUILD GAP on a partially-supported platform capability. SFMC DOES return performance over plain REST: GET /interaction/v1/interactions?extras=stats gives journey-level statistics, POST /interaction/v1/interactions/journeyhistory/download gives per-contact journey history as CSV/TSV, and the transactional queue/delivery-record endpoints report on messaging sends. Orbit's SFMC adapter reads none of them. The platform's genuine constraint (why partial, not native): classic Email Studio send-level aggregates and per-subscriber tracking events are SOAP-only (Retrieve on Send, SendSummary, TriggeredSendSummary, SentEvent/OpenEvent/ClickEvent/BounceEvent/UnsubEvent), and journey history is capped at 30 days' retention and 1 GB per download (verified 2026-08-24).",
       nearest_alternative:
         "Journey read with extras=stats, plus SFMC's in-app reports; full send-level aggregates need a SOAP client (revisit in v2).",
     },
@@ -573,11 +640,51 @@ export const CAPABILITIES = Object.freeze({
 export const PLATFORMS = Object.freeze(Object.keys(CAPABILITIES));
 
 /**
- * Support level for one (platform, operation) pair, or undefined if the
- * operation is not in the matrix. Returns "native" | "partial" | "unsupported".
+ * PLATFORM-AXIS support level for one (platform, operation) pair, or undefined
+ * if the operation is not in the matrix. "native" | "partial" | "unsupported".
+ *
+ * This answers "can the VENDOR'S API do this" and nothing else. It is NOT the
+ * question "will this call work through Orbit" — for that, use refusalOf(),
+ * which unions both axes. Gating dispatch on this alone is the bug the two-axis
+ * split exists to prevent.
  */
 export function capabilityOf(platform, operation) {
   return CAPABILITIES[platform]?.[operation]?.support;
+}
+
+/**
+ * ORBIT-AXIS build status for one (platform, operation) pair, or undefined if
+ * the operation is not in the matrix. "implemented" | "not_implemented".
+ *
+ * The single place the documented default is applied: a row that omits `orbit`
+ * is implemented. Read the field through here, never directly, so the default
+ * can never be applied two different ways in two different consumers.
+ */
+export function orbitStatusOf(platform, operation) {
+  const row = CAPABILITIES[platform]?.[operation];
+  if (!row) return undefined;
+  return row.orbit ?? "implemented";
+}
+
+/**
+ * Why an operation is refused, or null when it is available.
+ *
+ *   "platform_limit" — the ESP's public API has no path for it. Nothing Orbit
+ *                      could build would change this.
+ *   "orbit_gap"      — the API supports it (native or partial); Orbit has not
+ *                      built the adapter path. A backlog item, not a verdict
+ *                      on the vendor.
+ *   null             — supported by the platform AND implemented by Orbit.
+ *
+ * Precedence is deliberate: a platform limit outranks a build gap, because
+ * "they can't" is the more fundamental fact and building would not help.
+ */
+export function refusalOf(platform, operation) {
+  const row = CAPABILITIES[platform]?.[operation];
+  if (!row) return null;
+  if (row.support === "unsupported") return "platform_limit";
+  if (orbitStatusOf(platform, operation) === "not_implemented") return "orbit_gap";
+  return null;
 }
 
 /**

@@ -18,11 +18,13 @@
  *
  * ── Honest limits, by destination ───────────────────────────────────────
  *
- *   • Customer.io has no public template API at all (templates are authored
- *     in-app). The capability matrix marks pushTemplate unsupported, and this
- *     returns the SAME central {unsupported, reason, nearest_alternative}
- *     shape the rest of the ESP family returns — never a faked success and
- *     never an error, because nothing failed.
+ *   • Customer.io pushes are refused — but as an ORBIT BUILD GAP, not a
+ *     Customer.io limitation. Its Design Studio API publishes template CRUD
+ *     (POST/PUT /v1/design_studio/emails); Orbit's adapter does not call it
+ *     yet. The matrix records support:"partial", orbit:"not_implemented", and
+ *     this returns the SAME central {unsupported, refusal, message, reason,
+ *     nearest_alternative} shape the rest of the ESP family returns — never a
+ *     faked success and never an error, because nothing failed.
  *   • Braze is delegated to exportStripoEmailsToBraze(), which carries two
  *     Braze-only safety behaviours the generic path cannot: dedupe-by-name
  *     (a re-export UPDATES the same-named template rather than stacking
@@ -45,7 +47,7 @@ import {
 } from "./stripo-export-shared.js";
 import { exportStripoEmailsToBraze } from "./stripo-export-braze.js";
 import { resolvePlatform, dispatch, checkSetup } from "./esp/registry.js";
-import { capabilityOf } from "./esp/capabilities.js";
+import { refusalOf } from "./esp/capabilities.js";
 import { unsupportedResponse } from "./esp/errors.js";
 
 /**
@@ -245,13 +247,22 @@ export async function exportStripoEmailsToEsp({
     return { platform: "braze", ...result };
   }
 
-  // Capability gate FIRST — before the credential gates. An ESP with no public
-  // template API can never take this push, so "Customer.io has no template
-  // API" is the useful answer; "set your Stripo token" would send the user to
-  // fix a credential that would not have helped. It is a pure matrix lookup:
-  // no network, no Stripo quota, and the central {unsupported} shape, not an
-  // error — nothing failed, the endpoint does not exist.
-  if (capabilityOf(target, "pushTemplate") === "unsupported") {
+  // Capability gate FIRST — before the credential gates. A destination that
+  // cannot take this push today can never take it, so the capability answer is
+  // the useful one; "set your Stripo token" would send the user to fix a
+  // credential that would not have helped. It is a pure matrix lookup: no
+  // network, no Stripo quota, and the central {unsupported} shape, not an
+  // error — nothing failed.
+  //
+  // BOTH AXES gate here, and gating on `support` alone was a live bug: this
+  // was a SECOND copy of the registry's gate, and when Customer.io's rows were
+  // corrected from support:"unsupported" to support:"partial" +
+  // orbit:"not_implemented" (its Design Studio API does publish CRUD; Orbit
+  // has not built it), this test stopped firing while the registry's kept
+  // working. The export then spent Stripo reads on a push that could not land.
+  // refusalOf() is the ONE predicate for "will this operation run" — never
+  // re-derive it from a single field.
+  if (refusalOf(target, "pushTemplate")) {
     return {
       status: "unsupported",
       ...unsupportedResponse(target, "pushTemplate"),

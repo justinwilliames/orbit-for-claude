@@ -671,6 +671,15 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
       for (const op of p.operations) {
         assert.ok(["native", "partial", "unsupported"].includes(op.support),
           `${p.platform}/${op.operation} has support "${op.support}" — the grid would draw it as unknown`);
+        // The SECOND axis, added 2026-08-24. `support` describes the provider's
+        // API and nothing else; `orbit` describes whether Orbit built it. A
+        // payload carrying only the first is what let this widget draw
+        // Customer.io's template rows as "None" when the vendor's API supports
+        // them perfectly well.
+        assert.ok(["implemented", "not_implemented"].includes(op.orbit),
+          `${p.platform}/${op.operation} has orbit "${op.orbit}" — the grid cannot say whether Orbit built it`);
+        assert.equal(typeof op.available, "boolean",
+          `${p.platform}/${op.operation} does not say whether the call works today`);
         assert.ok(op.label, `${p.platform}/${op.operation} has no label`);
         // Every non-native cell must explain itself somehow. The matrix
         // records the explanation under `reason` for unsupported rows and
@@ -681,10 +690,26 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
           assert.ok(op.reason || op.notes,
             `${p.platform}/${op.operation} is ${op.support} and names no constraint at all`);
         }
+        // A refusal on EITHER axis must offer a way round it. Previously this
+        // only covered support === "unsupported"; an Orbit build gap strands
+        // the reader exactly as hard, so it is held to the same bar.
         if (op.support === "unsupported") {
           assert.ok(op.nearest_alternative,
             `${p.platform}/${op.operation} is unsupported and offers no way round it`);
         }
+        if (op.orbit === "not_implemented") {
+          assert.ok(op.reason,
+            `${p.platform}/${op.operation} is an Orbit gap and never says so`);
+          assert.ok(op.nearest_alternative,
+            `${p.platform}/${op.operation} is an Orbit gap and offers no way round it`);
+          assert.equal(op.available, false,
+            `${p.platform}/${op.operation} is not built but reports itself available`);
+        }
+        // The conflation guard, stated as an invariant rather than a case
+        // list: a cell whose vendor API supports the op must never be
+        // reported as available purely because Orbit built something.
+        assert.equal(op.available, op.support !== "unsupported" && op.orbit === "implemented",
+          `${p.platform}/${op.operation}: available must be the AND of both axes`);
       }
     }
   });
@@ -695,9 +720,22 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     assert.equal(structured.platforms.length, 1);
     assert.equal(structured.platforms[0].platform, "customerio");
     // The honesty row this widget exists to make unmissable.
+    //
+    // THIS EXPECTED VALUE CHANGED (2026-08-24) and the change IS the fix. It
+    // used to assert support === "unsupported", i.e. "Customer.io's API cannot
+    // create or update a template" — which is false. Design Studio publishes
+    // POST/PUT/DELETE /v1/design_studio/emails. It is "partial" because of a
+    // constraint Customer.io documents itself (the API stores content but
+    // cannot PUBLISH it), and it is refused today because ORBIT has not built
+    // the adapter path. Asserting the old value would re-freeze a claim that
+    // libels the vendor, so the assertion is inverted rather than dropped —
+    // the row is still pinned, just to the truth.
     const push = structured.platforms[0].operations.find((o) => o.operation === "pushTemplate");
-    assert.equal(push.support, "unsupported");
-    assert.ok(push.nearest_alternative, "an unsupported cell offered no way round it");
+    assert.equal(push.support, "partial", "Customer.io's API does publish template CRUD");
+    assert.equal(push.orbit, "not_implemented", "…and Orbit has not built it yet");
+    assert.equal(push.available, false, "so the call still does not work today");
+    assert.equal(push.refusal, "orbit_gap", "and the refusal must name whose gap it is");
+    assert.ok(push.nearest_alternative, "a refused cell offered no way round it");
   });
 });
 
@@ -1906,8 +1944,8 @@ describe("Dark pairs — the flip is arithmetic, and it is rarely a rescue", () 
 });
 
 describe("ESP matrix — a cell never renders as an empty space", () => {
-  const { cellFor, tally } = new Function(
-    `${ESP_CELL_JS}\nreturn { cellFor, tally };`
+  const { cellFor, tally, notBuiltCount } = new Function(
+    `${ESP_CELL_JS}\nreturn { cellFor, tally, notBuiltCount };`
   )();
 
   test("every support level carries a glyph AND a word", () => {
@@ -1918,6 +1956,40 @@ describe("ESP matrix — a cell never renders as an empty space", () => {
     assert.equal(cellFor("native").word, "Native");
     assert.equal(cellFor("partial").word, "Partial");
     assert.equal(cellFor("unsupported").word, "None");
+  });
+
+  test("an Orbit build gap is flagged WITHOUT downgrading the provider's word", () => {
+    // The rule the two-axis split exists to enforce, executed as shipped
+    // source. If a future edit makes cellFor return "None" when Orbit hasn't
+    // built something, the grid goes back to telling the reader that a vendor
+    // cannot do a thing the vendor documents — this test fails first.
+    for (const s of ["native", "partial"]) {
+      const built = cellFor(s, "implemented");
+      const gap = cellFor(s, "not_implemented");
+      assert.equal(gap.word, built.word, `${s} was downgraded because Orbit is behind`);
+      assert.equal(gap.glyph, built.glyph, `${s} changed glyph because Orbit is behind`);
+      assert.equal(gap.cls, built.cls, `${s} changed colour because Orbit is behind`);
+      assert.equal(gap.notBuilt, true, `${s} + Orbit gap did not raise the notBuilt flag`);
+      assert.equal(built.notBuilt, false, `${s} + implemented wrongly claims a gap`);
+    }
+    // Omitting the axis means "implemented" — the matrix's documented default,
+    // applied the same way here as in capabilities.orbitStatusOf().
+    assert.equal(cellFor("native").notBuilt, false);
+  });
+
+  test("the Orbit axis is counted separately from the provider axis", () => {
+    const ops = [
+      { support: "native", orbit: "implemented" },
+      { support: "native", orbit: "not_implemented" },
+      { support: "partial", orbit: "not_implemented" },
+      { support: "unsupported" },
+    ];
+    assert.equal(notBuiltCount(ops), 2);
+    assert.equal(notBuiltCount([]), 0);
+    assert.equal(notBuiltCount(undefined), 0);
+    // And the provider tally is untouched by it: three supported cells stay
+    // counted as what the VENDOR offers, however far behind Orbit is.
+    assert.deepEqual(tally(ops), { native: 2, partial: 1, unsupported: 1, other: 0 });
   });
 
   test("an unrecognised level renders as an explicit unknown, not as a blank cell", () => {
