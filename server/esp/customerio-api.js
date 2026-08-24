@@ -7,25 +7,27 @@
  * (Basic auth, site_id:api_key) is intentionally NOT used here — one credential,
  * one client.
  *
- * Capability note (honesty-critical, CORRECTED 2026-08-24): this adapter omits
- * listTemplates / getTemplate / pushTemplate, and the reason is an ORBIT BUILD
- * GAP — NOT a Customer.io limitation. The note that stood here previously said
- * Customer.io "exposes NO public CRUD for reusable email templates", which is
- * false: Design Studio publishes GET /v1/design_studio/emails, GET
- * /v1/design_studio/emails/{id} and POST/PUT/DELETE on the same resource. The
- * matrix now records support:"native"/"partial" with orbit:"not_implemented",
- * and the registry manufactures the {unsupported, refusal:"orbit_gap"} response
- * from capabilities.js so that shape lives in exactly one place.
+ * Capability note (honesty-critical, CLOSED 2026-08-24): the template trio —
+ * listTemplates / getTemplate / pushTemplate — is now BUILT against Customer.io's
+ * Design Studio endpoints. It was absent for a year behind a note claiming
+ * Customer.io "exposes NO public CRUD for reusable email templates", which was
+ * false: GET /v1/design_studio/emails, GET /v1/design_studio/emails/{id} and
+ * POST/PUT/DELETE on the same resource have shipped all along. That was an ORBIT
+ * BUILD GAP wearing a vendor limitation's clothes; the matrix rows lost their
+ * orbit:"not_implemented" marker in the same commit as these methods, because a
+ * built method with a stale not_implemented row is refused by the registry
+ * before it ever runs.
  *
- * These three methods SHOULD be built — this is a backlog item, not a closed
- * door. When they are, flip the `orbit` field on those matrix rows to
- * "implemented" (or delete it, which means the same thing) in the same commit;
- * a built method with a stale not_implemented row is refused before it runs.
- * One real constraint survives on the write path and must be surfaced: the
- * Design Studio API stores content but cannot PUBLISH it, so a 200 does not
- * mean the template can send.
+ * ONE real constraint survives, and it is the vendor's own: the Design Studio
+ * API stores content but CANNOT PUBLISH it. A 200 (create) or 204 (update) means
+ * the HTML is saved, not that it can send — a human must open the email in the
+ * Customer.io workspace and publish it. That is why pushTemplate stays
+ * support:"partial" and why every push return carries `published:false` and the
+ * PUBLISH_CAVEAT sentence. A silent success that never reaches a recipient is
+ * the worst failure mode this adapter has, so it is stated on every write rather
+ * than documented somewhere the caller will not look.
  *
- * What it can do: read campaigns + newsletters + segments, read per-campaign
+ * What else it can do: read campaigns + newsletters + segments, read per-campaign
  * and per-newsletter performance metrics, and send a transactional proof email
  * with an inline body (or a pre-authored transactional message id). Mirrors the
  * hardening in ../braze-api.js: promise-chain rate limiter, fetchWithRetry +
@@ -35,6 +37,11 @@
  * Endpoints verified 2026-07-21 against the Customer.io App API docs
  * (https://docs.customer.io/integrations/api/app/ and
  * https://docs.customer.io/journeys/send/transactional/api-examples/).
+ * The Design Studio trio was verified 2026-08-24 against the live App API
+ * OpenAPI 3.1.0 spec (https://docs.customer.io/files/journeys-app.json), which
+ * is the evidence behind docs/api-surveys/customerio.md — request params,
+ * response envelopes and the 200-vs-204 split below are read from it, not
+ * inferred.
  */
 
 import { safeParseJson } from "../utils.js";
@@ -44,6 +51,23 @@ import { EspApiError } from "./errors.js";
 const PLATFORM = "customerio";
 const CUSTOMERIO_BREAKER = getBreaker(PLATFORM);
 const CUSTOMERIO_API_TIMEOUT_MS = 20_000;
+
+/**
+ * The one sentence every Customer.io template write must carry. Customer.io's
+ * own integration guide is explicit that the Design Studio endpoints "only
+ * manage design studio content" — you cannot publish through them, and you
+ * cannot link an email to a campaign, broadcast or transactional message.
+ * Stored is not live. Surfaced on the pushTemplate return (never only logged)
+ * because the failure it prevents is silent: a template that lands, reports
+ * success, and never reaches a single recipient.
+ */
+const PUBLISH_CAVEAT =
+  "Stored, not published. Customer.io's Design Studio API cannot publish: this " +
+  "content is saved but will NOT send until someone opens the email in the " +
+  "Customer.io workspace and publishes it. The API also cannot link an email to " +
+  "a campaign, broadcast or transactional message, cannot manage global styles, " +
+  "and cannot touch content authored in the older drag-and-drop or rich-text " +
+  "editors. See https://docs.customer.io/integrations/api/integrate-with-ds/";
 
 // Promise-chain rate limiter — same serialised pattern as braze-api.js so two
 // concurrent awaiters cannot both read a stale timestamp and bypass the gap.
@@ -166,6 +190,36 @@ async function cioRequest({ config, method = "GET", endpoint, params = {}, body 
 // untranslated payload so nothing is lost.
 // ---------------------------------------------------------------------------
 
+/**
+ * Map one Design Studio email onto the shared NormalizedTemplate shape.
+ *
+ * The LIST rows and the GET row are different objects and this handles both:
+ * a list row carries id/name/is_template/is_linked/created/updated and NO
+ * content at all, so subject, preheader and html come back null there — that is
+ * the contract ("html is null in lists"), not a miss. GET adds `content`
+ * (subject, preheader_text, html, amp, text) plus envelope + transformers,
+ * which ride untranslated in esp_raw.
+ *
+ * `url` is null on purpose. A Design Studio deep link needs the workspace id,
+ * which no App API response returns; fabricating one would hand the reader a
+ * link that 404s. Same call Klaviyo's adapter makes.
+ */
+function normalizeTemplate(email) {
+  const content =
+    email?.content && typeof email.content === "object" ? email.content : {};
+  return {
+    platform: PLATFORM,
+    id: email?.id != null ? String(email.id) : null,
+    name: email?.name ?? null,
+    subject: content.subject ?? null,
+    preheader: content.preheader_text ?? null,
+    html: content.html ?? null,
+    updated_at: toIso(email?.updated) ?? toIso(email?.created),
+    url: null,
+    esp_raw: email ?? null,
+  };
+}
+
 function normalizeCampaign(c, kind) {
   return {
     platform: PLATFORM,
@@ -231,8 +285,8 @@ function normalizeMetrics({ raw, campaign_id, window }) {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter contract (server/esp — §2.1). listTemplates / getTemplate /
-// pushTemplate are intentionally absent — see the module docblock.
+// Adapter contract (server/esp — §2.1). All eight operations are implemented;
+// pushTemplate is the only one carrying a vendor constraint (no publish).
 // ---------------------------------------------------------------------------
 
 /** Sync. null = configured; otherwise a friendly needs_setup object. */
@@ -261,6 +315,154 @@ async function checkAuth({ config }) {
     }
     throw err;
   }
+}
+
+/**
+ * Design Studio email library (GET /v1/design_studio/emails).
+ *
+ * `is_template=true` is sent deliberately and is the whole difference between
+ * "list templates" and "list every email in the workspace". Design Studio holds
+ * both reusable templates and one-off message content in the same resource, and
+ * only this flag separates them — returning the second lot as templates would be
+ * the same class of dishonesty the capability matrix exists to stop. The applied
+ * filter is echoed on the response so an empty list reads as "nothing is marked
+ * as a template" rather than "the integration is broken".
+ *
+ * Pagination is page/limit (limit: 1–10000, server default 1000), and
+ * `meta.pagination` returns page + limit + total, so truncation is MEASURED
+ * rather than guessed from a full-looking page. `cursor` is the next page
+ * number as a string.
+ */
+async function listTemplates({ config, limit, cursor } = {}) {
+  const page = Math.max(1, Number.parseInt(cursor, 10) || 1);
+  const params = { page, is_template: "true" };
+  if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
+    params.limit = Math.min(Math.trunc(limit), 10_000);
+  }
+
+  const data = await cioRequest({
+    config,
+    endpoint: "/v1/design_studio/emails",
+    params,
+  });
+
+  const items = (Array.isArray(data?.emails) ? data.emails : []).map(normalizeTemplate);
+
+  // Truncation from meta.pagination only. With no meta we cannot see whether
+  // more pages exist, and claiming either answer would be a guess — so the
+  // honest report is "no more that we know of", never a fabricated cursor.
+  const pagination = data?.meta?.pagination ?? {};
+  const currentPage = Number(pagination.page) || page;
+  const perPage = Number(pagination.limit) || items.length;
+  const total = typeof pagination.total === "number" ? pagination.total : null;
+  const hasMore = total != null && perPage > 0 && currentPage * perPage < total;
+
+  return {
+    items,
+    truncated: hasMore,
+    next_cursor: hasMore ? String(currentPage + 1) : null,
+    // Named so the caller can tell an empty library from an empty filter.
+    filter: { is_template: "true" },
+  };
+}
+
+/**
+ * One Design Studio email, with content (GET /v1/design_studio/emails/{id}).
+ *
+ * Scope worth stating: this reads DESIGN STUDIO content only. Message bodies
+ * authored in Customer.io's older drag-and-drop / rich-text editors live at
+ * GET /v1/campaigns/{campaign_id}/actions/{action_id} — a two-part id this
+ * operation's single template_id cannot express — and the two endpoints
+ * explicitly refuse each other's content. Orbit does not read the legacy path
+ * yet; a legacy message id here returns not_found, which is the truth.
+ */
+async function getTemplate({ config, template_id } = {}) {
+  if (!template_id) {
+    throw new EspApiError({
+      code: "esp_error",
+      platform: PLATFORM,
+      detail: "getTemplate requires a template_id (a Customer.io Design Studio email id).",
+    });
+  }
+
+  const endpoint = `/v1/design_studio/emails/${encodeURIComponent(template_id)}`;
+  const data = await cioRequest({ config, endpoint });
+
+  // A 404 is already mapped to not_found upstream; this catches a 200 whose
+  // envelope is empty, so a missing template never returns a hollow template.
+  if (!data?.email) {
+    throw new EspApiError({
+      code: "not_found",
+      platform: PLATFORM,
+      endpoint,
+      detail: `No Customer.io Design Studio email found for id "${template_id}".`,
+    });
+  }
+  return normalizeTemplate(data.email);
+}
+
+/**
+ * Create (POST /v1/design_studio/emails, 200 + the new email) or update
+ * (PUT /v1/design_studio/emails/{id}, 204 and NO body) a Design Studio email.
+ *
+ * The 204 is why an update echoes the requested id rather than reading one back:
+ * Customer.io returns nothing to read. Neither verb publishes — see
+ * PUBLISH_CAVEAT, which rides on every return of this method.
+ */
+async function pushTemplate({ config, name, html, subject, preheader, template_id } = {}) {
+  // Customer.io stores subject and preheader ON the email, so unlike Klaviyo and
+  // Mailchimp both are really written here rather than accepted and dropped.
+  const content = {};
+  if (html != null) content.html = html;
+  if (subject != null) content.subject = subject;
+  if (preheader != null) content.preheader_text = preheader;
+
+  if (template_id) {
+    const body = {};
+    if (name != null) body.name = name;
+    if (Object.keys(content).length > 0) body.content = content;
+
+    await cioRequest({
+      config,
+      method: "PUT",
+      endpoint: `/v1/design_studio/emails/${encodeURIComponent(template_id)}`,
+      body,
+    });
+
+    return {
+      id: String(template_id),
+      action: "updated",
+      url: null,
+      published: false,
+      warning: PUBLISH_CAVEAT,
+    };
+  }
+
+  if (!name || html == null) {
+    throw new EspApiError({
+      code: "esp_error",
+      platform: PLATFORM,
+      detail: "Creating a Customer.io Design Studio email requires both name and html.",
+    });
+  }
+
+  const raw = await cioRequest({
+    config,
+    method: "POST",
+    endpoint: "/v1/design_studio/emails",
+    // is_template:true because this operation IS the template push — an email
+    // created here must land in the library the matching listTemplates reads,
+    // not as untagged one-off content that list would then filter out.
+    body: { name, is_template: true, content },
+  });
+
+  return {
+    id: raw?.email?.id != null ? String(raw.email.id) : null,
+    action: "created",
+    url: null,
+    published: false,
+    warning: PUBLISH_CAVEAT,
+  };
 }
 
 async function listCampaigns({ config, kind = "all", limit, cursor } = {}) {
@@ -381,12 +583,11 @@ export const adapter = {
 
   validateSetup,
   checkAuth,
+  listTemplates,
+  getTemplate,
+  pushTemplate,
   listCampaigns,
   listSegments,
   getPerformance,
   sendTest,
-  // NOTE: listTemplates / getTemplate / pushTemplate are omitted because ORBIT
-  // has not built them — Customer.io's Design Studio API does publish all
-  // three. The registry emits {unsupported, refusal:"orbit_gap"} meanwhile.
-  // See the capability note at the top of this file before "fixing" this.
 };

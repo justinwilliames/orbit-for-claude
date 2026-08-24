@@ -34,7 +34,9 @@ const { dispatch, resolvePlatform, REGISTERED_PLATFORMS } = await import(
   espUrl("registry.js")
 );
 const { EspApiError } = await import(espUrl("errors.js"));
-const { CAPABILITIES } = await import(espUrl("capabilities.js"));
+const { CAPABILITIES, orbitStatusOf, refusalOf } = await import(
+  espUrl("capabilities.js")
+);
 
 describe("ESP registry — resolvePlatform fallback chain", () => {
   test("explicit platform wins", () => {
@@ -102,12 +104,26 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
   ];
 
   // The API supports it; Orbit has not built the adapter path. Backlog items.
+  //
+  // THE CUSTOMER.IO TEMPLATE TRIO LEFT THIS LIST (2026-08-24) — by being built,
+  // not by being re-labelled. listTemplates/getTemplate/pushTemplate now call
+  // the Design Studio endpoints, the matrix rows dropped their
+  // orbit:"not_implemented" in the same commit, and the closed-gap assertions
+  // below pin that pair together: a method without the flip is refused before
+  // it runs, a flip without the method is a lie the registry would let through.
   const ORBIT_GAP_CASES = [
-    ["customerio", "listTemplates"], // GET /v1/design_studio/emails exists
-    ["customerio", "getTemplate"], // GET /v1/design_studio/emails/{id} exists
-    ["customerio", "pushTemplate"], // POST/PUT design_studio CRUD exists (partial: no publish)
     ["sfmc", "listSegments"], // GET /data/v1/customobjects exists
     ["sfmc", "getPerformance"], // GET /interaction/v1/interactions?extras=stats exists
+  ];
+
+  // Gaps that were closed. Asserted as hard as the open ones, because a closed
+  // gap silently re-opening (a method deleted, or a row re-marked) is exactly
+  // the drift the two-axis matrix was built to catch.
+  const CLOSED_GAP_CASES = [
+    ["customerio", "listTemplates", "native"],
+    ["customerio", "getTemplate", "native"],
+    // partial, and it must STAY partial: Customer.io's API cannot publish.
+    ["customerio", "pushTemplate", "partial"],
   ];
 
   /** The shape every refusal shares, whichever axis refused it. */
@@ -188,17 +204,56 @@ describe("ESP registry — central unsupported-shape manufacture", () => {
   });
 
   test("an Orbit-gap op is refused by the matrix, never attempted", async () => {
-    // customerio omits getTemplate on its adapter AND the matrix marks it an
-    // Orbit gap. Either path (matrix gate OR missing method) yields the same
-    // central shape; the matrix gate fires FIRST, which is what lets the
-    // response name the gap as Orbit's instead of falling through to a generic
-    // refusal. Proven here by the honest response never reaching a throw.
-    const res = await dispatch("customerio", "getTemplate", { config: {} });
+    // sfmc omits listSegments on its adapter AND the matrix marks it an Orbit
+    // gap. Either path (matrix gate OR missing method) yields the same central
+    // shape; the matrix gate fires FIRST, which is what lets the response name
+    // the gap as Orbit's instead of falling through to a generic refusal.
+    // Proven here by the honest response never reaching a throw.
+    //
+    // This case used to be customerio.getTemplate. It was moved when that gap
+    // was CLOSED rather than deleted, because the invariant is about the gate,
+    // not about Customer.io.
+    const res = await dispatch("sfmc", "listSegments", { config: {} });
     assert.equal(res.unsupported, true);
-    assert.equal(res.platform, "customerio");
-    assert.equal(res.operation, "getTemplate");
+    assert.equal(res.platform, "sfmc");
+    assert.equal(res.operation, "listSegments");
     assert.equal(res.refusal, "orbit_gap");
   });
+
+  for (const [platform, operation, expectedSupport] of CLOSED_GAP_CASES) {
+    test(`${platform}.${operation} → gap CLOSED: built, and the matrix says so`, async () => {
+      const row = CAPABILITIES[platform][operation];
+
+      // Axis 1: the vendor's API. Unchanged by Orbit building anything, and it
+      // must not drift — pushTemplate in particular stays "partial" because
+      // Customer.io cannot publish via the API, however much Orbit has built.
+      assert.equal(row.support, expectedSupport);
+      assert.ok(row.endpoint, "a supported op must name the endpoint the vendor publishes");
+      assert.ok(row.doc_url, "no support claim without a doc URL");
+      // A non-native row still has to name its constraint or the reader is told
+      // "partial" and nothing else.
+      if (row.support !== "native") {
+        assert.ok(row.reason || row.notes, `${platform}.${operation} is ${row.support} and names no constraint`);
+      }
+
+      // Axis 2: Orbit. The default is "implemented" for an unmarked row, so
+      // assert through the accessor rather than reading the absent field.
+      assert.equal(orbitStatusOf(platform, operation), "implemented");
+      assert.equal(
+        refusalOf(platform, operation),
+        null,
+        `${platform}.${operation} is built but the matrix still refuses it — the flip and the method must ship together`
+      );
+
+      // And the coupling in the other direction: the adapter really has it.
+      const adapter = (await import(espUrl(`${platform}-api.js`))).adapter;
+      assert.equal(
+        typeof adapter[operation],
+        "function",
+        `${platform} matrix says ${operation} is implemented but the adapter has no such method`
+      );
+    });
+  }
 });
 
 describe("ESP registry — dispatch routing to the resolved adapter", () => {

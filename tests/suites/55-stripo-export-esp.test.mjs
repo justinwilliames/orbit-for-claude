@@ -72,6 +72,8 @@ const CONFIG = {
   sfmcSubdomain: "mc563885gzs27c5t9-63k636ttgm",
   brazeApiKey: "braze-key-SUPERSECRET",
   brazeRestEndpoint: "https://rest.iad-07.braze.com",
+  // Customer.io became a real destination on 2026-08-24 (Design Studio).
+  customerioAppApiKey: "customerio-key-SUPERSECRET",
 };
 
 const REAL_FETCH = globalThis.fetch;
@@ -131,6 +133,7 @@ describe("the Stripo CSS merge survives to every destination", () => {
     ["klaviyo", { data: { id: "kl-1", attributes: {} } }, (b) => b.data.attributes.html],
     ["mailchimp", { id: 991 }, (b) => b.html],
     ["sfmc", { id: 77 }, (b) => b?.views?.html?.content ?? b?.content],
+    ["customerio", { email: { id: "cio-uuid" } }, (b) => b.content.html],
   ];
 
   for (const [platform, okBody, readHtml] of TARGETS) {
@@ -236,41 +239,70 @@ describe("each supported ESP builds its own real template request", () => {
   });
 });
 
-// ── 3. customerio: honestly unsupported, never faked ──────────────────────
+// ── 3. customerio: exports now, and never claims to have published ────────
+//
+// THIS SECTION USED TO ASSERT A REFUSAL, and the inversion is the point. The
+// exporter never named Customer.io: it gates on refusalOf(), and Customer.io
+// was refused only because Orbit had not built pushTemplate. The adapter was
+// built on 2026-08-24, the matrix row dropped orbit:"not_implemented" in the
+// same commit, and this destination started working with NO change to the
+// exporter's gate. What survives — and is asserted harder than the refusal
+// ever was — is the vendor's own constraint: the Design Studio API cannot
+// publish, so a successful export is a DRAFT.
 
-describe("customerio is honestly unsupported, not an error", () => {
-  test("returns the central {unsupported} shape and reads NOTHING from Stripo", async () => {
-    const calls = mockFetch(() => {
-      throw new Error("no ESP call must be made for an unsupported platform");
-    });
-    const res = await exportStripoEmailsToEsp({
-      config: { ...CONFIG, customerioAppApiKey: "cio-key" },
-      emailIds: 1,
-      platform: "customerio",
-    });
+describe("customerio exports, and every row admits it is not published", () => {
+  test("a push lands in the Design Studio template library", async () => {
+    const calls = mockFetch(() => makeResponse(200, { email: { id: "cio-uuid-1" } }));
+    const res = await exportStripoEmailsToEsp({ config: CONFIG, emailIds: 1, platform: "customerio" });
 
-    assert.equal(res.unsupported, true);
-    assert.equal(res.status, "unsupported");
+    assert.equal(res.status, "ok", JSON.stringify(res.results?.[0] ?? res));
     assert.equal(res.platform, "customerio");
-    assert.equal(res.operation, "pushTemplate");
-    assert.ok(res.reason && res.reason.length > 0, "must say WHY");
-    assert.ok("nearest_alternative" in res, "must point at the real alternative");
-    // No error flag, no failure count — nothing failed.
-    assert.equal(res.failed_count, undefined);
-    // And no Stripo quota spent on an export that can never land.
-    assert.equal(calls.length, 0);
+
+    const sent = espCalls(calls).at(-1);
+    assert.match(sent.url, /\/v1\/design_studio\/emails$/);
+    assert.equal(sent.init.method, "POST");
+    assert.equal(sent.body.name, "M10 Xero B - Free");
+    assert.equal(sent.body.is_template, true, "an export must land where listTemplates looks");
+    assert.equal(sent.body.content.subject, FULL_EMAIL.title);
+    assert.equal(sent.body.content.preheader_text, FULL_EMAIL.preheader);
+    assert.equal(res.results[0].esp_template_id, "cio-uuid-1");
   });
 
-  test("the unsupported answer beats the credential gates, on a keyless install too", async () => {
-    // Order matters: the capability answer is the useful one.
-    // Reporting a missing Stripo token first would send the user to
-    // fix a credential that could never have made this push work.
+  test("status ok is NOT status live — the row carries the publish caveat", async () => {
+    mockFetch(() => makeResponse(200, { email: { id: "cio-uuid-2" } }));
+    const res = await exportStripoEmailsToEsp({ config: CONFIG, emailIds: 1, platform: "customerio" });
+
+    const row = res.results[0];
+    assert.equal(row.status, "ok");
+    // The whole reason this destination is support:"partial". A bare "ok" here
+    // would report an email nobody will ever receive as a finished export.
+    assert.equal(row.published, false);
+    assert.match(row.warning, /cannot publish/i);
+    assert.match(row.warning, /workspace/i);
+  });
+
+  test("a destination with no publish constraint carries no publish noise", async () => {
+    // The pass-through is generic, not a Customer.io special case — so an ESP
+    // that publishes on write must not sprout a published:false field.
+    mockFetch(() => makeResponse(200, { templateId: 4242 }));
+    const res = await exportStripoEmailsToEsp({ config: CONFIG, emailIds: 1, platform: "iterable" });
+    assert.equal(res.results[0].published, undefined);
+    assert.equal(res.results[0].warning, undefined);
+  });
+
+  test("a missing Customer.io key is needs_setup, before any Stripo read", async () => {
+    // The capability gate no longer fires for this platform, so the credential
+    // gate is now the useful first answer — and it must still land before a
+    // single Stripo read is spent.
+    const { customerioAppApiKey, ...noCioKey } = CONFIG;
+    void customerioAppApiKey;
     const calls = mockFetch(() => makeResponse(200, {}));
-    const res = await exportStripoEmailsToEsp({ config: {}, emailIds: 1, platform: "customerio" });
-    assert.equal(res.unsupported, true);
-    assert.equal(res.status, "unsupported");
-    assert.equal(res.needs_setup, undefined);
-    assert.equal(calls.length, 0);
+    const res = await exportStripoEmailsToEsp({ config: noCioKey, emailIds: 1, platform: "customerio" });
+
+    assert.equal(res.needs_setup, true);
+    assert.equal(res.platform, "customerio");
+    assert.ok(res.missing.includes("ORBIT_CUSTOMERIO_APP_API_KEY"), "must name the credential");
+    assert.equal(calls.length, 0, "no Stripo quota on a push that cannot land");
   });
 });
 

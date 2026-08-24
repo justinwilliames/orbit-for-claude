@@ -16,7 +16,7 @@
  */
 
 import { DataApiError, unsupportedResponse } from "./errors.js";
-import { capabilityOf, PLATFORMS } from "./capabilities.js";
+import { refusalOf, PLATFORMS } from "./capabilities.js";
 
 /**
  * Lazy loaders, one per registered platform. Static string specifiers keep
@@ -84,7 +84,9 @@ export function resolvePlatform(explicit) {
  *
  * Order of gates (all honest, none crash):
  *   1. Unknown platform -> DataApiError.
- *   2. Matrix says "unsupported" -> centrally-manufactured {unsupported}.
+ *   2. Matrix refuses on EITHER axis (support:"unsupported" -> platform_limit,
+ *      or orbit:"not_implemented" -> orbit_gap) -> centrally-manufactured
+ *      {unsupported} carrying which of the two it is.
  *   3. Adapter missing/broken -> friendly needs_setup for that platform only.
  *   4. Adapter omits the method -> centrally-manufactured {unsupported}.
  *   5. Adapter's validateSetup returns an object -> that needs_setup, returned.
@@ -106,7 +108,14 @@ export async function dispatch(platform, operation, args = {}) {
     });
   }
 
-  if (capabilityOf(platform, operation) === "unsupported") {
+  // Matrix gate first — a refused op never touches an adapter. BOTH axes gate
+  // here (see server/esp/registry.js for the incident this pattern fixes):
+  // gating on `support` alone lets a support:"native", orbit:"not_implemented"
+  // row sail past as if it were fine, reaching an adapter that omits the
+  // method — same outcome, but the refusal it produced couldn't say which
+  // kind of gap it was. refusalOf() unions the axes and the response carries
+  // the discriminator.
+  if (refusalOf(platform, operation)) {
     return unsupportedResponse(platform, operation);
   }
 

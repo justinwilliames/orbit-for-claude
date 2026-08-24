@@ -304,7 +304,7 @@ export const CAPABILITIES = Object.freeze({
   },
 
   // -------------------------------------------------------------------------
-  // §1.3 Customer.io  (honesty-critical: reads + proofs, no template push)
+  // §1.3 Customer.io  (honesty-critical: the template trio is BUILT — 2026-08-24)
   // -------------------------------------------------------------------------
   customerio: {
     checkAuth: {
@@ -317,46 +317,47 @@ export const CAPABILITIES = Object.freeze({
     },
     listTemplates: {
       // Was support:"unsupported" with a reason blaming Customer.io for having
-      // "no public template listing". FALSE — Design Studio publishes one. The
-      // platform axis is native; the gap is Orbit's, and now says so.
+      // "no public template listing". FALSE — Design Studio publishes one, so
+      // the platform axis went to native and the row carried orbit:
+      // "not_implemented" until the adapter caught up. It has (2026-08-24), so
+      // the Orbit marker is gone — the field and the method move together or
+      // the registry refuses a built call.
       support: "native",
-      orbit: "not_implemented",
       label: "list templates",
       endpoint:
-        "GET /v1/design_studio/emails (params incl. is_template, parent_folder_id, updated_after)",
+        "GET /v1/design_studio/emails (params incl. page, limit, is_template, parent_folder_id, updated_after)",
       doc_url: "https://docs.customer.io/api/app/#tag/design-studio",
-      reason:
-        "ORBIT BUILD GAP, not a Customer.io limitation. Customer.io's Design Studio publishes a full template listing — GET /v1/design_studio/emails, with an is_template filter that isolates genuine reusable templates, plus GET /v1/design_studio/components and GET /v1/snippets. Orbit's Customer.io adapter does not call any of them yet (verified 2026-08-24).",
-      nearest_alternative:
-        "List transactional messages + newsletters as the closest content inventory Orbit can read today.",
+      notes:
+        "The Design Studio email library. Orbit sends is_template=true: Design Studio keeps reusable templates and one-off message content in ONE resource and only that flag separates them, so an unfiltered list would report message content as templates. Paged with page/limit (limit 1-10000, default 1000) and truncation read from meta.pagination.total rather than guessed. List rows carry id/name/is_template/is_linked/created/updated only — no content — so subject/preheader/html are null until getTemplate. GET /v1/design_studio/components and GET /v1/snippets hold reusable blocks Orbit still does not read (verified + built 2026-08-24).",
     },
     getTemplate: {
       // Was support:"unsupported" ("message content is authored in-app").
-      // FALSE — the read returns full content. Orbit simply doesn't call it.
+      // FALSE — the read returns full content, and Orbit now calls it
+      // (2026-08-24), so the orbit:"not_implemented" marker came off with the
+      // method going in.
       support: "native",
-      orbit: "not_implemented",
       label: "get template",
       endpoint:
         "GET /v1/design_studio/emails/{id}, GET /v1/campaigns/{campaign_id}/actions/{action_id}",
       doc_url: "https://docs.customer.io/api/app/#tag/design-studio",
-      reason:
-        "ORBIT BUILD GAP, not a Customer.io limitation. GET /v1/design_studio/emails/{id} returns content.subject, content.preheader_text, content.html, content.amp and content.text, and non-Design-Studio message bodies are readable via GET /v1/campaigns/{campaign_id}/actions/{action_id}. Orbit's Customer.io adapter implements neither yet (verified 2026-08-24).",
-      nearest_alternative: "Newsletter/campaign metadata reads.",
+      notes:
+        "Returns the full email under `email`: content.subject, content.preheader_text, content.html, content.amp, content.text, plus envelope and transformers (kept untranslated in esp_raw). Scope limit worth knowing: Orbit reads the DESIGN STUDIO path only. Bodies authored in the older drag-and-drop / rich-text editors live at GET /v1/campaigns/{campaign_id}/actions/{action_id}, a two-part id this operation's single template_id cannot express, and the two endpoints explicitly refuse each other's content — so a legacy message id returns not_found here (verified + built 2026-08-24).",
     },
     pushTemplate: {
       // Was support:"unsupported" ("no public template CRUD"). FALSE — CRUD
-      // exists. It is `partial`, not `native`, for a constraint Customer.io
-      // documents itself: the API stores content but cannot PUBLISH it.
+      // exists, and Orbit now calls it (2026-08-24). It stays `partial`, not
+      // `native`, and that is NOT an Orbit hedge: it is a constraint
+      // Customer.io documents itself — the API stores content but cannot
+      // PUBLISH it. The row states it, and the adapter repeats it on every
+      // single push return, because this is the one failure mode here that is
+      // otherwise completely silent.
       support: "partial",
-      orbit: "not_implemented",
       label: "create/update template",
       endpoint:
         "POST /v1/design_studio/emails, PUT /v1/design_studio/emails/{id}, DELETE /v1/design_studio/emails/{id}",
       doc_url: "https://docs.customer.io/integrations/api/integrate-with-ds/",
-      reason:
-        "ORBIT BUILD GAP on a platform capability that is real but constrained. Design Studio does expose POST/PUT/DELETE /v1/design_studio/emails — Orbit's adapter calls none of them. The platform's OWN documented constraint (why this is partial, not native): those endpoints only manage design studio content, so via the API you cannot PUBLISH changes, cannot connect an email to a campaign/broadcast/transactional message, cannot manage global styles, and cannot touch content authored in the older drag-and-drop or rich-text editors. A 200 means the content is stored, not live — a human must publish it in the workspace before it can send (verified 2026-08-24).",
-      nearest_alternative:
-        "Send via POST /v1/send/email with full inline body (to/from/subject/body supplied per-request).",
+      notes:
+        "PARTIAL, and the constraint is the vendor's own: the Design Studio endpoints only manage design studio content, so the API CANNOT PUBLISH. A 200 (create) or 204 (update) means the HTML is stored, NOT live — a human must open the email in the Customer.io workspace and publish it before it can send. Orbit therefore returns published:false plus the publish caveat on every push rather than reporting a bare success. The API also cannot link an email to a campaign/broadcast/transactional message, cannot manage global styles, and cannot touch content authored in the older drag-and-drop or rich-text editors (PUT /v1/campaigns/{id}/actions/{action_id} is that path, and each endpoint explicitly refuses the other's content). Update returns 204 with NO body, so the id is echoed from the request. DELETE exists and Orbit does not automate it (verified + built 2026-08-24).",
     },
     listCampaigns: {
       support: "native",

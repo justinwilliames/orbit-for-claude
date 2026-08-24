@@ -18,7 +18,7 @@
  * missing argument an operation requires.
  */
 
-import { capabilityRow } from "./capabilities.js";
+import { capabilityRow, refusalOf, PLATFORM_META } from "./capabilities.js";
 
 /**
  * The closed code list for family-level failures. Every member is also a member
@@ -65,20 +65,57 @@ export class DataApiError extends Error {
 }
 
 /**
- * Manufacture the response for an operation a platform cannot support. Built
- * centrally from the capability matrix so the reason and the nearest real
- * alternative come from the single source of truth — an adapter never
- * hand-writes this shape, it just omits the method.
+ * Manufacture the response for a REFUSED operation. Built centrally from the
+ * capability matrix so the reason and the nearest real alternative come from
+ * the single source of truth — an adapter never hand-writes this shape, it
+ * just omits the method.
+ *
+ * TWO refusals share this one shape, and the difference is the whole point —
+ * copied verbatim from server/esp/errors.js, the file this pattern was fixed
+ * in first:
+ *   refusal: "platform_limit" — the platform's public API has no path for it.
+ *   refusal: "orbit_gap"      — the API supports it; Orbit hasn't built it.
+ * `unsupported: true` names the SHAPE (a structured refusal, never a crash and
+ * never a faked success) and is kept on both so existing callers that branch
+ * on `.unsupported` keep working. Anything reporting the CAUSE to a human must
+ * use `message`/`refusal`, or it will tell the user a vendor can't do
+ * something the vendor does.
  *
  * @param {string} platform   registry key ("amplitude", "databricks").
  * @param {string} operation  adapter method name ("runQuery", "getCohort", …).
+ * @returns {{unsupported: true, refusal: "platform_limit"|"orbit_gap",
+ *            message: string, platform: string, operation: string,
+ *            reason: string, nearest_alternative: string|null, doc_url: string|null}}
  */
 export function unsupportedResponse(platform, operation) {
   const row = capabilityRow(platform, operation) ?? {};
+  const refusal = refusalOf(platform, operation) ?? "platform_limit";
+  const name = PLATFORM_META[platform]?.displayName ?? platform;
+  const what = row.label ?? operation;
+
+  // The whole point of the two-axis split, in one sentence the user reads
+  // first. "Amplitude cannot do this" and "Amplitude can, Orbit hasn't built
+  // it yet" lead to opposite decisions — one rules out a platform, the other
+  // files a feature request — so they must never share a message.
+  const message =
+    refusal === "orbit_gap"
+      ? `${name}'s public API supports ${what}${
+          row.support === "partial" ? " (with a documented constraint)" : ""
+        }, but Orbit has not built it yet. This is an Orbit build gap, not a platform limitation — do not read it as something ${name} cannot do.`
+      : `${name}'s public API has no path for ${what}. This is a platform limitation, not an Orbit build gap — building it is not possible against ${name}'s public API.`;
+
   return {
     unsupported: true,
+    // The discriminator. Callers that need to tell a backlog item from a
+    // platform limitation branch on THIS, never on the `unsupported` flag —
+    // that flag names the SHAPE (a structured refusal), not the cause.
+    refusal,
+    message,
     platform,
     operation,
+    // Copied from the matrix VERBATIM. The matrix is the drift-of-record for
+    // capability prose; manufacturing a second wording here is how the two
+    // would diverge.
     reason:
       row.reason ??
       `"${operation}" is not available for ${platform} via its public API.`,

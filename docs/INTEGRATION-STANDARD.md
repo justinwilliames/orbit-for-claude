@@ -154,6 +154,13 @@ The five non-Braze ESPs read through the shared `orbit_esp_*` family
 capability is recorded in `server/esp/capabilities.js` on two axes — what each
 ESP's public API offers, and what Orbit has built — and surfaced honestly as
 `{unsupported, refusal}` where either is missing, naming which of the two it is.
+**The rule and the mechanism are not ESP-specific.** `server/data/capabilities.js`
+carries the identical two axes, the identical `refusalOf()`/`orbitStatusOf()`
+accessors, and the identical default (omitted `orbit` means implemented) — see
+the two-axis rule below, which applies to every `capabilities.js` in every
+family, not only `server/esp/`. It was retrofitted onto the data matrix
+2026-08-24, before a second and third platform (Segment, RudderStack) could
+inherit the single-axis bug rather than the fix.
 
 Amplitude is the first analytics platform on the bar, and the only one whose
 useful surface is mostly *not* readable: its per-cohort route and its Export API
@@ -270,8 +277,11 @@ analytics and warehouses. Four files, and only the last one costs bytes:
 
 ### The two-axis rule (non-negotiable)
 
-**A capability cell answers two questions, so it needs two fields.** Every cell
-carries `support` and `orbit`, and they are never collapsed:
+**This rule binds every `capabilities.js` in every family — `server/esp/` AND
+`server/data/` alike, and any family added after them.** It is not an ESP
+peculiarity; it is a property of what a capability cell IS. A capability cell
+answers two questions, so it needs two fields. Every cell carries `support` and
+`orbit`, and they are never collapsed:
 
 | Field | Answers | Values |
 |---|---|---|

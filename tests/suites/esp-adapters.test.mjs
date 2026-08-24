@@ -37,7 +37,13 @@ const klaviyo = (await import(srvUrl("esp/klaviyo-api.js"))).adapter;
 const mailchimp = (await import(srvUrl("esp/mailchimp-api.js"))).adapter;
 const sfmc = (await import(srvUrl("esp/sfmc-api.js"))).adapter;
 const braze = (await import(srvUrl("esp/braze-adapter.js"))).adapter;
-const { EspApiError } = await import(srvUrl("esp/errors.js"));
+const { EspApiError, ESP_ERROR_CODES } = await import(srvUrl("esp/errors.js"));
+
+// Customer.io's Design Studio trio, aliased so the test bodies read as the
+// operation rather than the object path.
+const listTemplatesCio = (args) => customerio.listTemplates(args);
+const getTemplateCio = (args) => customerio.getTemplate(args);
+const pushTemplateCio = (args) => customerio.pushTemplate(args);
 const { fetchWithRetry } = await import(srvUrl("orbit-resilience.js"));
 const { ESP_TOOL_DEFINITIONS, setEspRuntimeConfig } = await import(
   srvUrl("esp/tools.js")
@@ -395,6 +401,256 @@ describe("ESP security and correctness canaries", () => {
       })
     );
     assert.equal(calls, 1, "/messages/send must not retry and risk a duplicate proof");
+  });
+});
+
+// ── 3b. Customer.io Design Studio template trio ───────────────────
+//
+// The gap closed on 2026-08-24. These are the four things that have to hold for
+// the close to be real rather than announced: each method actually calls the
+// documented endpoint, the vendor's cannot-publish constraint reaches the
+// caller, failures land in the closed error taxonomy, and no credential
+// survives into anything a caller or a log can read.
+describe("Customer.io — Design Studio templates (list / get / push)", () => {
+  // Assembled at runtime, never written as one literal: a token-shaped string
+  // committed to this repo trips GitHub push protection, and has already cost
+  // this work one history rewrite.
+  const KEY = ["ORBIT", "CIO", "APPKEY", "SENTINEL"].join("-");
+  const config = { customerioAppApiKey: KEY };
+
+  test("listTemplates asks for TEMPLATES, not every Design Studio email", async () => {
+    const calls = mockFetch(() =>
+      makeResponse(200, {
+        emails: [
+          { id: "11111111-1111-1111-1111-111111111111", name: "Welcome", is_template: true, created: 1_700_000_000, updated: 1_700_086_400 },
+          { id: "22222222-2222-2222-2222-222222222222", name: "Winback", is_template: true, created: 1_700_000_000, updated: 0 },
+        ],
+        meta: { pagination: { page: 1, limit: 2, total: 5 } },
+      })
+    );
+
+    const res = await listTemplatesCio({ config, limit: 2 });
+
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/v1/design_studio/emails");
+    assert.equal(
+      url.searchParams.get("is_template"),
+      "true",
+      "without this filter the list reports one-off message content as templates"
+    );
+    assert.equal(url.searchParams.get("limit"), "2");
+    assert.equal(url.searchParams.get("page"), "1");
+
+    assert.equal(res.items.length, 2);
+    assert.equal(res.items[0].id, "11111111-1111-1111-1111-111111111111");
+    assert.equal(res.items[0].name, "Welcome");
+    assert.equal(res.items[0].platform, "customerio");
+    // The contract: a list carries no content, so these are null — not "".
+    assert.equal(res.items[0].html, null);
+    assert.equal(res.items[0].subject, null);
+    assert.equal(res.items[0].preheader, null);
+    assert.equal(res.items[0].updated_at, new Date(1_700_086_400 * 1000).toISOString());
+    // updated:0 is not a timestamp — fall back to created rather than 1970.
+    assert.equal(res.items[1].updated_at, new Date(1_700_000_000 * 1000).toISOString());
+
+    // Truncation is MEASURED from meta.pagination (2 of 5), never guessed.
+    assert.equal(res.truncated, true);
+    assert.equal(res.next_cursor, "2");
+    assert.deepEqual(res.filter, { is_template: "true" });
+  });
+
+  test("listTemplates claims no truncation it cannot see, and pages from a cursor", async () => {
+    const calls = mockFetch(() => makeResponse(200, { emails: [] }));
+    const res = await listTemplatesCio({ config, cursor: "4" });
+    assert.equal(new URL(calls[0].url).searchParams.get("page"), "4");
+    assert.equal(res.truncated, false, "no meta.pagination means no evidence of more pages");
+    assert.equal(res.next_cursor, null, "a fabricated cursor is worse than none");
+  });
+
+  test("the EU region is a different data plane, and the trio honours it", async () => {
+    const calls = mockFetch(() => makeResponse(200, { emails: [] }));
+    await listTemplatesCio({ config: { ...config, customerioRegion: "eu" } });
+    assert.equal(
+      new URL(calls[0].url).host,
+      "api-eu.customer.io",
+      "an EU key against the US host returns confusing empties, not an error"
+    );
+  });
+
+  test("getTemplate returns the full body Customer.io was said not to expose", async () => {
+    const calls = mockFetch(() =>
+      makeResponse(200, {
+        email: {
+          id: "33333333-3333-3333-3333-333333333333",
+          name: "Onboarding day 1",
+          is_template: true,
+          updated: 1_700_086_400,
+          content: {
+            subject: "Welcome aboard",
+            preheader_text: "Two minutes to set up",
+            html: "<html><body>hi</body></html>",
+            text: "hi",
+          },
+          envelope: { from: "hello@example.com" },
+        },
+      })
+    );
+
+    const tpl = await getTemplateCio({ config, template_id: "33333333-3333-3333-3333-333333333333" });
+
+    assert.equal(
+      new URL(calls[0].url).pathname,
+      "/v1/design_studio/emails/33333333-3333-3333-3333-333333333333"
+    );
+    assert.equal(tpl.subject, "Welcome aboard");
+    assert.equal(tpl.preheader, "Two minutes to set up");
+    assert.equal(tpl.html, "<html><body>hi</body></html>");
+    // No workspace id is returned by any App API response, so a deep link would
+    // be a fabrication. null is the honest answer.
+    assert.equal(tpl.url, null);
+    assert.equal(tpl.esp_raw.envelope.from, "hello@example.com", "esp_raw keeps what normalisation drops");
+  });
+
+  test("getTemplate: a missing template is not_found — including a hollow 200", async () => {
+    mockFetch(() => makeResponse(404, { meta: { error: "not found" } }));
+    await assert.rejects(
+      () => getTemplateCio({ config, template_id: "missing" }),
+      (err) => {
+        assert.ok(err instanceof EspApiError);
+        assert.equal(err.code, "not_found");
+        return true;
+      }
+    );
+
+    // A 200 whose envelope is empty must not return a hollow template.
+    mockFetch(() => makeResponse(200, {}));
+    await assert.rejects(
+      () => getTemplateCio({ config, template_id: "empty-envelope" }),
+      (err) => {
+        assert.equal(err.code, "not_found");
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      () => getTemplateCio({ config }),
+      (err) => {
+        assert.equal(err.code, "esp_error", "a missing template_id is a caller error, not a 404");
+        return true;
+      }
+    );
+  });
+
+  test("pushTemplate CREATE writes subject + preheader + html, and says it is not published", async () => {
+    const calls = mockFetch(() =>
+      makeResponse(200, { email: { id: "44444444-4444-4444-4444-444444444444", name: "New" } })
+    );
+
+    const res = await pushTemplateCio({
+      config,
+      name: "New",
+      html: "<p>body</p>",
+      subject: "Subject line",
+      preheader: "Preview text",
+    });
+
+    assert.equal(calls[0].init.method, "POST");
+    assert.equal(new URL(calls[0].url).pathname, "/v1/design_studio/emails");
+    const sent = JSON.parse(calls[0].init.body);
+    assert.equal(sent.name, "New");
+    assert.equal(sent.is_template, true, "a template push must land in the template library it lists from");
+    assert.equal(sent.content.html, "<p>body</p>");
+    // Unlike Klaviyo and Mailchimp, Customer.io really stores these two.
+    assert.equal(sent.content.subject, "Subject line");
+    assert.equal(sent.content.preheader_text, "Preview text");
+
+    assert.equal(res.id, "44444444-4444-4444-4444-444444444444");
+    assert.equal(res.action, "created");
+    // THE constraint. A 200 that reports plain success here is the worst
+    // failure mode this adapter has: a template that lands and never sends.
+    assert.equal(res.published, false);
+    assert.match(res.warning, /cannot publish/i);
+    assert.match(res.warning, /will NOT send until/);
+  });
+
+  test("pushTemplate UPDATE survives a 204 with no body, and repeats the caveat", async () => {
+    // PUT /v1/design_studio/emails/{id} returns 204 and NOTHING to read, so the
+    // id has to be echoed from the request rather than parsed from a response.
+    const calls = mockFetch(() => makeResponse(204, ""));
+
+    const res = await pushTemplateCio({
+      config,
+      template_id: "55555555-5555-5555-5555-555555555555",
+      name: "Updated",
+      html: "<p>v2</p>",
+    });
+
+    assert.equal(calls[0].init.method, "PUT");
+    assert.equal(
+      new URL(calls[0].url).pathname,
+      "/v1/design_studio/emails/55555555-5555-5555-5555-555555555555"
+    );
+    assert.equal(res.id, "55555555-5555-5555-5555-555555555555");
+    assert.equal(res.action, "updated");
+    assert.equal(res.published, false, "an update is no more published than a create");
+    assert.match(res.warning, /cannot publish/i);
+  });
+
+  test("pushTemplate CREATE without a body is refused before the network", async () => {
+    const calls = mockFetch(() => makeResponse(200, { email: { id: "x" } }));
+    await assert.rejects(
+      () => pushTemplateCio({ config, name: "No body" }),
+      (err) => {
+        assert.equal(err.code, "esp_error");
+        return true;
+      }
+    );
+    assert.equal(calls.length, 0, "an invalid create must not spend a call");
+  });
+
+  test("a 401 on the trio lands in the closed taxonomy as auth_failed", async () => {
+    for (const call of [
+      () => listTemplatesCio({ config }),
+      () => getTemplateCio({ config, template_id: "any" }),
+      () => pushTemplateCio({ config, name: "n", html: "<p>h</p>" }),
+    ]) {
+      mockFetch(() => makeResponse(401, { meta: { error: "unauthorized" } }));
+      await assert.rejects(call, (err) => {
+        assert.ok(err instanceof EspApiError);
+        assert.equal(err.code, "auth_failed");
+        assert.ok(
+          ESP_ERROR_CODES.includes(err.code),
+          "an adapter may only raise a code from the closed taxonomy"
+        );
+        return true;
+      });
+    }
+  });
+
+  test("CANARY: no Customer.io credential survives into an error a caller can read", async () => {
+    // The upstream echoes the auth header back in its error body — the exact
+    // way a key leaks into a log without anyone writing a logging line.
+    const calls = mockFetch(() =>
+      makeResponse(401, {
+        meta: { error: `rejected credential: Bearer ${KEY} (Authorization: Bearer ${KEY})` },
+      })
+    );
+
+    await assert.rejects(
+      () => listTemplatesCio({ config }),
+      (err) => {
+        const serialized = JSON.stringify(err.toResponse());
+        const stderrForm = err.stack ?? err.message;
+        assert.doesNotMatch(serialized, new RegExp(KEY), "the key reached the tool response");
+        assert.doesNotMatch(stderrForm, new RegExp(KEY), "the key reached stderr");
+        assert.doesNotMatch(String(err.detail), new RegExp(KEY));
+        assert.match(serialized, /REDACTED/, "redaction happened, rather than the detail being empty");
+        return true;
+      }
+    );
+
+    // Not a vacuous pass: the request really did carry the credential.
+    assert.equal(calls[0].init.headers.Authorization, `Bearer ${KEY}`);
   });
 });
 

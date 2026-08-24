@@ -431,7 +431,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Capabilities",
       description:
-        "The honest what-works-where matrix for every supported ESP (Braze, Iterable, Customer.io, Klaviyo, Mailchimp, SFMC) — or one, if `platform` is given. TWO AXES per row: `support` is what the provider's public API does (native/partial/unsupported — the comparison axis), `orbit` is whether Orbit built it (implemented/not_implemented), `available` is both. A row can read native + not_implemented: the API does this, Orbit hasn't built it — a backlog item, not a vendor limit. Each row carries the endpoint, doc URL, constraint and nearest alternative. No network, no credentials. Drawn as one grid, every cell a glyph and a word, not a colour. Honest rows: Klaviyo has no test-send (render + QA-gate instead); Mailchimp get-template returns metadata only (no stored HTML); Customer.io templates and SFMC segments/performance are ORBIT gaps, not platform limits.",
+        "The honest what-works-where matrix for every supported ESP (Braze, Iterable, Customer.io, Klaviyo, Mailchimp, SFMC) — or one, if `platform` is given. TWO AXES per row: `support` is what the provider's public API does (native/partial/unsupported — the comparison axis), `orbit` is whether Orbit built it (implemented/not_implemented), `available` is both. A row can read native + not_implemented: the API does this, Orbit hasn't built it — a backlog item, not a vendor limit. Each row carries the endpoint, doc URL, constraint and nearest alternative. No network, no credentials. Drawn as one grid, every cell a glyph and a word, not a colour. Honest rows: Klaviyo has no test-send (render + QA-gate instead); Mailchimp get-template returns metadata only (no stored HTML); SFMC segments/performance are ORBIT gaps, not platform limits.",
       inputSchema: {
         platform: platformArg,
       },
@@ -475,7 +475,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Templates (read)",
       description:
-        "Read email templates from the target ESP, normalized. action:\"list\" returns { items, truncated, next_cursor } (subject/preheader where the ESP gives them; html is null in lists); action:\"get\" returns one full template with html populated. `esp_raw` always carries the untranslated payload. Gaps surface as {unsupported} naming `refusal`: Customer.io list/get are an ORBIT build gap, not a platform limit — its Design Studio API does publish both (use orbit_esp_read meanwhile). Mailchimp get returns metadata only (html is null — its API does not return stored template HTML). This is the READ side only; writes go through orbit_esp_push_template.",
+        "Read email templates from the target ESP, normalized. action:\"list\" returns { items, truncated, next_cursor } (subject/preheader where the ESP gives them; html is null in lists); action:\"get\" returns one full template with html populated. `esp_raw` always carries the untranslated payload. Gaps surface as {unsupported} naming `refusal`: Mailchimp get returns metadata only (html is null — its API does not return stored template HTML). This is the READ side only; writes go through orbit_esp_push_template.",
       inputSchema: {
         platform: platformArg,
         action: z
@@ -523,7 +523,7 @@ export const ESP_TOOL_DEFINITIONS = [
     inputSchema: {
       title: "ESP Push Template (write)",
       description:
-        "Create or update an email template on the target ESP. Pass template_id to update an existing template, omit it to create one; returns { id, action: \"created\"|\"updated\", url }. This is a WRITE path, kept separate from the read tools on purpose — approving a read must never silently approve a write. Klaviyo additionally renders server-side on push (the created template can be proofed via its render endpoint, since Klaviyo has no test-send). Customer.io returns {unsupported} as an ORBIT build gap, not a platform limit — its Design Studio API does publish CRUD (send inline proofs via orbit_esp_send_test meanwhile). Note for Mailchimp: pushes accept HTML normally, but reads return metadata only — keep your canonical HTML in your own repo / template brain.",
+        "Create or update an email template on the target ESP. Pass template_id to update an existing template, omit it to create one; returns { id, action: \"created\"|\"updated\", url }. This is a WRITE path, kept separate from the read tools on purpose — approving a read must never silently approve a write. Klaviyo additionally renders server-side on push (the created template can be proofed via its render endpoint, since Klaviyo has no test-send). Customer.io stores but cannot PUBLISH via API — the result says so. Note for Mailchimp: pushes accept HTML normally, but reads return metadata only — keep your canonical HTML in your own repo / template brain.",
       inputSchema: {
         platform: platformArg,
         name: z

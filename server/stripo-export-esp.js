@@ -18,13 +18,15 @@
  *
  * ── Honest limits, by destination ───────────────────────────────────────
  *
- *   • Customer.io pushes are refused — but as an ORBIT BUILD GAP, not a
- *     Customer.io limitation. Its Design Studio API publishes template CRUD
- *     (POST/PUT /v1/design_studio/emails); Orbit's adapter does not call it
- *     yet. The matrix records support:"partial", orbit:"not_implemented", and
- *     this returns the SAME central {unsupported, refusal, message, reason,
- *     nearest_alternative} shape the rest of the ESP family returns — never a
- *     faked success and never an error, because nothing failed.
+ *   • Customer.io pushes LAND BUT ARE NOT PUBLISHED (built 2026-08-24; this
+ *     destination was refused before then, as an Orbit build gap rather than a
+ *     Customer.io limitation). Its Design Studio API publishes template CRUD
+ *     (POST/PUT /v1/design_studio/emails) and Orbit's adapter now calls it —
+ *     but the same API explicitly cannot PUBLISH, so an exported row comes back
+ *     status:"ok" WITH published:false and the vendor's caveat attached. Read
+ *     that as "stored, still needs a human to publish it in the workspace".
+ *     Nothing here special-cases Customer.io: any adapter reporting
+ *     published:false is carried through the same way.
  *   • Braze is delegated to exportStripoEmailsToBraze(), which carries two
  *     Braze-only safety behaviours the generic path cannot: dedupe-by-name
  *     (a re-export UPDATES the same-named template rather than stacking
@@ -194,6 +196,15 @@ async function exportOneEmailToEsp({ config, platform, stripoEmailId, templateId
     // as the same value it was given.
     esp_template_id: pushed?.id != null ? String(pushed.id) : (templateId ?? null),
     esp_template_url: pushed?.url ?? null,
+    // Some destinations STORE a template without making it sendable —
+    // Customer.io's Design Studio API cannot publish, so a push lands as a
+    // draft a human still has to publish in the workspace. When an adapter says
+    // so, that survives into the row: flattening it into a bare "ok" is how a
+    // successful export becomes an email nobody ever receives. Generic on
+    // purpose — any adapter that sets published:false gets the same treatment.
+    ...(pushed?.published === false
+      ? { published: false, warning: pushed.warning ?? null }
+      : {}),
   };
 }
 

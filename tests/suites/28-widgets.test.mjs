@@ -721,21 +721,34 @@ describe("MCP App widgets — registration, binding, and self-containment", () =
     assert.equal(structured.platforms[0].platform, "customerio");
     // The honesty row this widget exists to make unmissable.
     //
-    // THIS EXPECTED VALUE CHANGED (2026-08-24) and the change IS the fix. It
-    // used to assert support === "unsupported", i.e. "Customer.io's API cannot
-    // create or update a template" — which is false. Design Studio publishes
-    // POST/PUT/DELETE /v1/design_studio/emails. It is "partial" because of a
-    // constraint Customer.io documents itself (the API stores content but
-    // cannot PUBLISH it), and it is refused today because ORBIT has not built
-    // the adapter path. Asserting the old value would re-freeze a claim that
-    // libels the vendor, so the assertion is inverted rather than dropped —
-    // the row is still pinned, just to the truth.
+    // THIS EXPECTED VALUE HAS MOVED TWICE, and both moves were the fix. It
+    // first asserted support === "unsupported", i.e. "Customer.io's API cannot
+    // create or update a template" — false; Design Studio publishes
+    // POST/PUT/DELETE /v1/design_studio/emails. It then asserted the honest
+    // pair support:"partial" + orbit:"not_implemented". As of 2026-08-24 Orbit
+    // has BUILT the adapter path, so the Orbit axis flips to implemented and
+    // the cell is available — while `support` stays "partial", because the one
+    // thing that never changed is the vendor's constraint: the API stores
+    // content and cannot publish it. That is the whole value of two axes —
+    // Orbit shipping something must never quietly upgrade a claim about
+    // Customer.io.
     const push = structured.platforms[0].operations.find((o) => o.operation === "pushTemplate");
     assert.equal(push.support, "partial", "Customer.io's API does publish template CRUD");
-    assert.equal(push.orbit, "not_implemented", "…and Orbit has not built it yet");
-    assert.equal(push.available, false, "so the call still does not work today");
-    assert.equal(push.refusal, "orbit_gap", "and the refusal must name whose gap it is");
-    assert.ok(push.nearest_alternative, "a refused cell offered no way round it");
+    assert.equal(push.orbit, "implemented", "…and Orbit has now built it");
+    assert.equal(push.available, true, "so the call works today");
+    assert.equal(push.refusal, undefined, "a working call carries no refusal");
+    assert.ok(
+      /publish/i.test(push.notes ?? ""),
+      "a partial cell must carry the cannot-publish constraint, or 'partial' is unactionable"
+    );
+
+    // The two reads are built too, and they are native — nothing constrains them.
+    for (const operation of ["listTemplates", "getTemplate"]) {
+      const row = structured.platforms[0].operations.find((o) => o.operation === operation);
+      assert.equal(row.support, "native", `${operation} support drifted`);
+      assert.equal(row.orbit, "implemented", `${operation} is built; the grid must say so`);
+      assert.equal(row.available, true, `${operation} must read as usable today`);
+    }
   });
 });
 

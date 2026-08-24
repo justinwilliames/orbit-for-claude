@@ -37,6 +37,8 @@ import {
   PLATFORM_META,
   OPERATIONS,
   OPERATION_LABELS,
+  refusalOf,
+  orbitStatusOf,
 } from "./capabilities.js";
 import { DataApiError } from "./errors.js";
 import { toErrorPayload } from "./databricks-api.js";
@@ -92,16 +94,33 @@ async function runDataTool(fn) {
   }
 }
 
-/** One platform's block of the capability matrix, for the docs/matrix tool. */
+/**
+ * One platform's block of the capability matrix, for the docs/matrix tool.
+ *
+ * BOTH AXES ARE EMITTED, always — the server/esp/tools.js pattern, applied
+ * here. `support` is what the PLATFORM's public API does; `orbit` is whether
+ * Orbit has built it. Emitting `support` alone is what let the ESP version of
+ * this tool report Orbit's backlog as vendor limitations; `available` is the
+ * derived answer to "will this call work today" (both axes must clear) so a
+ * reader never has to AND the two fields together and get it wrong.
+ */
 function capabilityBlock(platform) {
+  const rows = CAPABILITIES[platform] ?? {};
   return {
     platform,
     ...PLATFORM_META[platform],
-    operations: OPERATIONS.map((op) => ({
-      operation: op,
-      label: OPERATION_LABELS[op],
-      ...CAPABILITIES[platform][op],
-    })),
+    operations: OPERATIONS.map((op) => {
+      const row = rows[op] ?? {};
+      const refusal = refusalOf(platform, op);
+      return {
+        operation: op,
+        label: OPERATION_LABELS[op],
+        ...row,
+        orbit: orbitStatusOf(platform, op) ?? "not_implemented",
+        available: refusal === null,
+        ...(refusal ? { refusal } : {}),
+      };
+    }),
   };
 }
 

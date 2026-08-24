@@ -5261,7 +5261,7 @@ function registerTools() {
       //   • Returns ids/names/byte counts only, never raw HTML.
       description:
         "Turn finished STRIPO emails into email templates on your ESP — no GUI export. Stripo's separate stylesheet is merged in, so CTAs and padding render. " +
-        "Works on braze, iterable, klaviyo, mailchimp and sfmc; customerio returns {unsupported} (an Orbit build gap, not a platform limit). " +
+        "Works on braze, iterable, klaviyo, mailchimp and sfmc; customerio stores but cannot PUBLISH via API (publish in-app). " +
         "Braze updates the same-named template in place; elsewhere pass template_map (each run returns one) to update instead of creating a duplicate.",
       inputSchema: {
         email_ids: z

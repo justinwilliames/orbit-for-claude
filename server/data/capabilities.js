@@ -4,17 +4,48 @@
  * polymorphic `orbit_data_*` tool family.
  *
  * This is the `server/esp/capabilities.js` pattern applied to the data tier,
- * deliberately and verbatim in shape: same three-level `support` vocabulary,
- * same row fields, same two consumers (the registry gates dispatch; errors.js
- * manufactures the {unsupported} response from the reason recorded here).
+ * deliberately and verbatim in shape — same row fields, same three consumers
+ * (registry.js gates dispatch on the union of both axes; errors.js
+ * `unsupportedResponse()` manufactures the {unsupported} shape centrally from
+ * the reason/nearest_alternative recorded here; tools.js shapes
+ * `orbit_data_capabilities`), and, as of this file, the SAME TWO AXES.
  *
- * `support` is one of: "native" | "partial" | "unsupported".
+ * TWO AXES, NEVER ONE — the rule this file exists to enforce, copied from
+ * server/esp/capabilities.js because that file's header IS the postmortem: a
+ * single `support` field was used to answer two different questions — what
+ * the vendor's public API does, and what Orbit has built — and when they
+ * diverged the matrix reported Orbit's own build backlog as a vendor
+ * limitation. This family is small today (two platforms), which is exactly
+ * why the split belongs here NOW: the cost of applying it is a few lines, and
+ * the cost of skipping it compounds with every platform (Segment,
+ * RudderStack, …) added afterward.
+ *
+ * `support` — WHAT THE PLATFORM'S PUBLIC API CAN DO. Doc-backed, vendor-
+ * neutral, and the ONLY axis fit for comparing one data platform against
+ * another. It says nothing about Orbit, and must never be downgraded because
+ * Orbit is behind.
  *   native      — first-class public endpoint, no material constraint.
  *   partial     — achievable with a real, named constraint (a cap, a shape, a
  *                 deliberate refusal to fetch per-user rows).
- *   unsupported — the platform has no path to this concept; the op returns
- *                 {unsupported, reason, nearest_alternative} without ever
- *                 touching an adapter.
+ *   unsupported — no public API path at all.
+ *
+ * `orbit` — WHETHER ORBIT HAS BUILT AN ADAPTER PATH FOR IT.
+ *   "implemented"     — the adapter implements this operation.
+ *   "not_implemented" — the adapter does not, whatever the platform supports.
+ *
+ * THE DEFAULT IS STATED, NOT IMPLIED — a row that OMITS `orbit` means
+ * "implemented". Read every unmarked row as orbit: "implemented", and go
+ * through `orbitStatusOf()` rather than reading `row.orbit` directly so the
+ * default is applied in exactly one place — the same discipline the ESP
+ * matrix uses, for the same reason: an implicit default is exactly how the
+ * first ambiguity got in there.
+ *
+ * REFUSAL is the union of the two axes: an operation is refused when the
+ * platform cannot do it OR Orbit has not built it (`refusalOf()`). Both
+ * refusals return the same {unsupported, ...} shape, but carry different
+ * `refusal` discriminators and `message` sentences — "Amplitude cannot do
+ * this" and "Amplitude can, Orbit hasn't built it yet" are different facts
+ * and only one of them is the vendor's.
  *
  * The operation KEYS are the adapter method names, so
  * `capabilityOf(platform, operation)` keys off the exact string dispatch uses.
@@ -77,7 +108,24 @@ const DATABRICKS_DOCS = "https://docs.databricks.com/api/workspace/introduction"
 
 /**
  * The matrix. `{ [platform]: { [operation]: row } }`.
- * Row shape: { support, label, endpoint, doc_url, reason?, nearest_alternative? }.
+ *
+ * Row shape:
+ *   { support, orbit?, label, endpoint, doc_url, reason?, nearest_alternative? }
+ *
+ * `orbit` is OMITTED on the implemented majority (omitted means "implemented")
+ * and present only where Orbit has a build gap. Every row that carries
+ * orbit: "not_implemented" must also carry a `reason` naming the gap as
+ * ORBIT's and, where one exists, a `nearest_alternative`.
+ *
+ * Audited 2026-08-24 against the two-axis rule: every `unsupported` row below
+ * was checked for whether it was actually blaming the vendor for Orbit's own
+ * build backlog (the exact defect the ESP matrix had). None were — Amplitude's
+ * warehouse-shaped refusals (listCatalogs/listTables/describeTable) and its
+ * paid-add-on runQuery refusal, and Databricks' cohort/series refusals, are
+ * all genuine platform-conceptual limits with no adapter path that building
+ * more Orbit code would open. No row was flipped, and none carries `orbit`
+ * today — both platforms' `native`/`partial` cells are exactly what their
+ * adapters implement.
  */
 export const CAPABILITIES = Object.freeze({
   // ---------------------------------------------------------------------------
@@ -229,9 +277,52 @@ export const CAPABILITIES = Object.freeze({
  */
 export const PLATFORMS = Object.freeze(Object.keys(CAPABILITIES));
 
-/** Support level for one (platform, operation) pair, or undefined. */
+/**
+ * PLATFORM-AXIS support level for one (platform, operation) pair, or
+ * undefined if the operation is not in the matrix.
+ * "native" | "partial" | "unsupported".
+ *
+ * This answers "can the VENDOR'S API do this" and nothing else — NOT "will
+ * this call work through Orbit" (use refusalOf() for that, which unions both
+ * axes). Gating dispatch on this alone is the bug the two-axis split exists
+ * to prevent.
+ */
 export function capabilityOf(platform, operation) {
   return CAPABILITIES[platform]?.[operation]?.support;
+}
+
+/**
+ * ORBIT-AXIS build status for one (platform, operation) pair, or undefined if
+ * the operation is not in the matrix. "implemented" | "not_implemented".
+ *
+ * The single place the documented default is applied: a row that omits
+ * `orbit` is implemented. Read the field through here, never directly.
+ */
+export function orbitStatusOf(platform, operation) {
+  const row = CAPABILITIES[platform]?.[operation];
+  if (!row) return undefined;
+  return row.orbit ?? "implemented";
+}
+
+/**
+ * Why an operation is refused, or null when it is available.
+ *
+ *   "platform_limit" — the platform's public API has no path for it. Nothing
+ *                      Orbit could build would change this.
+ *   "orbit_gap"      — the API supports it (native or partial); Orbit has not
+ *                      built the adapter path. A backlog item, not a verdict
+ *                      on the vendor.
+ *   null             — supported by the platform AND implemented by Orbit.
+ *
+ * Precedence is deliberate: a platform limit outranks a build gap, because
+ * "they can't" is the more fundamental fact and building would not help.
+ */
+export function refusalOf(platform, operation) {
+  const row = CAPABILITIES[platform]?.[operation];
+  if (!row) return null;
+  if (row.support === "unsupported") return "platform_limit";
+  if (orbitStatusOf(platform, operation) === "not_implemented") return "orbit_gap";
+  return null;
 }
 
 /** The full matrix row for one (platform, operation) pair (or undefined). */
