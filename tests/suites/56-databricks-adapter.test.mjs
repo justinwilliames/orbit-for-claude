@@ -714,23 +714,29 @@ describe("Databricks tool definitions", () => {
     }
   });
 
-  test("the registry declares Databricks Tier 0 while the family is unregistered", () => {
+  test("the registry declares Databricks Tier 2 now the family is registered", () => {
+    // Inverted 2026-08-24. This previously asserted the opposite — Tier 0 and
+    // roadmap:true — because the family was built but unregistered, and the
+    // point was to stop the registry advertising a tier the user could not
+    // reach. The budget was raised and the family registered, so the honest
+    // claim flipped; the assertion flips with it rather than being deleted,
+    // because the thing worth guarding is that the registry and the server
+    // agree, in either direction.
     const entry = getIntegration("databricks");
-    assert.equal(entry.declaredTier, 0);
-    assert.equal(entry.roadmap, true);
-    assert.equal(entry.connectionCheckTool, null);
-    assert.deepEqual(entry.readTools, []);
-    assert.match(entry.notes, /byte/i, "the notes must say WHY it is not registered");
+    assert.equal(entry.declaredTier, 2);
+    assert.equal(entry.roadmap, false);
+    assert.equal(entry.connectionCheckTool, "orbit_check_data_auth");
+    assert.ok(entry.readTools.length >= 3, "Tier 2 needs at least three read tools");
   });
 
-  test("no data tool is annotated while the family is unregistered", () => {
+  test("every data tool is annotated now the family is registered", () => {
     // tests/suites/27-tool-annotations.test.mjs forbids naming a tool the
-    // server does not register. Registering this family means adding all four
-    // names to server/tool-annotations.js in the SAME commit; this asserts the
-    // two halves stay in step in the meantime.
+    // server does not register; this is the same rule from the other side —
+    // a registered tool must carry an annotation tier rather than falling
+    // through to the conservative default. The two halves stay in step.
     const classified = classifiedToolNames();
     for (const def of DATA_TOOL_DEFINITIONS) {
-      assert.ok(!classified.has(def.name), `${def.name} is annotated but not registered`);
+      assert.ok(classified.has(def.name), `${def.name} is registered but not annotated`);
     }
   });
 

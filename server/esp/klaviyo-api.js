@@ -499,15 +499,24 @@ export const adapter = {
   validateSetup,
 
   async checkAuth({ config }) {
-    // Probe = GET /api/lists?page[size]=1 (design §1.4 — cheap, read-scope).
+    // Probe = GET /api/accounts — the endpoint Klaviyo documents for exactly
+    // this purpose ("test if a Private API Key belongs to the correct account
+    // prior to performing subsequent actions"). It needs accounts:read rather
+    // than lists:read, and unlike the old /lists probe it actually names the
+    // account the key belongs to. See server/esp/capabilities.js.
     try {
-      await klaviyoRequest({
+      const res = await klaviyoRequest({
         config,
         method: "GET",
-        path: "/lists",
-        query: { "page[size]": 1 },
+        path: "/accounts",
       });
-      return { ok: true, detail: "Klaviyo private API key accepted." };
+      const org = res?.data?.[0]?.attributes?.contact_information?.organization_name;
+      return {
+        ok: true,
+        detail: org
+          ? `Klaviyo private API key accepted (account: ${org}).`
+          : "Klaviyo private API key accepted.",
+      };
     } catch (err) {
       if (err instanceof EspApiError) {
         return { ok: false, code: err.code, detail: err.detail ?? err.message };

@@ -86,7 +86,7 @@ Use a **Campaign** for a one-off or scheduled send to an audience/segment with n
 |---|---|---|
 | Auth check | **native** — dedicated health check | `GET /ping` |
 | List templates | native | `GET /templates` |
-| Get template | native | `GET /templates/{template_id}` |
+| Get template | **partial** — metadata only; the read contract has no `html` property at all | `GET /templates/{template_id}` |
 | Create / update template | native (create from HTML; PATCH update) | `POST /templates`, `PATCH /templates/{template_id}` |
 | Campaigns read | native (classic automations read-limited — campaigns only in v1) | `GET /campaigns` |
 | Audiences / segments read | native | `GET /lists`, `GET /lists/{list_id}/segments` |

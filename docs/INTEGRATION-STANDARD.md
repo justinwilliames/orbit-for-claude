@@ -102,7 +102,7 @@ speaks **only the closed error taxonomy**: a failure surfaces as one of
 `needs_setup`, `auth_failed`, `not_found`, `rate_limited`, `timeout`,
 `upstream_unavailable`, `unsupported`, or `error` — the vocabulary in
 `server/status-vocabulary.js`, classified into delivered / prompted / failed.
-An honest capability gap (Customer.io has no public template API) surfaces as a
+An honest capability gap (Klaviyo publishes no test-send endpoint) surfaces as a
 shaped `{unsupported, reason, nearest_alternative}`, never as a raw exception.
 
 **How the gate checks it.** For every entry at Tier ≥ 2: `readTools.length >= 3`
@@ -195,22 +195,24 @@ into an SSRF primitive that also posts the user's token wherever it points.
   connection check, move them off `roadmap` and the gate begins enforcing their
   new tier.
 - **The tools/list budget is the binding constraint on parity, and it is
-  shared.** Suite 01 caps `tools/list` at 161,500 bytes. The committed tree
-  measures 161,122 across 130 tools — **378 bytes of headroom**, or 53 once the
-  Stripo→ESP export tool lands. That is less than the floor for a single
-  registered tool (~300 bytes: name, title, annotations, an empty JSON Schema,
-  and a 20-character description). No new integration of any shape fits today.
-- **Segment, RudderStack, Amplitude and Databricks are all blocked on that one
-  number, not on their APIs.** Each was built and measured (2026-08-24):
-  Segment's read family 2,456 bytes, RudderStack's 1,639, and the shared
-  Amplitude + Databricks polymorphic family 3,838 — after which Segment and
-  RudderStack would join it for 252 bytes between them. Segment and RudderStack were
-  reverted; Amplitude's and Databricks' adapters survive under `server/data/`,
-  fully tested, with the four-tool family written and unregistered. Registering
-  it is three lines in `server/index.js`, four names in
-  `server/tool-annotations.js`, and four manifest entries — after somebody
-  decides, in one place, whether the cap moves to ~165,300 or ~3,800 bytes of
-  tools retire.
+  shared.** Suite 01 caps `tools/list` at 165,500 bytes, raised from 161,500 on
+  2026-08-24 to pay for the data family (Justin authorised the raise explicitly;
+  the arithmetic is in the suite's own comment). The committed tree measures
+  **165,278 bytes across 135 tools — 222 bytes of headroom**. That is below the
+  floor for a single registered tool (~300 bytes: name, title, annotations, an
+  empty JSON Schema, and a 20-character description), so no new integration of
+  any shape fits today without another decision.
+- **Amplitude and Databricks are LIVE at Tier 2** via the polymorphic
+  `orbit_data_*` family (3,838 bytes for four tools covering both platforms),
+  registered 2026-08-24 with manifest credential slots and annotation tiers.
+- **Segment and RudderStack are NOT built.** Both were prototyped and measured
+  on 2026-08-24 (Segment's read family 2,456 bytes standalone, RudderStack's
+  1,639) and then **reverted** — behind the shared family they would rejoin for
+  **252 bytes between them**, which is the whole point of the polymorphic shape.
+  But 252 > the 222 bytes now free, so they need either a further small raise or
+  ~30 bytes of retirement first. They are blocked on that one number, not on
+  their APIs: the adapters are a known quantity and the family already exists to
+  hold them.
 
 ---
 

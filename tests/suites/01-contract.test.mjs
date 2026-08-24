@@ -358,7 +358,35 @@ const SHAPED_RESPONSE_FLOOR = 45;
 // Headroom is deliberately small: 161_500 leaves ~380 bytes, which is
 // roughly one more optional parameter and nowhere near another tool.
 // Tool 131 still has to be a decision rather than a diff.
-const TOOLS_LIST_BYTE_BUDGET = 161_500;
+//
+// Raised 161_500 → 165_500 on 2026-08-24, authorised by Justin explicitly
+// rather than taken by whoever needed the room — which is the whole point
+// of making this a number someone has to argue with.
+//
+// What bought the 4,000 bytes: registering `server/data/` — the polymorphic
+// data-platform family. Four tools (orbit_data_read, orbit_data_schema,
+// orbit_check_data_auth, orbit_data_capabilities) measuring 3,838 bytes,
+// covering FOUR platforms: Amplitude, Databricks, Segment, RudderStack.
+//
+// The case, and why this raise is different in kind from the last two:
+// every previous raise bought ONE capability. This one changes the slope.
+// Flat per-platform tools cost ~1,600 bytes each, so these four platforms
+// would have cost ~6,400 bytes and the fifth would cost 1,600 more. Behind
+// the polymorphic family the marginal platform costs ~126 bytes — a row in
+// a registry and an enum value. This is the last large payment for data
+// platforms; the measurement is in docs/INTEGRATION-STANDARD.md
+// §"The polymorphic family rule".
+//
+// Honesty note, because the same doc demands it: collapsing the EXISTING
+// nine flat ESP tools into a polymorphic family was measured too, and it
+// saves only 971 bytes — not enough to pay for this, which is precisely
+// why this is a raise and not a refactor. The measurement falsified the
+// cheaper plan; recording that here so nobody re-proposes it.
+//
+// Headroom stays deliberately thin — 222 bytes at the time of the raise (135 tools, 165,278 bytes measured),
+// which is one optional parameter and nowhere near another tool. Tool 135
+// still has to be a decision rather than a diff.
+const TOOLS_LIST_BYTE_BUDGET = 165_500;
 
 /**
  * Return the minimum arguments needed to exercise a tool's happy path.

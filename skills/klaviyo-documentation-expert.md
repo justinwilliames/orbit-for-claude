@@ -79,17 +79,17 @@ Use a **List** only for static membership — newsletter opt-ins, imported cohor
 - **Base URL:** `https://a.klaviyo.com/api/`.
 - **Auth header:** `Authorization: Klaviyo-API-Key <private-key>` (private keys are prefixed `pk_…`). Never use a public/site key for server-side calls.
 - **Revision header is mandatory.** Every request must carry a `revision` header pinned to a dated API version (verified stable `2026-07-15`). Klaviyo ships breaking changes behind revisions roughly quarterly. Pin one revision constant per integration; never vary it per call. When Klaviyo announces a new revision, verify against the changelog before bumping.
-- **No ping endpoint.** The cheapest auth probe is `GET /api/lists?page[size]=1` (read scope, one row).
+- **Auth probe = `GET /api/accounts`.** Klaviyo documents this endpoint as the way to test whether a private API key belongs to the correct account before doing anything else (scope `accounts:read`; burst 1/s, steady 15/m — cache it). It also returns `default_sender_name`/`default_sender_email`, `organization_name`, the postal address, timezone, currency and `test_account`. The older `GET /api/lists?page[size]=1` probe works but needs `lists:read` and proves nothing about the account (verified 2026-08-24).
 - **JSON:API conventions.** Klaviyo's newer endpoints follow the JSON:API spec — resources under `data`, filtering via `filter=` expressions (e.g. `equals(messages.channel,'email')`), sparse fieldsets and relationships via `include`. Cursor pagination, not offset.
 
 ### Endpoint map (what Orbit reads/writes)
 
 | Operation | Support | Endpoint |
 |---|---|---|
-| Auth check | probe (no ping) | `GET /api/lists?page[size]=1` |
+| Auth check | native — documented key-validation probe | `GET /api/accounts` |
 | List templates | native | `GET /api/templates` |
 | Get template | native | `GET /api/templates/{id}` |
-| Create / update template | native (+ server-side render) | `POST /api/templates`, `PATCH /api/templates/{id}`, `POST /api/templates/{id}/render` |
+| Create / update template | native (+ server-side render) | `POST /api/templates`, `PATCH /api/templates/{id}`, `POST /api/template-render` |
 | Campaigns read | native — channel filter required | `GET /api/campaigns?filter=equals(messages.channel,'email')` |
 | Flows read | native | `GET /api/flows` |
 | Segments / lists read | native | `GET /api/segments`, `GET /api/lists` |
@@ -194,7 +194,7 @@ Conditions combine with AND/OR groups. Segments re-evaluate continuously — a p
 
 Orbit reaches Klaviyo through the generic ESP tool family (resolve `platform: "klaviyo"`):
 
-- `orbit_check_esp_auth` — runs the `GET /api/lists?page[size]=1` probe.
+- `orbit_check_esp_auth` — runs the `GET /api/accounts` probe.
 - `orbit_esp_templates` — list/get templates (native).
 - `orbit_esp_push_template` — create/update a template (native; server-side render available).
 - `orbit_esp_read` — campaigns (channel-filtered), flows, segments, lists; and performance via the Reporting API (**partial** — rate-limited, needs a conversion metric; metrics are cached).
@@ -223,7 +223,7 @@ returned no row for gets `null` stats and an `unreadable` entry, not a step that
 shape, so a delay that cannot be read reports `null` and a branch condition is left in
 `esp_raw` rather than paraphrased into a sentence nobody verified.
 
-**Honest gap — no test send.** Klaviyo exposes no public test-send endpoint for a template or campaign. `orbit_esp_send_test` returns `{unsupported}` with the nearest alternative: render the template server-side (`POST /api/templates/{id}/render`) and run Orbit's local render/QA gate (`orbit_render_email_preview` + `orbit_qa_email`) to verify the email before it ships.
+**Honest gap — no test send.** Klaviyo exposes no public test-send endpoint for a template or campaign (the stable spec carries no `test`, `preview` or `proof` path; `POST /api/campaign-send-jobs` is a real send to the audience). `orbit_esp_send_test` returns `{unsupported}` with the nearest alternative: render the template server-side via the top-level `POST /api/template-render` — note there is **no** `POST /api/templates/{id}/render` endpoint — and run Orbit's local render/QA gate (`orbit_render_email_preview` + `orbit_qa_email`) to verify the email before it ships.
 
 ---
 

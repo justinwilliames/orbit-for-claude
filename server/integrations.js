@@ -166,7 +166,7 @@ export const INTEGRATIONS = Object.freeze([
     deepTools: [],
     roadmap: false,
     notes:
-      "Campaigns, newsletters, segments and metrics read via the generic family. Template content is authored in-app (no public template API) — surfaced honestly as {unsupported}.",
+      "Campaigns, newsletters, segments and metrics read via the generic family. The three template operations are surfaced honestly as {unsupported} — an Orbit build gap, not a platform one: Customer.io's Design Studio endpoints (/v1/design_studio/emails) do publish template read/list/CRUD, and this adapter does not implement them yet (surveyed 2026-08-24).",
   },
   {
     id: "klaviyo",
@@ -312,13 +312,7 @@ export const INTEGRATIONS = Object.freeze([
     deepTools: [],
     roadmap: true,
     notes:
-      "Referenced in guide content as event plumbing. No integration built yet. " +
-      "Attempted 2026-08-24 and stopped at the tools/list byte budget, not at the API: " +
-      "a Tier 2 Segment read family (token probe + sources + destinations + tracking plans, " +
-      "tight one-sentence descriptions) measures 2,456 bytes against the 378 bytes suite 01 " +
-      "leaves under its 161,500-byte cap; even a degenerate 3-tool, zero-argument, " +
-      "20-character-description floor measures 1,043 bytes and lands 665 over. Building it " +
-      "needs a deliberate budget decision (raise the cap, or retire tools) BEFORE the adapter.",
+      "Referenced in guide content as event plumbing. Not built. Attempted 2026-08-24 and stopped at the tools/list byte budget, not at the API: a standalone Tier 2 Segment read family (token probe + sources + destinations + tracking plans) measures 2,456 bytes. The picture changed on 2026-08-24 when the polymorphic orbit_data_* family was registered (Amplitude + Databricks, Tier 2): Segment now joins that family for roughly 126 bytes — a registry row, an enum value, and an adapter — rather than paying for its own tool surface. The remaining blocker is arithmetic: Segment and RudderStack together need ~252 bytes and only 222 are free under the 165,500-byte cap, so one more small decision (a raise, or ~30 bytes retired) unblocks both.",
   },
   {
     id: "rudderstack",
@@ -335,59 +329,39 @@ export const INTEGRATIONS = Object.freeze([
     roadmap: true,
     notes:
       "Referenced in guide content as a Segment alternative. No integration built yet. " +
-      "Built and reverted 2026-08-24, stopped by the tools/list byte budget rather than by " +
-      "the API: a read-only Management API client (GET-only request helper, closed error " +
-      "taxonomy, credential redaction) plus a token probe and sources / destinations / " +
-      "connection-graph reads measured 1,639 bytes against the 378 bytes suite 01 leaves " +
-      "under its 161,500-byte cap. Trimming does not close it — a degenerate 3-tool, " +
-      "zero-argument, 20-character-description floor still measures 1,057 bytes and lands " +
-      "679 over. Same wall Segment hit. Raise the cap on purpose, or retire tools, BEFORE " +
-      "rebuilding the adapter.",
+      "Built and reverted 2026-08-24, stopped by the tools/list byte budget rather than by the API: a read-only Management API client (GET-only request helper, closed error taxonomy, credential redaction) plus a token probe and sources / destinations / connection-graph reads measured 1,639 bytes standalone. Same wall Segment hit, and the same escape: behind the now-registered polymorphic orbit_data_* family it costs roughly 126 bytes instead. Needs the same ~252-byte decision as Segment (222 free today), then the adapter can be restored from history.",
   },
   {
     id: "amplitude",
     name: "Amplitude",
     kind: "cdp",
-    declaredTier: 0,
-    configKeys: [],
-    secretKeys: [],
-    connectionCheckTool: null,
+    declaredTier: 2,
+    configKeys: ["amplitude_api_key", "amplitude_secret_key", "amplitude_region"],
+    secretKeys: ["amplitude_api_key", "amplitude_secret_key"],
+    connectionCheckTool: "orbit_check_data_auth",
     connectionCheckOutcomes: CONNECTION_CHECK_OUTCOMES,
-    sharedToolFamily: false,
-    readTools: [],
+    sharedToolFamily: true,
+    readTools: ["orbit_data_read", "orbit_data_schema", "orbit_data_capabilities"],
     deepTools: [],
-    roadmap: true,
+    roadmap: false,
     notes:
-      "READ-ONLY adapter BUILT and covered by tests (server/data/amplitude-api.js, " +
-      "tests/suites/54-data-family.test.mjs): cohort metadata + membership counts and bounded " +
-      "aggregate active/new-user and event series, with no member export, no raw Export API and " +
-      "no ingestion. NOT REGISTERED, and so declared Tier 0: it reaches the user through the " +
-      "polymorphic orbit_data_* family, which measures 3,838 bytes of tools/list against the 53 " +
-      "bytes suite 01 leaves under its 161,500-byte cap. That is the collapsed, four-tool shape " +
-      "already — the nine flat per-platform tools it replaced measured 4,809. Registering it is a " +
-      "three-line change in server/index.js once ~3,800 bytes exist to pay for it.",
+      "READ-ONLY Dashboard REST API, LIVE since 2026-08-24 through the polymorphic orbit_data_* family: cohort metadata + membership counts and bounded aggregate active/new-user and event series. No member export, no raw Export API, no ingestion — there is no write path in the adapter. Reached Tier 2 when the tools/list budget was raised 161,500 -> 165,500 to pay for the family's 3,838 bytes (see tests/suites/01-contract.test.mjs for the rationale).",
   },
   {
     id: "databricks",
     name: "Databricks",
     kind: "cdp",
-    declaredTier: 0,
-    configKeys: [],
-    secretKeys: [],
-    connectionCheckTool: null,
+    declaredTier: 2,
+    configKeys: ["databricks_host", "databricks_token"],
+    secretKeys: ["databricks_token"],
+    connectionCheckTool: "orbit_check_data_auth",
     connectionCheckOutcomes: CONNECTION_CHECK_OUTCOMES,
-    sharedToolFamily: false,
-    readTools: [],
+    sharedToolFamily: true,
+    readTools: ["orbit_data_read", "orbit_data_schema", "orbit_data_capabilities"],
     deepTools: [],
-    roadmap: true,
+    roadmap: false,
     notes:
-      "READ-ONLY adapter BUILT and covered by tests (server/data/databricks-api.js, " +
-      "server/data/sql-guard.js): Unity Catalog catalogs, schemas, tables and columns, plus a " +
-      "guarded SQL path that accepts a single SELECT/SHOW/DESCRIBE and refuses DML, DDL, " +
-      "semicolon-chained statements and comment-hidden writes before the request is built. No " +
-      "write path exists in the adapter. NOT REGISTERED for the same byte-budget reason as " +
-      "Amplitude above — the two share the orbit_data_* family, so they are one 3,838-byte " +
-      "decision, not two.",
+      "READ-ONLY Unity Catalog + SQL reads, LIVE since 2026-08-24 through the polymorphic orbit_data_* family: catalogs, schemas, tables and columns, plus a guarded SQL path that accepts a single SELECT/SHOW/DESCRIBE and refuses DML, DDL, semicolon-chained statements and comment-hidden writes BEFORE the request is built (server/data/sql-guard.js). The workspace host is user-supplied and validated against a Databricks domain allow-list. No write path exists in the adapter.",
   }
 ]);
 

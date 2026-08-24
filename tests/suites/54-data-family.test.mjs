@@ -594,16 +594,19 @@ describe("Amplitude adapter — read-only by construction", () => {
     assert.throws(() => resolvePlatform(undefined), /platform is required/);
   });
 
-  test("the registry declares Amplitude Tier 0 while the family is unregistered", () => {
-    // Built, tested, and unreachable: the tier follows what a user can reach,
-    // and the notes must carry the byte arithmetic that explains why.
+  test("the registry declares Amplitude Tier 2 now the family is registered", () => {
+    // Inverted 2026-08-24, when the budget was raised and the family
+    // registered. The invariant is unchanged and is the only one that
+    // matters: the declared tier follows what a user can actually reach.
+    // It read Tier 0 while the adapter was built-but-unreachable; it reads
+    // Tier 2 now the tools ship, and the credential slots it names must
+    // exist in the manifest for that claim to be true (suite 53 checks it).
     const entry = INTEGRATIONS.find((e) => e.id === "amplitude");
-    assert.equal(entry.declaredTier, 0);
-    assert.equal(entry.roadmap, true);
-    assert.equal(entry.connectionCheckTool, null);
-    assert.deepEqual(entry.readTools, []);
-    assert.deepEqual(entry.configKeys, []);
-    assert.match(entry.notes, /byte/i, "the notes must say WHY it is not registered");
+    assert.equal(entry.declaredTier, 2);
+    assert.equal(entry.roadmap, false);
+    assert.equal(entry.connectionCheckTool, "orbit_check_data_auth");
+    assert.ok(entry.readTools.length >= 3, "Tier 2 needs at least three read tools");
+    assert.ok(entry.configKeys.length > 0, "a reachable integration names its credential slots");
   });
 
   test("a tool handler returns a shaped payload rather than throwing", async () => {

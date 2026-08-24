@@ -175,10 +175,17 @@ export const READ_ONLY_NETWORKED = new Set([
   "orbit_check_bimi",
   "orbit_check_deliverability",
   "orbit_check_email_auth",
+  "orbit_check_data_auth",
   "orbit_check_esp_auth",
   "orbit_check_stripo_auth",
   "orbit_check_template_collision",
   "orbit_check_version",
+  // The data family reads the user's warehouse/CDP/analytics estate. Every
+  // one is a read against a third party: orbit_data_read runs only guarded
+  // SELECTs (server/data/sql-guard.js rejects anything else before it is
+  // sent), so read-only here is enforced, not merely asserted.
+  "orbit_data_read",
+  "orbit_data_schema",
   "orbit_esp_read",
   "orbit_esp_templates",
   "orbit_klaviyo_flow_audit",
@@ -231,6 +238,8 @@ export const READ_ONLY_LOCAL = new Set([
   "orbit_compose_sequence",
   "orbit_compose_sms",
   "orbit_dark_mode_check",
+  // A static, doc-backed matrix read out of the registry — no network.
+  "orbit_data_capabilities",
   "orbit_esp_capabilities",
   "orbit_fix_stripo_module",
   "orbit_free_shipping_threshold",

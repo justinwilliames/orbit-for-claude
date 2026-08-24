@@ -39,6 +39,7 @@ import {
   espSetupSummary,
   checkTemplateCollisionForPlatform,
 } from "./esp/tools.js";
+import { DATA_TOOL_DEFINITIONS, setDataRuntimeConfig } from "./data/tools.js";
 import { BRAIN_TOOL_DEFINITIONS } from "./brain/index.js";
 import { REGISTERED_PLATFORMS } from "./esp/registry.js";
 
@@ -1409,12 +1410,11 @@ function registerTools() {
   // provider and errors loudly if it is missing. The getter form keeps handlers
   // reading the live config, never a snapshot captured before bootstrap.
   setEspRuntimeConfig(() => runtimeConfig);
-  // NOTE: server/data/ (Amplitude + Databricks, polymorphic) is deliberately
-  // NOT registered here. Its four tools measure 3,838 bytes of tools/list and
-  // the budget in tests/suites/01-contract.test.mjs has 53 bytes of headroom.
-  // Registering it is `setDataRuntimeConfig(() => runtimeConfig)` plus
-  // `...DATA_TOOL_DEFINITIONS` in the loop below, once ~3,800 bytes exist to
-  // pay for it. See docs/INTEGRATION-STANDARD.md §"The polymorphic family rule".
+  // server/data/ — the data-platform family (Amplitude, Databricks, Segment,
+  // RudderStack), registered 2026-08-24 once the budget was raised to pay for
+  // its 3,838 bytes. Same getter-not-snapshot rule as the ESP family above:
+  // the config is read live, never captured before bootstrap.
+  setDataRuntimeConfig(() => runtimeConfig);
 
   registerToolSafe(
     "orbit_review_creative",
@@ -6440,6 +6440,7 @@ function registerTools() {
   // registerToolSafe — additive, no per-tool wiring in the monolith.
   for (const def of [
     ...ESP_TOOL_DEFINITIONS,
+    ...DATA_TOOL_DEFINITIONS,
     ...BRAIN_TOOL_DEFINITIONS,
   ]) {
     registerToolSafe(def.name, def.inputSchema, def.handler);

@@ -68,10 +68,9 @@ export function loadRuntimeConfig(rootDir) {
     mailchimpApiKey: cleanString(process.env.ORBIT_MAILCHIMP_API_KEY),
     mailchimpServerPrefix: cleanString(process.env.ORBIT_MAILCHIMP_SERVER_PREFIX),
     // Amplitude — READ-ONLY Dashboard REST API. HTTP Basic (api key : secret key);
-    // STAGED: the adapter lives at server/data/amplitude-api.js and is tested,
-    // but the orbit_data_* family that surfaces it is not registered yet (see
-    // server/integrations.js), so nothing reads these today except the suites.
-    // The manifest has no matching user_config slot for the same reason.
+    // LIVE since 2026-08-24: the adapter at server/data/amplitude-api.js is
+    // surfaced by the registered orbit_data_* family, and the manifest carries
+    // a matching user_config slot.
     // region picks the residency host (us | eu) and ORBIT_AMPLITUDE_API_BASE_URL
     // overrides the host wholesale for a proxy or the test harness.
     amplitudeApiKey: cleanString(process.env.ORBIT_AMPLITUDE_API_KEY),
@@ -85,7 +84,7 @@ export function loadRuntimeConfig(rootDir) {
     sfmcSubdomain: cleanString(process.env.ORBIT_SFMC_SUBDOMAIN),
     sfmcAccountId: cleanString(process.env.ORBIT_SFMC_ACCOUNT_ID),
     // Databricks - workspace host + personal access token (read-only use).
-    // STAGED alongside Amplitude above - same reason, same one-commit fix.
+    // LIVE alongside Amplitude above, same date, same family.
     // The host is USER-SUPPLIED, so it is validated against a host allow-list
     // in server/data/databricks-api.js before any request is built.
     databricksHost: cleanString(process.env.ORBIT_DATABRICKS_HOST),

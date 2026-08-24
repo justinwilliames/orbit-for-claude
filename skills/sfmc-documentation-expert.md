@@ -65,7 +65,7 @@ SFMC has **two** API stacks, and the split defines what Orbit can and cannot do:
 - **REST API** — modern, JSON. Content Builder assets, Journey (interaction) reads, Transactional Messaging. **This is Orbit's v1 surface.**
 - **SOAP API** — older, XML. Subscriber lists, data extensions, filters, and send-level tracking (Tracking Events / tracking extracts) are **SOAP-first** with no clean REST equivalent.
 
-**v1 ships no SOAP client.** That is a deliberate, load-bearing scope cut — a SOAP client is a project, not a bolt-on. Anything SOAP-gated (audience listing, aggregate send metrics) is honestly reported as unsupported in v1 rather than half-built.
+**v1 ships no SOAP client.** That is a deliberate, load-bearing scope cut — a SOAP client is a project, not a bolt-on. Anything SOAP-gated (classic subscriber lists/groups/filter definitions, Email Studio send aggregates, per-subscriber tracking events) is honestly reported as unsupported in v1 rather than half-built. Note the REST surface is not empty: data extensions list over `GET /data/v1/customobjects` and journey stats over `?extras=stats` — both real endpoints Orbit's adapter does not call yet (verified 2026-08-24).
 
 ---
 
@@ -93,8 +93,8 @@ Installed-package permissions vary per org. Journey reads require the **`Automat
 | Get template | native | `GET /asset/v1/content/assets/{id}` |
 | Create / update template | native (`htmlemail` asset type, id 208; PUT/PATCH update) | `POST /asset/v1/content/assets`, `PUT /asset/v1/content/assets/{id}` |
 | Journeys read | native (needs `Automation \| Journeys \| Read` scope) | `GET /interaction/v1/interactions`, `/interactions/{id}` |
-| Segments / lists read | **unsupported in v1** — SOAP-first (lists / data extensions / filters) | — |
-| Performance metrics | **unsupported in v1** — SOAP Tracking Events, no simple REST aggregate | — |
+| Segments / lists read | **unsupported in v1** — classic lists / groups / filter definitions are SOAP-only; the REST data-extension listing is unimplemented | (`GET /data/v1/customobjects`) |
+| Performance metrics | **unsupported in v1** — Email Studio send aggregates + tracking events are SOAP-only; the REST journey-stats and transactional metrics paths are unimplemented | (`GET /interaction/v1/interactions?extras=stats`) |
 | Test / proof send | **partial** — Transactional Messaging via a pre-created send definition | `POST /messaging/v1/email/messages/{messageKey}` |
 
 Reference: https://developer.salesforce.com/docs/marketing/marketing-cloud/guide/access-token-s2s.html, https://developer.salesforce.com/docs/marketing/marketing-cloud/guide/content-api.html, and https://developer.salesforce.com/docs/marketing/marketing-cloud/guide/transactional-messaging-api.html
@@ -178,11 +178,11 @@ Orbit reaches SFMC through the generic ESP tool family (resolve `platform: "sfmc
 - `orbit_check_esp_auth` — mints a token (which validates subdomain + MID) and reports granted scopes where present.
 - `orbit_esp_templates` — list/get Content Builder `htmlemail` assets (native).
 - `orbit_esp_push_template` — create/update an `htmlemail` asset (native).
-- `orbit_esp_read` — Journeys via the interactions read (native, scope-gated). Segments/lists and performance return `{unsupported}` in v1 (SOAP-first).
+- `orbit_esp_read` — Journeys via the interactions read (native, scope-gated). Segments/lists and performance return `{unsupported}` in v1 — the classic surfaces are SOAP-first, and the partial REST paths (data extensions, journey stats) are not implemented.
 - `orbit_esp_send_test` — **partial**: transactional send via a pre-created send definition (requires setup, not a one-call proof).
 - `orbit_esp_capabilities` — the honest matrix for SFMC, including the two SOAP boundaries.
 
-**Honest boundary — REST-only in v1.** Two operations return `{unsupported}` with the reason stated: segment/list reads and aggregate performance metrics are SOAP-first with no clean REST path. This is the single biggest deliberate scope cut in the SFMC integration; a SOAP client is an explicit v2 decision, not a gap to paper over.
+**Honest boundary — REST-only in v1.** Two operations return `{unsupported}` with the reason stated: segment/list reads and aggregate performance metrics. Be precise about why — the *classic* surfaces (subscriber lists, groups, filter definitions, send-level aggregates, tracking events) are SOAP-only, while partial REST paths do exist and are simply unimplemented (`GET /data/v1/customobjects` for data extensions, `?extras=stats` for journey statistics). A SOAP client is an explicit v2 decision, not a gap to paper over.
 
 ---
 

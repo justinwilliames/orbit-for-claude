@@ -7,8 +7,9 @@ description: >
   "write this Liquid", "why isn't this segment matching?", "send this transactional email",
   or any Customer.io-specific implementation question. This skill operates as a deep
   Customer.io platform expert — precise and implementable, and honest about the biggest
-  Orbit limitation here: Customer.io exposes no public template CRUD, so Orbit can read the
-  program and send proofs but cannot push templates.
+  Orbit limitation here: Orbit's adapter cannot read or push Customer.io templates, so it
+  reads the program and sends proofs only. That is an Orbit gap, not a platform one —
+  Customer.io's Design Studio API does expose email CRUD (verified 2026-08-24).
 ---
 
 # Customer.io Documentation Expert
@@ -55,7 +56,7 @@ Default response shape for this skill:
 | Newsletter | A designed one-off/recurring editorial send | Regular editorial / digest communication |
 | Segment | Data-driven or manual group; membership updates from attributes/events | Targeting for campaigns, broadcasts, newsletters |
 | Transactional Message | An API-triggered 1:1 send with an inline or in-app body | Receipts, password resets, real-time confirmations |
-| Content authored in-app | Message bodies edited in the Customer.io UI | All reusable message design lives here — not in a public template API |
+| Design Studio | Reusable emails, components and snippets, editable in the UI and readable/writable over the API (`/v1/design_studio/emails`) | Where reusable message design lives; Orbit's adapter does not call these endpoints yet |
 
 ### Campaign vs Broadcast vs Newsletter — When to Use Which
 
@@ -79,11 +80,11 @@ Customer.io has **multiple APIs**; for Orbit's read + transactional-send scope, 
 
 | Operation | Support | Endpoint |
 |---|---|---|
-| Auth check | probe (no ping) | `GET /v1/campaigns?limit=1` |
-| List templates | **unsupported** — no public template/layout listing | — |
-| Get template | **unsupported** — message content authored in-app | — |
-| Create / update template | **unsupported** — no public CRUD for reusable templates | — |
-| Campaigns / newsletters read | native (incl. per-campaign metadata) | `GET /v1/campaigns`, `/v1/campaigns/{id}`, `/v1/newsletters` |
+| Auth check | probe (no ping) | `GET /v1/workspaces` (fallback `GET /v1/campaigns?limit=1`) |
+| List templates | **unsupported in Orbit** — the API exists, the adapter does not call it | (`GET /v1/design_studio/emails?is_template=true`) |
+| Get template | **unsupported in Orbit** — the API exists, the adapter does not call it | (`GET /v1/design_studio/emails/{id}`) |
+| Create / update template | **unsupported in Orbit** — CRUD exists but cannot publish, or attach an email to a campaign/broadcast/transactional message | (`POST`/`PUT` `/v1/design_studio/emails`) |
+| Campaigns / newsletters read | native (incl. per-campaign metadata) | `GET /v1/campaigns`, `/v1/campaigns/{id}`, `/v1/broadcasts`, `/v1/newsletters`, `/v1/transactional` |
 | Segments read | native | `GET /v1/segments` |
 | Performance metrics | native (per-campaign and per-newsletter series) | `GET /v1/campaigns/{id}/metrics`, `/v1/newsletters/{id}/metrics` |
 | Test / proof send | native — transactional send with inline body to any address | `POST /v1/send/email` |
@@ -166,7 +167,7 @@ Segment logic drives campaign entry, broadcast targeting, and suppression. Becau
 
 | Issue | Cause | Fix |
 |---|---|---|
-| "Where are the templates?" | No public template API — content is in-app | Read campaigns/newsletters for inventory; author bodies in the UI |
+| "Where are the templates?" | Design Studio holds them; Orbit's adapter does not read them yet | Read campaigns/newsletters for inventory; author and publish bodies in the UI |
 | Wrong region / 401 | US key used against EU base (or vice versa) | Match base URL to workspace region (`api` vs `api-eu`) |
 | Transactional send renders blank | `message_data` not passed or Liquid path wrong | Supply structured `message_data`; reference exact keys in the body |
 | Campaign not triggering | Event name mismatch or segment condition unmet | Verify exact event name and segment membership for the person |
@@ -189,4 +190,4 @@ Orbit reaches Customer.io through the generic ESP tool family (resolve `platform
 
 ## Quality Standard
 
-Customer.io implementation is correct when: the right person receives the right message via the right channel at the right time, Liquid renders without errors or blank fields, campaign triggers fire on the right events, segments populate as expected, the transactional path is reserved for genuine 1:1 sends, and the base URL matches the workspace region. Because Orbit cannot push templates here, "done" for design work means the content is authored in-app and verified via a transactional proof send — set that expectation up front.
+Customer.io implementation is correct when: the right person receives the right message via the right channel at the right time, Liquid renders without errors or blank fields, campaign triggers fire on the right events, segments populate as expected, the transactional path is reserved for genuine 1:1 sends, and the base URL matches the workspace region. Because Orbit cannot push templates here, "done" for design work means the content is authored in-app and verified via a transactional proof send — set that expectation up front. Even a direct Design Studio API write would need publishing in the workspace before it sends.
