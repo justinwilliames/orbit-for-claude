@@ -79,6 +79,7 @@ const CATEGORY_GROUPS = {
   "measurement-economics": [
     "lifecycle-reporting",
     "lifecycle-performance-report",
+    "lifecycle-program-performance-report",
     "experiment-design",
     "retention-economics"
   ],

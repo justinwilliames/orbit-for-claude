@@ -5733,6 +5733,118 @@
     ]
   },
   {
+    "name": "lifecycle-program-performance-report",
+    "title": "Lifecycle Program Performance Report",
+    "category": "measurement-economics",
+    "description": "Use this skill to produce a recurring executive report on every live lifecycle program — reach and delivery against industry benchmarks, what each program achieved against ITS OWN goal, and what customers said. Trigger on \"weekly lifecycle program report\", \"how are our lifecycle programs performing\", \"build the program performance readout\", \"executive lifecycle report\", \"monthly program performance\", or \"report on our live journeys\". Built for teams that do NOT run holdouts: it measures exposed customers and what they did next, from billing and product data rather than ESP conversion events. Do NOT use for designing a measurement framework (that is lifecycle-reporting), for single-campaign metrics (that is braze-performance), or for deliverability triage.",
+    "trigger_phrases": [
+      "weekly lifecycle program report",
+      "how are our lifecycle programs performing",
+      "build the program performance readout",
+      "executive lifecycle report",
+      "monthly program performance",
+      "report on our live journeys"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [],
+    "artifact_types": [
+      "deliverable"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": false,
+      "supported_platforms": []
+    },
+    "templates": [],
+    "validator_rules": [
+      {
+        "label": "diagnosis or situation",
+        "type": "regex",
+        "value": "(diagnosis|situation|current state|findings?)",
+        "flags": "i"
+      },
+      {
+        "label": "recommendation or approach",
+        "type": "regex",
+        "value": "(recommendation|recommended approach|approach|plan)",
+        "flags": "i"
+      },
+      {
+        "label": "risks or assumptions",
+        "type": "regex",
+        "value": "(risk|assumption|dependency|dependencies)",
+        "flags": "i"
+      },
+      {
+        "label": "next actions",
+        "type": "regex",
+        "value": "(next action|next step|implementation step|what to do next)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "achieved",
+      "against",
+      "are",
+      "benchmarks",
+      "billing",
+      "braze-performance",
+      "build",
+      "built",
+      "conversion",
+      "customers",
+      "data",
+      "deliverability",
+      "deliverable",
+      "delivery",
+      "designing",
+      "did",
+      "each",
+      "esp",
+      "events",
+      "every",
+      "executive",
+      "exposed",
+      "framework",
+      "goal",
+      "holdouts",
+      "how",
+      "industry",
+      "its",
+      "journeys",
+      "lifecycle",
+      "lifecycle-program-performance-report",
+      "lifecycle-reporting",
+      "live",
+      "measurement",
+      "measures",
+      "metrics",
+      "monthly",
+      "next",
+      "not",
+      "our",
+      "own",
+      "performance",
+      "performing",
+      "produce",
+      "product",
+      "program",
+      "programs",
+      "rather",
+      "reach",
+      "readout",
+      "recurring",
+      "report",
+      "run",
+      "said",
+      "single-campaign",
+      "teams",
+      "triage",
+      "trigger",
+      "weekly"
+    ]
+  },
+  {
     "name": "lifecycle-reporting",
     "title": "Lifecycle Reporting Framework",
     "category": "measurement-economics",
