@@ -84,9 +84,10 @@ You do not need to pick folders during normal setup. Orbit fills in missing fold
 - `Figma API Token`
   - Required only for importing structured email designs from Figma.
 - `Braze API Key`
-  - Required only for publishing Content Blocks or HTML templates to Braze.
+  - Required for reading campaigns, canvases, segments, templates and performance data, and for publishing Content Blocks or HTML templates to Braze.
+  - Braze scopes keys per endpoint, and the scopes cannot be changed after the key is created. See `docs/braze-api-key-permissions.md` for the read-only set, the write scopes Orbit actually uses, and the scopes to withhold.
 - `Braze REST Endpoint`
-  - Required only for Braze publishing.
+  - Required for any Braze read or publish. Must match your workspace cluster.
 
 ## Brand Kit Structure
 

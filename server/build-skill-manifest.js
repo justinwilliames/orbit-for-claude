@@ -78,6 +78,8 @@ const CATEGORY_GROUPS = {
   ],
   "measurement-economics": [
     "lifecycle-reporting",
+    "lifecycle-performance-report",
+    "lifecycle-program-performance-report",
     "experiment-design",
     "retention-economics"
   ],
@@ -760,7 +762,28 @@ function extractTitle(body) {
 }
 
 function extractQuotedPhrases(text) {
-  return [...text.matchAll(/"([^"]+)"/g)]
+  // Two skills wrap the WHOLE description in double quotes (a YAML flow
+  // scalar) and write their trigger phrases in single quotes. Matching only
+  // `"..."` then captured the entire 870- and 1355-character description as
+  // one span, which the <120 length filter dropped — so
+  // braze-canvas-conformance and braze-claude-in-chrome-build shipped with
+  // zero trigger phrases each and scored on generic keyword overlap alone,
+  // while the build said "Wrote 82 skill manifest entries" and exited 0.
+  // Strip an outer wrapping pair first, then read BOTH quote styles.
+  const unwrapped = text.trim().replace(/^(['"])([\s\S]*)\1$/, "$2");
+
+  const doubleQuoted = [...unwrapped.matchAll(/"([^"]+)"/g)];
+  // A lone apostrophe inside a word must not close a phrase. Excluding `'`
+  // from the content class is not enough — it makes the phrase
+  // "is the brain's canvas_id still right" unmatchable rather than merely
+  // truncated, because the lazy run cannot cross the apostrophe to reach the
+  // real closing quote. So allow an apostrophe when it is flanked by letters,
+  // and require the delimiters themselves not to sit flush against one.
+  const singleQuoted = [
+    ...unwrapped.matchAll(/(?<![A-Za-z])'((?:[^']|(?<=[A-Za-z])'(?=[A-Za-z]))+?)'(?![A-Za-z])/g)
+  ];
+
+  return [...doubleQuoted, ...singleQuoted]
     .map((match) => match[1].trim().toLowerCase())
     .filter((phrase) => phrase.length > 3 && phrase.length < 120);
 }
