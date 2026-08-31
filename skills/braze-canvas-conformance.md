@@ -21,14 +21,22 @@ it. This skill is the check that runs before that happens.
 > | `/messages/send`, `/campaigns/trigger/send`, `/users/export/ids` with a bad body | `400` validation error | **endpoint exists, key is permitted** |
 > | `/canvas/update`, `/canvas/create`, `/canvas/step/update` | `404 {"message":"Invalid URL"}` | **route does not exist** |
 >
-> Braze's own docs confirm it: there are **nine** `canvas.*` API-key permissions —
-> `trigger.send`, `trigger.schedule.create/update/delete`, `list`, `details`, `data_series`,
-> `data_summary`, `url_info.details`. **Every one is read or trigger. There is no write scope to
-> grant**, so nothing in the API Keys page unlocks this.
+> The API Keys page confirms it. Permission list re-verified against the Braze dashboard on
+> 31 Aug 2026: there are **twelve** `canvas.*` scopes — `trigger.send`,
+> `trigger.schedule.create/update/delete`, `list`, `details`, `data_series`, `data_summary`,
+> `url_info.details`, `duplicate`, `translations.get`, `translations.update`. Two of them,
+> `duplicate` and `translations.update`, are genuine write scopes — but neither writes canvas
+> config: duplicate clones an entire canvas, and the translation update touches message copy.
+> **No checkbox on that page unlocks a canvas name, a step name, or the flow structure.**
 >
-> Braze does have exactly three *mutating* canvas endpoints — `POST /canvas/duplicate`, the `PUT`
-> translation update, and scheduled-send management. **None touches a canvas name, a step name, or
-> the flow structure.** Do not let their existence tempt you into thinking a write path exists.
+> Do not trust Braze's published permission reference here — at the time of writing it still listed
+> nine, omitting all three of the scopes added since. The dashboard is the source of truth. Orbit's
+> full snapshot of it lives in `docs/braze-api-key-permissions.md`.
+>
+> The same holds at the endpoint layer: Braze's *mutating* canvas endpoints are
+> `POST /canvas/duplicate`, the `PUT` translation update, and scheduled-send management. **None
+> touches a canvas name, a step name, or the flow structure.** Do not let their existence tempt you
+> into thinking a write path exists.
 >
 > **So: this skill READS over REST and WRITES through the dashboard**, via
 > `braze-claude-in-chrome-build`. Never report a fix as done without the re-run.
