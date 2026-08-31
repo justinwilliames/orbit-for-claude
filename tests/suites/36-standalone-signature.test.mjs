@@ -28,9 +28,31 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { ORBIT_WIDGETS } from "../../server/ui/register.js";
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * How many Chrome processes may be in flight at once.
+ *
+ * Every measurement is a cold Chrome start — ~0.75s of process launch for
+ * ~5ms of layout. Run serially, 49 of them took 37s locally and blew past
+ * the runner's 60s per-file timeout on CI hardware, where the whole file
+ * was killed and reported as "ran no tests": node:test buffers a file's
+ * subtest results and discards them when it kills the file, so 50 passing
+ * assertions vanished into one nameless timeout. Overlapping the launches
+ * is the fix — the assertions are unchanged, only the waiting is shared.
+ */
+const LAUNCH_CONCURRENCY = 12;
+
+/**
+ * Per-launch ceiling. A Chrome that never returns used to wedge the whole
+ * file into that same anonymous 60s timeout; this makes it name itself.
+ */
+const LAUNCH_TIMEOUT_MS = 30_000;
 
 /** Where a headless-capable Chrome might live, in order of preference. */
 const CHROME_CANDIDATES = [
@@ -605,7 +627,7 @@ const POPULATED = {
 };
 
 /** Render a widget's ARTIFACT document, load it in Chrome, return the probe. */
-function measure(widget, data = null) {
+async function measure(widget, data = null) {
   // render(null) is exactly the document the static ui:// resource carries,
   // and the artifact path bakes data into the same shell. Standalone is the
   // default: there is no host bridge in a file:// load, so orbitEmbedded is
@@ -614,7 +636,7 @@ function measure(widget, data = null) {
   const file = path.join(tmpDir, `${data ? "populated-" : "empty-"}${path.basename(widget.uri)}`);
   fs.writeFileSync(file, html, "utf8");
 
-  const dom = execFileSync(
+  const { stdout: dom } = await execFileAsync(
     CHROME,
     [
       "--headless",
@@ -625,7 +647,7 @@ function measure(widget, data = null) {
       "--dump-dom",
       `file://${file}`
     ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 }
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: LAUNCH_TIMEOUT_MS }
   );
 
   const match = /data-orbit-probe="([^"]*)"/.exec(dom);
@@ -638,7 +660,7 @@ function measure(widget, data = null) {
   return JSON.parse(decoded);
 }
 
-describe("Standalone artifacts show the row that carries the product name", { skip: CHROME ? false : "no Chrome found — set CHROME_PATH to run the rect assertions" }, () => {
+describe("Standalone artifacts show the row that carries the product name", { concurrency: LAUNCH_CONCURRENCY, skip: CHROME ? false : "no Chrome found — set CHROME_PATH to run the rect assertions" }, () => {
   before(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-signature-"));
   });
@@ -654,8 +676,8 @@ describe("Standalone artifacts show the row that carries the product name", { sk
 
   for (const widget of ORBIT_WIDGETS) {
     for (const state of ["empty", "populated"]) {
-    test(`${widget.uri} (${state}) — the signature row is inside the viewport`, () => {
-      const probe = measure(widget, state === "populated" ? POPULATED[widget.uri] : null);
+    test(`${widget.uri} (${state}) — the signature row is inside the viewport`, async () => {
+      const probe = await measure(widget, state === "populated" ? POPULATED[widget.uri] : null);
       assert.ok(probe.found, `no .o-made-with element in ${widget.uri}`);
 
       // The assertion the finding turns on: WHERE it is, not THAT it is.
@@ -729,12 +751,17 @@ const PUSH_PROBE = `
 
 let pushDir = null;
 
-function measurePush(data) {
+let pushSeq = 0;
+
+async function measurePush(data) {
   const widget = ORBIT_WIDGETS.find((w) => w.uri === "ui://orbit/review-gallery.html");
   const html = widget.render(data).replace("</body>", `${PUSH_PROBE}</body>`);
-  const file = path.join(pushDir, "push-preview.html");
+  // A per-call filename, not one shared path: these three run concurrently
+  // now, and a single push-preview.html would have them overwriting each
+  // other's document between write and load.
+  const file = path.join(pushDir, `push-preview-${pushSeq++}.html`);
   fs.writeFileSync(file, html, "utf8");
-  const dom = execFileSync(
+  const { stdout: dom } = await execFileAsync(
     CHROME,
     [
       "--headless",
@@ -745,7 +772,7 @@ function measurePush(data) {
       "--dump-dom",
       `file://${file}`
     ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 }
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: LAUNCH_TIMEOUT_MS }
   );
   const match = /data-orbit-push="([^"]*)"/.exec(dom);
   assert.ok(match, "the push preview never reported a measurement");
@@ -757,7 +784,7 @@ function measurePush(data) {
 const LONG_TITLE =
   "Your March invoice is ready and three payments failed overnight — review them before Friday";
 
-describe("Push preview draws the cut", { skip: CHROME ? false : "no Chrome found — set CHROME_PATH to run the rect assertions" }, () => {
+describe("Push preview draws the cut", { concurrency: LAUNCH_CONCURRENCY, skip: CHROME ? false : "no Chrome found — set CHROME_PATH to run the rect assertions" }, () => {
   before(() => {
     pushDir = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-push-"));
   });
@@ -766,8 +793,8 @@ describe("Push preview draws the cut", { skip: CHROME ? false : "no Chrome found
     if (pushDir) fs.rmSync(pushDir, { recursive: true, force: true });
   });
 
-  test("an over-length title is clipped in the frame, not set across two lines", () => {
-    const probe = measurePush({
+  test("an over-length title is clipped in the frame, not set across two lines", async () => {
+    const probe = await measurePush({
       programme: "Invoices",
       items: [
         {
@@ -787,11 +814,11 @@ describe("Push preview draws the cut", { skip: CHROME ? false : "no Chrome found
     );
   });
 
-  test("the clip note names every platform that cuts, and only the ones that do", () => {
+  test("the clip note names every platform that cuts, and only the ones that do", async () => {
     // 91-char title cuts on all three. 148-char body cuts on Android (100)
     // and web (120), and FITS on iOS (178) — which is precisely backwards
     // from the single "Clipped on iOS" line this replaced.
-    const probe = measurePush({
+    const probe = await measurePush({
       programme: "Invoices",
       items: [
         {
@@ -811,8 +838,8 @@ describe("Push preview draws the cut", { skip: CHROME ? false : "no Chrome found
     assert.doesNotMatch(probe.clipNote, /iOS [^·]*body/, "iOS is named as clipping a body that fits");
   });
 
-  test("copy that fits everywhere shows no clip note at all", () => {
-    const probe = measurePush({
+  test("copy that fits everywhere shows no clip note at all", async () => {
+    const probe = await measurePush({
       programme: "Invoices",
       items: [
         {
