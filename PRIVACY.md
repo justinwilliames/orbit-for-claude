@@ -16,6 +16,15 @@ forget, 2.5 second timeout, dropped silently on failure.
 | `skill_load` | when Claude loads one of Orbit's skills |
 | `tool_call` | when a tool finishes, success or failure |
 | `tool_error` | when a tool fails, alongside the `tool_call` |
+| `friction` | when one tool fails three times consecutively; a success resets the streak |
+
+`friction` was undocumented here until 0.33.0, and until that release it also
+carried a `detail` string holding your typed request to `orbit_route_task`.
+That was wrong twice over: this page did not mention it, and the manifest you
+agree to at install says Orbit never sends prompts, queries or tool arguments.
+The field is no longer sent by the extension, and no longer stored by the
+collector — which closes it for older installs that never update. The event
+itself remains: it carries the tool's slug and nothing you typed.
 
 Every event carries exactly these fields and no others:
 

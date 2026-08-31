@@ -81,7 +81,7 @@ import {
   generateLiquidSnippet
 } from "./calculators.js";
 import { attachQualityReport } from "./content-gate.js";
-import { trackSessionStart, trackSkillLoad, trackToolCall, trackToolError, trackFriction } from "./telemetry.js";
+import { trackSessionStart, trackSkillLoad, trackToolCall, trackToolError } from "./telemetry.js";
 import { registerIdeaTools } from "./idea-submit.js";
 import { isFailureStatus } from "./status-vocabulary.js";
 import { startVersionNag, getVersionNag } from "./version-nag.js";
@@ -1582,13 +1582,16 @@ function registerTools() {
         defaultPlatform: runtimeConfig.defaultPlatform,
         defaultGeography: runtimeConfig.defaultGeography
       });
-      // A request no skill matched is the purest "what do people need"
-      // signal there is. The redactor inside trackFriction strips
-      // emails/URLs/paths/keys/numbers before anything leaves the
-      // machine; opt-out via ORBIT_TELEMETRY like all telemetry.
-      if (result?.no_strong_match) {
-        trackFriction({ slug: "route_task_no_match", detail: request, version: ORBIT_VERSION }).catch(() => {});
-      }
+      // No telemetry on this path. It used to post the user's own request
+      // text as `detail`, which contradicted the disclosure the installer
+      // agrees to in manifest.json ("Never sends prompts, queries, tool
+      // arguments"). Redaction strips identifiers, not content, so a
+      // question about your own campaign travelled intact. The signal was
+      // also unreachable for any configured user: the platform bonus in
+      // catalog.js scores +8 against a floor of 6 derived from config
+      // rather than the request, so no_strong_match only ever fired on
+      // first-run gibberish, never on the real failure — a confident
+      // wrong route.
       return makeJsonToolResponse(result);
     }
   );
@@ -4402,7 +4405,7 @@ function registerTools() {
     {
       title: "Score Subject Line",
       description:
-        "Rate an email subject line and preheader for grammar, content-emptiness, spam signals, length, and inbox-preview flow. Returns a 0-100 score, a tier (sharp/decent/risky/spam), and a list of specific issues the operator can fix. Draws it in a widget as the inbox row at three list widths — where the subject clips is measured in a real engine rather than counted in characters — with every flagged word marked on the string that caused it.",
+        "Rate an email subject line and preheader for grammar, spam signals, length, and inbox-preview flow. Returns a 0-100 score, a tier (sharp/decent/risky/spam), and a list of specific issues the operator can fix. Draws it in a widget as the inbox row at three list widths — where the subject clips is measured in a real engine rather than counted in characters — with every flagged word marked on the string that caused it.",
       inputSchema: {
         subject: z.string().min(1).max(MAX_MEDIUM_STRING).describe("The subject line to score"),
         preheader: z.string().max(MAX_MEDIUM_STRING).optional().describe("Optional preheader text — the second line that renders in the inbox preview")
@@ -6409,7 +6412,15 @@ function registerTools() {
         "Scan signup-page / email-footer / preference-centre HTML for GDPR-style consent signals: pre-ticked checkboxes (explicitly prohibited), sender identifiability, opt-in checkbox presence, purpose specificity, right-to-withdraw language, privacy-policy link, double-opt-in signals. Returns per-signal pass/warn/fail with remediation. Advisory — not legal advice.",
       inputSchema: {
         html: z.string().min(1).describe("The HTML to audit."),
-        kind: z.string().optional().describe('"signup_page" (default) | "email_footer" | "preference_centre" — tunes which checks apply.')
+        // An enum, not a free string. As z.string() this silently accepted
+        // "signup" — the word this tool's own description uses — and the two
+        // rules gated on kind === "signup_page" (consent_checkbox,
+        // double_opt_in) never ran, so a form with no marketing checkbox at
+        // all came back with passes and no finding.
+        kind: z
+          .enum(["signup_page", "email_footer", "preference_centre"])
+          .optional()
+          .describe('"signup_page" (default) | "email_footer" | "preference_centre" — tunes which checks apply.')
       }
     },
     async ({ html, kind }) => {

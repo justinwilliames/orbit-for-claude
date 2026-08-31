@@ -139,6 +139,27 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
     }
   ];
 
+  // Computed once, up front, so `copy_generation.status` can derive from it
+  // rather than from a parallel condition that could disagree with it.
+  // The third entry is the one that used to be missing: a brand kit can be
+  // present and tone-defined while still not fully operational, and that was
+  // the case that produced a blocked status with nothing in the array.
+  const copyGenerationBlockers = allowCopyWithoutBrandGuidelines
+    ? []
+    : [
+        ...(brandKit.guidelines_path
+          ? []
+          : ["Create brand guidelines before Orbit writes copy. Run the brand-guidelines intake first."]),
+        ...(brandKit.tone_of_voice_defined
+          ? []
+          : ["Define Tone Of Voice in brand-guidelines.md before requesting copy from Orbit."]),
+        ...(brandKit.guidelines_path && brandKit.operational_status !== "full"
+          ? [
+              `Brand kit is present but not fully operational (status: ${brandKit.operational_status}). Complete the missing brand-kit sections, or call orbit_check_copy_readiness with allow_without_brand_guidelines to proceed on explicit assumptions.`
+            ]
+          : [])
+      ];
+
   const featureReadiness = {
     core: {
       status: checks[0].passed ? "ready" : "needs_setup",
@@ -178,27 +199,23 @@ export function checkSetup({ config, rootDir, brandKitDir, requestedFeatures = [
           : ["Add a Braze REST endpoint, such as https://rest.iad-01.braze.com, before publishing."])
       ]
     },
+    // `status` and `blocking_issues` used to derive from two DIFFERENT
+    // conditions: status keyed on `operational_status === "full"`, the array
+    // keyed on `guidelines_path`. A kit satisfying both array conditions but
+    // not "full" returned status:"needs_setup" with an EMPTY blocking_issues
+    // and guidance saying go ahead — reproduced in three independent
+    // environments, including a fully configured production brand kit.
+    // A check that holds an opinion and reports nothing is worse than no
+    // check, because it is trusted. Status now DERIVES from the array, so the
+    // two cannot disagree: every reason a caller is blocked is a reason the
+    // caller can read.
     copy_generation: {
-      status:
-        brandKit.operational_status === "full" && brandKit.tone_of_voice_defined
-          ? "ready"
-          : allowCopyWithoutBrandGuidelines
-            ? "ready_with_assumptions"
-            : "needs_setup",
-      blocking_issues: allowCopyWithoutBrandGuidelines
-        ? []
-        : [
-            ...(brandKit.guidelines_path
-              ? []
-              : [
-                  "Create brand guidelines before Orbit writes copy. Run the brand-guidelines intake first."
-                ]),
-            ...(brandKit.tone_of_voice_defined
-              ? []
-              : [
-                  "Define Tone Of Voice in brand-guidelines.md before requesting copy from Orbit."
-                ])
-          ],
+      status: copyGenerationBlockers.length > 0
+        ? "needs_setup"
+        : allowCopyWithoutBrandGuidelines && !(brandKit.operational_status === "full" && brandKit.tone_of_voice_defined)
+          ? "ready_with_assumptions"
+          : "ready",
+      blocking_issues: copyGenerationBlockers,
       guidance:
         brandKit.guidelines_path && brandKit.tone_of_voice_defined
           ? [

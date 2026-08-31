@@ -94,6 +94,12 @@ const COPY_PATHS = [
   "assets",
   "orbit.md",
   "orbit-lifecycle-os-claude.md",
+  // The telemetry disclosure has to travel with the product. Without this
+  // line the only PRIVACY.md in the bundle was docs/PRIVACY.md (816 bytes,
+  // the image-generation page), and an installer's entire disclosure was one
+  // user_config description string. A notice that does not ship has not been
+  // given.
+  "PRIVACY.md",
   "data",
   "docs",
   "skills",

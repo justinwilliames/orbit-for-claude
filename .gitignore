@@ -10,8 +10,22 @@ yarn-error.log*
 
 # private session artifacts — never ship
 .worklog/
-design/
 _gen-assets.mjs
+
+# design/ was ignored wholesale until 31 Aug 2026. That is how the 12 Aug
+# team review's twelve-item plan became unreachable: five of its items were a
+# guard, a decision or a hand, all addressed to a future session that had no
+# way to find them, in a directory git could not see. Its own item 12 was
+# "number the review folders, or un-ignore design/" — and that item died too.
+# The documents are now tracked so a plan can reach forward in time. The heavy
+# screen captures are not: one 2026-06 review carries 20MB of PNGs, and review
+# prose is the part that has to survive, not the pixels.
+design/**/*.png
+design/**/*.jpg
+design/**/*.jpeg
+design/**/*.gif
+design/**/*.mp4
+design/**/*.mov
 
 # A widget artifact written to a template-literal path whose variable was
 # undefined lands here. Product code cannot produce it — path.join throws

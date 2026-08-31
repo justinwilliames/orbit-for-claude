@@ -1,0 +1,31 @@
+# R3 — Han Müller (Staff Data Eng) — Committed Position
+
+**Dashboard 1722536 · "[CLM] High-Level — Weekly Review" · 2026-06-24 · Round 3 (convergence)**
+
+*(Note: this file previously held a draft for an unrelated "What's New — July" email review — same contamination flagged in the R2 story-pair file. Replaced with the correct R3 position for board 1722536.)*
+
+---
+
+## The shared diagnosis
+
+Six lenses converged on one fault: the board is named "Weekly Review" and behaves monthly, and the two planned adds make a *more legible monthly board*, not a weekly one. The fix the room agreed on is a weekly opener that answers "is the base healthier or sicker than last week, and do I act today?" — a four-number heartbeat row (new · churned · true-pause · resumed, each with a WoW relative-% delta), sitting above NEW-2 (monthly churn % incl. MTD), with NEW-1 (the 12-week volume trend) demoted to optional. On the data side the consensus is harder still: the *weekly* tiles must reconcile against each other and against tile 5, or the cadence the board promises is fiction at the number level. Three non-negotiables crystallised — churn always reads from `__interface_churn_events` (never raw `billing_subscription_cancelled`); the `pauseType` NULL trap is handled explicitly with a cutover annotation at w/c 28-Apr; and MTD never plots as a raw % on the same axis as closed months. The verified tile-5 query (`_TILE5-LIVE-QUERY.md`) closed the open question: Monday bucketing via `toMonday(event_ts)` with **no `toTimezone` wrapper**, week spine `numbers(1, 30)` that **excludes the current in-progress week**, floor `>= '2026-03-02'`. Every new weekly series inherits that verbatim.
+
+## My top concession
+
+I'm giving up my R1 "single thing I'd ship" — the standalone reconciliation tile, "[CLM] Weekly Org Overlap — Churn × Pause × At-Risk." In R2 I downgraded it to a conditional must-build; in R3 I accept Priya's harder ruling: it ships as a **hidden QA insight, not a board tile**, promoted to a pinned tile *only if* the overlap audit returns non-zero. **The cost is real and I want it on the record:** an integrity guard that lives off the board is a guard nobody looks at. The whole point of a reconciliation tile is that it sits *next to* the numbers it polices, so the day overlap appears the reviewer sees it before briefing the CEO — not three weeks later in a forensic dig. Hiding it trades standing protection for a one-time check. **Why I concede anyway:** Priya is right that it's a builder's diagnostic, not a Monday-reviewer's decision tile, and a 5-minute ritual cannot carry a tile whose ideal value is "always zero." The honest resolution is a two-part contract: (1) the overlap query runs as a build-time gate *and* as part of the post-ship verification Priya assigned; (2) it re-runs on any future edit to tile 5 or the source events. A hidden guard with a *scheduled re-run obligation* is acceptable. A hidden guard that runs once and is forgotten is the failure mode I'm signing us up for if we're sloppy — so I'm naming the obligation, not just the concession.
+
+## My line in the sand
+
+The double-count and source-asymmetry honesty is **not negotiable and does not get cleaned up to look tidy.** NEW-1 and the heartbeat row source *churn* from the curated, deduped `__interface_churn_events` and *pauses/resumptions/new-subs* from the raw `billing_subscription_*` stream. Those two universes have different dedup, different ingestion latency, and possibly different demo-org filtering. One org running the cancel flow can legitimately appear as a `cancellation_request`-typed pause (correctly excluded from true-pause), a headline at-risk contributor, AND an actualised churn row inside one ISO week. **That asymmetry must be written into the tile description in plain English** — e.g. `churn: __interface_churn_events (deduped); pause/resume/new: raw billing_subscription_* (NOT deduped). Do NOT "harmonise" — they measure different things.` The next engineer's instinct will be to make them consistent; that instinct silently moves the number. Equally firm: MTD computed with a full-month base under a fractional-month numerator reads **misleading-optimistic** — the exact opposite of Warwick's pessimistic headline intent — so the dashed projected-close line and the "day X of N, base = month-start active" subtitle are load-bearing, not footnotes.
+
+## My vote — the three principles the team ships against
+
+1. **Consistency beats textbook correctness.** Every new weekly series lifts tile 5's bucket and churn source verbatim (`toMonday`, no `toTimezone`, `numbers(1, 30)` excluding the current week, `>= '2026-03-02'`), with a grep-able drift-anchor comment naming insight 8931000. Reconcile-or-don't-ship.
+2. **Document the asymmetry; never hide it.** Where two sources or two definitions meet (curated vs raw; actualised vs headline; closed-month vs MTD), the tile carries the caveat in-band. Honesty in the description is cheaper than a quarter of silent drift.
+3. **Two tiles, stretch to three; no tile without a Monday decision.** NEW-2 + the heartbeat row ship; NEW-1 and my reconciliation tile are discretionary and must earn the slot. Hard stop at three on the board.
+
+## Open question for R4
+
+Tile 5's verified spine **excludes the current in-progress week**, and the heartbeat row's entire value is the *most recent* WoW delta. If the heartbeat inherits `numbers(1, 30)` verbatim, its "this week" is actually *last completed week* — honest, but it means the Monday-morning reviewer reads a number up to six days stale, and the board's named promise ("this week") is quietly false again. Do we (a) keep the heartbeat on completed-weeks-only for exact reconciliation with NEW-1/tile 5 and relabel it "Last Completed Week," or (b) let the heartbeat alone show the live partial week with a "day X of 7" caption — accepting it will *not* reconcile against the trend tiles by construction? I lean (a): a stale-but-true number beats a live-but-incomparable one on a board whose whole sickness is numbers that don't reconcile. But that relabel is a real concession on the "weekly" promise, and it's a naming/UX call as much as a data one — Yuki and Aja own the cover copy; I own whether the number underneath is honest.
+
+— Han
