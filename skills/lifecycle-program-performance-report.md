@@ -44,7 +44,7 @@ already pay, so its upgrade rate is structurally zero and says nothing.
 | Onboarding / activation | Convert new signups | Upgrades within N days of first message |
 | Reactivation / win-back | Wake dormant users | Upgrades within a **longer** window — 30–60 days |
 | Abandoned cart | Recover the checkout | Completed purchases |
-| Dunning / failed payment | Get the invoice paid | Recovery rate, and the lag from failure to payment |
+| Dunning / failed payment | Get the invoice paid | Recovery rate, and the lag from failure to payment. **Measure the lag before you choose the window** — recovery is far slower than it looks from inside a short one, and a window shorter than the true lag manufactures a decline that is purely censoring |
 | Pause / cancellation-adjacent | Bring subscriptions back | Cancellations as a **guard metric — low is good** |
 
 **3. Exposure-then-action is a correlation. Label it as one.** Without a holdout there is no
@@ -56,6 +56,12 @@ the number, not footnoted:
 
 Phrase it as *"X% of those exposed did Y within N days"*. Never *drove*, *incremental*,
 *lift* or *attributable*.
+
+**4a. Period-on-period comparison needs a comparable estate mix.** If the balance between
+broadcast and triggered sending shifts between periods, a single month-on-month engagement line
+measures the mix rather than the work — broadcasts and triggered journeys reach different
+audiences and click at different rates by construction. Compare broadcasts send-on-send, and
+triggered journeys against their own prior period.
 
 **4. Cohort sets performance before content does.** Never rank journeys with different
 audiences against each other. Where a natural experiment exists — the same content sent the
@@ -76,6 +82,14 @@ week.
 ---
 
 ## Benchmarks
+
+**Define the scope before the numbers: automated lifecycle programs only.** Marketing and
+transactional journeys both belong; **one-to-one email sent by a salesperson from a CRM does
+not, and must never be used as a benchmark.** A personal message from a named human earns
+open and reply rates no broadcast program can match, so blending the two inflates the estate
+and makes every published comparison meaningless. Published benchmarks measure broadcast
+marketing email — compare like with like, and state the scope in the caption so a later
+edition cannot quietly widen it.
 
 Carry a rates-only comparison: delivered, bounce, unique open, unique click, click-to-open,
 unsubscribe. **Every row names its publisher, edition and sample basis on the same line.**
@@ -121,6 +135,11 @@ report to its own previous editions.
 
 Use colour semantically and keep it **additive** — every coloured state also carries its own
 word, so a reader who cannot distinguish the hue still reads the state.
+
+**Tone tracks the outcome, not the caveat.** A good result stays positive-coloured even when
+heavily confounded; the caveat belongs in the words and in a cautionary note beside the
+number. Amber means needs attention, red means broken. Colouring a good headline amber
+because you are hedging it reads to a scanning executive as bad news.
 
 ---
 
