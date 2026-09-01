@@ -183,10 +183,18 @@ describe("Re-release guard — 'already published' is an error on dispatch, not 
     assert.match(result.out, /already published/i);
   });
 
-  test("a published version on a push SKIPS the release, it does not red main", async () => {
-    // The workflow fires on every push to main touching server/**, and 34
-    // of the last 40 qualifying commits did not bump the version. A hard
-    // exit 1 there makes green stop meaning "the tests passed".
+  test("this step exits 0 on a published version — a separate gate does the failing", async () => {
+    // Updated 01 Sep 2026. This step's exit code is a statement about ONE
+    // thing: whether the registry could be reached and answered. It must
+    // stay 0 here so that meaning survives.
+    //
+    // The run does now fail on a no-bump push — but from the "Fail a merge
+    // that shipped nothing" step downstream, gated on this step's
+    // `publish=false` output. Two verdicts, two steps, two names in the run
+    // summary. Collapsing them would make one exit code mean both "I could
+    // not reach the registry" and "you forgot to bump", which is the
+    // conflation that got the original guard defanged. See
+    // tests/suites/66-release-gate.test.mjs for the gate's own coverage.
     registryMode = "published";
     const result = await runGuard({ version: PUBLISHED_VERSION, event: "push" });
     assert.equal(result.code, 0, `a no-bump push failed the job:\n${result.out}`);

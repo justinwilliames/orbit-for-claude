@@ -33,8 +33,30 @@ export async function checkEmailAuth({ domain, dkimSelectors = [], resolveTxt } 
 
   const root = normaliseDomain(domain);
   const txt = resolveTxt ?? resolveTxtSafe;
+
+  // Every lane below asks a question about a zone. If there is no zone,
+  // none of those questions has an answer — and the DKIM lane in
+  // particular will happily manufacture one, because a non-existent zone
+  // NXDOMAINs every name under it and each of those used to be counted
+  // as a selector that "answered". That produced a graded `warn` reading
+  // "No DKIM selector was found among the 27 common default(s) that
+  // answered" for a domain nobody has ever registered: one fact about a
+  // missing zone, replayed 27 times and totalled as evidence.
+  //
+  // The apex TXT read is the one SPF needs anyway, so this costs no
+  // extra lookup on the path that matters — it is reused below.
+  const apex = await txt(root);
+  if (isNameNotFound(apex.error)) {
+    return unreadable("domain_not_found", {
+      domain: root,
+      message: `${root} does not exist in DNS (${apex.error} at the apex), so its SPF, DMARC and DKIM were not measured. A domain with no zone has nothing to grade — this is not a finding about its email authentication.`,
+      recommendation:
+        "Check the spelling, and pass the root domain rather than a hostname (yourorbit.team, not www.yourorbit.team or an MX host).",
+    });
+  }
+
   const [spf, dmarc, dkim] = await Promise.all([
-    resolveSpf(root, txt),
+    resolveSpf(root, txt, apex),
     resolveDmarc(root, txt),
     resolveDkim(root, Array.isArray(dkimSelectors) ? dkimSelectors : [], txt),
   ]);
@@ -55,8 +77,8 @@ export async function checkEmailAuth({ domain, dkimSelectors = [], resolveTxt } 
   };
 }
 
-async function resolveSpf(domain, resolveTxt = resolveTxtSafe) {
-  const records = await resolveTxt(domain);
+async function resolveSpf(domain, resolveTxt = resolveTxtSafe, prefetched = null) {
+  const records = prefetched ?? (await resolveTxt(domain));
   if (records.error) {
     if (isRealNegative(records.error)) {
       return {
@@ -414,6 +436,24 @@ export async function checkBimi({ domain, selector = "default", resolveTxt } = {
       }),
     };
   }
+  // Same rule as checkEmailAuth: `No BIMI record at default._bimi.<x>`
+  // is a claim about a zone, and a zone that does not exist cannot
+  // support it. The BIMI host alone can't tell the two cases apart — it
+  // NXDOMAINs identically for a live domain without BIMI — so when it
+  // comes back not-found, the apex is asked to separate the two. An
+  // answer at the BIMI host is itself proof the zone is there, so the
+  // extra lookup only ever happens on the negative path.
+  if (isNameNotFound(txt.error)) {
+    const apex = await txtLookup(root);
+    if (isNameNotFound(apex.error)) {
+      return unreadable("domain_not_found", {
+        domain: root,
+        selector,
+        message: `${root} does not exist in DNS (${apex.error} at the apex), so its BIMI record was not measured. A domain with no zone has nothing to grade.`,
+        recommendation: "Check the spelling, and pass the root domain rather than a hostname.",
+      });
+    }
+  }
   const bimi = (txt.values ?? []).find((r) => /^v=BIMI1\b/i.test(r));
   if (!bimi) {
     return {
@@ -635,6 +675,19 @@ const REAL_NEGATIVE_CODES = new Set(["ENOTFOUND", "ENODATA", "NXDOMAIN"]);
 
 function isRealNegative(error) {
   return REAL_NEGATIVE_CODES.has(String(error ?? "").toUpperCase());
+}
+
+// ENOTFOUND / NXDOMAIN mean the NAME does not exist. Asked at the apex,
+// that is the resolver saying there is no such zone — a different
+// sentence from ENODATA, which says the zone is there and holds no TXT.
+// Node maps c-ares this way and it is worth being literal about: a
+// registered domain with no TXT records answers ENODATA and still earns
+// every verdict in this file. Verified on 2026-09-01: example.invalid ->
+// ENOTFOUND, www.example.com (A record, no TXT) -> ENODATA.
+const NAME_NOT_FOUND_CODES = new Set(["ENOTFOUND", "NXDOMAIN"]);
+
+function isNameNotFound(error) {
+  return NAME_NOT_FOUND_CODES.has(String(error ?? "").toUpperCase());
 }
 
 function worstVerdict(verdicts) {

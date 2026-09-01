@@ -8,6 +8,8 @@
  * tests are the source of truth.
  */
 
+import { analyseSlop } from "./slop-detector.js";
+
 // ═══════════════════════════════════════════════════════════════════
 // SUBJECT-LINE SCORER — grammar primary, length/emoji secondary
 // Mirrors /tmp/get-orbit/lib/apps/subject-line-logic.ts
@@ -74,6 +76,40 @@ const FILLER_PHRASES = [
   { pattern: /\bwe'?ve\s+been\s+working\s+on\b/i, phrase: "we've been working on" },
 ];
 
+// Lines that name a CATEGORY of content instead of the content. This is
+// the vacuity mode the slop detector was never built for: these lines are
+// grammatical, jargon-free, correctly punctuated and the right length —
+// they simply contain no referent a reader could not have guessed.
+//
+// Admission rule, applied to every entry below: a phrase belongs here only
+// if no good subject line can be written around it. Anything rescuable by
+// context was deliberately left out — "5 ways to…", "insights" on its own,
+// "what's new in Orbit 3.0" and bare "tips" all survive a scoring pass,
+// because each can carry a real specific. Over-listing here would penalise
+// good short copy, which is the failure mode this whole block must avoid.
+const EMPTY_PROMISE_PATTERNS = [
+  { pattern: /\b(everything|all)\s+you\s+need\s+to\s+know\b/i, phrase: "everything you need to know" },
+  { pattern: /\bthe\s+ultimate\s+guide\b/i, phrase: "the ultimate guide" },
+  { pattern: /\b(tips\s+(and|&)\s+tricks|(top|some|a\s+few|helpful|useful)\s+tips)\b/i, phrase: "tips and tricks" },
+  { pattern: /\bbest\s+practices\b/i, phrase: "best practices" },
+  { pattern: /\b(insights|learnings|resources|content)\s+(to|that'?ll|that\s+will)\s+help\b/i, phrase: "insights to help you" },
+  { pattern: /\b(helpful|useful|important)\s+(information|resources|content)\b/i, phrase: "helpful information" },
+  { pattern: /\b(some|several|a\s+few|many)\s+ways\s+to\b/i, phrase: "some ways to…" },
+  { pattern: /\bthe\s+latest\s+(news|updates?|from\s+us)\b/i, phrase: "the latest news" },
+  { pattern: /^\s*what'?s\s+new(\s+(with|at)\s+us)?\s*[.!?]*$/i, phrase: "bare “what's new”" },
+  { pattern: /\bmore\s+than\s+just\s+(a|an|your)\b/i, phrase: "more than just a…" },
+  { pattern: /\bto\s+the\s+next\s+level\b/i, phrase: "to the next level" },
+  { pattern: /\blevel\s+up\s+your\b/i, phrase: "level up your…" },
+  { pattern: /\bwe'?re\s+(so\s+)?excited\s+to\s+(share|announce|tell|reveal)\b/i, phrase: "we're excited to announce" },
+  { pattern: /\byou\s+won'?t\s+believe\b/i, phrase: "you won't believe" },
+  { pattern: /\bwhat\s+we'?ve\s+been\s+up\s+to\b/i, phrase: "what we've been up to" },
+  { pattern: /\bget\s+the\s+most\s+(value|out\s+of\s+it)\b/i, phrase: "get the most value" },
+  { pattern: /\bsolutions?\s+for\s+(your|every)\s+(business|team|need)/i, phrase: "solutions for your business" },
+  { pattern: /\b(supercharge|elevate|revolutionise|revolutionize|transform)\s+your\b/i, phrase: "supercharge your…" },
+  { pattern: /\bunlock\s+(your|the|their)\b[^.!?]{0,20}\bpotential\b/i, phrase: "unlock your potential" },
+  { pattern: /^\s*learn\s+more\b/i, phrase: "learn more" },
+];
+
 const HOMOPHONE_PATTERNS = [
   { pattern: /\bon\s+it's\s+way\b/i, label: "on it's → on its" },
   { pattern: /\bit'?s\s+(turn|moment|place|job|role)\b/i, label: "it's / its confusion" },
@@ -99,6 +135,35 @@ function detectFillerPhrases(text) {
   const found = [];
   for (const { pattern, phrase } of FILLER_PHRASES) if (pattern.test(text)) found.push(phrase);
   return Array.from(new Set(found));
+}
+
+function detectEmptyPromises(text) {
+  const found = [];
+  for (const { pattern, phrase } of EMPTY_PROMISE_PATTERNS) if (pattern.test(text)) found.push(phrase);
+  return Array.from(new Set(found));
+}
+
+/**
+ * Borrow Orbit's slop detector for the marketing-jargon dialect, scoped
+ * to short copy.
+ *
+ * Two things make this safe on a 40-character line. First, STRUCTURAL
+ * findings are dropped: anaphoric runs, paragraph rhythm, fragment ratio,
+ * opening entropy and hedge density are prose heuristics that read a
+ * shape a subject line does not have, and letting them fire would
+ * penalise good copy for being short. What survives is the phrase-rule
+ * and skeleton layer — the fuzzy matcher in particular catches jargon
+ * variants no literal regex in this file enumerates. Second, the input is
+ * windowed: `subject` accepts up to MAX_MEDIUM_STRING, and there is
+ * nothing to learn about a subject line beyond the first few hundred
+ * characters that the length penalties have not already said.
+ */
+const SLOP_SCAN_WINDOW = 300;
+
+function detectSlopFindings(text) {
+  if (!text) return [];
+  return analyseSlop(text.slice(0, SLOP_SCAN_WINDOW)).findings
+    .filter((f) => f.category !== "structure");
 }
 
 function detectHomophoneErrors(text) {
@@ -174,6 +239,39 @@ export function scoreSubject(subject, preheader = "") {
     issues.push({ severity: subjectFiller.length > 0 ? "high" : "medium", label: `Content-free phrase in preheader: "${preheaderFiller[0]}"` });
   }
 
+  // ── What the line SAYS ─────────────────────────────────────────
+  // Everything above this point scores how the line is WRITTEN. None of
+  // it can tell a line nobody could copy from one anybody could have
+  // written, so a specific line and a generic one both walked out at
+  // 100/sharp with zero issues. These two checks score what the line
+  // SAYS, and they are the only reason those two now separate.
+  const emptyPromises = detectEmptyPromises(s);
+  if (emptyPromises.length > 0) {
+    score -= 26 + Math.min(14, (emptyPromises.length - 1) * 9);
+    issues.push({
+      severity: "high",
+      label: `Names a category, not the content: "${emptyPromises[0]}"${emptyPromises.length > 1 ? ` (+${emptyPromises.length - 1} more)` : ""}`,
+    });
+  }
+
+  const slopFindings = detectSlopFindings(s);
+  if (slopFindings.length > 0) {
+    const slopPenalty = slopFindings.reduce(
+      (sum, f) => sum + (f.severity === "high" ? 14 : f.severity === "medium" ? 7 : 3),
+      0,
+    );
+    score -= Math.min(30, slopPenalty);
+    issues.push({
+      severity: slopFindings.some((f) => f.severity === "high") ? "high" : "medium",
+      label: `${slopFindings[0].label}: "${slopFindings[0].matches?.[0] ?? s}"${slopFindings.length > 1 ? ` (+${slopFindings.length - 1} more)` : ""}`,
+    });
+  }
+  const preheaderSlop = detectSlopFindings(ph);
+  if (preheaderSlop.length > 0) {
+    score -= 8;
+    issues.push({ severity: "medium", label: `${preheaderSlop[0].label} in preheader` });
+  }
+
   if (len < 8 && !/\d/.test(s) && !personalisation) {
     score -= 15;
     issues.push({ severity: "high", label: `Ultra-short, no context — ${len} chars` });
@@ -237,6 +335,11 @@ export function scoreSubject(subject, preheader = "") {
   if (allMisspellings.length > 0) score = Math.min(score, 45);
   if (homophoneErrors.length > 0) score = Math.min(score, 55);
   if (allCapsWords.length >= 2 && exclamations >= 2) score = Math.min(score, 49);
+  // A line that names no referent cannot be "sharp", and a high-severity
+  // slop finding cannot survive into the top tier either, however clean
+  // the grammar and length are underneath.
+  if (emptyPromises.length > 0) score = Math.min(score, 74);
+  if (slopFindings.some((f) => f.severity === "high")) score = Math.min(score, 78);
 
   score = Math.max(0, Math.min(100, score));
   const tier =

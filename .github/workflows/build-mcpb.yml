@@ -189,16 +189,22 @@ jobs:
       #     So: capture the status code, and treat anything that is not a
       #     clean 200 or a clean 404 as unknown, which is a failure.
       #
-      #  2. It ended in `exit 1` on a `push`. This workflow fires on every
-      #     push to main touching server/**, so from that moment any push
-      #     that did not also bump the version failed the job — 34 of the
-      #     last 40 qualifying commits did exactly that, eight of them in a
-      #     row at one version. "This version is already published" is not
-      #     an error on a push, it is "nothing to release", and collapsing
-      #     the two makes a red main stop meaning anything. On a push we
-      #     set publish=false and the release steps skip; on a manual
+      #  2. It ended in `exit 1` on a `push`, which conflated "the registry
+      #     is unreachable" with "there is nothing to release" and turned
+      #     34 of 40 qualifying commits red. Those are two different
+      #     verdicts and this step now only renders the first: it decides
+      #     whether publishing is SAFE, and says so in `publish`. On a push
+      #     it still exits 0 with publish=false; on a manual
       #     workflow_dispatch, asking to re-release a published version IS
-      #     an error and still exits 1.
+      #     an error and still exits 1 here.
+      #
+      #     What "nothing to release" costs is settled one step below, in
+      #     "Fail a merge that shipped nothing" — because the warning this
+      #     step prints did not hold. It was written on 12 Aug on the
+      #     theory that a loud annotation on a green run would be read;
+      #     by 31 Aug main was 37 commits and 11 days ahead of the last
+      #     release, every one of those runs green. A warning nobody reads
+      #     is not a guard, so the verdict is now enforced by an exit code.
       - name: Refuse to re-release a published version
         id: republish_guard
         if: ${{ !inputs.dry_run && !inputs.allow_republish }}
@@ -249,14 +255,14 @@ jobs:
               echo "::error::Version $VERSION is already published to the MCP registry as $NAME. Publishing it again would overwrite the public .mcpb and stamp a new checksum against a registry entry that cannot change, so anyone verifying the hash would be refused the download. Bump the version in package.json, manifest.json and server.json — or re-run this workflow manually with allow_republish if the published asset is known to be broken."
               exit 1
             fi
-            # A ::notice:: is invisible in a green run's summary, and a
-            # green run is exactly what this path produces. Nine commits
-            # were once merged to main at a version the registry already
-            # held: every publish step skipped, the run was green, and
-            # the fixes reached nobody. That is the failure this line
-            # exists to make legible, so it is a WARNING — the job still
-            # succeeds, but the summary says out loud that nothing
-            # shipped.
+            # The annotation stays, and stays a WARNING, because this
+            # step's own exit code is a statement about the REGISTRY, not
+            # about whether the merge was worth anything: an `exit 1`
+            # here would be indistinguishable in the log from "could not
+            # reach the registry", which is the conflation that made this
+            # step red on 34 of 40 commits and got it softened in the
+            # first place. The run is failed by the next step instead,
+            # under a name that says which of the two happened.
             echo "::warning::Version $VERSION is already on the registry as $NAME, so THIS MERGE SHIPPED NOTHING — every publish step below is skipped and no user receives these changes. Build and tests ran. Bump the version in package.json, manifest.json and server.json to release."
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -264,6 +270,48 @@ jobs:
 
           echo "Version $VERSION is not yet on the registry — safe to publish."
           echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      # A merge that ships nothing is a FAILED release, not a quiet one.
+      #
+      # This is the whole of shippable item #1 from the 12 Aug review,
+      # which that review answered with a ::warning:: and closed. On 31 Aug
+      # main stood 37 commits and 11 days ahead of the published version,
+      # across a wall of green ticks — the warning had been printed on
+      # every one of those runs and read on none of them. GitHub does not
+      # notify on a warning, does not badge it, and does not block a merge
+      # on it; the only signal anybody in this repo actually reacts to is
+      # a red run. So the verdict gets an exit code.
+      #
+      # It lives in its own step rather than inside the guard on purpose.
+      # The guard answers "can I prove this version is unpublished?", and
+      # its exit code has to keep meaning "I could not reach the registry"
+      # — collapsing that with "you forgot to bump the version" is what
+      # made it red on 34 of 40 commits and got it defanged. Two verdicts,
+      # two steps, two names in the run summary.
+      #
+      # Both deliberate escape hatches survive, because both SKIP the
+      # guard above and therefore leave `publish` unset, which is not
+      # 'false':
+      #   - workflow_dispatch + allow_republish — the republish is the
+      #     point, and the publish steps run.
+      #   - workflow_dispatch + dry_run — nothing left the runner, so
+      #     there is no release to have missed. Gated twice for that one,
+      #     since a dry run must never be the thing that reds main.
+      # And a push at a version the registry does not hold sets
+      # publish=true, so the normal release path never touches this step.
+      # The opt-out is load-bearing, not a convenience. 34 of the 40 commits
+      # before this gate existed did not bump the version, and a gate that
+      # reds five merges in six is a gate someone deletes — which is exactly
+      # how its predecessor became a warning nobody read. `[no-release]` has
+      # to be TYPED into the commit message, so the quiet path stays a
+      # deliberate act and silence is never the default.
+      - name: Fail a merge that shipped nothing
+        if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish == 'false' && !contains(github.event.head_commit.message, '[no-release]') }}
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          echo "::error::Nothing shipped. Version $VERSION is already on the MCP registry, so every publish step in this run was skipped and no user receives these changes — the build and the tests passing does not make this a release. Bump the version in package.json, manifest.json and server.json (they must agree — npm run check) and merge again. If the published asset is known to be broken and must be overwritten in place, re-run this workflow manually with allow_republish. If this merge is deliberately not a release — a doc edit, a test, a refactor — put [no-release] in the commit message and this gate stands aside."
+          exit 1
 
       - name: Upload to MCPB bucket
         if: ${{ !inputs.dry_run && steps.republish_guard.outputs.publish != 'false' }}

@@ -216,3 +216,105 @@ describe("DNS abstention — a dead resolver is not evidence", () => {
     assert.ok(r.issues.some((i) => /p=none/.test(i)));
   });
 });
+
+/**
+ * A zone that does not exist answers NXDOMAIN to every name under it,
+ * for free and forever. The DKIM lane counted each of those as a
+ * selector that "answered", so a domain nobody has ever registered came
+ * back graded `warn` on the strength of "27 common default(s) that
+ * answered" — 27 replays of one fact about a zone that isn't there,
+ * dressed as 27 observations. Confirmed against live DNS on
+ * 2026-09-01 for orbit-does-not-exist-8f3a2b1c9d.example.invalid:
+ * selectors_resolved: 27, selectors_errored: 0, verdict "warn".
+ *
+ * ENOTFOUND at the apex is the resolver saying there is no such zone.
+ * ENODATA is a different sentence — the zone is there and holds no TXT —
+ * and still earns every verdict below.
+ */
+describe("A domain that does not exist is not a domain with bad auth", () => {
+  // Nothing in the zone, and every lookup NXDOMAINs — a name that was
+  // never registered.
+  const NXDOMAIN_EVERYWHERE = stubResolver({}, { defaultError: "ENOTFOUND" });
+
+  test("checkEmailAuth abstains instead of grading a zone that isn't there", async () => {
+    const r = await checkEmailAuth({
+      domain: "orbit-does-not-exist-8f3a2b1c9d.example.invalid",
+      resolveTxt: NXDOMAIN_EVERYWHERE,
+    });
+    assert.equal(r.status, "not_measurable", "there is no zone to grade");
+    assert.equal(r.not_measured, true);
+    assert.equal(r.reason, "domain_not_found");
+    assert.equal(r.overall, undefined, "an abstention has no overall grade");
+    assert.equal(r.verdict, null);
+    assert.match(r.message, /does not exist|not registered|no such/i, "the reason has to be readable");
+  });
+
+  test("no measurement is manufactured from the NXDOMAIN replay", async () => {
+    const r = await checkEmailAuth({
+      domain: "orbit-does-not-exist-8f3a2b1c9d.example.invalid",
+      resolveTxt: NXDOMAIN_EVERYWHERE,
+    });
+    const blob = JSON.stringify(r);
+    assert.equal(
+      /common default\(s\) that answered/.test(blob),
+      false,
+      "27 NXDOMAINs on a dead zone are one fact, not 27 answers"
+    );
+    assert.equal(r.dkim, undefined, "no lane runs against a zone that does not exist");
+    assert.equal(
+      /"selectors_resolved":\s*[1-9]/.test(blob),
+      false,
+      "selectors_resolved was the receipt this defect was signed off on"
+    );
+  });
+
+  test("checkBimi abstains on the same zone", async () => {
+    const r = await checkBimi({
+      domain: "orbit-does-not-exist-8f3a2b1c9d.example.invalid",
+      resolveTxt: NXDOMAIN_EVERYWHERE,
+    });
+    assert.equal(r.status, "not_measurable");
+    assert.equal(r.reason, "domain_not_found");
+    assert.equal(r.verdict, null, "'No BIMI record at <host>' is a claim about a zone that isn't there");
+  });
+
+  // The other half of the guard: the fix must not be "always abstain".
+  test("a real domain with no DKIM keys still earns its real verdict", async () => {
+    // Apex answers (the zone exists); every selector NXDOMAINs, which is
+    // genuine evidence of absence.
+    const r = await checkEmailAuth({
+      domain: "example.com",
+      resolveTxt: stubResolver({ "example.com": ["v=spf1 -all"] }),
+    });
+    assert.equal(r.status, "ok");
+    assert.equal(r.dkim.verdict, "warn");
+    assert.ok(r.dkim.selectors_resolved > 0, "these NXDOMAINs are real observations");
+    assert.equal(r.spf.verdict, "pass");
+    assert.equal(r.dmarc.verdict, "fail", "a live zone with no DMARC record is a real fail");
+  });
+
+  test("a live zone with no TXT at all (ENODATA) is still graded", async () => {
+    // ENODATA is the resolver saying the name exists and holds no TXT.
+    // That is an answer, and 'no SPF record' is the right verdict.
+    const r = await checkEmailAuth({
+      domain: "example.com",
+      resolveTxt: stubResolver({}, { defaultError: "ENODATA" }),
+    });
+    assert.equal(r.status, "ok");
+    assert.equal(r.spf.verdict, "fail");
+    assert.equal(r.dmarc.verdict, "fail");
+  });
+
+  test("a full BIMI record on a live zone is still graded", async () => {
+    const zone = {
+      "example.com": ["v=spf1 -all"],
+      "default._bimi.example.com": [
+        "v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/vmc.pem",
+      ],
+      "_dmarc.example.com": ["v=DMARC1; p=reject; rua=mailto:d@example.com"],
+    };
+    const r = await checkBimi({ domain: "example.com", resolveTxt: stubResolver(zone) });
+    assert.equal(r.status, "ok");
+    assert.equal(r.verdict, "pass");
+  });
+});

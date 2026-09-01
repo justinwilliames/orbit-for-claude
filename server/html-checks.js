@@ -98,6 +98,25 @@ export function checkDarkModeRisk({ html }) {
     });
   }
 
+  // <img> elements were, until this check existed, entirely invisible
+  // to this function: `img` sits in SELF_CLOSING_TAGS, so both
+  // collectFgBgPairs and collectBareWhiteText walk straight past every
+  // one. A header with a real logo <img> on a resolvable light
+  // background — no <picture> dark-mode source, no data-ogsc/data-ogsb
+  // escape hatch on the element — measured 0 image findings and
+  // returned "pass" every time, regardless of what the image actually
+  // was. This cannot decide whether an arbitrary PNG's pixels survive
+  // inversion (that needs a rendered client, not markup), so it makes
+  // only the claim markup can support: this ground inverts and no
+  // adaptation was declared for the image sitting on it.
+  const imageRisks = collectImageDarkModeRisks(html, sheet);
+  for (const risk of imageRisks.risks) {
+    findings.push(risk);
+  }
+  for (const nm of imageRisks.notMeasured) {
+    warnings.push(nm);
+  }
+
   // Check for a dark-mode media query in <style>. Its presence is a
   // strong signal the template has been designed for dark mode.
   const hasDarkMediaQuery =
@@ -119,7 +138,9 @@ export function checkDarkModeRisk({ html }) {
     has_apple_dark_styles: hasAppleDarkStyles,
     invert_risk_count: findings.filter((f) => f.kind === "invert_risk").length,
     already_dark_count: findings.filter((f) => f.kind === "already_dark").length,
+    image_invert_risk_count: findings.filter((f) => f.kind === "image_invert_risk").length,
     colour_pairs_measured: pairs.length,
+    images_measured: imageRisks.risks.length + imageRisks.notMeasured.length,
     unresolved_style_rules: sheet.unsupportedColourRules,
     findings,
     warnings,
@@ -237,18 +258,53 @@ export function accessibilityLint({ html }) {
         recommendation: "Mark the primary subject of the email as <h1> (one per email).",
       });
     }
-    let lastLevel = null;
+    // Walk the sequence as a nesting stack — the same mental model a
+    // screen-reader user builds while navigating by heading level.
+    // Each heading either opens a child one level deeper (push), returns
+    // to a level that is CURRENTLY OPEN on the stack (pop back to it —
+    // an entirely ordinary "close the subsection, continue the parent's
+    // next sibling" move, e.g. h3 -> h2 with that h2 already open), or
+    // does neither. Two ways to do neither:
+    //   - forward, skipping a depth the outline never opened (h1 -> h4);
+    //     already caught before this rewrite.
+    //   - backward, landing on a level that was never opened as an
+    //     ancestor of the heading just closed (h5 -> h1, h3 -> h1, with
+    //     no h1 currently on the stack). That is not "a legitimate new
+    //     section" — it drops the reader onto a level the outline never
+    //     established, which is exactly the lost-place failure this
+    //     rule exists to catch, and it was previously absent from every
+    //     array this check returns: not fail, not warn, not
+    //     not_measured. A decrease onto an OPEN ancestor must stay
+    //     silent, or the rule turns into noise on every ordinary
+    //     multi-section email and gets ignored.
+    const stack = [];
     for (const lvl of levels) {
-      if (lastLevel !== null && lvl - lastLevel > 1) {
+      if (stack.length === 0) {
+        stack.push(lvl);
+        continue;
+      }
+      const top = stack[stack.length - 1];
+      if (lvl === top + 1) {
+        stack.push(lvl);
+      } else if (lvl > top + 1) {
         issues.push({
           rule: "heading-order",
           severity: "warn",
-          message: `Heading jumps from h${lastLevel} to h${lvl} — skipping levels breaks screen-reader semantics.`,
-          recommendation: `Use h${lastLevel + 1} instead.`,
+          message: `Heading jumps from h${top} to h${lvl} — skipping levels breaks screen-reader semantics.`,
+          recommendation: `Use h${top + 1} instead.`,
+        });
+        break;
+      } else if (stack.includes(lvl)) {
+        while (stack.length && stack[stack.length - 1] !== lvl) stack.pop();
+      } else {
+        issues.push({
+          rule: "heading-order",
+          severity: "warn",
+          message: `Heading drops from h${top} to h${lvl} — h${lvl} was never opened earlier in the outline, so a screen-reader user navigating by heading level loses their place.`,
+          recommendation: `Use a level already open in the outline (${stack.map((l) => `h${l}`).join(", ")}), or introduce h${lvl} in sequence before returning to it.`,
         });
         break;
       }
-      lastLevel = lvl;
     }
   }
 
@@ -717,6 +773,106 @@ function collectBareWhiteText(rawHtml, sheet) {
     stack.push(makeFrame(tagName, m[2], sheet));
   }
   return bare;
+}
+
+// Find <img> elements sitting on a resolvable, non-dark background with
+// no declared dark-mode adaptation. Two concrete adaptation signals are
+// recognised — both are things markup can actually prove, unlike "will
+// this PNG's pixels read after inversion":
+//   1. A <picture> ancestor with a <source media="(prefers-color-scheme:
+//      dark)"> earlier in the same <picture> — the standard responsive-
+//      image dark-mode technique.
+//   2. A data-ogsc / data-ogsb attribute on the <img> itself — the
+//      non-standard but real Apple-Mail dark-mode hook ESPs use to key
+//      a src/style swap to a specific element.
+// An image whose container background cannot be resolved at all is not
+// a risk finding (it may be transparent, or the ground genuinely is not
+// determinable) — it is reported separately as not-measured, with a
+// named reason, rather than silently dropped or scored as a pass.
+function collectImageDarkModeRisks(rawHtml, sheet) {
+  const html = stripNonRenderedText(rawHtml);
+  const risks = [];
+  const notMeasured = [];
+  const tagRegex = /<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi;
+  const stack = [];
+  let inPicture = false;
+  let sawDarkSourceInPicture = false;
+
+  for (const m of html.matchAll(tagRegex)) {
+    const raw = m[0];
+    const tagName = m[1].toLowerCase();
+    const attrs = m[2];
+    const isClose = raw.startsWith("</");
+
+    if (tagName === "picture") {
+      if (isClose) {
+        inPicture = false;
+        sawDarkSourceInPicture = false;
+      } else {
+        inPicture = true;
+        sawDarkSourceInPicture = false;
+      }
+    }
+    if (tagName === "source" && !isClose && inPicture) {
+      const media = (attrs.match(/\bmedia\s*=\s*["']([^"']*)["']/i) || [])[1] ?? "";
+      if (/prefers-color-scheme\s*:\s*dark/i.test(media)) sawDarkSourceInPicture = true;
+    }
+
+    if (tagName === "img" && !isClose) {
+      const hasDarkEscape =
+        (inPicture && sawDarkSourceInPicture) || /\bdata-ogs[cb]\s*=/i.test(attrs);
+      if (!hasDarkEscape) {
+        let bg = null;
+        for (let i = stack.length - 1; i >= 0; i--) {
+          const a = stack[i];
+          bg =
+            parseColor(cssProp(a.style, "background-color")) ||
+            parseColor(cssProp(a.style, "background")) ||
+            parseColor(a.bgcolorAttr);
+          if (bg) break;
+        }
+        const src = truncateSrc((attrs.match(/\bsrc\s*=\s*["']([^"']*)["']/i) || [])[1] ?? null);
+        if (bg && !isDark(bg)) {
+          risks.push({
+            tag: "img",
+            src,
+            bg: colorToHex(bg),
+            kind: "image_invert_risk",
+            message:
+              "Image sits on a light ground with no dark-mode adaptation declared (no <picture> prefers-color-scheme:dark source, no data-ogsc/data-ogsb hook). Apple Mail / Outlook mobile dark mode inverts this background under the image; a light-mode-only mark will not survive that.",
+          });
+        } else if (!bg) {
+          notMeasured.push({
+            tag: "img",
+            src,
+            kind: "image_dark_mode_not_measured",
+            message:
+              "No background colour could be resolved for this image's container, so whether its ground inverts in dark mode could not be determined from markup.",
+          });
+        }
+      }
+    }
+
+    if (!isClose) {
+      if (SELF_CLOSING_TAGS.has(tagName)) continue;
+      const isSelfClosing = /\/\s*>$/.test(raw);
+      if (isSelfClosing) continue;
+      stack.push(makeFrame(tagName, attrs, sheet));
+    } else {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].tag === tagName) {
+          stack.length = i;
+          break;
+        }
+      }
+    }
+  }
+  return { risks, notMeasured };
+}
+
+function truncateSrc(src) {
+  if (!src) return null;
+  return src.length > 80 ? `${src.slice(0, 77)}...` : src;
 }
 
 function stripInnerTags(s) {
