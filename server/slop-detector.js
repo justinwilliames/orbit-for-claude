@@ -208,6 +208,20 @@ const PHRASE_RULES = [
   { pattern: /\bhere'?s\s+what\s+(changed\s+everything|I\s+(learned|figured\s+out|discovered)|no\s+one\s+(tells|told)\s+you)\b/gi, severity: "medium", category: "language", label: "Here's-what-changed-everything opener", explanation: "Thread-reveal opener — announces a reveal instead of just making it.", fix: "Lead with the specific insight. Skip the 'what I learned' frame." },
   { pattern: /(^|\n)\s*\d+[\/.]?\s+[A-Z]\w+\s+\w+/gm, severity: "low", category: "structure", label: "Slash-numbered thread bullets", explanation: "'1/ Stop waiting for permission  2/ Start before you're ready' — LinkedIn thread-bullet format.", fix: "Write the list as prose paragraphs, or at least drop the slash. The format itself signals template." },
 
+  // ═══════════════════════════════════════════════════════════════════
+  // COMMA-AND CLAUSE WELDING  (Justin, 1 Sep 2026)
+  // The single most common AI rhythm tell: never letting a sentence end.
+  // A complete thought lands, then a comma and an "and" drag a second
+  // independent clause on behind it. Humans write two sentences.
+  // NOT the Oxford comma — "sends it, records it, and files it" is a real
+  // list and must pass. The rules below only fire when there is no earlier
+  // comma in the sentence, which is what separates a weld from a list.
+  // ═══════════════════════════════════════════════════════════════════
+  { pattern: /[^,.!?;:\n]{25,},\s+and\s+(?:I|we|you|it|this|that|they|there|he|she)\s+\w+/gi, severity: "medium", category: "structure", label: "Comma-and clause weld", explanation: "A finished thought, then ', and' dragging a second independent clause on behind it. This is the most common AI sentence rhythm — every sentence becomes a two-parter with a trailing addendum, so nothing ever lands with a full stop. Fires only when there is no earlier comma in the sentence; serial-comma lists are caught by the Oxford rule instead. Same family: ', but I', ', so we', ', which means'.", fix: "Full stop. Start the second clause as its own sentence. 'The data does not exist today. This program is the cheapest way to start building it.' beats welding them with ', and'." },
+  { pattern: /\*[^*\n]{12,}?,\s+and\s+(?:I|we|you|it|this|that)\s+[^*\n]+\*/g, severity: "high", category: "structure", label: "Headline with a tacked-on clause", explanation: "A bolded headline or title that states its subject, then welds a second thought on with ', and'. No human writes a headline that way — a headline is one claim. The second clause belongs in the body, or the headline should be cut down to the half that carries the news.", fix: "Cut at the comma. Keep the half that is the news, move the rest into the first line of the body." },
+
+  { pattern: /,[^,.!?;:\n]{2,60},\s+and\s+/gi, severity: "medium", category: "structure", label: "Oxford comma", explanation: "The serial comma before 'and' in a list — 'sends it, records it, and files it'. It is American house style and it is over-represented in AI output, so it reads as both imported and machine-drafted in British or Australian register. Justin's house style drops it.", fix: "Delete the comma before 'and'. 'sends it, records it and files it'. If the list genuinely needs the comma to stay unambiguous, the list is too complex for one sentence — split it." },
+
   // Repeated sentence openings (detected separately via analysis)
 ];
 

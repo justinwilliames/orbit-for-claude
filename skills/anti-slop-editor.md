@@ -121,6 +121,17 @@ failure mode each represents.
 - SEO-driven headings that substitute keyword presence for real argument
 - Conclusions that restate what was said instead of landing a thesis
 - Paragraph-bullets-summary stacks that repeat the same content three times
+- **Comma-and clause welding** — a finished thought, then `, and` dragging a
+  second independent clause on behind it, so no sentence ever lands on a full
+  stop. The most common AI rhythm tell. Worst in a headline: a title that
+  states its subject then welds a second thought on is one no human writes.
+  Same family: `, but I`, `, so we`, `, which means`. Fix: full stop, new
+  sentence.
+- **The Oxford comma** — the serial comma before `and` in a list. American
+  house style, over-represented in AI output, and dropped in British and
+  Australian register, so it reads as imported as well as machine-drafted.
+  Fix: delete the comma before `and`. If the list needs it to stay
+  unambiguous, the list is too complex for one sentence — split it.
 
 ### Substance
 
