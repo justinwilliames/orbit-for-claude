@@ -20,6 +20,22 @@
  * dropped. A drift-prevention script that skips the storefront is not
  * preventing the drift that costs anything.
  *
+ * The guide-count pattern used to require the literal words "practitioner
+ * guides" in that order. README's own hand-written prose said "99
+ * long-form guides" — no "practitioner" — so a script that reported
+ * "already in sync" every single run was silently walking past the one
+ * count it was never told to check. Widened below to catch every
+ * long-form/practitioner combination actually in use, not just the one
+ * the pattern's author happened to type first.
+ *
+ * Two known counting surfaces are deliberately NOT targets of this script:
+ * CLAUDE.md and docs/INTEGRATION-STANDARD.md no longer state Orbit's skill
+ * or tool count as a bare number at all (see their own prose) — an
+ * internal engineering doc gets nothing from repeating a cardinal that a
+ * stranger never reads and a `ls skills/*.md | wc -l` answers in one
+ * command. Demoted rather than synced, on purpose: fewer numbers to drift
+ * beats one more regex to maintain.
+ *
  * Everything is rewritten in place so the prose around each number stays
  * hand-written. Exit 1 means something was stale and has been rewritten.
  */
@@ -77,10 +93,13 @@ export const GUIDE_INVENTORY = `${COUNTS.guides} long-form practitioner guides`;
  * The rewrites. Each pattern deliberately matches ANY count in that shape,
  * so a stale hand-edit is corrected rather than duplicated.
  */
-const REWRITES = [
+export const REWRITES = [
   { pattern: /\b\d+\+? skills and \d+\+? tools\b/g, replacement: () => INVENTORY },
   {
-    pattern: /\b\d+\+? (?:long-form )?practitioner guides\b/g,
+    // Matches "N practitioner guides", "N long-form guides", and "N
+    // long-form practitioner guides" — every shape the prose has actually
+    // used, not just the one the pattern was first written against.
+    pattern: /\b\d+\+? (?:long-form practitioner|practitioner|long-form) guides\b/g,
     replacement: () => GUIDE_INVENTORY,
   },
   { pattern: /\b[\d,]+-word practitioner library\b/g, replacement: () => GUIDE_WORDS },
@@ -91,7 +110,27 @@ const REWRITES = [
 ];
 
 /** Files that state Orbit's own size. */
-const TARGETS = ["README.md", "server.json", "server/index.js", "manifest.json"];
+export const TARGETS = ["README.md", "server.json", "server/index.js", "manifest.json"];
+
+/**
+ * Files that deliberately do NOT carry a synced count — the number was
+ * demoted out of them instead of wired in. Each pattern below is scoped to
+ * the EXACT phrasing that drifted before, not a blanket "no digit near the
+ * word tools" ban — docs/INTEGRATION-STANDARD.md legitimately discusses
+ * "135 tools" and "66 of 135" as a dated historical measurement a few
+ * paragraphs away, and a broad pattern would flag that honest history as
+ * if it were a second, unsynced inventory claim.
+ */
+export const DEMOTED = [
+  {
+    file: "CLAUDE.md",
+    patterns: [/\b\d+\+? skills total\b/i, /\b\d+\+? specialist protocols\b/i, /\b\d+\+? tools backing\b/i],
+  },
+  {
+    file: "docs/INTEGRATION-STANDARD.md",
+    patterns: [/\bthe \d+ guides\b/i],
+  },
+];
 
 if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const stale = [];

@@ -1,0 +1,83 @@
+name: Release lag
+
+# How long has finished work been sitting on main without reaching a user?
+#
+# THIS DOES NOT RUN ON PUSH, AND THAT IS THE POINT.
+#
+# build-mcpb.yml already fails a merge that ships nothing ("Fail a merge
+# that shipped nothing"), and on a push it has the better answer: it knows
+# the exact version, it knows every publish step was skipped, and its error
+# names the three files to bump. Running this job on push as well would
+# fail the same merge twice for the same reason, and two alarms on one
+# event is how both get muted.
+#
+# What that gate cannot do is speak when nobody pushes. It is edge-
+# triggered: it fires on a push, judges that push, and goes quiet. Three
+# ways drift re-accumulates in total silence beneath it, each checked
+# against this repo's own history:
+#
+#   1. Nobody pushes. The gate reds on Monday, nobody bumps the version,
+#      nobody pushes again for eleven days. No further runs happen —
+#      a push-triggered workflow cannot run without a push. One stale red
+#      X and eleven days of drift look exactly like one stale red X and a
+#      fix in flight.
+#   2. The path filter. build-mcpb.yml runs only for pushes touching
+#      server/, skills/, tests/, scripts/, .github/workflows/ or the three
+#      version files. Over the 20–31 Aug incident window, 5 of 38 commits
+#      touched none of those and started no run at all.
+#   3. [no-release]. The gate rightly stands aside for commits carrying
+#      that marker — a doc edit should not burn a version — but every one
+#      is a green tick that adds distance, and nothing counts them.
+#
+# So this job is the level-triggered complement: it measures the STANDING
+# STATE on a clock, and it is the only thing here that can raise a signal
+# on a day when nothing happened. Standing still is not an event, so it
+# cannot be caught by an event.
+
+on:
+  schedule:
+    # 22:00 UTC daily — 08:00 Australia/Brisbane, the start of the day the
+    # result is meant to change.
+    #
+    # DAILY, not weekly, because the sampling interval must be finer than
+    # the threshold it enforces. A weekly check against a 3-day threshold
+    # can let a breach open and close unseen between runs, and at worst
+    # reports one that is already 7 days stale — which is the same "found
+    # it too late" failure the metric exists to prevent, just automated.
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+    inputs:
+      threshold_days:
+        description: >-
+          Days of unreleased work tolerated before this job fails. Defaults
+          to 3: this repo ships same-day in 15 of its last 19 releases, and
+          3 days is the smallest threshold that still lets a Friday-evening
+          merge ship on Monday morning without paging anyone.
+        type: string
+        default: '3'
+
+# Read-only. This job measures; it does not publish, tag, or bump. If it
+# ever needs write access, the thing being added is not a measurement.
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the metric walks back to the oldest commit that is
+      # not in the published release. A shallow clone silently truncates
+      # that walk and reports a smaller lag than the real one — the one
+      # failure mode that would make this job lie in the safe direction.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Measure days of unreleased work on main
+        env:
+          THRESHOLD: ${{ inputs.threshold_days || '3' }}
+        run: node scripts/release-lag.mjs --threshold "$THRESHOLD"

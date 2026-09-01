@@ -211,20 +211,36 @@ export function buildSkillSummary(skill) {
 
 // Minimum score a skill must reach to be considered a real match.
 // Prevents generic words like "build" from routing to the wrong skill.
+//
+// The floor is applied to MERIT only — the evidence that came out of the
+// request. Config-derived context (ORBIT_DEFAULT_PLATFORM, default
+// geography) used to be scored the same way, and at +8 against a floor of
+// 6 it carried every skill in its platform's family over the line on its
+// own. The consequence was not a mis-rank, it was the loss of a verdict:
+// `no_strong_match` became unreachable for anyone who had finished setup,
+// so "sharpen a hand plane" routed to braze-build-packager and reported
+// ready_to_proceed. A tool must be able to say "I do not know", and
+// whether it says so must depend on the request. Config now breaks ties
+// between candidates that already cleared on merit; it never creates one.
 const MIN_ROUTE_SCORE = 6;
 
 export function routeTask(library, request, limit = 5, defaults = {}) {
   const requestText = String(request ?? "").trim();
   const requestTokens = new Set(tokenize(requestText));
   const taskType = inferTaskType(requestText);
+  const taskTypeExplicit = hasExplicitTaskType(requestText);
   const signals = detectSignals(requestText, defaults);
   const requestProfile = buildRequestProfile(requestText, requestTokens, taskType, signals);
+  const keywordWeights = getKeywordWeights(library);
 
   const scored = library.skills
     .map((skill) =>
-      scoreSkill(skill, requestText, requestTokens, taskType, signals, requestProfile)
+      scoreSkill(skill, requestText, requestTokens, taskType, signals, requestProfile, {
+        keywordWeights,
+        taskTypeExplicit
+      })
     )
-    .filter((item) => item.score >= MIN_ROUTE_SCORE)
+    .filter((item) => item.meritScore >= MIN_ROUTE_SCORE)
     .sort((left, right) => right.score - left.score)
     .slice(0, Math.max(1, limit));
 
@@ -429,9 +445,21 @@ export function validateOutput(library, skillName, draft) {
   };
 }
 
-function scoreSkill(skill, requestText, requestTokens, taskType, signals, requestProfile) {
+function scoreSkill(
+  skill,
+  requestText,
+  requestTokens,
+  taskType,
+  signals,
+  requestProfile,
+  { keywordWeights, taskTypeExplicit } = {}
+) {
   const matchedKeywords = [];
+  // Evidence that came out of the request. Only this clears MIN_ROUTE_SCORE.
   let score = 0;
+  // Evidence that came out of configuration. Orders candidates; never
+  // qualifies one. See the note on MIN_ROUTE_SCORE.
+  let contextScore = 0;
   const reasons = [];
   const normalizedRequest = requestText.toLowerCase();
   const normalizedRequestSimple = normalizedRequest.replace(/[^a-z0-9]+/g, " ");
@@ -447,6 +475,8 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
         return {
           skill,
           score: 0,
+          meritScore: 0,
+          contextScore: 0,
           matchedKeywords: [],
           reasons: [`Exclusion phrase matched: "${phrase}"`]
         };
@@ -464,11 +494,48 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
     reasons.push("The request directly names this Orbit protocol.");
   }
 
+  // A skill's keyword set is tokenised prose — its description plus its
+  // first six section headings — so it carries the English the description
+  // happens to be written in as well as the domain terms. "any" is in the
+  // keyword set of 54 of 83 skills; "how" 38; "our" 28. A flat +2 per hit
+  // meant an accounts-payable question in Xero scored against b2b-lifecycle
+  // on the single shared word "any", which is not a match, it is noise
+  // wearing a match's clothes.
+  //
+  // Two filters, both derived from the library rather than from a
+  // hand-written stoplist that would rot:
+  //
+  //  1. Rarity. A term's weight falls with the share of the library that
+  //     carries it; past roughly a third of the corpus it carries no
+  //     information about which skill is right and is worth nothing.
+  //  2. Agreement. One surviving term is only enough when it is
+  //     DEFINITIONAL — present in the skill's own name or title. "been" is
+  //     rare across the corpus (2 skills) but says nothing about a request;
+  //     "deliverability" is rare AND names the skill. Otherwise at least two
+  //     independent terms must agree before any of them scores.
+  const scoringKeywords = [];
   for (const keyword of skill.keywords) {
-    if (requestTokens.has(keyword)) {
-      matchedKeywords.push(keyword);
-      score += 2;
+    if (!requestTokens.has(keyword)) {
+      continue;
     }
+    const weight = keywordWeights?.get(keyword) ?? 2;
+    if (weight > 0) {
+      scoringKeywords.push({ keyword, weight });
+    }
+  }
+
+  const definitionalTokens = new Set([
+    ...tokenize(skill.name.replace(/-/g, " ")),
+    ...tokenize(skill.title)
+  ]);
+  const keywordEvidence =
+    scoringKeywords.length >= 2
+      ? scoringKeywords
+      : scoringKeywords.filter((entry) => definitionalTokens.has(entry.keyword));
+
+  for (const { keyword, weight } of keywordEvidence) {
+    matchedKeywords.push(keyword);
+    score += weight;
   }
 
   // Trigger phrases matched by SUBSTRING only, which meant a skill was
@@ -481,8 +548,20 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
   // an exact hit so a verbatim phrase still wins.
   for (const phrase of skill.triggerPhrases) {
     if (normalizedRequest.includes(phrase)) {
-      score += 7;
-      reasons.push(`Matches trigger phrase "${phrase}".`);
+      // A one-word trigger phrase is a keyword wearing a phrase's badge, and
+      // the manifest has a few — braze-parameterized-canvas literally lists
+      // "template". At +7 against a floor of 6 that single token routed the
+      // whole request on its own. The token-coverage branch below already
+      // refuses to score one-word phrases for exactly this reason; scoring
+      // one here at strong-keyword weight keeps the two branches honest
+      // about what a phrase is.
+      const isPhrase = tokenize(phrase).length >= 2;
+      score += isPhrase ? 7 : 3;
+      reasons.push(
+        isPhrase
+          ? `Matches trigger phrase "${phrase}".`
+          : `Matches single-word trigger term "${phrase}".`
+      );
     } else if (phraseTokensCovered(phrase, requestTokens)) {
       score += 5;
       reasons.push(`Covers every content word of trigger phrase "${phrase}".`);
@@ -495,13 +574,24 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
     reasons.push("Matches request phrase patterns beyond simple keyword overlap.");
   }
 
-  if (skill.name.includes(taskType) || skill.category.includes(taskType)) {
+  // `inferTaskType` falls through to "review" when the request contains no
+  // verb it recognises, which handed +4 to every skill with "review" in its
+  // name for a request that expressed no intent at all. A default is not a
+  // detection; only a task type the request actually stated can score.
+  if (taskTypeExplicit && (skill.name.includes(taskType) || skill.category.includes(taskType))) {
     score += 4;
     reasons.push(`Matches task type "${taskType}".`);
   }
 
+  // Scaled by how hard the sequence matched. A flat +9 meant one generic
+  // word — "ai", "build", "email" — pulled a whole sequence and put four
+  // skills over a floor of 6 on its own, which is a routing decision made
+  // by a single token. Three points per matched keyword-word, same ceiling
+  // as before, so a request that genuinely describes the workflow is
+  // unchanged and a request that brushed one word against it is not enough
+  // by itself.
   if (requestProfile.sequenceSkills.includes(skill.name)) {
-    score += 9;
+    score += Math.min(9, 3 * requestProfile.sequenceStrength);
     reasons.push("Fits a named Orbit workflow sequence for this request.");
   }
 
@@ -511,15 +601,28 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
     reasons.push("Fits the artifact and workflow intent of the request.");
   }
 
+  // The platform bonus is merit only when the REQUEST named the platform.
+  // From config it is a tie-breaker: it orders skills that already earned
+  // their place, and cannot lift one over the floor by itself.
   if (signals.platform) {
+    const fromRequest = signals.platformSource === "request";
+    const award = (points) => {
+      if (fromRequest) {
+        score += points;
+      } else {
+        contextScore += points;
+      }
+    };
+
     if (skill.platformSensitivity.supported_platforms.includes(signals.platform)) {
-      score += skill.platformSensitivity.requires_confirmation ? 8 : 3;
-      reasons.push(`Fits the ${signals.platform} platform context.`);
-    } else if (
-      skill.platformSensitivity.supported_platforms.length > 0 &&
-      !skill.platformSensitivity.supported_platforms.includes(signals.platform)
-    ) {
-      score -= 4;
+      award(skill.platformSensitivity.requires_confirmation ? 8 : 3);
+      reasons.push(
+        fromRequest
+          ? `Fits the ${signals.platform} platform context.`
+          : `Tie-break only: fits the configured default platform (${signals.platform}).`
+      );
+    } else if (skill.platformSensitivity.supported_platforms.length > 0) {
+      award(-4);
     }
   }
 
@@ -533,9 +636,18 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
     reasons.push("The request includes business-model context.");
   }
 
+  // Same rule as platform. A configured default geography is not something
+  // the request said, and "The weather in Lisbon has been unusually mild"
+  // should not collect a compliance-context bonus because a config file
+  // three directories away says australia.
   if (signals.geography && skill.disambiguators.includes("geography")) {
-    score += 3;
-    reasons.push("The request includes geography or compliance context.");
+    if (signals.geographySource === "request") {
+      score += 3;
+      reasons.push("The request includes geography or compliance context.");
+    } else {
+      contextScore += 3;
+      reasons.push("Tie-break only: fits the configured default geography.");
+    }
   }
 
   if (signals.lifecycleStage && /lifecycle|onboarding|winback|retention|journey/i.test(skill.name)) {
@@ -558,64 +670,191 @@ function scoreSkill(skill, requestText, requestTokens, taskType, signals, reques
     score += 5;
   }
 
-  if (
-    /\b(brand guidelines|brand kit|tone of voice|logo assets?|brand examples?)\b/.test(
-      normalizedRequest
-    ) &&
-    /graphic-design|copy-framework/.test(skill.name)
-  ) {
-    score += 8;
+  // Domain-vocabulary boosts, scaled by how many of their terms the request
+  // actually used. A flat +8 for matching ONE alternative meant the
+  // one-word request "template" scored 8 against a floor of 6 and came back
+  // as email-production-system, ready_to_proceed — a routing decision, and
+  // a confident one, resting on a single token. Same correction as the
+  // sequence bonus above: strength of evidence tracks amount of evidence,
+  // and a request that genuinely says "the MJML and HTML template" still
+  // earns the full weight.
+  const { vocabulary } = requestProfile;
+
+  if (vocabulary.brandGuidelines > 0 && /graphic-design|copy-framework/.test(skill.name)) {
+    score += vocabularyBonus(vocabulary.brandGuidelines);
     reasons.push("The request is asking for brand-guidelines work.");
   }
 
   if (
-    /\b(html|mjml|template|plain text|compiled email|email preview|email qa)\b/.test(
-      normalizedRequest
-    ) &&
+    vocabulary.emailProduction > 0 &&
     /email-production-system|email-render-qa|content-block-system/.test(skill.name)
   ) {
-    score += 8;
+    score += vocabularyBonus(vocabulary.emailProduction);
     reasons.push("The request includes explicit lifecycle email production signals.");
   }
 
   if (
-    /\b(braze pack|canvas build sheet|content block manifest|liquid snippets?)\b/.test(
-      normalizedRequest
-    ) &&
+    vocabulary.brazePack > 0 &&
     /braze-build-packager|braze-documentation-expert/.test(skill.name)
   ) {
-    score += 8;
+    score += vocabularyBonus(vocabulary.brazePack);
     reasons.push("The request includes Braze packaging or implementation-pack signals.");
   }
 
   if (
-    /\b(notion|documentation bundle|library|save template|version template|reuse)\b/.test(
-      normalizedRequest
-    ) &&
+    vocabulary.library > 0 &&
     /template-library-management|notion-documentation-export/.test(skill.name)
   ) {
-    score += 8;
+    score += vocabularyBonus(vocabulary.library);
     reasons.push("The request includes library or documentation-export signals.");
   }
 
   return {
     skill,
-    score,
+    score: score + contextScore,
+    meritScore: score,
+    contextScore,
     matchedKeywords: [...new Set(matchedKeywords)].sort(),
     reasons
   };
 }
 
+/**
+ * Per-keyword weight, from how much of the library carries the term.
+ *
+ * Document frequency is the only rarity signal available here and it is
+ * derived, so it tracks the library as skills are added rather than
+ * freezing a judgement about English made on one afternoon. Thresholds are
+ * shares of the corpus, not counts, for the same reason.
+ *
+ * Memoised per library object: 83 skills times ~50 keywords is cheap, but
+ * routeTask is called per request and there is no reason to recount.
+ */
+/**
+ * English closed-class words: determiners, quantifiers, pronouns,
+ * auxiliaries, prepositions, conjunctions, degree adverbs.
+ *
+ * Rarity alone cannot see these. A skill's keyword set is tokenised prose
+ * over 83 skills, so a function word can land in only a handful of them and
+ * score as though it were a domain term: "Our SPF record has two includes
+ * TOO MANY and DMARC is failing" matched onboarding-design on {too, many},
+ * both of which are rare in this corpus purely because its descriptions
+ * happen not to say them often. `orbit-library.js` already drops a partial
+ * list inside `tokenize`; this is the same linguistic artifact, extended,
+ * and applied where scoring happens.
+ *
+ * The membership rule is grammatical, not empirical: a word belongs here
+ * because English cannot coin new ones of its kind, never because it turned
+ * up in a failing case. Nothing that could name a lifecycle concept — no
+ * noun, no domain verb — is eligible.
+ */
+const FUNCTION_WORDS = new Set([
+  // determiners and quantifiers
+  "a", "an", "the", "this", "that", "these", "those", "some", "any", "each",
+  "every", "both", "all", "another", "such", "same", "own", "other", "no",
+  "many", "much", "more", "most", "few", "fewer", "less", "least", "several",
+  "one", "two", "three", "too", "very", "enough", "only", "half",
+  // pronouns
+  "i", "me", "my", "mine", "we", "us", "our", "ours", "you", "your", "yours",
+  "he", "him", "his", "she", "her", "hers", "it", "its", "they", "them",
+  "their", "theirs", "who", "whom", "whose", "someone", "something",
+  "anything", "everything", "nothing", "anyone", "everyone",
+  // auxiliaries and modals
+  "am", "is", "are", "was", "were", "be", "been", "being", "do", "does",
+  "did", "doing", "done", "has", "have", "had", "having", "can", "could",
+  "may", "might", "must", "shall", "should", "will", "would",
+  // prepositions and conjunctions
+  "about", "above", "across", "after", "against", "along", "among", "and",
+  "around", "as", "at", "because", "before", "behind", "below", "beneath",
+  "beside", "between", "beyond", "but", "by", "down", "during", "except",
+  "for", "from", "if", "in", "inside", "into", "like", "near", "nor", "not",
+  "of", "off", "on", "once", "onto", "or", "out", "outside", "over", "per",
+  "since", "so", "than", "then", "there", "through", "throughout", "till",
+  "to", "toward", "towards", "under", "until", "up", "upon", "via", "what",
+  "when", "where", "whether", "which", "while", "why", "with", "within",
+  "without", "yet",
+  // degree and filler adverbs
+  "just", "really", "actually", "quite", "rather", "maybe", "perhaps",
+  "else", "ever", "never", "always", "often", "sometimes", "again", "also",
+  "still", "now", "here", "how"
+]);
+
+const KEYWORD_WEIGHT_CACHE = new WeakMap();
+
+export function getKeywordWeights(library) {
+  const cached = KEYWORD_WEIGHT_CACHE.get(library);
+  if (cached) {
+    return cached;
+  }
+
+  const documentFrequency = new Map();
+  for (const skill of library.skills) {
+    for (const keyword of skill.keywords) {
+      documentFrequency.set(keyword, (documentFrequency.get(keyword) ?? 0) + 1);
+    }
+  }
+
+  const total = Math.max(1, library.skills.length);
+  const weights = new Map();
+  for (const [keyword, count] of documentFrequency) {
+    if (FUNCTION_WORDS.has(keyword)) {
+      weights.set(keyword, 0);
+      continue;
+    }
+    const share = count / total;
+    // Distinctive to a handful of skills; worth more than a flat keyword hit.
+    if (share <= 0.05) weights.set(keyword, 3);
+    // Ordinary domain vocabulary — the old flat weight.
+    else if (share <= 0.15) weights.set(keyword, 2);
+    // Common, still faintly informative.
+    else if (share <= 0.3) weights.set(keyword, 1);
+    // Carried by a third of the library or more: says nothing about which
+    // skill is right.
+    else weights.set(keyword, 0);
+  }
+
+  KEYWORD_WEIGHT_CACHE.set(library, weights);
+  return weights;
+}
+
+/**
+ * Whether the request stated a task type, as opposed to falling through to
+ * the "review" default. Deliberately mirrors `inferTaskType`'s branches so
+ * the two cannot disagree about what counts as stated.
+ */
+function hasExplicitTaskType(requestText) {
+  return inferTaskTypeExplicitly(String(requestText).toLowerCase()) !== null;
+}
+
 function buildRequestProfile(requestText, requestTokens, taskType, signals) {
   const normalized = requestText.toLowerCase();
-  const matchingSequence = findBestSequenceMatch(normalized);
+  const matchingSequence = findBestSequenceEntry(normalized);
 
   return {
     taskType,
     signals,
     normalized,
     phrases: extractRequestPhrases(normalized),
-    sequenceSkills: matchingSequence?.skills ?? [],
+    sequenceSkills: matchingSequence?.sequence.skills ?? [],
+    sequenceStrength: matchingSequence?.score ?? 0,
+    vocabulary: {
+      brandGuidelines: countVocabularyHits(
+        normalized,
+        /\b(brand guidelines|brand kit|tone of voice|logo assets?|brand examples?)\b/g
+      ),
+      emailProduction: countVocabularyHits(
+        normalized,
+        /\b(html|mjml|template|plain text|compiled email|email preview|email qa)\b/g
+      ),
+      brazePack: countVocabularyHits(
+        normalized,
+        /\b(braze pack|canvas build sheet|content block manifest|liquid snippets?)\b/g
+      ),
+      library: countVocabularyHits(
+        normalized,
+        /\b(notion|documentation bundle|library|save template|version template|reuse)\b/g
+      )
+    },
     intents: {
       brandGuidelines: /\b(brand guidelines|brand kit|tone of voice|logo assets?|brand examples?)\b/.test(
         normalized
@@ -693,12 +932,29 @@ function computePhraseCoverage(requestPhrases, skill) {
 
   let coverage = 0;
   for (const requestPhrase of requestPhrases) {
-    if (requestPhrase.length < 4) {
+    // Single words are already scored, with rarity weighting, as keywords.
+    // Scoring them a second time here — by raw substring, against the whole
+    // of every trigger phrase — was how "The weather in Lisbon has been
+    // unusually mild for October" earned a point against
+    // deliverability-management: "been" is a substring of "we've been
+    // blacklisted". A phrase match should mean the request and the skill
+    // agree on an ORDERED PAIR of words, which is evidence a single common
+    // word is not.
+    const words = requestPhrase.split(" ");
+    if (words.length < 2 || requestPhrase.length < 4) {
+      continue;
+    }
+
+    // A phrase built entirely of function words is not a phrase match. "too
+    // many" is a substring of onboarding-design's trigger phrase "too many
+    // users sign up and never come back", and matching on it is matching on
+    // English rather than on lifecycle marketing.
+    if (words.every((word) => FUNCTION_WORDS.has(word))) {
       continue;
     }
 
     if (skillPhrases.some((phrase) => phrase.includes(requestPhrase) || requestPhrase.includes(phrase))) {
-      coverage += requestPhrase.split(" ").length > 1 ? 3 : 1;
+      coverage += 3;
     }
   }
 
@@ -777,18 +1033,50 @@ function scoreIntentAffinity(skill, requestProfile) {
 }
 
 function findBestSequenceMatch(requestText) {
+  return findBestSequenceEntry(requestText)?.sequence ?? null;
+}
+
+/**
+ * The sequence a request matches, and how hard it matched.
+ *
+ * Matching was raw `String.includes`, which is why "failing alignment" —
+ * two words that both contain the letters a-i — pulled the AI
+ * personalisation sequence and handed +9 to four skills for an SPF
+ * question. Word boundaries only: "accounts payable" is not the "account"
+ * of account-based marketing, and a substring is not a mention.
+ */
+function findBestSequenceEntry(requestText) {
   const normalized = String(requestText ?? "").toLowerCase();
   const scoredSequences = SEQUENCES.map((sequence) => ({
     sequence,
     score: sequence.keywords.reduce(
-      (total, keyword) => total + (normalized.includes(keyword) ? keyword.split(" ").length : 0),
+      (total, keyword) => total + (matchesWholeWords(normalized, keyword) ? keyword.split(" ").length : 0),
       0
     )
   }))
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score);
 
-  return scoredSequences[0]?.sequence ?? null;
+  return scoredSequences[0] ?? null;
+}
+
+/** Distinct terms of a vocabulary set the request used. */
+function countVocabularyHits(normalizedRequest, pattern) {
+  const hits = new Set();
+  for (const match of normalizedRequest.matchAll(pattern)) {
+    hits.add(match[1]);
+  }
+  return hits.size;
+}
+
+/** Half weight for one term, full weight once the request corroborates it. */
+function vocabularyBonus(hits) {
+  return Math.min(8, 4 * hits);
+}
+
+function matchesWholeWords(haystack, phrase) {
+  const escaped = String(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(haystack);
 }
 
 function inferDisambiguators(primarySkill, taskType, signals) {
@@ -975,7 +1263,18 @@ function evaluateValidatorRule(rule, text) {
 }
 
 function inferTaskType(requestText) {
-  const normalized = requestText.toLowerCase();
+  return inferTaskTypeExplicitly(requestText.toLowerCase()) ?? "review";
+}
+
+/**
+ * The task type the request actually stated, or null when it stated none.
+ *
+ * `inferTaskType` keeps its old contract of always returning a string —
+ * callers and the tool response shape depend on it — but the scorer needs
+ * to tell a stated "review" from a defaulted one, because +4 for matching
+ * a task type the user never expressed is a bonus for saying nothing.
+ */
+function inferTaskTypeExplicitly(normalized) {
   // `qa` is the word a marketer actually types for this, and it was not
   // here at all — so "QA my Braze canvas before launch" fell through to
   // the build branch on the word `launch` and scored +4 for every skill
@@ -996,7 +1295,7 @@ function inferTaskType(requestText) {
   if (/\b(strategy|plan|roadmap|recommend)\b/.test(normalized)) {
     return "strategy";
   }
-  return "review";
+  return null;
 }
 
 function detectSignals(requestText, defaults) {

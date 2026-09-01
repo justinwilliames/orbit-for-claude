@@ -95,10 +95,12 @@ const COPY_PATHS = [
   "orbit.md",
   "orbit-lifecycle-os-claude.md",
   // The telemetry disclosure has to travel with the product. Without this
-  // line the only PRIVACY.md in the bundle was docs/PRIVACY.md (816 bytes,
-  // the image-generation page), and an installer's entire disclosure was one
-  // user_config description string. A notice that does not ship has not been
-  // given.
+  // line the only privacy doc in the bundle was docs/IMAGE-GENERATION-PRIVACY.md
+  // (Gemini art-layer only), and an installer's entire telemetry disclosure
+  // was one user_config description string. A notice that does not ship has
+  // not been given. The docs/ entry below carries that renamed file along
+  // automatically — it stays a distinct basename from this one, which
+  // tests/suites/73-setup-docs.test.mjs guards.
   "PRIVACY.md",
   "data",
   "docs",

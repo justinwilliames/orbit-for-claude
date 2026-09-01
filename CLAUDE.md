@@ -5,8 +5,12 @@
 The **Orbit MCP extension** for Claude Desktop, packaged as a `.mcpb` bundle. Local-only stdio transport. Distributed from the private Tigris bucket fronted by `get-orbit`'s `/api/mcpb-download`. Sibling repos: `get-orbit` (website + admin), `orion-by-orbit` (macOS dock companion), `orbit-dictation` (menu-bar dictation fork).
 
 Two surfaces in one extension:
-1. **Skill router** (`orbit.md`) — disambiguates the user's request and selects the right specialist protocol from `skills/`. 62 skills total.
-2. **Tool layer** (`server/`) — 80+ tools backing the skills. ESM JS, no TypeScript, Zod for input validation.
+1. **Skill router** (`orbit.md`) — disambiguates the user's request and selects the right specialist protocol from `skills/`.
+2. **Tool layer** (`server/`) — the tools backing the skills. ESM JS, no TypeScript, Zod for input validation.
+
+(Exact skill/tool counts live in `manifest.json` and are kept in sync by
+`scripts/sync-counts.mjs` — this file deliberately doesn't repeat them as a
+number, since it drifted twice and nothing here needs the precise figure.)
 
 ## Repo map
 
@@ -14,7 +18,7 @@ Two surfaces in one extension:
 |---|---|
 | `manifest.json` | MCPB manifest. Version is the source of truth; `package.json.version` must match (CI `check` script enforces). |
 | `orbit.md` | Master skill router — what Claude reads first to decide which protocol to apply. |
-| `skills/*.md` | 62 specialist protocols, one per lifecycle/CRM concern. YAML frontmatter (`name`, `description`) drives Claude's trigger logic. |
+| `skills/*.md` | One specialist protocol per lifecycle/CRM concern. YAML frontmatter (`name`, `description`) drives Claude's trigger logic. |
 | `server/index.js` | Monolithic entry point: tool registration + dispatch + telemetry. ~4,800 LoC. **Known target for splitting** — see `Deferred refactors` below. |
 | `server/catalog.js` | Skill registry + manifest builder. Loaded at startup. |
 | `server/braze-*.js` | Braze API client surface, fragmented across 4 files. **Known target for consolidation.** |

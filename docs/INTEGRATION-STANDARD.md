@@ -42,7 +42,8 @@ Each requirement below states **what** it demands, **why** it exists, the
 **What.** A knowledge or skill surface works with zero configuration.
 
 **Why.** Roughly two-thirds of Orbit — the calculators, validators, the MJML
-pipeline, the brain tools, the 99 guides — needs no credential at all. A
+pipeline, the brain tools, the practitioner guide library — needs no
+credential at all. A
 platform can also appear here as *named-but-unbuilt*: referenced in guidance as
 plumbing a program needs, with no integration yet.
 

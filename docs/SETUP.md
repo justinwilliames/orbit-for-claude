@@ -26,7 +26,19 @@ There are two source paths you can point CLI at:
 | Unpacked MCPB | `~/Library/Application Support/Claude/Claude Extensions/local.mcpb.<id>/server/index.js` | You want CLI to match Desktop exactly, including auto-updates. Path changes if Desktop bumps the version. |
 | Dev source (recommended for contributors) | `~/code/orbit-for-claude/server/index.js` | You want CLI to run the latest local checkout. Stable path. Decouples from Desktop's update cycle. |
 
-Registration command (replace each `<value>` with the matching credential):
+**Zero-credential quickstart.** This is the command that works today, with
+nothing configured — skill routing, template loading, validators, lifecycle
+diagrams, brand-header spec generation, and workspace bootstrap all run on it
+as-is (see "What Works Without Extra Keys" below):
+
+```bash
+claude mcp add --scope user orbit -- node /path/to/orbit-for-claude/server/index.js
+```
+
+**Full registration.** Add credentials only for the features that need them —
+Braze reads/publishes, Stripo sync, Figma import, or Gemini brand-header
+rendering. Every `--env` flag below is optional; include only the ones you
+actually plan to use (replace each `<value>` with the matching credential):
 
 ```bash
 claude mcp add --scope user \
@@ -154,7 +166,7 @@ Orbit uses Gemini only for the art layer of brand-header rendering. Orbit keeps 
 - Run `orbit_check_setup` to see what is missing.
 - Run `orbit_validate_brand_kit` to verify `brand-profile.json`, `brand-guidelines.md`, logo files, and example assets.
 - Use `orbit_update_brand_guidelines` to revise the longform brand guide without redoing the full intake.
-- Use `orbit://privacy/image-generation` if you need the payload/privacy summary.
+- Use `orbit://privacy/image-generation` (`docs/IMAGE-GENERATION-PRIVACY.md`) if you need the image-generation payload/privacy summary. For the telemetry Orbit sends every session, see `PRIVACY.md` at the repo root instead.
 
 ## When something is actually broken
 

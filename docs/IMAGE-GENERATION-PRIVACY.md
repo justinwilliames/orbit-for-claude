@@ -1,5 +1,9 @@
 # Orbit Image Generation Privacy
 
+Covers only the Gemini art-layer call inside `orbit_render_brand_header`. For
+the telemetry Orbit sends on every session — what event, what payload, how to
+opt out — see [`/PRIVACY.md`](../PRIVACY.md) at the repo root instead.
+
 Orbit uses Google image generation only for brand-header art layers.
 
 ## What Gets Sent To Google
