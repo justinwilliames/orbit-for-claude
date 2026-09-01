@@ -127,6 +127,16 @@ failure mode each represents.
   states its subject then welds a second thought on is one no human writes.
   Same family: `, but I`, `, so we`, `, which means`. Fix: full stop, new
   sentence.
+- **The balanced coda, on ANY punctuation** — a clause that does its work, then
+  a payoff echoing its grammar with a new subject. `the calls came back to you,
+  **and so did** the number`. `your number is the exception**:** it's held until
+  Friday`. `the number is different **—** it's on a clock`. Same move every
+  time; only the carrier changes. **THE CARRIER IS NOT THE RULE.** Banning one
+  connector teaches the next draft which connector to avoid, not which habit to
+  drop — observed when the author of this rule swapped a comma for a colon
+  within the hour and considered it fixed. Fix: cover everything after the mark,
+  whichever mark it is. If no fact is lost it was cadence — cut it. If a fact is
+  lost, give it a full sentence.
 - **The Oxford comma** — the serial comma before `and` in a list. American
   house style, over-represented in AI output, and dropped in British and
   Australian register, so it reads as imported as well as machine-drafted.
