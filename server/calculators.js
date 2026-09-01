@@ -110,6 +110,47 @@ const EMPTY_PROMISE_PATTERNS = [
   { pattern: /^\s*learn\s+more\b/i, phrase: "learn more" },
 ];
 
+// ── The anchored-payload exemption ─────────────────────────────
+// Two different faults share the list above, and only one of them can be
+// rescued by evidence.
+//
+// A CONTAINER phrase ("best practices", "the ultimate guide", "learn more",
+// "everything you need to know", "tips and tricks") names a genre whose
+// contents may be entirely specific. "Best practices we learned fitting 400
+// boilers" is real copy with a real referent, and docking it says the phrase
+// is the fault when the fault was only ever the emptiness behind it.
+//
+// A HYPE phrase ("supercharge your…", "to the next level", "unlock your
+// potential", "we're excited to announce") is not a container. It makes a
+// claim about value rather than promising content, so nothing can sit inside
+// it. "Supercharge your workflow with 5 easy wins" has a number and is still
+// pure claim. Hype phrases are therefore NOT listed below and are never
+// exempted, however many digits surround them.
+//
+// The set is deliberately short. "The latest news", "helpful information",
+// "insights to help you" and "what we've been up to" were all considered and
+// left OUT: each is a claim of recency or usefulness rather than a container,
+// and every one of them stays docked with or without an anchor.
+const ANCHORABLE_PROMISE_PHRASES = new Set([
+  "everything you need to know",
+  "the ultimate guide",
+  "tips and tricks",
+  "best practices",
+  "learn more",
+]);
+
+// Not every digit is a referent, and this regex is the whole reason a bare
+// anchor test would have been too blunt. Three kinds of number say nothing
+// about what a message contains:
+//   · a bare calendar year — "in 2026" names WHEN, never WHAT;
+//   · a multiplier — "10x more done" is a claim of magnitude, not a thing;
+//   · a count of the promised genre itself — "our top 10 tips", "7 ways to…"
+//     restates the promise at a higher volume.
+// They are erased before the payload is tested, so "The ultimate guide to
+// email deliverability in 2026" stays docked while "…about the 14 Oct
+// cutover" does not.
+const NON_REFERENT_ANCHOR_RE = /\b(?:19|20)\d{2}\b|\b\d[\d,]*\s*x\b|\b\d[\d,]*\s+(?:[a-z]+\s+){0,2}(?:tips|tricks|ways|things|reasons|steps|hacks|secrets|ideas|lessons|takeaways|practices|guides|rules|myths|mistakes|questions|examples)\b/gi;
+
 // ── Content emptiness ──────────────────────────────────────────────
 // The vacuity mode that neither the filler list, the empty-promise list
 // nor the slop detector can see. "An update about your account" is
@@ -209,9 +250,25 @@ function detectFillerPhrases(text) {
   return Array.from(new Set(found));
 }
 
+/**
+ * A container phrase is rescued only by an anchor in its PAYLOAD — the text
+ * that follows it. Position is doing real work here: an anchor in front of
+ * the phrase is the listicle counter ("10 tips and tricks to…", "7 best
+ * practices for…"), which quantifies the promise instead of filling it.
+ */
+function hasPayloadAnchor(tail) {
+  return CONCRETE_ANCHOR_RE.test(tail.replace(NON_REFERENT_ANCHOR_RE, " "));
+}
+
 function detectEmptyPromises(text) {
   const found = [];
-  for (const { pattern, phrase } of EMPTY_PROMISE_PATTERNS) if (pattern.test(text)) found.push(phrase);
+  for (const { pattern, phrase } of EMPTY_PROMISE_PATTERNS) {
+    const m = pattern.exec(text);
+    if (!m) continue;
+    const tail = text.slice(m.index + m[0].length);
+    if (ANCHORABLE_PROMISE_PHRASES.has(phrase) && hasPayloadAnchor(tail)) continue;
+    found.push(phrase);
+  }
   return Array.from(new Set(found));
 }
 

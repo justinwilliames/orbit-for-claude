@@ -369,6 +369,125 @@ describe("Slop detection is scoped to short copy, not applied as prose", () => {
   });
 });
 
+/**
+ * The anchored-payload exemption.
+ *
+ * THE DEFECT THIS PINS. The empty-promise regexes matched the phrase and
+ * stopped reading. "Best practices we learned fitting 400 boilers" names
+ * a count of real work, "Learn more about the KX-9 recall" names a model
+ * number and "Everything you need to know about the 14 Oct cutover" names
+ * a date — and all three were capped at the empty-promise ceiling because
+ * of the words in front of the referent. The phrase was never the signal;
+ * what follows it is. "Best practices for handling callbacks" and "Best
+ * practices we learned fitting 400 boilers" open identically and are not
+ * the same line.
+ *
+ * WHY A BARE ANCHOR TEST WOULD HAVE BEEN WRONG. A digit does not make a
+ * promise concrete. The ADVERSARIAL bank below is the measurement that
+ * decided the shape of the rule: every line in it carries a digit or a
+ * currency symbol and every one is still filler. Three conditions had to
+ * be added before the exemption was safe — a container/hype split, a
+ * position requirement, and a non-referent number filter — and each of
+ * them is load-bearing against a specific line in that bank.
+ */
+describe("An anchored payload rescues a container phrase, and nothing else", () => {
+  // The three false positives. Each names a referent the pattern could
+  // not see because it never looked past its own match.
+  const ANCHORED = [
+    "Best practices we learned fitting 400 boilers",
+    "Learn more about the KX-9 recall",
+    "Everything you need to know about the 14 Oct cutover",
+  ];
+
+  // Lines that MUST stay docked. Every one contains a digit or a currency
+  // symbol, so a bare-anchor exemption would have released all of them.
+  //
+  //   · "10 tips and tricks…", "7 best practices…"  — the anchor is a
+  //     listicle counter sitting BEFORE the phrase; it quantifies the
+  //     promise rather than filling it.
+  //   · "Supercharge your workflow with 5 easy wins", "5 ways to unlock
+  //     your potential"  — hype phrases are not containers. Nothing can
+  //     sit inside a claim about value, so no anchor rescues them.
+  //   · "…in 2026", "…to 2026 growth"  — a bare year names when, not what.
+  //   · "…getting 10x more done"  — a multiplier is a magnitude, not a thing.
+  //   · "…about our top 10 tips"  — a count of the promised genre itself.
+  const ADVERSARIAL = [
+    "10 tips and tricks to supercharge your growth",
+    "7 best practices for better results",
+    "3 tips and tricks to level up your business",
+    "100 best practices to transform your business",
+    "5 ways to unlock your potential",
+    "Unlock your potential with 5 simple habits",
+    "Supercharge your workflow with 5 easy wins",
+    "Take your business to the next level in 90 days",
+    "Level up your skills in 2026",
+    "The ultimate guide to email deliverability in 2026",
+    "The ultimate guide to 2026 growth",
+    "Best practices for your 2026 planning",
+    "The ultimate guide to getting 10x more done",
+    "Everything you need to know about our top 10 tips",
+    "Learn more about our 2026 solutions for your business",
+    "The ultimate guide to 7 ways to grow",
+  ];
+
+  test("a container phrase with a real referent behind it is not docked", () => {
+    for (const line of ANCHORED) {
+      const r = scoreSubject(line);
+      assert.ok(
+        !r.issues.some((i) => /Names a category/.test(i.label)),
+        `"${line}" was still charged as an empty promise: ` +
+          `${r.score} — ${r.issues.map((i) => i.label).join(" / ")}`,
+      );
+      assert.equal(
+        r.tier,
+        "sharp",
+        `"${line}" scored ${r.score}/${r.tier}. It names a count, a model ` +
+          "number or a date, and must read as sharp.",
+      );
+    }
+  });
+
+  test("the same opening with nothing behind it is still docked", () => {
+    // The pair that proves the rule reads the payload, not the phrase.
+    const empty = scoreSubject("Best practices for handling callbacks");
+    const anchored = scoreSubject("Best practices we learned fitting 400 boilers");
+    assert.ok(
+      empty.score <= 74,
+      `"Best practices for handling callbacks" scored ${empty.score}; the ` +
+        "exemption has leaked into lines with no payload at all.",
+    );
+    assert.ok(
+      anchored.score - empty.score >= MIN_GAP,
+      `the anchored line beat the empty one by only ${anchored.score - empty.score} ` +
+        `points (${anchored.score} vs ${empty.score}); they share an opening and ` +
+        "are not the same line.",
+    );
+  });
+
+  test("a digit does not buy a line out of the empty-promise ceiling", () => {
+    const released = ADVERSARIAL.map((l) => [l, scoreSubject(l)])
+      .filter(([, r]) => r.score > 74)
+      .map(([l, r]) => `  ${r.score}  "${l}"`);
+
+    assert.equal(
+      released.length,
+      0,
+      "The anchored-payload exemption is too blunt — these lines carry a " +
+        "number and are still filler:\n" +
+        released.join("\n"),
+    );
+  });
+
+  test("every generic line in the bank is unmoved by the exemption", () => {
+    // None of GENERIC carries an anchor, so the exemption must be inert
+    // over the whole pre-existing bank.
+    for (const line of GENERIC) {
+      const r = scoreSubject(line);
+      assert.ok(r.score <= 74, `"${line}" climbed to ${r.score} after the exemption`);
+    }
+  });
+});
+
 describe("Existing subject-line behaviour is unchanged", () => {
   test("an empty subject still returns null", () => {
     assert.equal(scoreSubject(""), null);
