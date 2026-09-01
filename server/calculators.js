@@ -110,6 +110,78 @@ const EMPTY_PROMISE_PATTERNS = [
   { pattern: /^\s*learn\s+more\b/i, phrase: "learn more" },
 ];
 
+// ── Content emptiness ──────────────────────────────────────────────
+// The vacuity mode that neither the filler list, the empty-promise list
+// nor the slop detector can see. "An update about your account" is
+// grammatical, jargon-free, correctly punctuated, 28 characters, and
+// carries no phrase any dictionary here enumerates. It is empty for a
+// reason none of those instruments measure: a reader could have written
+// it without knowing anything about the message.
+//
+// This is NOT a banned-word list, and the direction is the whole safety
+// argument. "Update" is fine in "Update: your refund cleared" — emptiness
+// is a property of the whole line, never of a word. So the vocabulary
+// below is an ALLOWLIST OF NON-EVIDENCE: a token in it contributes
+// nothing, and a token this file has never heard of counts as evidence
+// and clears the line. A blocklist fails dangerously (an unlisted word
+// slips through; a listed word inside good copy is a false positive). An
+// allowlist of non-evidence fails safe — the unfamiliar is exonerated,
+// not punished. A line is flagged only when EVERY token is non-evidence
+// and no numeric anchor is present, i.e. when there is nothing left.
+const EMPTY_VOCABULARY = new Set([
+  // Nouns that name the existence of a message rather than its content.
+  "update", "updates", "news", "newsletter", "newsletters", "information",
+  "info", "message", "messages", "notice", "notification", "notifications",
+  "reminder", "reminders", "announcement", "announcements", "detail",
+  "details", "account", "accounts", "item", "items", "thing", "things",
+  "stuff", "something", "everything", "anything", "note", "notes",
+  "digest", "roundup", "recap", "bulletin", "communication", "content",
+  "matter", "team", "everyone",
+  // Modifiers that assert significance instead of supplying any.
+  "important", "quick", "brief", "general", "various", "several",
+  "helpful", "useful", "exciting", "great", "good", "nice", "big",
+  "little", "small", "latest", "recent", "upcoming", "monthly", "weekly",
+  "daily", "quarterly", "annual", "personal", "few", "other", "another",
+  // Verbs and adverbs of pure existence — they commit to no event.
+  "here", "there", "inside", "below", "attached", "coming", "soon",
+  "share", "shares", "sharing", "shared", "know", "knowing", "see",
+  "read", "regarding", "following", "wanted", "want", "wants", "need",
+  "needs", "please", "have", "has", "had", "having", "was", "were",
+  "been", "being", "will", "can", "could", "should", "would", "may",
+  "might", "must", "does", "did", "doing", "get", "gets", "getting",
+  "got", "give", "gives", "let", "lets", "make", "makes", "made",
+  "take", "takes", "about", "regard", "concerning", "everybody",
+]);
+
+// A digit, a currency symbol, a percentage or a personalisation token is a
+// referent the token scan cannot see: "#4471" and "Q3" survive no
+// alphabetic tokenizer, and neither does "£40". Any one of them clears
+// the line on its own.
+const CONCRETE_ANCHOR_RE = /[\d£$€¥%]|\{\{/;
+
+/**
+ * Return the tokens that constitute evidence of content — every word that
+ * is neither a grammatical stopword nor a member of the empty vocabulary.
+ * An empty return means the line, read end to end, names nothing.
+ */
+function contentEvidenceTokens(text) {
+  return text
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z']/g, ""))
+    .filter((w) => w.length >= 3)
+    .filter((w) => !SUBJECT_STOPWORDS.has(w) && !EMPTY_VOCABULARY.has(w));
+}
+
+function isContentEmpty(text) {
+  const words = text.split(/\s+/).filter(Boolean);
+  // Two-word stubs ("No subject", "Update") are already priced by the bare
+  // opener and ultra-short rules; charging them twice would be dishonest.
+  if (words.length < 3) return false;
+  if (CONCRETE_ANCHOR_RE.test(text)) return false;
+  return contentEvidenceTokens(text).length === 0;
+}
+
 const HOMOPHONE_PATTERNS = [
   { pattern: /\bon\s+it's\s+way\b/i, label: "on it's → on its" },
   { pattern: /\bit'?s\s+(turn|moment|place|job|role)\b/i, label: "it's / its confusion" },
@@ -222,7 +294,8 @@ export function scoreSubject(subject, preheader = "") {
   else if (/[!?]{2,}/.test(s)) { score -= 6; issues.push({ severity: "medium", label: "Repeated punctuation" }); }
   if (/\s{2,}/.test(s) || /\s{2,}/.test(ph)) { score -= 4; issues.push({ severity: "low", label: "Double spaces" }); }
 
-  if (BARE_OPENERS_RE.test(s)) {
+  const bareOpener = BARE_OPENERS_RE.test(s);
+  if (bareOpener) {
     score -= 20;
     issues.push({ severity: "high", label: `Bare opener: "${s}"` });
   }
@@ -251,6 +324,29 @@ export function scoreSubject(subject, preheader = "") {
     issues.push({
       severity: "high",
       label: `Names a category, not the content: "${emptyPromises[0]}"${emptyPromises.length > 1 ? ` (+${emptyPromises.length - 1} more)` : ""}`,
+    });
+  }
+
+  // Emptiness and jargon are different failure modes, and the lists above
+  // only catch emptiness that happens to be idiomatic. This catches it
+  // when it is not: a line built end to end out of nothing.
+  //
+  // The finding and the points are separated on purpose. The CEILING
+  // below always applies, so a vacuous line cannot climb by reaching for
+  // a cliché the dictionaries already know — before this split,
+  // "Important information about your account" outscored "An update about
+  // your account" by 8 points for being worse. The POINT penalty is
+  // withheld when a filler or empty-promise phrase was already named,
+  // because those are the same fault at a finer grain and charging twice
+  // pushed a merely-empty line into the "spam" tier, which is a lie about
+  // what is wrong with it.
+  const contentEmpty = !bareOpener && isContentEmpty(s);
+  const emptinessAlreadyPriced = subjectFiller.length > 0 || emptyPromises.length > 0;
+  if (contentEmpty) {
+    if (!emptinessAlreadyPriced) score -= 32;
+    issues.push({
+      severity: "high",
+      label: "Says nothing a reader could not have guessed — no name, number, date or object",
     });
   }
 
@@ -339,6 +435,9 @@ export function scoreSubject(subject, preheader = "") {
   // slop finding cannot survive into the top tier either, however clean
   // the grammar and length are underneath.
   if (emptyPromises.length > 0) score = Math.min(score, 74);
+  // A line with no referent at all is emptier than one that reaches for a
+  // cliché, so its ceiling sits below the empty-promise ceiling.
+  if (contentEmpty) score = Math.min(score, 66);
   if (slopFindings.some((f) => f.severity === "high")) score = Math.min(score, 78);
 
   score = Math.max(0, Math.min(100, score));

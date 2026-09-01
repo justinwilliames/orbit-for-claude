@@ -56,6 +56,32 @@ const SPECIFIC = [
   "Your Q3 insights are ready",
   "Tips from the crew who fitted 400 boilers",
   "We messed up your delivery",
+  // Plainest copy in the bank: no proper noun, no number, no date, no
+  // date-word. If the vacuity check leans on anchors alone, these fall.
+  "Update: your refund cleared",
+  "The van broke down",
+  "Your engineer is running late",
+  "Someone tried to log in",
+  "We could not reach you",
+  "Your quote expired",
+];
+
+// Lines with no referent at all. None of them contains a filler phrase,
+// an empty promise or a word of marketing jargon — the three instruments
+// that existed before this one are blind to every line here. They are
+// grammatical, correctly punctuated, sensibly long and completely empty:
+// each announces that a message exists and stops.
+const VACUOUS = [
+  "An update about your account",
+  "Important information about your account",
+  "A message from the team",
+  "Some news to share with you",
+  "We have an update for you",
+  "An important notice about your details",
+  "Your monthly newsletter is here",
+  "Something you should know",
+  "We wanted to share a few updates",
+  "Please read this important message",
 ];
 
 // Lines that name a category of content instead of the content. Every one
@@ -154,6 +180,136 @@ describe("Subject-line scorer distinguishes specific copy from filler", () => {
       `stacked filler must be reported as multiple phrases, got ` +
         `[${several.issues.map((i) => i.label).join("; ")}]`,
     );
+  });
+});
+
+/**
+ * THE HALF THIS BLOCK CLOSES. The dictionaries above catch emptiness only
+ * when it is idiomatic — a phrase somebody already wrote down. Emptiness
+ * that is merely ordinary walked straight past all three instruments:
+ * "An update about your account" returned 100/sharp with zero issues,
+ * carrying no jargon for the slop detector to find and no cliché for the
+ * lists to match. Emptiness and jargon are different failure modes and
+ * only one was measured.
+ *
+ * THE RULE. A line is empty when every one of its tokens is a stopword or
+ * a member of the non-evidence vocabulary AND it carries no numeric,
+ * currency or personalisation anchor. Deliberately an allowlist of
+ * evidence, not a blocklist of words: a word the vocabulary has never
+ * heard of clears the line, so the check fails safe on copy nobody
+ * anticipated. That is why "Update: your refund cleared" survives while
+ * "An update about your account" does not — the word is identical and the
+ * lines are not.
+ *
+ * WHAT IT STILL DOES NOT CATCH, recorded so nobody mistakes it for
+ * finished. Only the purest vacuity is caught: one ordinary noun clears
+ * the line, so "An update about your subscription details", "Your account
+ * summary is available" and "A note on our services" all still score
+ * 100/sharp, and a stray digit exonerates outright. Closing that gap
+ * needs the opposite polarity — flag unless a concrete anchor, a
+ * consequence verb or a proper noun is present. That was measured, not
+ * assumed, and it flagged 8 of the 36 good lines in this file's banks
+ * (22%), "It sends it, records it, and files it" among them. Doctrine 1
+ * says good short copy pays nothing, so the safe half shipped and issue
+ * #17's disclosure guard stays in place until the rest exists.
+ */
+describe("Subject-line scorer detects content emptiness, not just jargon", () => {
+  test("a jargon-free, cliché-free empty line loses the top tier", () => {
+    const r = scoreSubject("An update about your account");
+    assert.notEqual(
+      r.tier,
+      "sharp",
+      `"An update about your account" scored ${r.score}/${r.tier} — a line that ` +
+        `announces only that a message exists must never read as sharp`,
+    );
+    assert.ok(
+      r.issues.length > 0,
+      "a line with no referent must raise at least one issue",
+    );
+  });
+
+  test("every vacuous line is kept out of the top tier", () => {
+    for (const line of VACUOUS) {
+      const r = scoreSubject(line);
+      assert.notEqual(
+        r.tier,
+        "sharp",
+        `"${line}" scored ${r.score}/${r.tier} — it names nothing`,
+      );
+    }
+  });
+
+  test("the vacuous bank does not overlap the specific bank", () => {
+    const worstSpecific = Math.min(...SPECIFIC.map((s) => scoreSubject(s).score));
+    const bestVacuous = Math.max(...VACUOUS.map((s) => scoreSubject(s).score));
+    assert.ok(
+      worstSpecific - bestVacuous >= MIN_GAP,
+      `worst specific ${worstSpecific}, best vacuous ${bestVacuous} ` +
+        `(gap ${worstSpecific - bestVacuous})`,
+    );
+  });
+
+  // Doctrine, and the reason this check is an allowlist. "Update" is not a
+  // banned word; these two lines share it and must be scored apart.
+  test("the same word is fine in a line that says something", () => {
+    const empty = scoreSubject("An update about your account");
+    const full = scoreSubject("Update: your refund cleared");
+    assert.equal(
+      full.tier,
+      "sharp",
+      `"Update: your refund cleared" scored ${full.score}/${full.tier} — the ` +
+        `check has degenerated into a banned-word list`,
+    );
+    assert.ok(full.score - empty.score >= MIN_GAP, `${full.score} vs ${empty.score}`);
+  });
+
+  // Doctrine 1, pinned as its own test: good short copy pays nothing. Not
+  // "stays sharp" — pays NOTHING. A single point lost here means the check
+  // is wrong, and this is the assertion that says so out loud.
+  test("terse, anchor-free good copy loses not one point", () => {
+    for (const line of [
+      "Your trial ends Friday — pick a plan",
+      "It sends it, records it, and files it",
+      "The van broke down",
+      "We could not reach you",
+      "Your quote expired",
+      "Someone tried to log in",
+    ]) {
+      const r = scoreSubject(line);
+      assert.equal(
+        r.score,
+        100,
+        `"${line}" scored ${r.score} with issues ` +
+          `[${r.issues.map((i) => i.label).join("; ")}] — a vacuity check that ` +
+          `costs good short copy a single point is the wrong check`,
+      );
+    }
+  });
+
+  // Emptiness is charged once. Before the finding and the points were
+  // separated, adding a cliché to an empty line RAISED its score, and a
+  // line that is merely empty was billed twice into the "spam" tier —
+  // which misreports what is wrong with it.
+  test("adding a cliché to an empty line never improves it", () => {
+    const plain = scoreSubject("An update about your account");
+    const cliched = scoreSubject("Important information about your account");
+    assert.ok(
+      cliched.score <= plain.score,
+      `"Important information about your account" (${cliched.score}) must not ` +
+        `outscore "An update about your account" (${plain.score})`,
+    );
+  });
+
+  test("a merely-empty line is not reported as spam", () => {
+    for (const line of VACUOUS) {
+      const r = scoreSubject(line);
+      assert.notEqual(
+        r.tier,
+        "spam",
+        `"${line}" scored ${r.score}/${r.tier} — emptiness is not spam, and ` +
+          `double-charging it says the wrong thing to an operator`,
+      );
+    }
   });
 });
 
