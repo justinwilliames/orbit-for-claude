@@ -35,6 +35,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { createServer } from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -50,6 +51,11 @@ import {
 const execFileAsync = promisify(execFile);
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SCRIPT = path.join(ROOT_DIR, "scripts", "release-lag.mjs");
+
+// Fixture commit dates. Fixed, not relative: a fixture whose verdict moves
+// with the wall clock is a fixture that fails on a slow CI runner one day.
+const FIXTURE_OLD_ISO = "2026-01-10T00:00:00Z";
+const FIXTURE_NEW_ISO = "2026-01-11T00:00:00Z";
 
 /** Shift an instant by whole/fractional days, as an ISO string. */
 function shift(iso, days) {
@@ -298,6 +304,9 @@ describe("76 · release-lag metric: the verdict reaches the shell", () => {
   /** Serve a registry versions payload with a caller-chosen publish date. */
   let publishedAt = null;
 
+  /** A throwaway git repo with history this suite controls. */
+  let fixtureDir = null;
+
   before(async () => {
     server = createServer((req, res) => {
       res.writeHead(200, { "content-type": "application/json" });
@@ -316,18 +325,66 @@ describe("76 · release-lag metric: the verdict reaches the shell", () => {
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     base = `http://127.0.0.1:${server.address().port}`;
+
+    // These tests are about what the SCRIPT does, not about what this
+    // checkout happens to contain — so they run against a fixture repo with
+    // history we control, never against ROOT_DIR.
+    //
+    // Pointing them at the real repo made the verdict a function of the
+    // clone depth. CI checks out shallow, so "a clean repo exits zero"
+    // asserted `clean` and got `unknown`, and before the shallow detection
+    // existed it asserted `breach` and got `ok`. Two CI failures, same root
+    // cause: an assertion about the environment wearing the costume of an
+    // assertion about the code.
+    //
+    // realpathSync because macOS symlinks /var/folders to /private/var, and
+    // the script's main-module guard compares import.meta.url against
+    // process.argv[1] — hand it the symlinked path and it silently runs
+    // nothing and exits 0.
+    fixtureDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "orbit-laglab-")));
+    const g = (...args) => execFileAsync("git", args, { cwd: fixtureDir });
+    await g("init", "-q", "-b", "main");
+    await g("config", "user.email", "fixture@example.invalid");
+    await g("config", "user.name", "Fixture");
+    await g("config", "commit.gpgsign", "false");
+    fs.mkdirSync(path.join(fixtureDir, "scripts"), { recursive: true });
+    fs.copyFileSync(SCRIPT, path.join(fixtureDir, "scripts", "release-lag.mjs"));
+    // The script resolves ROOT_DIR from its own location and reads
+    // server.json there for the registry server name. Without it the run
+    // dies with ENOENT before it reaches any verdict, and `report` comes
+    // back null — which is how this fixture failed the first time.
+    fs.writeFileSync(
+      path.join(fixtureDir, "server.json"),
+      JSON.stringify({ name: "io.github.justinwilliames/orbit-lifecycle-mcp", version: "0.0.1-test" }, null, 2),
+    );
+
+    // Two commits, both dated well in the past, so a publish date after them
+    // is CLEAN and a publish date before them is a BREACH — deterministic in
+    // any environment.
+    const stamp = async (file, iso) => {
+      fs.writeFileSync(path.join(fixtureDir, file), `${file}\n`);
+      await g("add", "-A");
+      await execFileAsync("git", ["commit", "-q", "-m", file], {
+        cwd: fixtureDir,
+        env: { ...process.env, GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso },
+      });
+    };
+    await stamp("first.txt", FIXTURE_OLD_ISO);
+    await stamp("second.txt", FIXTURE_NEW_ISO);
   });
 
   after(async () => {
     await new Promise((resolve) => server.close(resolve));
+    if (fixtureDir) fs.rmSync(fixtureDir, { recursive: true, force: true });
   });
 
   async function runCli(env) {
     try {
-      const { stdout } = await execFileAsync(process.execPath, [SCRIPT, "--json"], {
-        cwd: ROOT_DIR,
-        env: { ...process.env, ...env },
-      });
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [path.join(fixtureDir, "scripts", "release-lag.mjs"), "--json"],
+        { cwd: fixtureDir, env: { ...process.env, ...env } },
+      );
       return { code: 0, report: JSON.parse(stdout) };
     } catch (err) {
       let report = null;
