@@ -46,13 +46,32 @@ const execFileAsync = promisify(execFile);
  * assertions vanished into one nameless timeout. Overlapping the launches
  * is the fix — the assertions are unchanged, only the waiting is shared.
  */
-const LAUNCH_CONCURRENCY = 12;
+/*
+ * Scaled to the machine, not pinned to a number.
+ *
+ * A fixed 12 was tuned on a 10-core laptop and shipped green there. On a
+ * GitHub-hosted runner with a fraction of those cores, twelve cold Chromes
+ * starve each other and every one of them crosses the 30s per-launch
+ * ceiling — 0.36.0's CI died with four ~30.7s timeouts reported as "may not
+ * have loaded", which is the wrong diagnosis for a process that loaded fine
+ * and was simply never given a core. It passed on 0.34.0 and 0.35.0 by a
+ * margin, which is the worst way for a limit to be wrong: it looks settled
+ * right up until it isn't.
+ */
+const LAUNCH_CONCURRENCY = Math.max(
+  // Floor of 4, not 2. A cold Chrome start is as much process and I/O setup
+  // as it is CPU, so mild oversubscription on a small runner costs little,
+  // while dropping to 2 would put 49 launches back within reach of the
+  // per-file ceiling — trading a launch timeout for a file timeout.
+  4,
+  Math.min(12, (os.availableParallelism?.() ?? os.cpus().length ?? 4)),
+);
 
 /**
  * Per-launch ceiling. A Chrome that never returns used to wedge the whole
  * file into that same anonymous 60s timeout; this makes it name itself.
  */
-const LAUNCH_TIMEOUT_MS = 30_000;
+const LAUNCH_TIMEOUT_MS = 45_000;
 
 /** Where a headless-capable Chrome might live, in order of preference. */
 const CHROME_CANDIDATES = [
@@ -651,7 +670,13 @@ async function measure(widget, data = null) {
   );
 
   const match = /data-orbit-probe="([^"]*)"/.exec(dom);
-  assert.ok(match, `the page never reported a measurement for ${widget.uri} — it may not have loaded`);
+  assert.ok(
+    match,
+    `the page never reported a measurement for ${widget.uri}. ` +
+      `Chrome returned but the probe marker was absent — if this run also shows launches near ` +
+      `${LAUNCH_TIMEOUT_MS}ms, the cause is CPU starvation, not a broken widget ` +
+      `(concurrency ${LAUNCH_CONCURRENCY} on ${os.availableParallelism?.() ?? os.cpus().length} cores).`,
+  );
   const decoded = match[1]
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, "&")

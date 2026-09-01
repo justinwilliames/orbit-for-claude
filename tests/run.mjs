@@ -61,7 +61,13 @@ async function main() {
   const stream = run({
     files,
     concurrency: 1,
-    timeout: 60_000
+    // A hang detector, not a performance budget. 60s was neither: suite 36
+    // makes 49 cold Chrome launches, which is legitimately slow on a small
+    // CI runner, and when it crossed the line node:test killed the file and
+    // discarded its buffered subtests — 50 passing assertions surfaced as
+    // one nameless timeout plus "ran no tests". A suite taking 100s is slow;
+    // a suite taking 180s is wedged. The line belongs at the second one.
+    timeout: 180_000
   });
 
   const streamProcessing = new Promise((resolve, reject) => {
