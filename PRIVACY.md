@@ -66,7 +66,12 @@ Every event carries exactly these fields and no others:
 - Your API keys for Braze, Stripo, Figma, Gemini or any ESP. Those are
   read from your local environment and sent only to the platform they
   belong to.
-- Your IP address. The receiving server does not log it.
+- Your IP address. Orbit's application never reads it, never stores it, and the
+  telemetry table has no column for one. What it cannot promise is the layer
+  underneath: the request reaches the app through hosting and edge
+  infrastructure that keeps its own short-lived operational access logs, the
+  way every HTTP service on the internet does. Nothing correlates those to
+  your `clientId` or to anything Orbit holds.
 
 ## Turning it off
 

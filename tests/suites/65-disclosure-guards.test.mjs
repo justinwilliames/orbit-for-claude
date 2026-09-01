@@ -133,29 +133,85 @@ describe("Guard 2 — the consent auditor cannot issue a false pass", () => {
 describe("Guard 3 — a check that holds an opinion must state its reason", () => {
   test("copy_generation never reports blocked with an empty blocking_issues", async () => {
     const os = await import("node:os");
-    const { checkSetup } = await import("../../server/setup-validator.js");
+    const { checkSetup, validateBrandKit } = await import("../../server/setup-validator.js");
+    const { BRAND_GUIDELINE_SECTIONS } = await import("../../server/brand-kit.js");
 
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-guard-"));
     const kit = path.join(root, "brand-kit");
     const lib = path.join(root, "library");
-    fs.mkdirSync(kit, { recursive: true });
+    fs.mkdirSync(path.join(kit, "logos"), { recursive: true });
+    fs.mkdirSync(path.join(kit, "examples"), { recursive: true });
     fs.mkdirSync(lib, { recursive: true });
     const config = { rootDir: root, brandKitDir: kit, libraryDir: lib, outputsDir: path.join(root, "outputs") };
 
+    // `validateBrandKit` reports operational_status "full" only when nothing is
+    // in `missing` AND brand-guidelines.md exists AND no guideline section is
+    // still placeholder text. These two helpers build a kit that clears
+    // `missing` (brand_name, a real primary logo file, two real example asset
+    // files, colors, fonts) and guidelines whose sections we control, so the
+    // fixture can sit either side of "full" deliberately. "Open Questions /
+    // TBD" is exempt from the placeholder scan, so it is left blank in both.
+    const writeCompleteProfile = () => {
+      fs.writeFileSync(path.join(kit, "logos", "logo.png"), "logo");
+      fs.writeFileSync(path.join(kit, "examples", "one.png"), "one");
+      fs.writeFileSync(path.join(kit, "examples", "two.png"), "two");
+      fs.writeFileSync(
+        path.join(kit, "brand-profile.json"),
+        JSON.stringify({
+          brand_name: "Guardrail Co",
+          primary_logo: "logos/logo.png",
+          colors: { primary: "#101820" },
+          example_assets: ["examples/one.png", "examples/two.png"],
+          fonts: ["Inter"]
+        })
+      );
+    };
+    // Built from BRAND_GUIDELINE_SECTIONS rather than a literal so the fixture
+    // cannot silently drift out of "full" when a section is added or renamed.
+    const writeGuidelines = (body) =>
+      fs.writeFileSync(
+        path.join(kit, "brand-guidelines.md"),
+        `# Guardrail Co\n\n${BRAND_GUIDELINE_SECTIONS.map(
+          (title) => `## ${title}\n${title === "Open Questions / TBD" ? "" : body(title)}\n`
+        ).join("\n")}`
+      );
+
     const states = [
-      ["empty kit", () => {}],
+      // No profile, no guidelines: several blockers, plainly blocked.
+      ["empty kit", () => {}, { expect_blocked: true }],
+      // Guidelines and tone present, profile still missing.
       [
-        "guidelines and tone present but kit not fully operational",
-        () =>
-          fs.writeFileSync(
-            path.join(kit, "brand-guidelines.md"),
-            "# Brand\n\n## Tone Of Voice\nWarm, direct.\n"
-          )
+        "guidelines and tone present but no brand profile",
+        () => writeGuidelines(() => "Real content."),
+        { expect_blocked: true }
+      ],
+      // THE ORIGINAL DEFECT STATE. guidelines_path truthy, tone_of_voice
+      // defined, operational_status !== "full" (one section still placeholder).
+      // Both of the array's original conditions are satisfied here, so the
+      // pre-fix array came back EMPTY while status said "needs_setup".
+      [
+        "complete profile, tone defined, one guideline section still placeholder",
+        () => {
+          writeCompleteProfile();
+          writeGuidelines((title) => (title === "Approved References" ? "TBD - not supplied yet." : "Real content."));
+        },
+        { expect_blocked: true, expect_operational_status: "profile_only" }
+      ],
+      // The state Guard 3 could never previously reach: a genuinely clean kit,
+      // where blocking_issues is empty. Without this the invariant below is
+      // unfalsifiable — its left conjunct is never true.
+      [
+        "fully operational kit",
+        () => writeGuidelines(() => "Real content."),
+        { expect_clear: true, expect_operational_status: "full" }
       ]
     ];
 
-    for (const [label, mutate] of states) {
+    let reachedEmptyBlockingIssues = false;
+
+    for (const [label, mutate, expectation] of states) {
       mutate();
+      const brandKit = validateBrandKit({ config, rootDir: root, brandKitDir: kit });
       const readiness = checkSetup({
         config,
         rootDir: root,
@@ -163,14 +219,116 @@ describe("Guard 3 — a check that holds an opinion must state its reason", () =
         requestedFeatures: ["copy_generation"]
       }).feature_readiness.copy_generation;
 
+      if (readiness.blocking_issues.length === 0) reachedEmptyBlockingIssues = true;
+
+      // The fixture has to actually land where it claims, or the assertions
+      // below are testing a state nobody designed.
+      if (expectation.expect_operational_status) {
+        assert.equal(
+          brandKit.operational_status,
+          expectation.expect_operational_status,
+          `Fixture drift: "${label}" was built to produce operational_status ` +
+            `"${expectation.expect_operational_status}" but validateBrandKit returned ` +
+            `"${brandKit.operational_status}" (missing: ${JSON.stringify(brandKit.missing)}). Fix the ` +
+            `fixture — the guard below is only meaningful on the state it was written for.`
+        );
+      }
+
+      // THE INVARIANT. Status and blocking_issues derive from one source, so
+      // they cannot disagree. A model reads this on turn one of nearly every
+      // session; being told it is blocked with nothing to fix is worse than no
+      // check at all, because the check is trusted.
       assert.ok(
         !(readiness.status === "needs_setup" && readiness.blocking_issues.length === 0),
         `copy_generation reported "${readiness.status}" with an empty blocking_issues array (${label}). ` +
           `Status must derive from the array so the two cannot disagree — a model reads this on turn one ` +
           `of nearly every session and is told it is blocked with nothing to fix.`
       );
+
+      // The other half of the same contract: a stated reason must produce a
+      // blocked status, and a blocked status must carry at least one reason.
+      if (expectation.expect_blocked) {
+        assert.equal(
+          readiness.status,
+          "needs_setup",
+          `copy_generation reported "${readiness.status}" for a kit that is not ready (${label}). ` +
+            `Blockers: ${JSON.stringify(readiness.blocking_issues)}`
+        );
+        assert.ok(
+          readiness.blocking_issues.length > 0,
+          `copy_generation blocked "${label}" without naming a reason. On the original defect this exact ` +
+            `state — guidelines present, tone defined, kit not fully operational — returned an empty array.`
+        );
+      }
+      if (expectation.expect_clear) {
+        assert.equal(
+          readiness.blocking_issues.length,
+          0,
+          `A fully operational brand kit still carries blockers (${label}): ` +
+            `${JSON.stringify(readiness.blocking_issues)}`
+        );
+        assert.notEqual(
+          readiness.status,
+          "needs_setup",
+          `copy_generation reported "needs_setup" on a fully operational brand kit (${label}) with an ` +
+            `empty blocking_issues array. This is the exact contradiction Guard 3 exists to catch.`
+        );
+      }
     }
 
     fs.rmSync(root, { recursive: true, force: true });
+
+    // ANTI-VACUITY. The invariant above is `!(needs_setup && empty)`. If no
+    // fixture ever produces an empty blocking_issues array, its left conjunct
+    // is unreachable and the assertion passes no matter what the code does —
+    // which is exactly what this guard did when it shipped: the derivation
+    // could be replaced with a hardcoded value and the suite stayed green.
+    // A guard nobody has watched fail is a badge, not a check.
+    assert.ok(
+      reachedEmptyBlockingIssues,
+      "No Guard 3 fixture reached blocking_issues.length === 0, so the invariant above never had a case " +
+        "to judge and this test proves nothing. Restore a fixture state that produces a fully operational " +
+        "brand kit before trusting this suite."
+    );
   });
+});
+
+describe("Guard 4 — no shipped surface advertises a capability the code lacks", () => {
+  // Nebula's R5b caveat. `orbit_score_subject_line` advertised "content-emptiness"
+  // detection; the implementation was 21 literal regexes at server/calculators.js:54,
+  // and it scored the README's best line and two deliberately generic lines
+  // identically at 96/sharp. The claim was removed from server/index.js in 0.33.0 —
+  // and survived in manifest.json, because the fix checked one surface and the
+  // product ships two. tests/suites/26-manifest-drift.test.mjs compares tool names,
+  // versions and the product blurb, but never per-tool description text, so nothing
+  // caught it. This is that check.
+  //
+  // Add a term here when a tool description makes a claim the code does not yet
+  // honour, and delete it when the capability actually lands.
+  const UNBACKED_CLAIMS = [
+    {
+      term: "content-emptiness",
+      why:
+        "orbit_score_subject_line has no content-emptiness check — server/calculators.js runs literal " +
+        "regexes. server/slop-detector.js is the real instrument and is pointed at Orbit's own output, " +
+        "not the user's. Tracked as issue #17; until it is wired, no surface may claim it."
+    }
+  ];
+
+  const SURFACES = ["manifest.json", "server/index.js", "README.md"];
+
+  for (const { term, why } of UNBACKED_CLAIMS) {
+    test(`no shipped surface claims "${term}"`, () => {
+      const offenders = SURFACES.filter((rel) => {
+        const p = path.join(ROOT, rel);
+        return fs.existsSync(p) && fs.readFileSync(p, "utf8").includes(term);
+      });
+
+      assert.deepEqual(
+        offenders,
+        [],
+        `"${term}" is advertised in: ${offenders.join(", ")}. ${why}`
+      );
+    });
+  }
 });

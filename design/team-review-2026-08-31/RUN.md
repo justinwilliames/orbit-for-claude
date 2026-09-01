@@ -2,8 +2,16 @@
 
 # RUN.md — the run's own instrument (31 Aug 2026)
 
-**Outcome: BLOCKED at R5. No `FINAL-SHIPPING-DECISION.md` was written.**
-One block (Iris), nine agree-with-caveat. Escalated to Justin for a tiebreaker.
+**Outcome: SIGNED OFF at R5b. `FINAL-SHIPPING-DECISION.md` written.**
+
+R5 ended BLOCKED — one block (Iris), nine agree-with-caveat — against an artefact the plan
+had not yet touched. The plan was then executed and shipped as v0.33.0, and the team
+re-signed at **R5b against the changed artefact: ten of ten, zero blocks.** Iris's block is
+lifted. Echo's "do not promote" position stands and is correct.
+
+R5b caught three defects in the orchestrator's own fixes — a guard that could not fail, a
+false capability claim surviving on a second surface, and a privacy sentence that traded one
+absolute for another. All three are fixed and each is guarded. See FINAL-SHIPPING-DECISION.md.
 
 ---
 
@@ -16,7 +24,9 @@ One block (Iris), nine agree-with-caveat. Escalated to Justin for a tiebreaker.
 | R3 — convergence | 10 | 9m 05s | 1,514,867 | 414 | 10/10 |
 | R4 — action plan | orchestrator | — | — | — | 1/1 |
 | R5 — sign-off | 10 | 2m 39s | 1,011,487 | 151 | 10/10 |
-| **Total** | **35** | **31m 44s** | **4,624,742** | **1,069** | **37 files** |
+| R5b — re-sign | 10 | 8m 00s | 979,562 | 161 | 10/10 |
+| Guard repair | 1 (Sentinel) | 7m 30s | 110,022 | 23 | 1/1 |
+| **Total** | **46** | **47m 14s** | **5,714,326** | **1,253** | **50 files** |
 
 **Zero agent errors, zero empty results, zero stalls across all four fan-outs.** The liveness gate
 never fired because the Workflow engine returns a stalled agent as `null` rather than hanging, which
