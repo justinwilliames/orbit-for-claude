@@ -244,7 +244,21 @@ export function buildOrbitMarkdownHeader({
   logoPath,
   contextLines = []
 }) {
-  const logo = logoPath || ORBIT_LOGO_DARK_URL;
+  // A markdown header renders on a background nobody here controls — a
+  // GitHub README in either theme, a Notion page, an editor preview. The
+  // default was the site's dark-INK mark, which measures 21:1 on white and
+  // 1.19:1 on the dark theme ground: invisible to every reader in dark mode.
+  //
+  // The two repos use "dark" oppositely, which is how this survived. In the
+  // extension, icon-dark.png is the variant FOR dark mode (light ink). On the
+  // website, orbit-icon-dark.png is dark INK, for light grounds. Same word,
+  // inverted meaning, one URL crossing between them.
+  //
+  // orbit-icon.png is the full tile — fully opaque, so it carries its own
+  // background and measures 19.79:1 on dark and 20.87:1 on light. It is the
+  // only one of the three that is legible either way, which is the only
+  // property this call site can actually rely on.
+  const logo = logoPath || ORBIT_LOGO_URL;
   return [
     `[![Orbit](${logo})](${ORBIT_URL})`,
     "",
