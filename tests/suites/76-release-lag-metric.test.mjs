@@ -343,11 +343,87 @@ describe("76 · release-lag metric: the verdict reaches the shell", () => {
   test("a real breach exits the PROCESS non-zero, not just the return value", async () => {
     // Publish date far in the past, so every commit in this repo's real
     // history is unreleased and the oldest is years old.
+    //
+    // This test asserts against the REAL repo, so its answer depends on
+    // whether the checkout carries history. CI checks out shallow
+    // (actions/checkout@v4 defaults to fetch-depth: 1), and the first CI
+    // run of this suite failed here with 'ok' !== 'breach' — one commit of
+    // history, nothing old, a clean bill of health for a repo that could
+    // be days behind. That was a real defect in the script, not a flaky
+    // test, and the script now refuses to answer instead of guessing.
+    //
+    // So the assertion forks on the same fact the script forks on. Both
+    // branches assert something; neither is a skip.
     publishedAt = "2020-01-01T00:00:00.000Z";
     const { code, report } = await runCli({ REGISTRY_BASE: base });
+
+    if (report.status === STATUS.UNKNOWN) {
+      assert.equal(code, 2, "a shallow clone must exit 2 — a failed measurement is not a breach");
+      assert.equal(report.lagDays, null, "an unmeasurable lag must be null, never a number");
+      assert.match(
+        report.summary,
+        /shallow/i,
+        "the not-measured summary must name the reason, or it is indistinguishable from a pass"
+      );
+      return;
+    }
+
     assert.equal(report.status, STATUS.BREACH);
     assert.ok(report.unreleasedCommits > 0, "expected unreleased commits against a 2020 publish date");
     assert.equal(code, 1, "the breach must leave the process with exit status 1");
+  });
+
+  test("a shallow clone reports not-measured, never clean", async () => {
+    // The guard for the defect above, asserted directly rather than as a
+    // side effect of the environment. Builds a real depth-1 clone so the
+    // shallow detection is exercised for real, not stubbed.
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const run = promisify(execFile);
+    const os = await import("node:os");
+
+    // realpathSync matters. On macOS os.tmpdir() is /var/folders/... which
+    // is a symlink to /private/var/folders/..., and the script's
+    // main-module guard compares import.meta.url (real path) against
+    // process.argv[1] (as passed). Hand it the symlinked path and the guard
+    // is false, so the script defines its exports, runs nothing, and exits 0
+    // with empty stdout — which reads exactly like a pass.
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "orbit-shallow-")));
+    const clone = path.join(dir, "repo");
+    try {
+      await run("git", ["clone", "--depth", "1", `file://${ROOT_DIR}`, clone], { maxBuffer: 1 << 26 });
+    } catch {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return; // no git, or the source is itself unclonable — nothing to assert
+    }
+
+    // The clone carries the COMMITTED script; copy the working-tree version
+    // so this tests the code under review rather than the last release.
+    fs.mkdirSync(path.join(clone, "scripts"), { recursive: true });
+    fs.copyFileSync(SCRIPT, path.join(clone, "scripts", path.basename(SCRIPT)));
+
+    const shallow = (
+      await run("git", ["rev-parse", "--is-shallow-repository"], { cwd: clone })
+    ).stdout.trim();
+    assert.equal(shallow, "true", "the fixture clone is not shallow, so this test proves nothing");
+
+    let code = 0;
+    let stdout = "";
+    try {
+      ({ stdout } = await run(process.execPath, [path.join(clone, "scripts", path.basename(SCRIPT)), "--json"], {
+        cwd: clone,
+        env: { ...process.env, REGISTRY_BASE: base },
+      }));
+    } catch (err) {
+      code = err.code;
+      stdout = err.stdout || "";
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const report = JSON.parse(stdout);
+    assert.equal(report.status, STATUS.UNKNOWN, "a shallow clone reported a measurable status");
+    assert.notEqual(report.status, STATUS.CLEAN, "a shallow clone must never report clean");
+    assert.equal(code, 2, "not-measured must exit 2, distinct from both pass (0) and breach (1)");
   });
 
   test("a clean repo exits zero", async () => {

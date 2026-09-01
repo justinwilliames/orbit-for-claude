@@ -119,6 +119,19 @@ export const STATUS = {
   OK: "ok",
   /** Unreleased work has aged past the threshold. Exit non-zero. */
   BREACH: "breach",
+  /**
+   * The measurement could not be made — the clone is shallow, so the
+   * commits this metric exists to count are not on disk.
+   *
+   * This is NOT "ok". A shallow clone has one commit of history, so every
+   * range query returns almost nothing and the honest-looking answer is a
+   * clean bill of health for a repo that might be eleven days behind. That
+   * is precisely the defect this whole script was written to catch, and it
+   * would have shipped inside the catcher: CI checks out shallow by
+   * default, and the first CI run reported `ok` against a fixture built to
+   * force a breach.
+   */
+  UNKNOWN: "unknown",
 };
 
 function parseInstant(value, label) {
@@ -269,7 +282,25 @@ export async function fetchLatestPublished({ registryBase, serverName, fetchImpl
  * committer dates. Falls back to the registry publish timestamp when the
  * tag is absent (a release cut without a local tag, or a shallow clone).
  */
+/**
+ * Is this a shallow clone? `git rev-parse --is-shallow-repository` prints
+ * "true"/"false" and is the only reliable check — `.git/shallow` is absent
+ * on a partial (blobless/treeless) clone that is still depth-limited.
+ */
+export async function isShallowClone() {
+  try {
+    return (await git(["rev-parse", "--is-shallow-repository"])).trim() === "true";
+  } catch {
+    // Not a git repo, or a git too old for the flag. Either way we cannot
+    // prove the history is complete, so do not claim it is.
+    return true;
+  }
+}
+
 export async function findOldestUnreleasedCommit({ version, publishedAt } = {}) {
+  if (await isShallowClone()) {
+    return { sha: null, committedAt: null, count: null, basis: "shallow-clone", shallow: true };
+  }
   if (!version && !publishedAt) {
     // Nothing published at all: every commit is unreleased.
     const first = await git(["rev-list", "--max-parents=0", "HEAD"]);
@@ -352,6 +383,21 @@ async function main(argv) {
     basis: unreleased.basis,
   };
 
+  // A shallow clone cannot answer this question, and the answer it would
+  // otherwise give is the dangerous one: no old commits found reads as
+  // CLEAN. Overriding here rather than inside computeVerdict keeps that
+  // function a pure function of dates, which is what makes it testable.
+  if (unreleased.shallow) {
+    report.status = STATUS.UNKNOWN;
+    report.exitCode = 2;
+    report.lagDays = null;
+    report.summary =
+      "Release lag NOT MEASURED: this is a shallow clone, so the commit history this metric counts " +
+      "is not on disk. A shallow checkout reports zero unreleased commits regardless of the truth, " +
+      "which would be a clean bill of health for a repo that may be days behind. " +
+      "Add `fetch-depth: 0` to the checkout step, or run this against a full clone.";
+  }
+
   if (json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
@@ -363,6 +409,8 @@ async function main(argv) {
     process.stdout.write(`  status            : ${report.status}\n`);
     if (report.status === STATUS.BREACH) {
       process.stdout.write(`::error::${report.summary}\n`);
+    } else if (report.status === STATUS.UNKNOWN) {
+      process.stdout.write(`::warning::${report.summary}\n`);
     } else {
       process.stdout.write(`${report.summary}\n`);
     }
