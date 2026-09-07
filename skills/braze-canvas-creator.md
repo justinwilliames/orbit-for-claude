@@ -38,6 +38,12 @@ already decided, validated and written down — which is where the time actually
 > which sent people to their account manager to ask for a thing that is not a product.
 > Corrected 2026-08-24 against Braze's published API index.
 
+> **The Braze MCP server does not change this (checked 2026-09-07).** Braze's hosted
+> MCP server exposes four Canvas tools — `get_canvas_list`, `get_canvas_details`,
+> `get_canvas_data_series`, `get_canvas_data_summary` — and all four are reads. There
+> is no create, no edit, no step or branch mutation. If a user says "but Braze has an
+> MCP now", the answer is that it added segment and campaign writes, not Canvas ones.
+
 ---
 
 ## What the API can and cannot do here

@@ -336,6 +336,9 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `stripo-integration` | Connect a Stripo account via API to sync saved modules, document the design system, and compose emails directly into the user's Stripo workspace |
 | `stripo-library-cleanup` | Tidy a Stripo workspace — dedupe to the latest of each template, delete stale copies, file loose emails into the right folders (cleanup, NOT building) |
 | `braze-template-sync` | Publish reusable components and final HTML templates into Braze |
+| `braze-mcp-operations` | Route a Braze task across the Braze MCP server, Orbit's tools, and the browser — capability map, setup gates, and the four things the MCP cannot do |
+| `braze-segment-builder` | Create or edit Braze segments programmatically (Braze MCP only — segment writes are not in the REST API) |
+| `braze-campaign-operations` | Create, edit, duplicate, launch, stop, or archive Braze campaigns and their message variations, behind a confirmation gate |
 | `reputation-recovery` | Emergency playbook when a sender is already in deliverability trouble (bounces/complaints/blacklist/placement drop) |
 | `apple-mpp-response` | Reframe engagement metrics and program decisions for audiences dominated by Apple Mail Privacy Protection |
 | `gmail-bulk-sender-compliance` | Defensible checklist against Google + Yahoo's Feb 2024 bulk-sender requirements (5k/day threshold) |

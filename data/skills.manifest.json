@@ -798,6 +798,125 @@
     ]
   },
   {
+    "name": "braze-campaign-operations",
+    "title": "Braze Campaign Operations",
+    "category": "production-operations",
+    "description": "Use this skill when the user wants to CREATE, EDIT, DUPLICATE, LAUNCH, STOP, or ARCHIVE a Braze campaign programmatically, or to add / update / delete its message steps and variations. Trigger on \"create a Braze campaign\", \"duplicate that campaign for the new market\", \"launch the campaign\", \"stop the campaign\", \"add a variation\", \"change the message split\", \"archive these old campaigns\", or any request to operate campaign lifecycle without hand-clicking the dashboard. Requires the Braze MCP server. The skill treats launch, stop, and delete as irreversible outward actions behind an explicit confirmation gate, and it refuses to substitute a campaign for a Canvas when the user actually needs a journey. Not for Canvas work, not for QA (braze-canvas-qa), and not for writing the email itself.",
+    "trigger_phrases": [
+      "create a braze campaign",
+      "duplicate that campaign for the new market",
+      "launch the campaign",
+      "stop the campaign",
+      "add a variation",
+      "change the message split",
+      "archive these old campaigns"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "braze-mcp-operations",
+      "braze-segment-builder",
+      "braze-canvas-qa",
+      "braze-template-sync"
+    ],
+    "artifact_types": [
+      "braze-campaign-record",
+      "launch-confirmation"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "braze"
+      ]
+    },
+    "templates": [
+      "braze-campaign-record"
+    ],
+    "validator_rules": [
+      {
+        "label": "Campaign",
+        "type": "regex",
+        "value": "(campaign|message|variation)",
+        "flags": "i"
+      },
+      {
+        "label": "Confirmation gate",
+        "type": "regex",
+        "value": "(confirm|approval|launch|stop|archive)",
+        "flags": "i"
+      },
+      {
+        "label": "Readback",
+        "type": "regex",
+        "value": "(read back|readback|verified|live state)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "actions",
+      "actually",
+      "add",
+      "any",
+      "archive",
+      "behind",
+      "braze",
+      "braze-campaign-operations",
+      "braze-campaign-record",
+      "braze-canvas-qa",
+      "campaign",
+      "campaigns",
+      "canvas",
+      "change",
+      "confirmation",
+      "create",
+      "dashboard",
+      "delete",
+      "duplicate",
+      "edit",
+      "email",
+      "explicit",
+      "gate",
+      "hand-clicking",
+      "irreversible",
+      "its",
+      "itself",
+      "journey",
+      "launch",
+      "launch-confirmation",
+      "lifecycle",
+      "market",
+      "mcp",
+      "message",
+      "needs",
+      "new",
+      "not",
+      "old",
+      "operate",
+      "operations",
+      "outward",
+      "programmatically",
+      "refuses",
+      "request",
+      "requires",
+      "server",
+      "split",
+      "steps",
+      "stop",
+      "substitute",
+      "these",
+      "treats",
+      "trigger",
+      "update",
+      "user",
+      "variation",
+      "variations",
+      "wants",
+      "without",
+      "work",
+      "writing"
+    ]
+  },
+  {
     "name": "braze-canvas-conformance",
     "title": "Braze Canvas Conformance — lint, then drive the fix",
     "category": "braze-platform",
@@ -1985,6 +2104,130 @@
     ]
   },
   {
+    "name": "braze-mcp-operations",
+    "title": "Braze MCP Operations",
+    "category": "production-operations",
+    "description": "Use this skill whenever a Braze task could be done through the Braze MCP server (Braze's own hosted server at mcp.braze.com/mcp), and you need to decide which surface actually does the job — the Braze MCP, Orbit's own Braze tools, or the browser. Trigger on \"connect the Braze MCP\", \"use the Braze MCP server\", \"can the MCP do this\", \"create a segment in Braze\", \"launch this campaign via API\", \"update the catalog\", \"which Braze tool should I use\", \"the local Braze MCP is deprecated\", or any Braze request where a write is involved and the path is ambiguous. The skill carries the capability map — what the Braze MCP can write, what it can only read, and the four things it CANNOT do at all (Canvas writes, user-level PII, preference centres, subscription groups). It routes rather than executes, and it never assumes a tool exists without enumerating the live server.",
+    "trigger_phrases": [
+      "connect the braze mcp",
+      "use the braze mcp server",
+      "can the mcp do this",
+      "create a segment in braze",
+      "launch this campaign via api",
+      "update the catalog",
+      "which braze tool should i use",
+      "the local braze mcp is deprecated"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "braze-segment-builder",
+      "braze-campaign-operations",
+      "braze-documentation-expert",
+      "braze-template-sync"
+    ],
+    "artifact_types": [
+      "braze-surface-routing",
+      "capability-map"
+    ],
+    "platform_sensitivity": {
+      "supported_platforms": [
+        "braze"
+      ]
+    },
+    "templates": [
+      "braze-surface-routing"
+    ],
+    "validator_rules": [
+      {
+        "label": "Surface",
+        "type": "regex",
+        "value": "(braze mcp|orbit|browser|dashboard)",
+        "flags": "i"
+      },
+      {
+        "label": "Capability or gap",
+        "type": "regex",
+        "value": "(cannot|not available|read-only|supported|gap)",
+        "flags": "i"
+      },
+      {
+        "label": "Canvas caveat",
+        "type": "regex",
+        "value": "(canvas)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "actually",
+      "all",
+      "ambiguous",
+      "any",
+      "api",
+      "assumes",
+      "braze",
+      "braze-mcp-operations",
+      "braze-surface-routing",
+      "browser",
+      "campaign",
+      "can",
+      "cannot",
+      "canvas",
+      "capability",
+      "capability-map",
+      "carries",
+      "catalog",
+      "centres",
+      "com/mcp",
+      "connect",
+      "could",
+      "create",
+      "decide",
+      "deprecated",
+      "does",
+      "done",
+      "enumerating",
+      "executes",
+      "exists",
+      "four",
+      "groups",
+      "hosted",
+      "involved",
+      "job",
+      "launch",
+      "live",
+      "local",
+      "map",
+      "mcp",
+      "need",
+      "never",
+      "operations",
+      "own",
+      "path",
+      "pii",
+      "preference",
+      "rather",
+      "read",
+      "request",
+      "routes",
+      "segment",
+      "server",
+      "subscription",
+      "surface",
+      "things",
+      "tool",
+      "tools",
+      "trigger",
+      "update",
+      "user-level",
+      "via",
+      "without",
+      "write",
+      "writes",
+      "you"
+    ]
+  },
+  {
     "name": "braze-namer",
     "title": "Braze Namer",
     "category": "braze-platform",
@@ -2371,6 +2614,123 @@
       "using",
       "wants",
       "workspace"
+    ]
+  },
+  {
+    "name": "braze-segment-builder",
+    "title": "Braze Segment Builder",
+    "category": "production-operations",
+    "description": "Use this skill when the user wants to CREATE or EDIT a Braze segment programmatically rather than by hand in the dashboard. Trigger on \"create a Braze segment\", \"build me a segment for X\", \"make a segment of users who...\", \"edit that segment's filters\", \"spin up the segments for this program\", \"recreate this segment in the other workspace\", or any request to author Braze audience definitions as a build step. Requires the Braze MCP server (segment writes are not in the Braze REST API and not in Orbit's tools). The skill discovers the live filter vocabulary first, authors a named and documented definition, writes it, and reads it back before reporting. It does NOT audit or analyse existing segments — that is braze-segment-analysis — and it does NOT build Canvases or audience paths.",
+    "trigger_phrases": [
+      "create a braze segment",
+      "build me a segment for x",
+      "make a segment of users who...",
+      "edit that segment's filters",
+      "spin up the segments for this program",
+      "recreate this segment in the other workspace"
+    ],
+    "exclusion_phrases": [],
+    "disambiguators": [],
+    "adjacent_skills": [
+      "braze-mcp-operations",
+      "braze-segment-analysis",
+      "segmentation-strategy",
+      "braze-namer"
+    ],
+    "artifact_types": [
+      "braze-segment-record",
+      "segment-definition"
+    ],
+    "platform_sensitivity": {
+      "requires_confirmation": true,
+      "supported_platforms": [
+        "braze"
+      ]
+    },
+    "templates": [
+      "braze-segment-record"
+    ],
+    "validator_rules": [
+      {
+        "label": "Segment intent",
+        "type": "regex",
+        "value": "(segment|audience|filter)",
+        "flags": "i"
+      },
+      {
+        "label": "Readback",
+        "type": "regex",
+        "value": "(read back|readback|verified|get_segment_details)",
+        "flags": "i"
+      },
+      {
+        "label": "Name",
+        "type": "regex",
+        "value": "(name|naming|called)",
+        "flags": "i"
+      }
+    ],
+    "keywords": [
+      "analyse",
+      "any",
+      "api",
+      "are",
+      "audience",
+      "audit",
+      "author",
+      "authors",
+      "back",
+      "braze",
+      "braze-segment-analysis",
+      "braze-segment-builder",
+      "braze-segment-record",
+      "build",
+      "builder",
+      "canvases",
+      "create",
+      "dashboard",
+      "definition",
+      "definitions",
+      "discovers",
+      "documented",
+      "does",
+      "edit",
+      "existing",
+      "filter",
+      "filters",
+      "first",
+      "hand",
+      "live",
+      "make",
+      "mcp",
+      "named",
+      "not",
+      "other",
+      "paths",
+      "program",
+      "programmatically",
+      "rather",
+      "reads",
+      "recreate",
+      "reporting",
+      "request",
+      "requires",
+      "rest",
+      "segment",
+      "segment-definition",
+      "segments",
+      "server",
+      "spin",
+      "step",
+      "tools",
+      "trigger",
+      "user",
+      "users",
+      "vocabulary",
+      "wants",
+      "who",
+      "workspace",
+      "writes"
     ]
   },
   {

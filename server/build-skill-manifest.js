@@ -111,7 +111,10 @@ const CATEGORY_GROUPS = {
     "notion-documentation-export",
     "email-design-ingestion",
     "design-to-email-componentization",
-    "braze-template-sync"
+    "braze-template-sync",
+    "braze-mcp-operations",
+    "braze-segment-builder",
+    "braze-campaign-operations"
   ],
   "knowledge-attribution": [
     "sources"
@@ -244,6 +247,24 @@ const ADJACENCY_MAP = {
     "braze-build-packager",
     "template-library-management"
   ],
+  "braze-mcp-operations": [
+    "braze-segment-builder",
+    "braze-campaign-operations",
+    "braze-documentation-expert",
+    "braze-template-sync"
+  ],
+  "braze-segment-builder": [
+    "braze-mcp-operations",
+    "braze-segment-analysis",
+    "segmentation-strategy",
+    "braze-namer"
+  ],
+  "braze-campaign-operations": [
+    "braze-mcp-operations",
+    "braze-segment-builder",
+    "braze-canvas-qa",
+    "braze-template-sync"
+  ],
   "sources": [
     "deliverability-management",
     "experiment-design",
@@ -336,6 +357,17 @@ const PLATFORM_SENSITIVITY = {
   "braze-template-sync": {
     requires_confirmation: true,
     supported_platforms: ["braze"]
+  },
+  "braze-mcp-operations": {
+    supported_platforms: ["braze"]
+  },
+  "braze-segment-builder": {
+    requires_confirmation: true,
+    supported_platforms: ["braze"]
+  },
+  "braze-campaign-operations": {
+    requires_confirmation: true,
+    supported_platforms: ["braze"]
   }
 };
 
@@ -391,6 +423,9 @@ const TEMPLATE_MAP = {
   "email-design-ingestion": ["design-import-record"],
   "design-to-email-componentization": ["component-map"],
   "braze-template-sync": ["braze-sync-record"],
+  "braze-mcp-operations": ["braze-surface-routing"],
+  "braze-segment-builder": ["braze-segment-record"],
+  "braze-campaign-operations": ["braze-campaign-record"],
   "sources": ["citation-footnote"]
 };
 
@@ -435,6 +470,9 @@ const ARTIFACT_TYPES = {
   "email-design-ingestion": ["design-import-record", "source-artifact-set"],
   "design-to-email-componentization": ["component-map", "email-component-contract"],
   "braze-template-sync": ["braze-sync-record", "publish-log"],
+  "braze-mcp-operations": ["braze-surface-routing", "capability-map"],
+  "braze-segment-builder": ["braze-segment-record", "segment-definition"],
+  "braze-campaign-operations": ["braze-campaign-record", "launch-confirmation"],
   "sources": ["citation-footnote", "attribution-block"]
 };
 
@@ -519,6 +557,21 @@ const SPECIAL_VALIDATOR_RULES = {
     { label: "Braze", type: "regex", value: "(braze|content block|template)", flags: "i" },
     { label: "Sync result", type: "regex", value: "(sync|publish|id)", flags: "i" },
     { label: "Status", type: "regex", value: "(status|warning|failure)", flags: "i" }
+  ],
+  "braze-mcp-operations": [
+    { label: "Surface", type: "regex", value: "(braze mcp|orbit|browser|dashboard)", flags: "i" },
+    { label: "Capability or gap", type: "regex", value: "(cannot|not available|read-only|supported|gap)", flags: "i" },
+    { label: "Canvas caveat", type: "regex", value: "(canvas)", flags: "i" }
+  ],
+  "braze-segment-builder": [
+    { label: "Segment intent", type: "regex", value: "(segment|audience|filter)", flags: "i" },
+    { label: "Readback", type: "regex", value: "(read back|readback|verified|get_segment_details)", flags: "i" },
+    { label: "Name", type: "regex", value: "(name|naming|called)", flags: "i" }
+  ],
+  "braze-campaign-operations": [
+    { label: "Campaign", type: "regex", value: "(campaign|message|variation)", flags: "i" },
+    { label: "Confirmation gate", type: "regex", value: "(confirm|approval|launch|stop|archive)", flags: "i" },
+    { label: "Readback", type: "regex", value: "(read back|readback|verified|live state)", flags: "i" }
   ],
   "sources": [
     { label: "Sources block", type: "includes", value: "**Sources**" },

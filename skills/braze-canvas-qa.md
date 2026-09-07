@@ -43,7 +43,9 @@ data-pipeline questions.
    template names (the API `title` is usually `null`). You MUST open the canvas in the
    dashboard (browser via the `computer-control` skill) to verify these. `orbit_read_braze_canvas`
    also truncates to ~10 steps; the raw `get_canvas_details` gives the full step graph
-   but **still** won't show filters/segments — so it's structure-only.
+   but **still** won't show filters/segments — so it's structure-only. The Braze MCP
+   server's Canvas tools are reads with the same blind spots — it adds no visibility
+   here, and no way to fix a finding without the dashboard.
 
 2. **NEVER launch during QA.** Do not click "Save and continue" toward a launch state,
    do not start/launch the Canvas. Use plain **Save** only. Keep the **entry audience on a
