@@ -148,10 +148,19 @@ describe("Positioning guard — Orbit leads with the brain, not a vendor", () =>
       fs.readFileSync(new URL("../../manifest.json", import.meta.url), "utf8")
     );
     const card = `${manifest.description} ${manifest.long_description}`;
-    assert.match(
+    // Overturned by the 2026-09-07 team review (R3-vector, R4 item 4): the
+    // first 160 characters are what most install UIs show, and they belong to
+    // the deed — the render gate a stranger can watch work — not the price.
+    // Cost and access close the description; they must not open it.
+    assert.doesNotMatch(
       manifest.description.slice(0, 160),
+      /free|no licence key|no payment/i,
+      "the first 160 characters are what most install UIs show — the deed belongs in them, the price closes"
+    );
+    assert.match(
+      manifest.description,
       /free/i,
-      "the first 160 characters are what most install UIs show — the price belongs in them"
+      "the price still has to be said — at the close, not the door"
     );
     assert.doesNotMatch(card, /Orbit Intelligence/i, "retired framing is back in the storefront");
     assert.match(card, /lifecycle brain/i, "the flagship path is not mentioned on the card");

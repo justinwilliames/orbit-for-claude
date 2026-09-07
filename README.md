@@ -1,6 +1,6 @@
 # Orbit
 
-**A lifecycle marketer, built into Claude.** Free, open, no licence key, every tool unlocked.
+**A lifecycle marketer, built into Claude.** It checks every email in a real browser before you send, and turns the emails you already send into a design system. Free, open, no licence key, every tool unlocked.
 The GitHub release below is ungated; the website download asks for a free account (one email).
 
 Orbit is an MCP extension that gives Claude a senior lifecycle operator's playbook: 86 skills and 135 tools spanning email and MJML, render QA, segmentation maths, deliverability, brand voice, Figma import, Notion export, diagram generation, and the sending layer itself — Braze, Stripo, Klaviyo, Iterable and the rest. Ask Claude a lifecycle question and it answers like someone who has shipped the program, not like someone who has read about it.
