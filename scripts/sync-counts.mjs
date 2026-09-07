@@ -35,11 +35,17 @@
  * corpus it reasons over held 86. Both are now targets; neither number is
  * hand-kept any more.
  *
- * manifest.json also gains a generated `skills` key. It had none, so the
- * website's fifteen-minute sync — which reads the manifest this repo
- * uploads verbatim — had no skill count to read and fell back to a number
- * a human typed. A count that exists in prose but not in machine-readable
- * form is a count the next surface will get wrong.
+ * The machine-readable count ships BESIDE manifest.json, not inside it.
+ * The website's fifteen-minute sync reads the manifest this repo uploads
+ * verbatim and had no skill count to read, falling back to a number a
+ * human typed — so a generated `skills` key was added to the manifest,
+ * and `mcpb pack` rejected the whole file: "Manifest validation failed:
+ * Unrecognized key(s) in object: 'skills'". The MCPB schema is closed and
+ * CI runs that pack; top-level, `compatibility.*`, `server.*`, `metadata`
+ * and `x_`/`_` prefixes were each probed and each refused. So the counts
+ * live in data/counts.json, uploaded to the bucket as counts.json beside
+ * the manifest, and manifest.json is actively STRIPPED of the key below —
+ * a mistake that breaks the release build should not be re-typeable.
  *
  * Two known counting surfaces are deliberately NOT targets of this script:
  * CLAUDE.md and docs/INTEGRATION-STANDARD.md no longer state Orbit's skill
@@ -178,27 +184,41 @@ export const TARGETS = [
 ];
 
 /**
- * manifest.json's machine-readable count.
+ * The machine-readable counts, as a sidecar.
  *
- * The prose counts above are for humans; this key is for the website's
- * fifteen-minute sync, which pulls the manifest this repo uploads verbatim
- * and had no skills figure to read. Written as a sibling of `tools` so the
- * two inventory numbers sit together, and only ever the key — `version`
- * and `description` belong to other owners.
+ * The prose counts above are for humans; this file is for the website's
+ * fifteen-minute sync, which reads it off the bucket beside the manifest.
+ * It is a separate file rather than a manifest key because the MCPB
+ * manifest schema is closed and rejects unknown keys at pack time — see
+ * the header. `version` rides along so a consumer can tell which release
+ * the counts describe without correlating two fetches.
  */
-export const MANIFEST_SKILLS_KEY = "skills";
+export const COUNTS_FILE = "data/counts.json";
 
-/** Insert or correct manifest.json's `skills` key. Returns the new text. */
-export function withManifestSkills(raw, count = COUNTS.skills) {
-  const existing = /^(  "skills": )\d+(,)$/m;
-  if (existing.test(raw)) {
-    return raw.replace(existing, `$1${count}$2`);
-  }
-  const anchor = raw.indexOf('\n  "tools": [');
-  if (anchor === -1) {
-    throw new Error('manifest.json has no top-level "tools" array to anchor the skills key against.');
-  }
-  return `${raw.slice(0, anchor)}\n  "skills": ${count},${raw.slice(anchor)}`;
+/** The sidecar's exact bytes. Key order is fixed so the file diffs cleanly. */
+export function countsFileBody(version = manifest.version) {
+  return `${JSON.stringify(
+    {
+      skills: COUNTS.skills,
+      tools: COUNTS.tools,
+      guides: COUNTS.guides,
+      version,
+      generated_from: "scripts/sync-counts.mjs",
+    },
+    null,
+    2
+  )}\n`;
+}
+
+/**
+ * Remove manifest.json's `skills` key. Returns the new text.
+ *
+ * Not merely "don't write it" — actively strip it, because the key was
+ * shipped once and a hand-edit restoring it would fail the release build
+ * rather than this script.
+ */
+export function withoutManifestSkills(raw) {
+  return raw.replace(/^ {2}"skills": \d+,\n/m, "");
 }
 
 /**
@@ -231,8 +251,8 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
       next = next.replace(pattern, replacement());
     }
     if (file === "manifest.json") {
-      next = withManifestSkills(next);
-      // Parse before writing: a hand-rolled insertion into JSON is exactly
+      next = withoutManifestSkills(next);
+      // Parse before writing: a hand-rolled deletion from JSON is exactly
       // the kind of edit that is fine until the day it isn't.
       JSON.parse(next);
     }
@@ -242,15 +262,25 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
     }
   }
 
+  const countsPath = path.join(ROOT_DIR, COUNTS_FILE);
+  const countsBody = countsFileBody();
+  const countsBefore = fs.existsSync(countsPath) ? fs.readFileSync(countsPath, "utf8") : null;
+  if (countsBefore !== countsBody) {
+    fs.writeFileSync(countsPath, countsBody);
+    stale.push(COUNTS_FILE);
+  }
+
+  const surfaces = [...TARGETS, COUNTS_FILE];
+
   // Naming the surfaces on every run, in both branches, is the point. The
   // previous line said the inventory was "in sync everywhere" and meant
   // four files — which is how orbit.md sat at 62/84 under a green tick.
   // A gate that will not name its own denominator cannot be trusted to
   // have counted it.
   process.stdout.write(
-    `Checked ${TARGETS.length} surfaces for Orbit's stated size:\n` +
-      TARGETS.map((f) => `  - ${f}${stale.includes(f) ? "  [rewritten]" : ""}\n`).join("") +
-      `  - manifest.json "${MANIFEST_SKILLS_KEY}" key -> ${COUNTS.skills}\n`
+    `Checked ${surfaces.length} surfaces for Orbit's stated size:\n` +
+      surfaces.map((f) => `  - ${f}${stale.includes(f) ? "  [rewritten]" : ""}\n`).join("") +
+      `  - manifest.json "skills" key -> removed (the MCPB schema rejects it)\n`
   );
 
   if (stale.length > 0) {
@@ -260,7 +290,7 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
   process.stdout.write(
-    `All ${TARGETS.length} surfaces above are in sync with the generated counts ` +
+    `All ${surfaces.length} surfaces above are in sync with the generated counts ` +
       `(${COUNTS.skills} skills, ${COUNTS.tools} tools, ${COUNTS.guides} guides).\n`
   );
 }

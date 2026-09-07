@@ -526,8 +526,16 @@ jobs:
             manifest.json \
             "s3://$S3_BUCKET/manifest.json" \
             --content-type application/json
+          # The skill/guide counts ride beside the manifest, not inside it:
+          # the MCPB schema is closed and `mcpb pack` rejects extra keys.
+          # get-orbit's /api/orbit/latest-version merges this file into the
+          # manifest it serves, which is where the website's sync reads it.
+          aws --endpoint-url "$S3_ENDPOINT" s3 cp \
+            data/counts.json \
+            "s3://$S3_BUCKET/counts.json" \
+            --content-type application/json
           gh release edit "v$VERSION" --latest
-          echo "Promoted v$VERSION: latest.mcpb, manifest.json, and the GitHub Release's latest flag."
+          echo "Promoted v$VERSION: latest.mcpb, manifest.json, counts.json, and the GitHub Release's latest flag."
 
       # Notify the get-orbit website immediately that a new MCPB
       # version is live. Triggers the sync-mcpb-version workflow

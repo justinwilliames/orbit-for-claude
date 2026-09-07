@@ -28,7 +28,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { COUNTS, TARGETS, INVENTORY, GUIDE_INVENTORY, GUIDE_WORDS } from "./sync-counts.mjs";
+import { COUNTS, TARGETS, COUNTS_FILE, INVENTORY, GUIDE_INVENTORY, GUIDE_WORDS } from "./sync-counts.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -114,13 +114,35 @@ for (const file of TARGETS) {
   }
 }
 
-// manifest.json's machine-readable key: the one the website reads.
+// The machine-readable sidecar: the one the website reads. It sits beside
+// manifest.json in the bucket rather than inside it because the MCPB
+// manifest schema is closed — see scripts/sync-counts.mjs.
+const countsPath = path.join(ROOT_DIR, COUNTS_FILE);
+const wantCounts = `${COUNTS.skills} skills, ${COUNTS.tools} tools, ${COUNTS.guides} guides`;
+let counts = null;
+try {
+  counts = JSON.parse(fs.readFileSync(countsPath, "utf8"));
+} catch (err) {
+  row(COUNTS_FILE, wantCounts, `(unreadable: ${err.message.split("\n")[0]})`, false);
+}
+if (counts) {
+  row(
+    COUNTS_FILE,
+    wantCounts,
+    `${counts.skills} skills, ${counts.tools} tools, ${counts.guides} guides`,
+    counts.skills === COUNTS.skills && counts.tools === COUNTS.tools && counts.guides === COUNTS.guides
+  );
+}
+
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
+// The inverse assertion, and the one that actually protects the release:
+// a `skills` key here is not a stale count, it is a manifest `mcpb pack`
+// refuses to build. It shipped once; this row is why it cannot ship twice.
 row(
-  'manifest.json ("skills" key)',
-  String(COUNTS.skills),
+  'manifest.json (no "skills" key)',
+  "(absent)",
   "skills" in manifest ? String(manifest.skills) : "(absent)",
-  manifest.skills === COUNTS.skills
+  !("skills" in manifest)
 );
 row('manifest.json ("tools" array)', String(COUNTS.tools), String(manifest.tools.length), manifest.tools.length === COUNTS.tools);
 

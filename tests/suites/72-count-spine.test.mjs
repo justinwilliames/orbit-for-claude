@@ -46,9 +46,18 @@
  * skills" over a corpus of 86. Both are TARGETS now, so the loop above
  * covers them; the tests below are the independent half, because a shape
  * the rewriter has never been taught is exactly what a fixed-point check
- * cannot see. manifest.json also gained a machine-readable `skills` key —
- * the website's fifteen-minute sync reads the uploaded manifest and had no
+ * cannot see.
+ *
+ * THE MACHINE-READABLE COUNT, AND WHERE IT LIVES. The website's
+ * fifteen-minute sync reads the manifest this repo uploads and had no
  * skill count to read, which is how a typed 79 outlived a generated 86.
+ * The first fix put a `skills` key in manifest.json — and `mcpb pack`
+ * rejected it ("Unrecognized key(s) in object: 'skills'"), which would
+ * have broken the release build in CI. The count now ships as the sidecar
+ * data/counts.json, published beside manifest.json in the bucket. Both
+ * halves are asserted below: the sidecar must exist and be true, and the
+ * manifest must NOT carry the key — the second assertion is the one that
+ * keeps a working release, so it is not folded into the first.
  *
  * THE TRAP THIS GUARDS. docs/INTEGRATION-STANDARD.md legitimately discusses
  * "135 tools" and "66 of 135" a few paragraphs away, as a DATED historical
@@ -66,7 +75,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { COUNTS, REWRITES, TARGETS, DEMOTED, INVENTORY, GUIDE_INVENTORY } from "../../scripts/sync-counts.mjs";
+import { COUNTS, REWRITES, TARGETS, COUNTS_FILE, DEMOTED, INVENTORY, GUIDE_INVENTORY } from "../../scripts/sync-counts.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -212,20 +221,38 @@ describe("count spine: every stated Orbit size is honest", () => {
     assert.match(raw, /rare across the corpus \(2 skills\)/);
   });
 
-  test('manifest.json: carries a machine-readable "skills" key equal to the generated count', () => {
-    // Prose counts are for humans. This key is what the website's
-    // fifteen-minute sync reads off the uploaded manifest; without it the
-    // site had nothing to read and kept a typed number instead.
+  test("data/counts.json: the sidecar exists, parses, and states the generated counts", () => {
+    // Prose counts are for humans. This file is what the website's
+    // fifteen-minute sync reads off the bucket; without it the site had
+    // nothing to read and kept a typed number instead.
+    const full = path.join(ROOT_DIR, COUNTS_FILE);
+    assert.ok(
+      fs.existsSync(full),
+      `${COUNTS_FILE} is missing — the website's sync has no counts to read. Run \`node scripts/sync-counts.mjs\`.`
+    );
+    const counts = JSON.parse(fs.readFileSync(full, "utf8"));
+    assert.equal(counts.skills, COUNTS.skills, `${COUNTS_FILE} says ${counts.skills} skills; the library holds ${COUNTS.skills}.`);
+    assert.equal(counts.tools, COUNTS.tools, `${COUNTS_FILE} says ${counts.tools} tools; the manifest registers ${COUNTS.tools}.`);
+    assert.equal(counts.guides, COUNTS.guides, `${COUNTS_FILE} says ${counts.guides} guides; the library holds ${COUNTS.guides}.`);
+    // The version rides along so a consumer can tell which release the
+    // counts describe. A sidecar describing a different build is worse
+    // than no sidecar: it looks authoritative and isn't.
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
+    assert.equal(counts.version, manifest.version);
+    assert.equal(counts.generated_from, "scripts/sync-counts.mjs");
+  });
+
+  test('manifest.json: carries NO top-level "skills" key', () => {
+    // Not a style preference — a hard build constraint. The MCPB manifest
+    // schema is closed, and `mcpb pack` fails the whole release with
+    // "Unrecognized key(s) in object: 'skills'". The key shipped here once;
+    // this assertion is why it cannot ship twice. The count lives in
+    // data/counts.json instead (asserted above).
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
     assert.ok(
-      "skills" in manifest,
-      'manifest.json has no top-level "skills" key — the website\'s sync has no skill count to read. ' +
-        "Run `node scripts/sync-counts.mjs`."
-    );
-    assert.equal(
-      manifest.skills,
-      COUNTS.skills,
-      `manifest.json says ${manifest.skills} skills; the library holds ${COUNTS.skills}.`
+      !("skills" in manifest),
+      'manifest.json has a top-level "skills" key — `mcpb pack` rejects the manifest and CI cannot build a release. ' +
+        "The count belongs in data/counts.json; run `node scripts/sync-counts.mjs` to strip it."
     );
     assert.equal(manifest.tools.length, COUNTS.tools);
   });
