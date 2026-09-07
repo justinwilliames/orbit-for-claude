@@ -28,7 +28,16 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { COUNTS, TARGETS, COUNTS_FILE, INVENTORY, GUIDE_INVENTORY, GUIDE_WORDS } from "./sync-counts.mjs";
+import {
+  COUNTS,
+  TARGETS,
+  COUNTS_FILE,
+  DESCRIPTION_FILE,
+  REPO_DESCRIPTION,
+  INVENTORY,
+  GUIDE_INVENTORY,
+  GUIDE_WORDS,
+} from "./sync-counts.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -134,6 +143,29 @@ if (counts) {
   );
 }
 
+// The GitHub repo description, held in-repo so a script owns it. The live
+// value is GitHub's, and is only ever REPORTED under --live below — this
+// row checks the file the release workflow pushes FROM.
+const descriptionPath = path.join(ROOT_DIR, DESCRIPTION_FILE);
+let repoDescription = null;
+try {
+  repoDescription = fs.readFileSync(descriptionPath, "utf8");
+} catch (err) {
+  row(DESCRIPTION_FILE, INVENTORY, `(unreadable: ${err.message.split("\n")[0]})`, false);
+}
+if (repoDescription !== null) {
+  // Scanned by shape, like every other surface, rather than compared whole:
+  // the prose around the numbers is hand-written and may legitimately be
+  // reworded, but the count inside it may not drift.
+  const stated = (repoDescription.match(SCANNERS[0].pattern) ?? []).map((m) => m.replace(/\s+/g, " "));
+  row(
+    DESCRIPTION_FILE,
+    INVENTORY,
+    stated.length ? stated.join(" | ") : "(no count stated)",
+    stated.length > 0 && stated.every((s) => s.toLowerCase() === INVENTORY.toLowerCase())
+  );
+}
+
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
 // The inverse assertion, and the one that actually protects the release:
 // a `skills` key here is not a stale count, it is a manifest `mcpb pack`
@@ -208,6 +240,21 @@ if (process.argv.includes("--live")) {
     const description = JSON.parse(out).description ?? "";
     const said = claims(description);
     process.stdout.write(`  gh repo description ${said.length ? said.join(" | ") : "(no count-shaped claim found)"}\n`);
+    // The live description now has a file behind it, so this is no longer
+    // "here is a number, reconcile it yourself" — it is a diff against the
+    // exact bytes the release workflow pushes. Still reported and never
+    // failed on: the push happens on merge to main, so a branch is EXPECTED
+    // to read as drift until it ships, and reddening the build for that
+    // would train someone to stop running --live.
+    if (repoDescription !== null) {
+      process.stdout.write(
+        description === repoDescription
+          ? `  ${DESCRIPTION_FILE.padEnd(17)} matches the live description\n`
+          : `  ${DESCRIPTION_FILE.padEnd(17)} DRIFT — live: ${JSON.stringify(description)}\n` +
+              `  ${" ".repeat(17)}       file: ${JSON.stringify(repoDescription)}\n` +
+              `  ${" ".repeat(17)}       the release workflow's Promote step pushes the file on the next merge to main.\n`
+      );
+    }
   } catch (err) {
     process.stdout.write(`  gh repo description unreachable (${err.message.split("\n")[0]})\n`);
   }

@@ -211,6 +211,33 @@ export function countsFileBody(version = manifest.version) {
 }
 
 /**
+ * The GitHub repo description, as a file a script owns.
+ *
+ * The description is the first sentence a stranger reads on the repo page
+ * and in every search result that surfaces it, and it was the last count
+ * surface with no owner at all: hand-edited to "83 skills" on 01 Sep 2026
+ * and drifted within six days, because `grep -rn "repo edit"` over
+ * .github/workflows/ and scripts/ found nothing. Every other surface here
+ * is a file in the repo the rewriter can open; this one lives on GitHub's
+ * side of the boundary, so the file below is the SOURCE and the release
+ * workflow's Promote step pushes it with `gh repo edit --description`.
+ *
+ * The prose is deliberately verbatim — it is stranger-facing copy in
+ * Orbit's voice, and only the two numbers are generated. Written with NO
+ * trailing newline so the file's bytes ARE the description: `gh repo edit
+ * --description "$(cat data/repo-description.txt)"` strips a trailing
+ * newline anyway, but a file whose contents equal the string exactly is
+ * one that can be diffed against the live value without normalising.
+ */
+export const DESCRIPTION_FILE = "data/repo-description.txt";
+
+/** The description's exact bytes. `INVENTORY` is the only generated part. */
+export const REPO_DESCRIPTION =
+  `Lifecycle marketing in Claude — ${INVENTORY}: email render QA, deliverability, ` +
+  `segmentation maths, MJML, and Braze, Iterable, Klaviyo, Mailchimp, Customer.io ` +
+  `and Salesforce Marketing Cloud. Free, no licence key · yourorbit.team`;
+
+/**
  * Remove manifest.json's `skills` key. Returns the new text.
  *
  * Not merely "don't write it" — actively strip it, because the key was
@@ -270,7 +297,16 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
     stale.push(COUNTS_FILE);
   }
 
-  const surfaces = [...TARGETS, COUNTS_FILE];
+  const descriptionPath = path.join(ROOT_DIR, DESCRIPTION_FILE);
+  const descriptionBefore = fs.existsSync(descriptionPath)
+    ? fs.readFileSync(descriptionPath, "utf8")
+    : null;
+  if (descriptionBefore !== REPO_DESCRIPTION) {
+    fs.writeFileSync(descriptionPath, REPO_DESCRIPTION);
+    stale.push(DESCRIPTION_FILE);
+  }
+
+  const surfaces = [...TARGETS, COUNTS_FILE, DESCRIPTION_FILE];
 
   // Naming the surfaces on every run, in both branches, is the point. The
   // previous line said the inventory was "in sync everywhere" and meant
