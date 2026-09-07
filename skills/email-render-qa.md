@@ -5,7 +5,9 @@ description: >
   personalisation fallbacks, links, accessibility, unsubscribe/legal blocks, or Braze-safe
   markup. Trigger on "QA this email", "check the HTML", "will this render safely?", "validate
   the Liquid", "review for dark mode", or any request for lifecycle email validation before build
-  handoff or launch.
+  handoff or launch. This is the render gate the product promises on its front door:
+  trigger on "check this email before I send it", "check my email in a real browser
+  before I send", and "run the render gate".
 ---
 
 # Email Render QA
@@ -24,7 +26,8 @@ When this skill is active, apply this operating sequence before diving into the 
 2. Confirm the variables that materially change the answer: platform/tool, business model, audience, channel, geography/compliance, and current state.
 3. If a critical variable is missing, ask only if the answer would materially change; otherwise proceed with explicit assumptions.
 4. Diagnose current reality before prescribing future state whenever existing work, performance, or tooling is involved.
-5. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
+5. Measure before you judge: run `orbit_render_gate` on the HTML first — it lays the email out at 640px and 390px in a real browser engine and returns what static analysis cannot see (a heading whose last line holds one word, a CTA row that wraps at mobile, a tap target under 44x44 CSS px, computed contrast below WCAG AA, rendered height). Then run `orbit_qa_email` for the markup-level checks — alt text, heading order, dark-mode risk. They are complements, not substitutes.
+6. Give a recommendation with rationale, risks, and next actions. Do not stop at explanation alone.
 
 ## Response Contract
 

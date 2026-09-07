@@ -16,11 +16,16 @@
  * denominator is how "in sync everywhere" came to mean four files.
  *
  * With --live it also reads the two surfaces a stranger actually meets —
- * the homepage and the GitHub repo description — and reports what they
- * say. Those are REPORTED, never failed on: they are downstream of a
- * deploy this repo does not control, and a red build because a laptop is
- * on a train teaches nobody anything. Reconciling them is a human's job,
- * and the numbers are printed so it takes ten seconds.
+ * the homepage and the GitHub repo description — and diffs each against
+ * this tree. By default those are REPORTED, never failed on: they are
+ * downstream of a deploy this repo does not control, and a red build
+ * because a laptop is on a train teaches nobody anything.
+ *
+ * --strict (which requires --live) turns those reports into failures. It
+ * exists for ONE caller: the weekly scheduled workflow running against
+ * `main`, where the published surfaces are supposed to already agree with
+ * the tree, so a difference is an outcome to open an issue about rather
+ * than a branch mid-flight. Never put --strict on a branch build.
  */
 
 import fs from "node:fs";
@@ -40,6 +45,16 @@ import {
 } from "./sync-counts.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const LIVE = process.argv.includes("--live");
+const STRICT = process.argv.includes("--strict");
+if (STRICT && !LIVE) {
+  // Refused rather than ignored. A CI step that passes --strict alone and
+  // is quietly told nothing is the same fail-open shape this script exists
+  // to close: a flag that looks like a gate and enforces nothing.
+  process.stderr.write("--strict has no meaning without --live: there is nothing live to be strict about.\n");
+  process.exit(2);
+}
 
 /**
  * Shape scanners: what a count claim LOOKS like, independent of how the
@@ -92,10 +107,35 @@ const SCANNERS = [
   },
 ];
 
+/**
+ * Surfaces that are allowed to state no count at all.
+ *
+ * Every OTHER target must state one. Finding nothing used to score `ok`
+ * (the row read `(no count stated) | yes`), which meant the one edit most
+ * likely to break this gate — rewording a claim into a shape no scanner
+ * knows, "86 lifecycle skills and 135 tools" — turned a checked surface
+ * into an unchecked one AND printed a tick for it. Silence is now a
+ * failure unless it was declared here on purpose.
+ *
+ * server.json is the one entry, and it is a real design decision rather
+ * than a convenience: the registry reads that `description` verbatim, it
+ * has never carried a cardinal, and adding one would create a surface
+ * that drifts in a file this repo does not get to re-publish on demand.
+ * A surface listed here that LATER starts stating a count is scanned
+ * normally — the allowlist excuses absence, it does not excuse drift.
+ */
+const COUNT_FREE = new Set(["server.json"]);
+
 const rows = [];
+/** Detail too wide for a table cell: printed underneath it, in order. */
+const notes = [];
 
 function row(surface, expected, found, ok) {
   rows.push({ surface, expected, found, ok });
+}
+
+function note(lines) {
+  notes.push(lines);
 }
 
 for (const file of TARGETS) {
@@ -117,9 +157,15 @@ for (const file of TARGETS) {
     }
   }
   if (mentions === 0) {
-    // Not a failure — server.json states no count today. Printed so the
-    // surface still appears in the denominator rather than vanishing.
-    row(file, "(no count stated)", "(none found)", true);
+    const declared = COUNT_FREE.has(file);
+    row(file, declared ? "(declared count-free)" : "(a scannable count claim)", "(no count stated)", declared);
+    if (!declared) {
+      note([
+        `${file} states no count this script can see. Either the claim was reworded into a`,
+        "shape no scanner knows — add the shape to SCANNERS — or the surface genuinely",
+        "stopped stating a size, in which case declare it in COUNT_FREE and say why.",
+      ]);
+    }
   }
 }
 
@@ -151,19 +197,26 @@ let repoDescription = null;
 try {
   repoDescription = fs.readFileSync(descriptionPath, "utf8");
 } catch (err) {
-  row(DESCRIPTION_FILE, INVENTORY, `(unreadable: ${err.message.split("\n")[0]})`, false);
+  row(DESCRIPTION_FILE, "(the generated sentence, byte for byte)", `(unreadable: ${err.message.split("\n")[0]})`, false);
 }
 if (repoDescription !== null) {
-  // Scanned by shape, like every other surface, rather than compared whole:
-  // the prose around the numbers is hand-written and may legitimately be
-  // reworded, but the count inside it may not drift.
-  const stated = (repoDescription.match(SCANNERS[0].pattern) ?? []).map((m) => m.replace(/\s+/g, " "));
-  row(
-    DESCRIPTION_FILE,
-    INVENTORY,
-    stated.length ? stated.join(" | ") : "(no count stated)",
-    stated.length > 0 && stated.every((s) => s.toLowerCase() === INVENTORY.toLowerCase())
-  );
+  // Compared WHOLE, against the sentence sync-counts.mjs generates — not
+  // scanned by shape like the prose surfaces. This file is not prose: its
+  // bytes ARE the description the release workflow pushes to the public
+  // repo page, so anything a scanner is not looking at rides along
+  // unexamined. A digits-only check passes
+  // "86 skills and 135 tools. NOW WITH A PAID TIER — card required."
+  // That is why REPO_DESCRIPTION is imported; until now it was imported
+  // and never used, so the assertion was intended rather than written.
+  const matches = repoDescription === REPO_DESCRIPTION;
+  row(DESCRIPTION_FILE, "(the generated sentence, byte for byte)", matches ? "(exact match)" : "(differs)", matches);
+  if (!matches) {
+    note([
+      `${DESCRIPTION_FILE} is not what sync-counts.mjs generates. Run \`node scripts/sync-counts.mjs\`.`,
+      `  file:      ${JSON.stringify(repoDescription)}`,
+      `  generated: ${JSON.stringify(REPO_DESCRIPTION)}`,
+    ]);
+  }
 }
 
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
@@ -179,8 +232,47 @@ row(
 row('manifest.json ("tools" array)', String(COUNTS.tools), String(manifest.tools.length), manifest.tools.length === COUNTS.tools);
 
 // skills/ against its generated manifest — the source of the source.
-const skillFiles = fs.readdirSync(path.join(ROOT_DIR, "skills")).filter((f) => f.endsWith(".md")).length;
-row("skills/*.md vs data/skills.manifest.json", String(COUNTS.skills), String(skillFiles), skillFiles === COUNTS.skills);
+const skillSlugs = fs
+  .readdirSync(path.join(ROOT_DIR, "skills"))
+  .filter((f) => f.endsWith(".md"))
+  .map((f) => f.slice(0, -3));
+row("skills/*.md vs data/skills.manifest.json", String(COUNTS.skills), String(skillSlugs.length), skillSlugs.length === COUNTS.skills);
+
+/**
+ * orbit.md's Skill Index against skills/ — as a SET, not a cardinality.
+ *
+ * The row above proves the library is the size the manifest says. It says
+ * nothing about the index Claude actually reads to find a protocol: a
+ * skill absent from that table is a skill the router cannot route to, and
+ * 33 of 86 were absent while every count on every surface read 86. A
+ * cardinality check would also miss the worse case — one skill renamed and
+ * another added keeps the total at 86 while pointing the router at a file
+ * that does not exist. Only the set difference catches a swap.
+ */
+const indexSlugs = new Set(
+  [...fs.readFileSync(path.join(ROOT_DIR, "orbit.md"), "utf8").matchAll(/^\| `([a-z0-9-]+)`/gm)].map((m) => m[1])
+);
+const skillSet = new Set(skillSlugs);
+const missingFromIndex = [...skillSet].filter((s) => !indexSlugs.has(s)).sort();
+const notASkill = [...indexSlugs].filter((s) => !skillSet.has(s)).sort();
+row(
+  "orbit.md Skill Index vs skills/*.md",
+  String(COUNTS.skills),
+  String(indexSlugs.size),
+  missingFromIndex.length === 0 && notASkill.length === 0
+);
+if (missingFromIndex.length > 0) {
+  note([
+    `${missingFromIndex.length} skill file(s) have no Skill Index row in orbit.md — the router cannot route to them:`,
+    `  ${missingFromIndex.join(", ")}`,
+  ]);
+}
+if (notASkill.length > 0) {
+  note([
+    `${notASkill.length} Skill Index row(s) in orbit.md name no file in skills/ — the router points at nothing:`,
+    `  ${notASkill.join(", ")}`,
+  ]);
+}
 
 /** Widths from the content, so the table stays readable as surfaces are added. */
 function renderTable(list) {
@@ -202,8 +294,19 @@ process.stdout.write(
 );
 process.stdout.write(`${renderTable(rows)}\n`);
 
-if (process.argv.includes("--live")) {
-  process.stdout.write("\nLive surfaces (reported, never failed on):\n");
+for (const lines of notes) {
+  process.stdout.write(`\n${lines.join("\n")}\n`);
+}
+
+/** Live surfaces that disagree with this tree — failures only under --strict. */
+const liveDrift = [];
+
+if (LIVE) {
+  process.stdout.write(
+    STRICT
+      ? "\nLive surfaces (--strict: drift fails this run):\n"
+      : "\nLive surfaces (reported, never failed on — pass --strict to fail on drift):\n"
+  );
 
   /** Every count-shaped claim on a page, deduped, so nothing is cherry-picked. */
   function claims(text) {
@@ -219,16 +322,47 @@ if (process.argv.includes("--live")) {
     return [...found];
   }
 
+  /** Every distinct skill cardinal a page states, as numbers. */
+  function skillCounts(text) {
+    return [
+      ...new Set(
+        [...text.matchAll(/\b(\d[\d,]*)\+?\s+(?:lifecycle\s+)?skills\b/gi)].map((m) => Number(m[1].replace(/,/g, "")))
+      ),
+    ];
+  }
+
   try {
     const res = await fetch("https://yourorbit.team/", { signal: AbortSignal.timeout(15000) });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
-    const html = await res.text();
-    const said = claims(html.replace(/<[^>]+>/g, " "));
+    const text = (await res.text()).replace(/<[^>]+>/g, " ");
+    const said = claims(text);
     process.stdout.write(`  yourorbit.team      ${said.length ? said.join(" | ") : "(no count-shaped claim found)"}\n`);
+    // The comparator the description row has had all along and this one
+    // has not: until now the homepage's claims were parsed, joined into a
+    // string, printed, and never compared to anything — so `79 skills`
+    // printed under a truth of 86 and the run still exited 0.
+    const stated = skillCounts(text);
+    const wrong = stated.filter((n) => n !== COUNTS.skills);
+    if (stated.length === 0) {
+      process.stdout.write("  yourorbit.team      NO SKILL COUNT FOUND — the page states no size this script can read\n");
+      liveDrift.push("yourorbit.team states no skill count");
+    } else if (wrong.length > 0) {
+      process.stdout.write(
+        `  yourorbit.team      DRIFT — live: ${wrong.join(", ")} skills · this tree: ${COUNTS.skills} skills\n` +
+          "                      the site re-reads data/counts.json from the bucket after a release publishes.\n"
+      );
+      liveDrift.push(`yourorbit.team says ${wrong.join(", ")} skills, this tree holds ${COUNTS.skills}`);
+    } else {
+      process.stdout.write(`  yourorbit.team      matches this tree (${COUNTS.skills} skills)\n`);
+    }
   } catch (err) {
     process.stdout.write(`  yourorbit.team      unreachable (${err.message})\n`);
+    // Unreachable is not drift, but under --strict it is still a surface
+    // the weekly run failed to verify, and "could not look" scoring green
+    // is the same fail-open the table above just closed.
+    liveDrift.push(`yourorbit.team could not be read (${err.message})`);
   }
 
   try {
@@ -242,21 +376,29 @@ if (process.argv.includes("--live")) {
     process.stdout.write(`  gh repo description ${said.length ? said.join(" | ") : "(no count-shaped claim found)"}\n`);
     // The live description now has a file behind it, so this is no longer
     // "here is a number, reconcile it yourself" — it is a diff against the
-    // exact bytes the release workflow pushes. Still reported and never
-    // failed on: the push happens on merge to main, so a branch is EXPECTED
-    // to read as drift until it ships, and reddening the build for that
-    // would train someone to stop running --live.
+    // exact bytes the release workflow pushes.
+    //
+    // Without --strict this is reported and never failed on: the push
+    // happens on merge to main, so a BRANCH is expected to read as drift
+    // until it ships, and reddening a branch build for that would train
+    // someone to stop running --live. --strict is for the weekly scheduled
+    // run against main, where the push has already happened and a
+    // difference is a real outcome — not a branch waiting its turn.
     if (repoDescription !== null) {
-      process.stdout.write(
-        description === repoDescription
-          ? `  ${DESCRIPTION_FILE.padEnd(17)} matches the live description\n`
-          : `  ${DESCRIPTION_FILE.padEnd(17)} DRIFT — live: ${JSON.stringify(description)}\n` +
-              `  ${" ".repeat(17)}       file: ${JSON.stringify(repoDescription)}\n` +
-              `  ${" ".repeat(17)}       the release workflow's Promote step pushes the file on the next merge to main.\n`
-      );
+      if (description === repoDescription) {
+        process.stdout.write(`  ${DESCRIPTION_FILE.padEnd(17)} matches the live description\n`);
+      } else {
+        process.stdout.write(
+          `  ${DESCRIPTION_FILE.padEnd(17)} DRIFT — live: ${JSON.stringify(description)}\n` +
+            `  ${" ".repeat(17)}       file: ${JSON.stringify(repoDescription)}\n` +
+            `  ${" ".repeat(17)}       the release workflow's Promote step pushes the file on the next merge to main.\n`
+        );
+        liveDrift.push(`the GitHub repo description differs from ${DESCRIPTION_FILE}`);
+      }
     }
   } catch (err) {
     process.stdout.write(`  gh repo description unreachable (${err.message.split("\n")[0]})\n`);
+    liveDrift.push(`the GitHub repo description could not be read (${err.message.split("\n")[0]})`);
   }
 }
 
@@ -268,4 +410,17 @@ if (failed.length > 0) {
   );
   process.exit(1);
 }
-process.stdout.write(`\nAll ${rows.length} checks pass across the surfaces listed above.\n`);
+if (STRICT && liveDrift.length > 0) {
+  process.stdout.write(
+    `\nAll ${rows.length} checks pass in this tree, but --strict failed on ${liveDrift.length} live surface(s):\n` +
+      liveDrift.map((d) => `  - ${d}\n`).join("") +
+      "\nThe tree is right and what a stranger reads is not. Publish, or fix the surface by hand:\n" +
+      `  gh repo edit --description "$(cat ${DESCRIPTION_FILE})"\n`
+  );
+  process.exit(1);
+}
+process.stdout.write(
+  `\nAll ${rows.length} checks pass across the surfaces listed above.${
+    STRICT ? " Live surfaces agree with this tree." : ""
+  }\n`
+);

@@ -14,7 +14,9 @@ description: >
   programme", or when scattered wiki pages and ESP dashboards keep
   drifting from what actually ships. Pairs with `brain-graphify-setup` (the graph layer
   on top of the repo). The brain is the upstream knowledge layer; it does NOT certify
-  render correctness — that stays with the compile + render QA gate.
+  render correctness — that stays with the compile + render QA gate. Also called a
+  "lifecycle brain" — trigger equally on "build me a lifecycle brain", "set up my
+  lifecycle brain", and "turn the emails I already send into a design system".
 ---
 
 # Template Brain

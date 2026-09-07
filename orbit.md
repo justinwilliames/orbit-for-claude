@@ -299,6 +299,8 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `lifecycle-reporting` | Design metrics, dashboards, and reporting cadences |
 | `experiment-design` | Design statistically sound tests and decision rules |
 | `retention-economics` | Quantify retention impact, LTV, payback, and ROI tradeoffs |
+| `lifecycle-performance-report` | Portfolio-level performance readout of every live lifecycle program, not one campaign |
+| `lifecycle-program-performance-report` | Recurring executive report on every live program — reach, goal, customer voice |
 
 ### Growth & Research
 | Protocol | Trigger |
@@ -312,6 +314,10 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `copy-framework` | Write or review lifecycle copy across email, push, SMS, and in-app |
 | `graphic-design` | Direct or critique visual work, CRM creative, decks, dashboards, and image prompts |
 | `ai-personalization` | Use AI/LLMs for timing, content, audience scoring, or orchestration |
+| `anti-slop-editor` | Edit or evaluate user-facing and developer-facing language — the final anti-slop pass |
+| `claude-design-email-header` | Design an on-brand email header or hero in Claude Design via Chrome |
+| `email-header-design` | Design, generate, or iteratively improve an on-brand email hero or header image |
+| `smart-header-builder` | Generate, create, build, or design a brand header, email header, or banner |
 
 ### Platform Documentation
 | Protocol | Trigger |
@@ -346,6 +352,53 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `quarterly-planning` | Turn annual OKRs into a prioritised 90-day lifecycle program backlog that survives exec review |
 | `email-production-qa` | Canonical pre-send QA gate — chains accessibility, dark-mode, and Gmail-clipping checks via orbit_qa_email |
 | `postmaster-tools-setup` | Set up Gmail Postmaster Tools and interpret the six dashboards — pairs with orbit_parse_postmaster_signal |
+
+### Lifecycle Brain
+| Protocol | Trigger |
+|---|---|
+| `template-brain` | Build, structure, or maintain an LLM-first template brain — a git source of truth |
+| `brain-graphify-setup` | Add a knowledge-graph index on top of a template brain using graphify |
+| `liquid-branch-coverage` | Prove every personalised version of an email renders correctly, not just yours |
+
+### Braze Platform
+| Protocol | Trigger |
+|---|---|
+| `braze-canvas-conformance` | Lint live Braze canvases against a naming and tagging convention, and fix |
+| `braze-canvas-creator` | Turn an Orbit lifecycle program into a Braze Canvas structure |
+| `braze-canvas-qa` | Pre-launch QA of a Braze Canvas or campaign before it goes live |
+| `braze-canvas-reader` | Read, inspect, or import an existing Braze Canvas or campaign |
+| `braze-parameterized-canvas` | Run one Braze canvas template across many campaign instances via the API |
+| `braze-claude-in-chrome-build` | Drive the Braze dashboard via Claude in Chrome — canvas edits, save semantics |
+| `braze-content-block-audit` | Audit, inventory, or clean up Braze Content Blocks |
+| `braze-data-validation` | Verify custom events and attributes in a message plan exist in Braze |
+| `braze-deliverability` | Check email deliverability health in Braze — bounces, complaints, unsubscribes |
+| `braze-instance-audit` | Audit, inventory, or health-check a Braze workspace before building |
+| `braze-master-template` | Import an HTML template, break it into modules, generate variations |
+| `braze-namer` | Generate a consistent naming convention for any Braze asset |
+| `braze-performance` | Pull performance data or analytics from Braze — Canvas, campaign, MAU |
+| `braze-segment-analysis` | Analyse, audit, or understand Braze segments — health, size, overlap |
+| `braze-test-users` | Validate test user profiles in Braze before sending QA test messages |
+
+### ESP Platform
+| Protocol | Trigger |
+|---|---|
+| `customerio-documentation-expert` | Any Customer.io-specific implementation question — campaigns, segments, Liquid, App API |
+| `klaviyo-documentation-expert` | Any Klaviyo-specific implementation question — Flows, segments, templates, catalog feeds |
+| `mailchimp-documentation-expert` | Any Mailchimp-specific implementation question — journeys, audiences, merge tags |
+| `sfmc-documentation-expert` | Any Salesforce Marketing Cloud question — Journeys, data extensions, AMPscript |
+| `stripo-email-builder` | Write, build, or scope an email program as a Notion-ready build spec |
+| `stripo-module-bindings` | Make a Stripo module's text, link, or image substitutable per send |
+
+### Render & Deliverability
+| Protocol | Trigger |
+|---|---|
+| `gmail-delivery-truth` | The email looks right in preview and wrong in the inbox |
+| `ip-warming` | Ramp, throttle, or stagger send volume to protect sender reputation |
+
+### Knowledge & Attribution
+| Protocol | Trigger |
+|---|---|
+| `sources` | Attribute a specific claim, benchmark, framework, or recommendation to its original source |
 
 ---
 

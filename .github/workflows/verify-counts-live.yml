@@ -1,0 +1,114 @@
+name: Verify live counts
+
+# The named trigger for count drift, and D6's replacement for a repo-admin
+# PAT. The two surfaces a stranger actually meets — the homepage and the
+# GitHub repo description — are downstream of a deploy and of a `gh repo
+# edit` this repo does not control, so nothing in the publish pipeline can
+# fail on them without reddening a build for a website's sake. Instead they
+# get their own clock: once a week, against `main`, and drift opens an
+# issue with the numbers in it rather than waiting to be re-found by a
+# review. `administration: write` buys the same sentence and carries
+# visibility, collaborators and deletion with it; this does not.
+on:
+  # Monday 22:00 UTC = Tuesday 08:00 Australia/Brisbane (UTC+10, no DST) —
+  # the start of a working day, not the middle of a Sunday night.
+  schedule:
+    - cron: '0 22 * * 1'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # Minimal and exhaustive: read the tree, write an issue. No
+    # `administration`, no `contents: write`, no packages, no id-token —
+    # this job publishes nothing and edits no setting.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      # `--strict` is what makes `--live` able to fail: without it the live
+      # surfaces are REPORTED and the script exits 0 by design, which is
+      # correct for a publish gate and useless for a drift alarm. The flag
+      # is owned by scripts/verify-count-spine.mjs (Voyager, same wave); if
+      # --strict makes any live drift exit non-zero; without --live it exits 2. Weekly against main only.
+      # step stays green, and the log below still prints what the homepage
+      # and the repo description actually say.
+      - name: verify:counts against the live surfaces
+        id: drift
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/verify-count-spine.mjs --live --strict 2>&1 | tee drift.log
+
+      - name: Open or update the drift issue
+        if: steps.drift.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = 'Count drift on a live surface';
+            const log = fs.readFileSync('drift.log', 'utf8').slice(-30000);
+            const body = [
+              `\`verify:counts --live --strict\` failed on \`main\` at ${context.sha}.`,
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'The two live surfaces are the homepage and the GitHub repo description.',
+              'The repo description is fixed by hand — this workflow deliberately holds no',
+              'admin scope: `gh repo edit ' + `${context.repo.owner}/${context.repo.repo}` + ' --description "$(cat data/repo-description.txt)"`.',
+              '',
+              '```',
+              log,
+              '```',
+            ].join('\n');
+            // One issue, reopened and appended to, rather than a new one a
+            // week: a drift alarm that files duplicates gets muted, and a
+            // muted alarm is the failure it was built to prevent.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 100,
+            });
+            const match = existing.data.find((i) => i.title === title && !i.pull_request);
+            if (match) {
+              if (match.state === 'closed') {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: match.number,
+                  state: 'open',
+                });
+              }
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body,
+              });
+              core.notice(`Updated issue #${match.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+              core.notice(`Opened issue #${created.data.number}`);
+            }
+
+      # The alarm is the issue; the run should still read red in the
+      # Actions list, or a muted email is the only signal.
+      - name: Fail the run when the live surfaces drifted
+        if: steps.drift.outcome == 'failure'
+        run: exit 1

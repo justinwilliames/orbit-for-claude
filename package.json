@@ -14,7 +14,8 @@
     "test": "node tests/run.mjs",
     "pack": "npm run build:extension && npx @anthropic-ai/mcpb pack .mcpb-build orbit-lifecycle-marketing-system-for-claude.mcpb",
     "sync:manifest": "node scripts/sync-manifest-annotations.mjs",
-    "verify:counts": "node scripts/verify-count-spine.mjs"
+    "verify:counts": "node scripts/verify-count-spine.mjs",
+    "verify:outcomes": "node scripts/verify-outcomes.mjs"
   },
   "//overrides": "Force patched TRANSITIVE deps pulled in by the mjml / hono trees. These carry high-severity advisories and gate the release workflow's `npm audit --omit=dev --audit-level=high`. Every pin stays INSIDE the existing major version, so mjml 5.1.0 is untouched \u2014 do NOT let `npm audit fix --force` bump mjml itself, which moved mjml2html to async at 5.1.0 and broke the compiler once already. A caret range here is not a pin; the lockfile is \u2014 commit package-lock.json with every change. Re-check with `npm audit --omit=dev --audit-level=high` and `npm run smoke`.",
   "overrides": {

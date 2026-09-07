@@ -100,6 +100,14 @@ jobs:
 
       - run: npm run build:extension
 
+      # After the build because fetch-guides rewrites data/guides-export.json — the file COUNTS.guides reads.
+      # And with `git diff` because build-extension.js:46-50 repairs the runner's tree silently: bundle right, commit wrong.
+      - name: Verify the tree that ships
+        run: |
+          npm run verify:counts
+          git diff --exit-code -- README.md orbit.md manifest.json data/counts.json data/repo-description.txt
+          npx @anthropic-ai/mcpb validate .mcpb-build/manifest.json
+
       # Package the .mcpb bundle for distribution.
       - name: Package .mcpb
         run: |

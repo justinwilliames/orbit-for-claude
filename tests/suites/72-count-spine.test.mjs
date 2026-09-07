@@ -67,12 +67,43 @@
  * if wired into the rewriter, would corrupt it to match today's count. The
  * DEMOTED patterns below are scoped to the exact phrasing that actually
  * drifted, not a broad ban, so the historical figure is provably untouched.
+ *
+ * WHAT THE SECOND DESCRIBE BLOCK ADDS. Everything above asserts the state
+ * of this tree. None of it asserts that verify-count-spine.mjs would NOTICE
+ * a bad tree — and two of its rows were, until 2026-09-07, incapable of it:
+ *
+ *   - `mentions === 0` scored a row `ok`. Rewording server/index.js to
+ *     "86 lifecycle skills and 135 tools" — a shape no scanner knows —
+ *     turned a checked surface into an unchecked one AND printed a tick
+ *     for it, which is worse than not checking the file at all.
+ *   - orbit.md's Skill Index had no row of its own. 33 of 86 skills had no
+ *     index line, so the router could not route to them, while every count
+ *     on every surface truthfully read 86. A cardinality check would not
+ *     have caught the worse case either: rename one skill and add another
+ *     and the total still reads 86 while the index points at a file that
+ *     does not exist. Only a set difference sees that.
+ *
+ * A green tick over a fixture that cannot fail is the defect this review
+ * round is named after, so those two rows are tested by MUTATION: build a
+ * scratch tree, break exactly one thing in it, and require the script to
+ * exit non-zero. The control case runs the same harness on an unbroken
+ * tree and requires exit 0 — without it, a scratch tree that failed for
+ * its own reasons would make every mutation test pass for the wrong reason.
+ *
+ * The scratch tree is a symlink farm: only the two scripts and the file
+ * under mutation are real copies, everything else is a link into this
+ * repo. That matters twice. Node's ESM loader resolves symlinks, so a
+ * linked script would compute ROOT_DIR back to the real repo and would
+ * mutate nothing; and nothing here ever writes or deletes through a link,
+ * so a working tree someone else is editing is never touched.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -304,5 +335,172 @@ describe("count spine: every stated Orbit size is honest", () => {
     const raw = fs.readFileSync(path.join(ROOT_DIR, "docs", "INTEGRATION-STANDARD.md"), "utf8");
     assert.match(raw, /66 of 135 tools had ever been called at the time/);
     assert.match(raw, /Orbit\s+registers 135/);
+  });
+});
+
+/**
+ * A throwaway copy of the repo, with `overrides` written in place of the
+ * real files. Only `scripts/` and any directory holding an override are
+ * real directories; everything else is one symlink.
+ *
+ * Overrides are limited to depth 2 (`orbit.md`, `server/index.js`) — deeper
+ * than that and the parent-materialising below would need to recurse, and
+ * nothing needs it yet. Writing to a path whose parent is still a symlink
+ * would write THROUGH it into the real repo, so this throws rather than
+ * quietly guessing.
+ */
+function scratchTree(overrides = {}) {
+  const realDirs = new Set(["scripts"]);
+  for (const rel of Object.keys(overrides)) {
+    const parts = rel.split("/");
+    assert.ok(parts.length <= 2, `scratchTree override "${rel}" is deeper than this helper materialises.`);
+    if (parts.length === 2) {
+      realDirs.add(parts[0]);
+    }
+  }
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "orbit-count-spine-"));
+  for (const entry of fs.readdirSync(ROOT_DIR)) {
+    const src = path.join(ROOT_DIR, entry);
+    const dst = path.join(dir, entry);
+    if (!realDirs.has(entry)) {
+      fs.symlinkSync(src, dst);
+      continue;
+    }
+    fs.mkdirSync(dst);
+    for (const child of fs.readdirSync(src)) {
+      fs.symlinkSync(path.join(src, child), path.join(dst, child));
+    }
+  }
+
+  // The scripts must be real files. Node's ESM loader resolves symlinks
+  // before computing import.meta.url, so a linked script would derive
+  // ROOT_DIR back to the real repo and read straight past every override.
+  for (const script of ["verify-count-spine.mjs", "sync-counts.mjs"]) {
+    const dst = path.join(dir, "scripts", script);
+    fs.rmSync(dst);
+    fs.copyFileSync(path.join(ROOT_DIR, "scripts", script), dst);
+  }
+
+  for (const [rel, contents] of Object.entries(overrides)) {
+    const dst = path.join(dir, rel);
+    // rmSync on a symlink unlinks the link, never the target.
+    fs.rmSync(dst);
+    fs.writeFileSync(dst, contents);
+  }
+  return dir;
+}
+
+/** Run the spine in a scratch tree. Returns its exit code and stdout. */
+function runSpine(dir) {
+  try {
+    const stdout = execFileSync(process.execPath, [path.join(dir, "scripts", "verify-count-spine.mjs")], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { code: 0, stdout };
+  } catch (err) {
+    return { code: err.status ?? -1, stdout: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+  }
+}
+
+/** The printed table row whose surface column starts with `surface`. */
+function tableRow(stdout, surface) {
+  return stdout.split("\n").find((line) => line.startsWith(surface)) ?? "";
+}
+
+/** Runs `body` against a scratch tree and always removes it afterwards. */
+function withScratch(overrides, body) {
+  const dir = scratchTree(overrides);
+  try {
+    body(runSpine(dir), dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const ORBIT_MD = fs.readFileSync(path.join(ROOT_DIR, "orbit.md"), "utf8");
+/** The first Skill Index row, as the verify script's own pattern finds it. */
+const FIRST_INDEX_ROW = ORBIT_MD.match(/^\| `([a-z0-9-]+)`.*$/m);
+
+describe("count spine: the gate itself fails on a tree that deserves it", () => {
+  test("control: an unmutated scratch tree passes, so a mutation failing means something", () => {
+    // The fixture-honesty check. If the symlink farm were broken, every
+    // mutation below would exit non-zero for reasons that have nothing to
+    // do with what it claims to prove, and all of them would pass.
+    withScratch({}, ({ code, stdout }) => {
+      assert.equal(code, 0, `an untouched scratch tree should pass the spine. Output:\n${stdout}`);
+      assert.match(stdout, /orbit\.md Skill Index vs skills\/\*\.md/, "the Skill Index row is missing from the table.");
+      assert.match(stdout, /All \d+ checks pass/);
+    });
+  });
+
+  test("Skill Index: dropping one slug from orbit.md fails the set-difference row", () => {
+    assert.ok(FIRST_INDEX_ROW, "expected orbit.md to hold at least one Skill Index row to drop.");
+    const [line, slug] = FIRST_INDEX_ROW;
+    withScratch({ "orbit.md": ORBIT_MD.replace(`${line}\n`, "") }, ({ code, stdout }) => {
+      assert.equal(code, 1, `dropping "${slug}" from the Skill Index must fail the spine. Output:\n${stdout}`);
+      assert.match(
+        tableRow(stdout, "orbit.md Skill Index vs skills/*.md"),
+        /\| NO$/,
+        "the Skill Index row should read NO when a skill has no index line."
+      );
+      assert.match(stdout, new RegExp(`have no Skill Index row[^]*\\b${slug}\\b`), `the failure should name ${slug}.`);
+    });
+  });
+
+  test("Skill Index: a swap that preserves the count still fails — this is why it is a set", () => {
+    // The case a cardinality check cannot see, and the reason R2 ruled for
+    // a set difference: 86 index rows against 86 files, one of them
+    // pointing at a skill that does not exist.
+    assert.ok(FIRST_INDEX_ROW, "expected orbit.md to hold at least one Skill Index row to swap.");
+    const [line, slug] = FIRST_INDEX_ROW;
+    const swapped = line.replace(`\`${slug}\``, "`not-a-real-skill`");
+    withScratch({ "orbit.md": ORBIT_MD.replace(line, () => swapped) }, ({ code, stdout }) => {
+      assert.equal(code, 1, `swapping "${slug}" for a non-existent skill must fail the spine. Output:\n${stdout}`);
+      const row = tableRow(stdout, "orbit.md Skill Index vs skills/*.md");
+      assert.match(row, /\| NO$/);
+      assert.match(
+        row,
+        new RegExp(`\\| ${COUNTS.skills} +\\| ${COUNTS.skills} +\\| NO$`),
+        `the count is unchanged at ${COUNTS.skills} on both sides — only the set difference catches this. Row: ${row}`
+      );
+      assert.match(stdout, /name no file in skills\/[^]*not-a-real-skill/);
+    });
+  });
+
+  test("fail-open: a surface that states no count at all fails instead of scoring ok", () => {
+    // Sentinel's instrumented case, verbatim: the exact reword that used to
+    // print "(no count stated) | yes" for server/index.js.
+    const raw = fs.readFileSync(path.join(ROOT_DIR, "server", "index.js"), "utf8");
+    const stated = `${COUNTS.skills} skills and ${COUNTS.tools} tools`;
+    assert.ok(raw.includes(stated), `server/index.js no longer says "${stated}" — pick another surface to mutate.`);
+    const reworded = raw.replaceAll(stated, `${COUNTS.skills} lifecycle skills and ${COUNTS.tools} tools`);
+
+    withScratch({ "server/index.js": reworded }, ({ code, stdout }) => {
+      assert.equal(code, 1, `a reworded count no scanner knows must fail, not score ok. Output:\n${stdout}`);
+      const row = tableRow(stdout, "server/index.js ");
+      assert.match(
+        row,
+        /\(no count stated\) +\| NO$/,
+        `server/index.js should read "(no count stated) | NO". Row: ${row}`
+      );
+      assert.match(stdout, /shape no scanner knows/, "the failure should say how to fix it.");
+    });
+  });
+
+  test("fail-open: a surface declared count-free in the script is still allowed to say nothing", () => {
+    // The allowlist has exactly one member today. server.json's description
+    // is read verbatim by the MCP registry and has never carried a
+    // cardinal; the row must stay green, or the gate is unrunnable and gets
+    // switched off, which is the same fail-open by a different door.
+    withScratch({}, ({ code, stdout }) => {
+      assert.equal(code, 0);
+      assert.match(
+        tableRow(stdout, "server.json "),
+        /\(declared count-free\) +\| \(no count stated\) +\| yes$/,
+        "server.json should pass by declaration, visibly, rather than by silence."
+      );
+    });
   });
 });

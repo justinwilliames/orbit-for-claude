@@ -44,6 +44,10 @@ panel it is designed to sit on, leaving the white glyph doing the work —
 exactly the effect a hand-drawn "dark" mark would be going for, produced
 here without redrawing anything.
 
+Note: assets/icon.svg is now the vector master (superellipse background +
+traced glyph, disclosed fidelity loss). Future regenerations of this pair
+should start from rasterising that SVG rather than re-deriving from icon.png.
+
 Usage: python3 assets/generate-icon-dark.py
 Rewrites icon-dark.png in the repo root from icon.png. Idempotent.
 """

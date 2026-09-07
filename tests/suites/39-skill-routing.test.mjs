@@ -201,3 +201,48 @@ describe("orbit_route_task answers the obvious Braze questions with the obvious 
     assert.equal(routeTask(library, "QA my Braze canvas before launch", 1, {}).taskType, "audit");
   });
 });
+
+/**
+ * The doors' own words must reach the deed.
+ *
+ * Wave 2 pointed four surfaces at the render gate and the lifecycle
+ * brain — README:3, orbit.md:43, the manifest description, the
+ * getting-started page — and shipped four sentences the router resolved
+ * elsewhere: "check this email before I send it" ranked
+ * `pre-launch-review` (14) over `email-render-qa` (9), and "build me a
+ * lifecycle brain" ranked `copy-framework` (6) with `template-brain`
+ * nowhere in the top three. The copy was right and unwitnessed.
+ *
+ * These are the door sentences, verbatim, asserted at rank 1. A copy
+ * edit that reorders a promise without re-running the router now fails
+ * here rather than in a stranger's first chat.
+ */
+describe("The door sentences route to the deed they promise", () => {
+  const doors = [
+    // README:3 / orbit.md:43 / manifest.description — the brain half.
+    ["build me a lifecycle brain", "template-brain"],
+    ["turn the emails I already send into a design system", "template-brain"],
+    // README:3 / orbit.md:43 / manifest.description — the render-gate half.
+    ["check this email before I send it", "email-render-qa"],
+    ["check my email in a real browser before I send", "email-render-qa"],
+    // get-orbit app/getting-started/page.tsx prompt #1, verbatim. A
+    // labelled prompt that misroutes costs more than no prompt at all.
+    [
+      "Build a two-line test email with a slightly-too-faint brand colour on white, " +
+        "then run it through the render gate and show me what it flags.",
+      "email-render-qa"
+    ]
+  ];
+
+  for (const [request, expected] of doors) {
+    test(`"${request.slice(0, 60)}" routes to ${expected}`, () => {
+      const result = routeTask(library, request, 5, {});
+      const ranked = (result.rankedMatches ?? []).map((m) => `${m.score} ${m.skill}`);
+      assert.equal(
+        result.primarySkill,
+        expected,
+        `routed to ${result.primarySkill} instead.\n  ${ranked.join("\n  ")}`
+      );
+    });
+  }
+});
