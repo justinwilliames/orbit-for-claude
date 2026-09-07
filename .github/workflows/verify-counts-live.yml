@@ -38,11 +38,11 @@ jobs:
 
       # `--strict` is what makes `--live` able to fail: without it the live
       # surfaces are REPORTED and the script exits 0 by design, which is
-      # correct for a publish gate and useless for a drift alarm. The flag
-      # is owned by scripts/verify-count-spine.mjs (Voyager, same wave); if
-      # --strict makes any live drift exit non-zero; without --live it exits 2. Weekly against main only.
-      # step stays green, and the log below still prints what the homepage
-      # and the repo description actually say.
+      # correct for a publish gate and useless for a drift alarm. With it,
+      # any live drift exits non-zero (and `--strict` without `--live` exits
+      # 2). continue-on-error lets the issue step below read the outcome and
+      # still print what the homepage and the repo description actually say;
+      # the final step re-reds the run. Weekly, against main only.
       - name: verify:counts against the live surfaces
         id: drift
         continue-on-error: true

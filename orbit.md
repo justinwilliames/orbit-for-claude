@@ -452,7 +452,7 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 `quarterly-planning` → `orbit_build_exec_report` (baseline) → `orbit_rfm_score` + `orbit_cohort_retention` (audience sizing) → `orbit_list_growth_forecast` (12-month trajectory) → individual program skills for the top 5-7 picks
 
 **Pre-send QA gate (run before any email goes to Braze or production):**
-`email-production-qa` → `orbit_qa_email` → `orbit_validate_email_template` → `orbit_check_email_auth` → `orbit_score_subject_line` + `orbit_score_preheader` → ship
+`email-production-qa` → `orbit_render_gate` (the browser-engine measurement) → `orbit_qa_email` (the markup checks — a complement, not a substitute) → `orbit_validate_email_template` → `orbit_check_email_auth` → `orbit_score_subject_line` + `orbit_score_preheader` → ship
 
 **Diagnose Gmail deliverability with real telemetry:**
 `postmaster-tools-setup` (if not already set up) → `orbit_parse_postmaster_signal` → `orbit_check_email_auth` → `reputation-recovery` (if any metric fails)

@@ -255,7 +255,7 @@ export async function checkStripoAuth({ config }) {
   if (!restConfigured) {
     result.status = "needs_setup";
     result.message =
-      "Stripo REST API token is not configured. Generate it in Stripo under Settings → Workspace → Projects → REST API, then set ORBIT_STRIPO_REST_API_TOKEN.";
+      "Stripo REST API token is not configured. Generate it in Stripo under Settings → Workspace → Projects → REST API, then add it in Settings → Extensions → Orbit (the Stripo REST API Token field), then fully quit and relaunch Claude Desktop (Cmd+Q on Mac; quit from the system tray or Task Manager on Windows).";
     return result;
   }
 
@@ -275,7 +275,7 @@ export async function checkStripoAuth({ config }) {
       result.checks.push({ key: "stripo_rest_auth", passed: false, detail: err.message });
       if (code === "stripo_auth_failed") {
         result.message =
-          "Stripo REST API token is present but REJECTED (401). The running server loads the token once at startup, so a long-lived session can hold a stale value — RESTART Claude / the MCP server first; that reloads the token from settings and usually clears this. If it persists after a restart, regenerate the token in Stripo under Settings → Workspace → Projects → REST API and update ORBIT_STRIPO_REST_API_TOKEN. Pushes will fail until this is resolved.";
+          "Stripo REST API token is present but REJECTED (401). The running server loads the token once at startup, so a long-lived session can hold a stale value — RESTART Claude / the MCP server first; that reloads the token from settings and usually clears this. If it persists after a restart, regenerate the token in Stripo under Settings → Workspace → Projects → REST API, then update it in Settings → Extensions → Orbit (the Stripo REST API Token field), then fully quit and relaunch Claude Desktop (Cmd+Q on Mac; quit from the system tray or Task Manager on Windows). Pushes will fail until this is resolved.";
       }
     }
   } else {
