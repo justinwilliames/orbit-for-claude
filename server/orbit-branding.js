@@ -30,9 +30,18 @@ export const ORBIT_THEME = {
   logo: { default: ORBIT_LOGO_URL, dark: ORBIT_LOGO_DARK_URL, white: ORBIT_LOGO_WHITE_URL },
 };
 
+// The light entry used to point at icon-light.png, which was a byte-for-byte
+// duplicate of icon.png (md5 8bbfa740c307310a5c90cd335068fa58 for both) — a
+// second copy of the same raster shipping in every bundle so this table could
+// name a "light" file. icon-dark.png is a genuinely different asset (see
+// assets/generate-icon-dark.py); icon-light.png never diverged from icon.png in
+// its lifetime. The duplicate is retired and light reads the canonical icon
+// directly. The exported filename is unchanged, so consumers of
+// orbit-logo-light.png see no difference. If a light mark that is actually
+// distinct from icon.png ever exists, add the file back and repoint this line.
 const BRANDING_ASSETS = {
   light: {
-    source: "icon-light.png",
+    source: "icon.png",
     filename: "orbit-logo-light.png"
   },
   dark: {

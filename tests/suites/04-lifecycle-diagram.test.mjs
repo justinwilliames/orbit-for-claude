@@ -102,6 +102,54 @@ describe("Lifecycle diagram suite — build + render including HTML artifact", (
       "Writer should have recursively created the output directory");
   });
 
+  test("render regenerates a missing mermaid blob instead of crashing", async () => {
+    // A spec a model retypes or hand-trims loses the multi-line mermaid blob
+    // first. Before the guard this reached writeFileSync(path, undefined) and
+    // the whole render threw. The fixture hand-supplies `mermaid`, so this is
+    // the one field the rest of the suite can never exercise the absence of.
+    const spec = makeSampleLifecycleSpec();
+    delete spec.mermaid;
+    assert.ok(!("mermaid" in spec), "Precondition: spec must carry no mermaid field");
+
+    const { parsed } = await client.callToolJson("orbit_lifecycle_diagram", {
+      action: "render",
+      spec_json: JSON.stringify(spec),
+      formats: ["svg"],
+      output_dir: path.join(workspace, "outputs", "no-mermaid")
+    });
+    assert.equal(parsed.status, "ok",
+      `Expected ok, got ${parsed.status}: ${parsed.message ?? ""}`);
+    assert.ok(fs.existsSync(parsed.files?.svg), `SVG should exist at ${parsed.files?.svg}`);
+
+    // The blob is regenerated from the spec's own nodes, not left empty.
+    const mermaid = fs.readFileSync(parsed.files.mermaid, "utf8");
+    assert.match(mermaid, /flowchart/, "Regenerated mermaid should carry a flowchart header");
+    assert.match(mermaid, /nudge/, "Regenerated mermaid should carry the spec's nodes");
+  });
+
+  test("build output renders unmodified (build -> render chained)", async () => {
+    // The suite rendered a hand-written fixture and built a spec it never
+    // rendered, so the two halves of the tool were never joined. This chains
+    // them on build's actual output, byte for byte.
+    const build = await client.callToolJson("orbit_lifecycle_diagram", {
+      action: "build",
+      request: "Winback program for lapsed customers on Braze. Day 0 reminder, day 3 offer, day 7 last call.",
+      platform: "braze"
+    });
+    assert.equal(build.parsed.status, "ok");
+    assert.ok(build.parsed.spec, "Expected a spec from build");
+
+    const { parsed } = await client.callToolJson("orbit_lifecycle_diagram", {
+      action: "render",
+      spec_json: JSON.stringify(build.parsed.spec),
+      formats: ["svg"],
+      output_dir: path.join(workspace, "outputs", "chained")
+    });
+    assert.equal(parsed.status, "ok",
+      `Expected ok, got ${parsed.status}: ${parsed.message ?? ""}`);
+    assert.ok(fs.existsSync(parsed.files?.svg), `SVG should exist at ${parsed.files?.svg}`);
+  });
+
   test("update applies deterministic revisions to an existing spec", async () => {
     const spec = makeSampleLifecycleSpec();
     const { parsed } = await client.callToolJson("orbit_lifecycle_diagram", {

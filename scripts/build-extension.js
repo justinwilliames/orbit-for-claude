@@ -89,7 +89,8 @@ if (process.env.ORBIT_SKIP_AUDIT === "1") {
 const COPY_PATHS = [
   "manifest.json",
   "icon.png",
-  "icon-light.png",
+  // icon-light.png was retired: it was a byte-identical duplicate of icon.png,
+  // and server/orbit-branding.js's BRANDING_ASSETS.light now reads icon.png.
   "icon-dark.png",
   "assets",
   "orbit.md",

@@ -497,7 +497,7 @@ function scoreSkill(
   // A skill's keyword set is tokenised prose — its description plus its
   // first six section headings — so it carries the English the description
   // happens to be written in as well as the domain terms. "any" is in the
-  // keyword set of 54 of 83 skills; "how" 38; "our" 28. A flat +2 per hit
+  // keyword set of 54 of 86 skills; "how" 38; "our" 28. A flat +2 per hit
   // meant an accounts-payable question in Xero scored against b2b-lifecycle
   // on the single shared word "any", which is not a match, it is noise
   // wearing a match's clothes.
@@ -727,7 +727,7 @@ function scoreSkill(
  * freezing a judgement about English made on one afternoon. Thresholds are
  * shares of the corpus, not counts, for the same reason.
  *
- * Memoised per library object: 83 skills times ~50 keywords is cheap, but
+ * Memoised per library object: 86 skills times ~50 keywords is cheap, but
  * routeTask is called per request and there is no reason to recount.
  */
 /**
@@ -735,7 +735,7 @@ function scoreSkill(
  * auxiliaries, prepositions, conjunctions, degree adverbs.
  *
  * Rarity alone cannot see these. A skill's keyword set is tokenised prose
- * over 83 skills, so a function word can land in only a handful of them and
+ * over 86 skills, so a function word can land in only a handful of them and
  * score as though it were a domain term: "Our SPF record has two includes
  * TOO MANY and DMARC is failing" matched onboarding-design on {too, many},
  * both of which are rare in this corpus purely because its descriptions

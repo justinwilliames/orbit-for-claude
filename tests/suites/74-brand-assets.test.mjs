@@ -1,4 +1,16 @@
 /**
+ * UPDATE: icon-light.png has since been retired. It never diverged from
+ * icon.png in its lifetime — md5 8bbfa740c307310a5c90cd335068fa58 for both
+ * — so it was a second copy of the same raster shipping in every bundle
+ * purely so BRANDING_ASSETS could name a distinct "light" file.
+ * BRANDING_ASSETS.light now reads icon.png directly and the duplicate is
+ * deleted. This suite's subject is unchanged: the LIGHT mark and the DARK
+ * mark must not be the same bytes. Only the filename holding the light
+ * role moved, from icon-light.png to icon.png. Every assertion below now
+ * reads icon.png where it read icon-light.png; none was weakened.
+ *
+ * Original context, still the reason this suite exists:
+ *
  * icon.png, icon-light.png and icon-dark.png were byte-identical —
  * `shasum -a1` returned d3beefd77fd508c50c23c00f85e8a081354e57bc for all
  * three (Nova, #14/#23). server/orbit-branding.js's BRANDING_ASSETS wires
@@ -37,8 +49,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..", "..");
 
 const ICON = path.join(ROOT, "icon.png");
-const ICON_LIGHT = path.join(ROOT, "icon-light.png");
+// icon.png IS the light mark — see the retirement note in this file's header.
+const ICON_LIGHT = ICON;
 const ICON_DARK = path.join(ROOT, "icon-dark.png");
+const RETIRED_ICON_LIGHT = path.join(ROOT, "icon-light.png");
 
 function sha1(filePath) {
   return createHash("sha1").update(fs.readFileSync(filePath)).digest("hex");
@@ -157,19 +171,29 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 describe("brand icon assets — light and dark actually differ", () => {
-  test("icon-light.png and icon-dark.png are not byte-identical", () => {
+  test("icon.png (the light mark) and icon-dark.png are not byte-identical", () => {
     const lightHash = sha1(ICON_LIGHT);
     const darkHash = sha1(ICON_DARK);
     assert.notEqual(
       darkHash,
       lightHash,
-      "icon-dark.png is a byte-for-byte re-export of icon-light.png — the exact regression this suite exists to catch"
+      "icon-dark.png is a byte-for-byte re-export of the light mark — the exact regression this suite exists to catch"
     );
   });
 
-  test("icon.png, icon-light.png and icon-dark.png are not all three identical", () => {
-    const hashes = new Set([sha1(ICON), sha1(ICON_LIGHT), sha1(ICON_DARK)]);
-    assert.ok(hashes.size > 1, "all three brand icons hash identically — the theme wiring is decorative");
+  // Replaces the old "not all three identical" test, which is now a duplicate
+  // of the one above: there is no third file. What is worth guarding instead is
+  // the retirement itself — a re-export pipeline silently reintroducing the
+  // duplicate is the same defect wearing a different filename.
+  test("the retired icon-light.png duplicate has not come back", () => {
+    if (!fs.existsSync(RETIRED_ICON_LIGHT)) return;
+    assert.notEqual(
+      sha1(RETIRED_ICON_LIGHT),
+      sha1(ICON),
+      "icon-light.png is back and is byte-identical to icon.png — the duplicate this repo deliberately retired. " +
+        "If a light mark that genuinely differs from icon.png now exists, keep the file and repoint " +
+        "BRANDING_ASSETS.light in server/orbit-branding.js at it."
+    );
   });
 
   test("icon-dark.png's fill is genuinely recoloured for a dark ground, not just perturbed", () => {
@@ -186,7 +210,7 @@ describe("brand icon assets — light and dark actually differ", () => {
     // Light stays the Orbit indigo brand fill.
     assert.ok(
       Math.abs(lightBg.r - 99) < 12 && Math.abs(lightBg.g - 102) < 12 && Math.abs(lightBg.b - 241) < 12,
-      `icon-light.png background drifted from Orbit indigo: rgb(${lightBg.r},${lightBg.g},${lightBg.b})`
+      `icon.png (the light mark) background drifted from Orbit indigo: rgb(${lightBg.r},${lightBg.g},${lightBg.b})`
     );
 
     // Dark must be a real dark ground (low luminance), not the same
@@ -198,7 +222,7 @@ describe("brand icon assets — light and dark actually differ", () => {
     );
     assert.ok(
       Math.abs(darkBg.r - lightBg.r) + Math.abs(darkBg.g - lightBg.g) + Math.abs(darkBg.b - lightBg.b) > 200,
-      "icon-dark.png background is barely different from icon-light.png's — not a real recolour"
+      "icon-dark.png background is barely different from icon.png's — not a real recolour"
     );
   });
 
@@ -210,14 +234,14 @@ describe("brand icon assets — light and dark actually differ", () => {
     // rounded-square corner curve.
     const lightCorner = light.getPixel(5, 5);
     const darkCorner = dark.getPixel(5, 5);
-    assert.equal(lightCorner.a, 0, "sanity: (5,5) must be transparent in icon-light.png");
+    assert.equal(lightCorner.a, 0, "sanity: (5,5) must be transparent in icon.png");
     assert.equal(darkCorner.a, 0, "icon-dark.png's outline moved — (5,5) should still be outside the mark");
 
     // (256, 256): the glyph itself, which the recolour is defined to
     // leave white in both variants.
     const lightGlyph = light.getPixel(256, 256);
     const darkGlyph = dark.getPixel(256, 256);
-    for (const [label, px] of [["icon-light.png", lightGlyph], ["icon-dark.png", darkGlyph]]) {
+    for (const [label, px] of [["icon.png", lightGlyph], ["icon-dark.png", darkGlyph]]) {
       assert.ok(
         px.r > 240 && px.g > 240 && px.b > 240,
         `${label} glyph pixel at (256,256) is not white: rgb(${px.r},${px.g},${px.b})`

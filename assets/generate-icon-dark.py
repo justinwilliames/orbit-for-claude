@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Derives icon-dark.png from icon.png (== icon-light.png at the time this
-script was written) by a mechanical, transparency-aware recolour — NOT a
-re-export, NOT a redraw.
+Derives icon-dark.png from icon.png by a mechanical, transparency-aware
+recolour — NOT a re-export, NOT a redraw.
+
+(Historical note: when this script was written there was also an
+icon-light.png, byte-identical to icon.png. It never diverged, so it has
+since been retired and BRANDING_ASSETS.light reads icon.png directly. Every
+mention of it below is history, not a live file.)
 
 Why this exists: icon.png, icon-light.png and icon-dark.png were found
 byte-identical (Finding 1, Nova's half of #14/#23). BRANDING_ASSETS in

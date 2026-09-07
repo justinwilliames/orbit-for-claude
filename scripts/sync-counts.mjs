@@ -28,6 +28,19 @@
  * long-form/practitioner combination actually in use, not just the one
  * the pattern's author happened to type first.
  *
+ * The count also ships in shapes this script could not see. orbit.md — the
+ * router every session reads before Orbit does anything — said "62
+ * specialist protocols and 84 tools" in a shape no pattern matched, and
+ * server/catalog.js reasoned in comments about "83 skills" while the
+ * corpus it reasons over held 86. Both are now targets; neither number is
+ * hand-kept any more.
+ *
+ * manifest.json also gains a generated `skills` key. It had none, so the
+ * website's fifteen-minute sync — which reads the manifest this repo
+ * uploads verbatim — had no skill count to read and fell back to a number
+ * a human typed. A count that exists in prose but not in machine-readable
+ * form is a count the next surface will get wrong.
+ *
  * Two known counting surfaces are deliberately NOT targets of this script:
  * CLAUDE.md and docs/INTEGRATION-STANDARD.md no longer state Orbit's skill
  * or tool count as a bare number at all (see their own prose) — an
@@ -49,6 +62,25 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const skills = JSON.parse(
   fs.readFileSync(path.join(ROOT_DIR, "data", "skills.manifest.json"), "utf8")
 );
+
+/**
+ * The generated manifest is the source, but skills/ is the ground truth —
+ * a skill added without regenerating leaves the two disagreeing, and every
+ * surface downstream would then be confidently synced to a stale number.
+ * Loud on mismatch rather than picking a winner: there is no safe guess
+ * about which of two numbers is the real size of the library.
+ */
+const skillFileCount = fs
+  .readdirSync(path.join(ROOT_DIR, "skills"))
+  .filter((f) => f.endsWith(".md")).length;
+
+if (skillFileCount !== skills.length) {
+  throw new Error(
+    `Skill count disagrees at the source: skills/*.md has ${skillFileCount}, ` +
+      `data/skills.manifest.json has ${skills.length}. ` +
+      `Run \`npm run build:skills-manifest\` and re-run this script.`
+  );
+}
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
 const guides = JSON.parse(
   fs.readFileSync(path.join(ROOT_DIR, "data", "guides-export.json"), "utf8")
@@ -107,10 +139,67 @@ export const REWRITES = [
   // lines above a correctly-synced "79 skills and 126 tools" because the
   // inventory pattern could not see it.
   { pattern: /\b\d+\+? protocols Claude loads\b/g, replacement: () => `${COUNTS.skills} protocols Claude loads` },
+  // orbit.md states the pair under a third noun and in two joinings — "the
+  // master router for 62 specialist protocols and 84 tools" (wrapped over a
+  // line break) and "One router. 62 specialist protocols. 84 tools." The
+  // separator and the whitespace are captured and replayed so the prose
+  // keeps its own wrapping; `replacement()` returns a string, so `$1`/`$2`
+  // are String.replace's own group references, not template values.
+  {
+    pattern: /\b\d+\+? specialist protocols(\.?\s+(?:and\s+)?)\d+\+?(\s+)tools\b/g,
+    replacement: () => `${COUNTS.skills} specialist protocols$1${COUNTS.tools}$2tools`,
+  },
+  // server/catalog.js reasons about the corpus size in comments beside the
+  // code that scores against it. Scoped to the three phrasings actually in
+  // use rather than a blanket "N skills": the same file says a term is
+  // "rare across the corpus (2 skills)", which is a document-frequency
+  // observation about one keyword, not a claim about how big Orbit is, and
+  // a broad pattern would rewrite it to 86 and make the comment a lie.
+  { pattern: /\b(of|over) \d+ skills\b/g, replacement: () => `$1 ${COUNTS.skills} skills` },
+  { pattern: /\b\d+ skills times\b/g, replacement: () => `${COUNTS.skills} skills times` },
 ];
 
-/** Files that state Orbit's own size. */
-export const TARGETS = ["README.md", "server.json", "server/index.js", "manifest.json"];
+/**
+ * Files that state Orbit's own size.
+ *
+ * orbit.md is the router Claude reads first in every session, so its
+ * numbers are the ones a model repeats back to a user; server/catalog.js
+ * states the corpus size in comments, which is the surface an engineer
+ * reads before changing the scorer. Neither was guarded, and both had
+ * drifted — 62/84 and 83 against a true 86/135.
+ */
+export const TARGETS = [
+  "README.md",
+  "server.json",
+  "server/index.js",
+  "manifest.json",
+  "orbit.md",
+  "server/catalog.js",
+];
+
+/**
+ * manifest.json's machine-readable count.
+ *
+ * The prose counts above are for humans; this key is for the website's
+ * fifteen-minute sync, which pulls the manifest this repo uploads verbatim
+ * and had no skills figure to read. Written as a sibling of `tools` so the
+ * two inventory numbers sit together, and only ever the key — `version`
+ * and `description` belong to other owners.
+ */
+export const MANIFEST_SKILLS_KEY = "skills";
+
+/** Insert or correct manifest.json's `skills` key. Returns the new text. */
+export function withManifestSkills(raw, count = COUNTS.skills) {
+  const existing = /^(  "skills": )\d+(,)$/m;
+  if (existing.test(raw)) {
+    return raw.replace(existing, `$1${count}$2`);
+  }
+  const anchor = raw.indexOf('\n  "tools": [');
+  if (anchor === -1) {
+    throw new Error('manifest.json has no top-level "tools" array to anchor the skills key against.');
+  }
+  return `${raw.slice(0, anchor)}\n  "skills": ${count},${raw.slice(anchor)}`;
+}
 
 /**
  * Files that deliberately do NOT carry a synced count — the number was
@@ -141,11 +230,28 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
     for (const { pattern, replacement } of REWRITES) {
       next = next.replace(pattern, replacement());
     }
+    if (file === "manifest.json") {
+      next = withManifestSkills(next);
+      // Parse before writing: a hand-rolled insertion into JSON is exactly
+      // the kind of edit that is fine until the day it isn't.
+      JSON.parse(next);
+    }
     if (next !== raw) {
       fs.writeFileSync(full, next);
       stale.push(file);
     }
   }
+
+  // Naming the surfaces on every run, in both branches, is the point. The
+  // previous line said the inventory was "in sync everywhere" and meant
+  // four files — which is how orbit.md sat at 62/84 under a green tick.
+  // A gate that will not name its own denominator cannot be trusted to
+  // have counted it.
+  process.stdout.write(
+    `Checked ${TARGETS.length} surfaces for Orbit's stated size:\n` +
+      TARGETS.map((f) => `  - ${f}${stale.includes(f) ? "  [rewritten]" : ""}\n`).join("") +
+      `  - manifest.json "${MANIFEST_SKILLS_KEY}" key -> ${COUNTS.skills}\n`
+  );
 
   if (stale.length > 0) {
     process.stdout.write(
@@ -154,6 +260,7 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
   process.stdout.write(
-    `Inventory already in sync everywhere ("${INVENTORY}", "${GUIDE_INVENTORY}").\n`
+    `All ${TARGETS.length} surfaces above are in sync with the generated counts ` +
+      `(${COUNTS.skills} skills, ${COUNTS.tools} tools, ${COUNTS.guides} guides).\n`
   );
 }

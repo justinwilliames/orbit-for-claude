@@ -290,7 +290,19 @@ export async function renderLifecycleDiagram({
   }
 
   const specPath = writeJson(`${outputBasePath}.json`, laidOut);
-  const mermaidPath = writeText(`${outputBasePath}.mmd`, spec.mermaid);
+  // A spec that was retyped or hand-trimmed loses the multi-line mermaid blob
+  // first; regenerate it from the nodes rather than handing writeText undefined.
+  // layoutDiagram above already iterated spec.nodes/edges, so both are arrays here.
+  const mermaid =
+    typeof spec.mermaid === "string" && spec.mermaid.trim()
+      ? spec.mermaid
+      : buildMermaid({
+          title: spec.title ?? "",
+          nodes: spec.nodes,
+          edges: spec.edges,
+          diagramType: spec.diagram_type
+        });
+  const mermaidPath = writeText(`${outputBasePath}.mmd`, mermaid);
 
   const result = {
     status: "ok",

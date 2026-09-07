@@ -38,6 +38,18 @@
  * asserts every DEMOTED file has stayed demoted: the exact bare-count
  * phrasing that drifted before must not have crept back in.
  *
+ * WHAT 2026-09-07 ADDED. The same defect recurred on surfaces that were
+ * never TARGETS: orbit.md — the router Claude reads first in every session,
+ * so its numbers are the ones a model repeats back to a user — said "62
+ * specialist protocols and 84 tools" and "80+ practitioner guides" against
+ * a true 86/135/99, and server/catalog.js reasoned in comments about "83
+ * skills" over a corpus of 86. Both are TARGETS now, so the loop above
+ * covers them; the tests below are the independent half, because a shape
+ * the rewriter has never been taught is exactly what a fixed-point check
+ * cannot see. manifest.json also gained a machine-readable `skills` key —
+ * the website's fifteen-minute sync reads the uploaded manifest and had no
+ * skill count to read, which is how a typed 79 outlived a generated 86.
+ *
  * THE TRAP THIS GUARDS. docs/INTEGRATION-STANDARD.md legitimately discusses
  * "135 tools" and "66 of 135" a few paragraphs away, as a DATED historical
  * measurement from a specific past event — not a live "here is Orbit's
@@ -54,7 +66,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { REWRITES, TARGETS, DEMOTED, INVENTORY, GUIDE_INVENTORY } from "../../scripts/sync-counts.mjs";
+import { COUNTS, REWRITES, TARGETS, DEMOTED, INVENTORY, GUIDE_INVENTORY } from "../../scripts/sync-counts.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -131,6 +143,104 @@ describe("count spine: every stated Orbit size is honest", () => {
       }
     });
   }
+
+  test("orbit.md and server/catalog.js are in TARGETS at all", () => {
+    // The defect was never that a pattern was wrong — it was that a
+    // surface was outside the denominator, so no pattern ever ran on it.
+    // Asserting membership means deleting a target fails here rather than
+    // quietly shrinking what "in sync" means.
+    for (const file of ["orbit.md", "server/catalog.js", "manifest.json"]) {
+      assert.ok(
+        TARGETS.includes(file),
+        `${file} states Orbit's size and must be a sync-counts TARGET — it drifted to 62/84/83 while it wasn't.`
+      );
+    }
+  });
+
+  test("orbit.md: every count-shaped claim, found independently of REWRITES, is current", () => {
+    // Independent of the rewriter, for the same reason the README scan
+    // above is: "62 specialist protocols and 84 tools" survived every run
+    // of a script whose patterns had never heard of that phrasing.
+    //
+    // A bare "N guides" is deliberately not scanned: the citation rules say
+    // "2-4 guides max", which is an instruction about how many to cite, not
+    // a claim about how many exist. The "+" form ("80+ guides") is a size
+    // claim and is scanned.
+    const raw = fs.readFileSync(path.join(ROOT_DIR, "orbit.md"), "utf8");
+    const flat = raw.replace(/\s+/g, " ");
+
+    const pairs = flat.match(/\b\d+\+? specialist protocols\.? (?:and )?\d+\+? tools\b/g) ?? [];
+    assert.ok(pairs.length > 0, "expected orbit.md to state its protocol/tool inventory — did the router intro move?");
+    for (const mention of pairs) {
+      assert.match(
+        mention,
+        new RegExp(`^${COUNTS.skills} specialist protocols\\.? (?:and )?${COUNTS.tools} tools$`),
+        `orbit.md says "${mention}", not ${COUNTS.skills} protocols and ${COUNTS.tools} tools. ` +
+          "This is the surface Claude reads before every Orbit answer."
+      );
+    }
+
+    const guideClaims =
+      flat.match(/\b\d[\d,]*\+?\s+(?:long-form\s+)?practitioner\s+guides\b|\b\d[\d,]*\+\s+guides\b/gi) ?? [];
+    assert.ok(guideClaims.length > 0, "expected orbit.md to state the guide-library size in Further Reading.");
+    for (const mention of guideClaims) {
+      assert.equal(mention, GUIDE_INVENTORY, `orbit.md says "${mention}", not the canonical "${GUIDE_INVENTORY}".`);
+    }
+  });
+
+  test("server/catalog.js: the corpus size in the scorer's comments is current", () => {
+    const raw = fs.readFileSync(path.join(ROOT_DIR, "server", "catalog.js"), "utf8");
+    const mentions = raw.match(/\b(?:of|over) \d+ skills\b|\b\d+ skills times\b/g) ?? [];
+    assert.ok(mentions.length > 0, "expected server/catalog.js to describe the corpus it scores over.");
+    for (const mention of mentions) {
+      const stated = Number(mention.match(/\d+/)[0]);
+      assert.equal(
+        stated,
+        COUNTS.skills,
+        `server/catalog.js says "${mention}" — the scorer's own comments describe a library of ${COUNTS.skills}.`
+      );
+    }
+  });
+
+  test("server/catalog.js: the per-keyword document frequency is NOT rewritten as a corpus size", () => {
+    // The counterpart trap to INTEGRATION-STANDARD.md's dated figure: the
+    // same file observes that a term is "rare across the corpus (2 skills)",
+    // which is a document frequency for one keyword. A blanket "N skills"
+    // pattern would rewrite it to the library size and turn a true comment
+    // into a false one.
+    const raw = fs.readFileSync(path.join(ROOT_DIR, "server", "catalog.js"), "utf8");
+    assert.match(raw, /rare across the corpus \(2 skills\)/);
+  });
+
+  test('manifest.json: carries a machine-readable "skills" key equal to the generated count', () => {
+    // Prose counts are for humans. This key is what the website's
+    // fifteen-minute sync reads off the uploaded manifest; without it the
+    // site had nothing to read and kept a typed number instead.
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "manifest.json"), "utf8"));
+    assert.ok(
+      "skills" in manifest,
+      'manifest.json has no top-level "skills" key — the website\'s sync has no skill count to read. ' +
+        "Run `node scripts/sync-counts.mjs`."
+    );
+    assert.equal(
+      manifest.skills,
+      COUNTS.skills,
+      `manifest.json says ${manifest.skills} skills; the library holds ${COUNTS.skills}.`
+    );
+    assert.equal(manifest.tools.length, COUNTS.tools);
+  });
+
+  test("skills/*.md and data/skills.manifest.json agree on how many skills exist", () => {
+    // Everything above is synced FROM the generated manifest. If the
+    // manifest itself is stale, every surface is confidently wrong
+    // together, which is worse than one surface being visibly wrong.
+    const onDisk = fs.readdirSync(path.join(ROOT_DIR, "skills")).filter((f) => f.endsWith(".md")).length;
+    assert.equal(
+      onDisk,
+      COUNTS.skills,
+      `skills/ holds ${onDisk} files, data/skills.manifest.json ${COUNTS.skills}. Run \`npm run build:skills-manifest\`.`
+    );
+  });
 
   test("docs/INTEGRATION-STANDARD.md: the dated historical tool count is untouched by demotion", () => {
     // The trap this suite exists to avoid falling into: proving the fix for

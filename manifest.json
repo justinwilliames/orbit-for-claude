@@ -296,6 +296,7 @@
       "default": "us"
     }
   },
+  "skills": 86,
   "tools": [
     {
       "name": "orbit_accessibility_lint",

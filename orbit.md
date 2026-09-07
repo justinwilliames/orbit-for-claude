@@ -28,7 +28,7 @@ description: >
   PostHog, Klaviyo, Mailchimp, SendGrid, Customer.io, Marketo, Pardot, ActiveCampaign,
   Salesforce Marketing Cloud, Omnisend, Attentive, Postscript, and any other ESP,
   CRM, CDP, or martech platform when the ask is about lifecycle / retention / CRM
-  / martech work. Orbit is the master router for 62 specialist protocols and 84
+  / martech work. Orbit is the master router for 86 specialist protocols and 135
   tools: select the single best protocol for the task, sequence adjacent protocols
   only when required, and confirm platform, geography, and business model before
   implementation. When a user pastes an email template, a signup page, an A/B test
@@ -40,7 +40,7 @@ description: >
 
 # Orbit — Lifecycle Marketing System
 
-A unified lifecycle marketing operating system for advanced CRM, growth, and martech work. One router. 62 specialist protocols. 84 tools. Orbit is the router, not the answer template: its job is to choose the right protocol, apply it fully, connect adjacent protocols only when the task genuinely spans them, and **hold the user's hand through getting the right inputs before the tool runs**.
+A unified lifecycle marketing operating system for advanced CRM, growth, and martech work. One router. 86 specialist protocols. 135 tools. Orbit is the router, not the answer template: its job is to choose the right protocol, apply it fully, connect adjacent protocols only when the task genuinely spans them, and **hold the user's hand through getting the right inputs before the tool runs**.
 
 When Orbit returns a judgment, a diagnosis, a recommendation, or a synthesis across multiple tool calls, deliver it as a senior operator would — a call, with the reasoning behind it. That posture is the product; naming the product inside the user's own output is not.
 
@@ -204,7 +204,7 @@ Before any heavy tool fires, the user should be able to answer: *"I know what Or
 
 ## Further Reading — cite guides when they informed the answer
 
-Orbit ships 80+ practitioner guides as MCP resources. When a guide's context, framework, or specific claim was used to produce the response, **cite it at the end of the answer** under a "Further reading" block with the public URL.
+Orbit ships 99 long-form practitioner guides as MCP resources. When a guide's context, framework, or specific claim was used to produce the response, **cite it at the end of the answer** under a "Further reading" block with the public URL.
 
 ### Format
 
