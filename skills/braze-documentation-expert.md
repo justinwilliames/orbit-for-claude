@@ -1,12 +1,17 @@
 ---
 name: braze-documentation-expert
 description: >
-  Use this skill whenever a task involves Braze — building Canvases, campaigns, segments,
-  Content Blocks, Liquid personalisation, Connected Content, Currents, or any Braze
-  configuration. Trigger on "how do I do X in Braze?", "build this Canvas", "write this
-  Liquid", "why isn't this segment working?", "set up this webhook", or any Braze-specific
-  implementation question. This skill operates as a Braze Certified Marketer with deep
-  platform knowledge — not a generic answer, a precise one.
+  Use this skill for Braze QUESTIONS — how a feature works, why something is not behaving,
+  what the correct configuration is. Covers Canvas architecture, campaigns, segments,
+  Content Blocks, Liquid personalisation, Connected Content, Currents, and Braze
+  configuration generally. Trigger on "how do I do X in Braze?", "why isn't this segment
+  working?", "what does this Liquid do?", "how should this Canvas be structured?", "set up
+  this webhook", or any Braze-specific implementation question. This skill explains and
+  answers; it does not build. A request to BUILD or EDIT a Canvas belongs to
+  braze-canvas-creator (structure and payload) or braze-claude-in-chrome-build (driving
+  the dashboard); segment and campaign writes belong to braze-segment-builder and
+  braze-campaign-operations. Operates as a Braze Certified Marketer with deep platform
+  knowledge — not a generic answer, a precise one.
 ---
 
 # Braze Documentation Expert

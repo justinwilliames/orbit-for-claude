@@ -2,9 +2,11 @@
 name: braze-canvas-creator
 description: >
   Use this skill when the user wants to turn an Orbit lifecycle program into a Braze
-  Canvas structure. Trigger on "design a Canvas", "map this program to a Canvas",
-  "build a Canvas layout from this message plan", or any request to translate an Orbit
-  program into Canvas steps, delays, channels and entry logic. IMPORTANT: pushing a new
+  Canvas structure. Trigger on "build a Braze Canvas", "create a Braze Canvas", "make a
+  Braze Canvas", "build a Canvas in Braze", "build me a Canvas with three branches",
+  "design a Braze Canvas", "map this program to a Canvas", "build a Canvas layout from
+  this message plan", or any request to translate an Orbit program into Canvas steps,
+  delays, channels and entry logic. IMPORTANT: pushing a new
   Canvas via API is NOT AVAILABLE YET — Braze's public API exposes no canvas-structure
   create or update endpoint today. This skill produces a validated, submit-ready payload
   and a build sheet you assemble in the Braze dashboard; the builder is kept ready so

@@ -378,7 +378,22 @@ const EXCLUSION_PHRASES = {
     "braze vs",
     "what is braze",
     "strategy for braze",
-    "best practices for braze"
+    "best practices for braze",
+    "build a canvas",
+    "build a braze canvas",
+    "create a canvas",
+    "create a braze canvas",
+    "build me a canvas",
+    "canvas with"
+  ],
+  "braze-segment-builder": [
+    "canvas",
+    "audience path",
+    "audience-path"
+  ],
+  "braze-campaign-operations": [
+    "canvas",
+    "segment of"
   ]
 };
 
