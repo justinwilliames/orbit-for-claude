@@ -40,11 +40,20 @@ already decided, validated and written down — which is where the time actually
 > which sent people to their account manager to ask for a thing that is not a product.
 > Corrected 2026-08-24 against Braze's published API index.
 
-> **The Braze MCP server does not change this (checked 2026-09-07).** Braze's hosted
-> MCP server exposes four Canvas tools — `get_canvas_list`, `get_canvas_details`,
+> **The Braze MCP server does not change this (live-verified 2026-09-08).** Braze's
+> hosted MCP server exposes four Canvas tools — `get_canvas_list`, `get_canvas_details`,
 > `get_canvas_data_series`, `get_canvas_data_summary` — and all four are reads. There
-> is no create, no edit, no step or branch mutation. If a user says "but Braze has an
-> MCP now", the answer is that it added segment and campaign writes, not Canvas ones.
+> is no create, no edit, no step or branch mutation, in any of its 71 tools.
+>
+> **One carve-out, and it matters.** `send_operator_prompt` hands a natural-language
+> instruction to BrazeAI Operator, which drives the dashboard in a live browser session
+> — so the MCP *can* reach Canvas construction, just never through a structured tool.
+> "The MCP cannot build a Canvas" is true of its API surface and false of the server as
+> a whole. See `braze-operator` for the job protocol.
+>
+> If a user says "but Braze has an MCP now", the accurate answer is that it added
+> campaign writes and a segment writer that **cannot filter on any custom attribute** —
+> not Canvas ones.
 
 ---
 

@@ -45,7 +45,9 @@ data-pipeline questions.
    also truncates to ~10 steps; the raw `get_canvas_details` gives the full step graph
    but **still** won't show filters/segments — so it's structure-only. The Braze MCP
    server's Canvas tools are reads with the same blind spots — it adds no visibility
-   here, and no way to fix a finding without the dashboard.
+   here (live-verified 2026-09-08). Fixing a finding still means the dashboard, but not
+   necessarily your hands: `send_operator_prompt` drives it for you — see
+   `braze-operator`, and scope the prompt tightly, because QA is not a licence to launch.
 
 2. **NEVER launch during QA.** Do not click "Save and continue" toward a launch state,
    do not start/launch the Canvas. Use plain **Save** only. Keep the **entry audience on a
