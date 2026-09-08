@@ -69,8 +69,7 @@ function gateVerdict(findings, abstained) {
 `;
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+.wrap { display: grid; grid-template-columns: 1fr 380px }
 
 /* ---- stage (left) --------------------------------------------------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -145,7 +144,7 @@ body { height: 100vh; overflow: hidden; }
 
 @media (max-width: 900px) {
   .wrap { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .rail { border-left: 0; border-top: 1px solid var(--rule); max-height: 46vh; }
+  .rail { border-left: 0; border-top: 1px solid var(--rule); max-height: 320px; }
 }
 `;
 
@@ -1018,7 +1017,12 @@ if (app) {
 }
 
 if (!adoptData(bootstrap)) {
+  // Both halves, deliberately. This used to speak only into #rail-list — the
+  // narrow sidebar — leaving #stage, the primary content box a reader actually
+  // looks at, completely blank. The widget read as broken rather than idle.
   $("#rail-list").innerHTML = '<div class="o-empty">Waiting for HTML to gate\\u2026</div>';
+  $("#stage").innerHTML =
+    '<div class="o-empty">Waiting for HTML to gate \\u2014 run orbit_render_gate on an email to measure it in a real browser at 640px and 390px.</div>';
 }
 `;
 

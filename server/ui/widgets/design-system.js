@@ -143,8 +143,7 @@ function tokenContrast(fg, bg, threshold) {
 `;
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+.wrap { display: grid; grid-template-columns: 320px 1fr }
 
 /* ---- spine (left) ---------------------------------------------------- */
 .rail { border-right: 1px solid var(--rule); background: var(--card); display: flex; flex-direction: column; min-height: 0; }
@@ -242,7 +241,7 @@ body:not([data-ready]) .until-ready { display: none !important; }
 
 @media (max-width: 900px) {
   .wrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .rail { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 40vh; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 280px; }
 }
 `;
 

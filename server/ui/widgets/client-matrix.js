@@ -124,8 +124,7 @@ function clientFidelity(variant) {
 `;
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: grid; grid-template-columns: 1fr 340px; height: 100vh; }
+.wrap { display: grid; grid-template-columns: 1fr 340px }
 
 
 /* Until a result arrives this document is the STATIC ui:// resource the
@@ -214,7 +213,7 @@ body:not([data-ready]) .until-ready { display: none !important; }
 
 @media (max-width: 980px) {
   .wrap { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .rail { border-left: 0; border-top: 1px solid var(--rule); max-height: 46vh; }
+  .rail { border-left: 0; border-top: 1px solid var(--rule); max-height: 320px; }
   .stage { grid-template-columns: 1fr; }
 }
 `;
@@ -457,6 +456,8 @@ function render() {
 
   renderRail();
   renderStage();
+  var empty = document.getElementById("stage-empty");
+  if (empty) empty.remove();
   document.body.dataset.ready = "1";
 }
 
@@ -509,7 +510,19 @@ if (app) {
 }
 
 if (!adopt(bootstrap)) {
+  // The rail alone is not enough. .stagewrap carries .until-ready, which
+  // body:not([data-ready]) hides outright, so with no data the whole primary
+  // column was blank and only the narrow sidebar said anything. Insert the
+  // notice OUTSIDE the hidden wrapper rather than into it, so nothing has to
+  // be un-hidden and render() finds its panes intact when data does arrive.
   $("#rail-list").innerHTML = '<div class="o-empty">Waiting for a client simulation\\u2026</div>';
+  var sw = document.querySelector(".stagewrap");
+  if (sw && !document.getElementById("stage-empty")) {
+    sw.insertAdjacentHTML(
+      "beforebegin",
+      '<div class="o-empty" id="stage-empty">Waiting for a client simulation \\u2014 run orbit_client_sim to see how each email client degrades this HTML.</div>'
+    );
+  }
 }
 `;
 

@@ -110,8 +110,7 @@ function flipVerdict(before, after) {
 `;
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: flex; flex-direction: column; height: 100vh; }
+.wrap { display: flex; flex-direction: column }
 
 .head { padding: 13px 18px 11px; border-bottom: 1px solid var(--rule); background: var(--card); }
 .head-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }

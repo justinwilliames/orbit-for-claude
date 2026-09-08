@@ -198,6 +198,13 @@ h2 { font-size: 15px; }
 h3 { font-size: 13px; }
 code, pre, .mono { font-family: var(--mono); font-size: 12px; }
 a { color: var(--brand-strong); }
+/* Dark mode needs the lighter rung. --brand-strong (#6366F1) on the dark
+   --card (#171a24) is 3.89:1 — under AA for body text — which is how the ESP
+   matrix's documentation links shipped legible in light and not in dark.
+   --brand (#818CF8) on the same ground is 5.82:1. Light mode is unchanged at
+   6.29:1, so this is a dark-only correction, not a palette change. */
+@media (prefers-color-scheme: dark) { a { color: var(--brand); } }
+:root[data-theme="dark"] a { color: var(--brand); }
 
 .o-card {
   background: var(--card);
@@ -289,6 +296,23 @@ a { color: var(--brand-strong); }
   font-size: 11px; color: var(--ink-3);
   border-top: 1px solid var(--rule); background: var(--paper);
   text-align: center;
+  /* Sticky, because this row is the only thing Orbit ships whose job is
+     organic distribution — a shared artifact is the one object it produces
+     that reaches someone without Orbit installed.
+
+     It used to be kept on screen by shell.js shortening .wrap to
+     calc(100vh - rowHeight). That worked, and it worked by CLIPPING the
+     widget's own content to make room: the same 100vh pin that left the ESP
+     matrix showing 45px of a 592px grid. Deleting the pin (2026-09-09) gave
+     the content back and pushed this row to the end of a document that is
+     now taller than the window — visible in the host, where auto-resize
+     grows the pane to fit, and below the fold in a browser tab, which is
+     exactly the standalone case this row exists for.
+
+     sticky serves both: it sits at the end of a short document, and pins to
+     the bottom edge of a tall one. No height is pinned, so the widget still
+     reports its true height to the host. */
+  position: sticky; bottom: 0; z-index: 2;
 }
 .o-made-with a { color: var(--brand-ink); text-decoration: none; font-weight: 600; }
 .o-made-with a:hover { text-decoration: underline; }

@@ -22,8 +22,7 @@
 import { buildWidgetHtml, WIDGET_PRELUDE } from "../shell.js";
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: flex; flex-direction: column; height: 100vh; }
+.wrap { display: flex; flex-direction: column }
 
 .head { padding: 14px 18px 12px; border-bottom: 1px solid var(--rule); background: var(--card); }
 .head-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

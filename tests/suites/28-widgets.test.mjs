@@ -2025,3 +2025,53 @@ describe("ESP matrix — a cell never renders as an empty space", () => {
     assert.deepEqual(tally(undefined), { native: 0, partial: 0, unsupported: 0, other: 0 });
   });
 });
+
+describe("widget height — no stylesheet may pin a widget to the viewport", () => {
+  // WHY THIS EXISTS. Until 2026-09-09 every widget shipped
+  //   body { height: 100vh; overflow: hidden; }
+  //   .wrap { ...; height: 100vh; }
+  // and shell.js re-applied `calc(100vh - Npx)` to .wrap as an INLINE style to
+  // make room for the branding footer. The host's ext-apps bridge has
+  // auto-resize on by default and measures the document — so a document pinned
+  // to the viewport reported the pane's own height back to the host, forever.
+  // The widget could never ask for more room than it had already been given.
+  //
+  // Measured on the ESP capability matrix, populated, at a 520px pane:
+  // .grid-box was 45px tall against 592px of content — column headers and not
+  // one of its eight data rows, in the widget whose entire purpose is the grid.
+  // After removing the pins: 592/592, and the document reports its true 1170px
+  // at both a 520 and a 760 pane. That equality is the real invariant; this
+  // static check is its cheap sentinel, because `vh` in a widget stylesheet is
+  // the only way the bug has ever been reintroduced.
+  //
+  // The earlier fix attempt is instructive and is why a floor is not the
+  // answer: min-height on the CHILD was tried and reverted in August — the
+  // parent chain could not grow, so the child overflowed and the panel below
+  // rendered on top of it. Strictly worse. Fix the pin, not the symptom.
+  const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const UI_DIR = path.join(REPO_ROOT, "server", "ui");
+  const VIEWPORT_UNIT = /(?:max-|min-)?height:\s*[0-9.]+vh/g;
+
+  test("no viewport-relative height survives anywhere under server/ui", () => {
+    const offenders = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (!entry.name.endsWith(".js")) continue;
+        const src = fs.readFileSync(full, "utf8");
+        for (const m of src.matchAll(VIEWPORT_UNIT)) {
+          const line = src.slice(0, m.index).split("\n").length;
+          offenders.push(`${path.relative(REPO_ROOT, full)}:${line} ${m[0]}`);
+        }
+      }
+    };
+    walk(UI_DIR);
+    assert.deepEqual(
+      offenders, [],
+      "a widget pinned itself to the viewport again — it will report the pane's " +
+      "height to the host instead of its own, and clip its own content:\n  " +
+      offenders.join("\n  ")
+    );
+  });
+});

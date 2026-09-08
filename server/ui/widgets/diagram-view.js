@@ -23,8 +23,7 @@
 import { buildWidgetHtml, WIDGET_PRELUDE } from "../shell.js";
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: grid; grid-template-columns: 1fr 340px; height: 100vh; }
+.wrap { display: grid; grid-template-columns: 1fr 340px }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 .head { padding: 13px 18px; border-bottom: 1px solid var(--rule); background: var(--card); }
@@ -101,7 +100,7 @@ pre.mermaid-src {
 
 @media (max-width: 900px) {
   .wrap { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .rail { border-left: 0; border-top: 1px solid var(--rule); max-height: 45vh; }
+  .rail { border-left: 0; border-top: 1px solid var(--rule); max-height: 315px; }
 }
 `;
 

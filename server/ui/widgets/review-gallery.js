@@ -165,8 +165,7 @@ function pushClipLabel(clip) {
 `;
 
 const CSS = `
-body { height: 100vh; overflow: hidden; }
-.wrap { display: grid; grid-template-columns: var(--rail-w) 1fr; height: 100vh; }
+.wrap { display: grid; grid-template-columns: var(--rail-w) 1fr }
 
 /* ---- left rail ---------------------------------------------------- */
 .rail { border-right: 1px solid var(--rule); background: var(--card); display: flex; flex-direction: column; min-height: 0; }
@@ -278,7 +277,7 @@ body { height: 100vh; overflow: hidden; }
    treatment its sibling diagram-view already uses. */
 @media (max-width: 860px) {
   .wrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .rail { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 38vh; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--rule); max-height: 265px; }
   .stagewrap { padding: 12px; }
   .frame--email { width: 100%; max-width: 640px; }
 }

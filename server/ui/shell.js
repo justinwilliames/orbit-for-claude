@@ -331,24 +331,20 @@ orbitDegradeWithoutHost();
       '<a href="https://www.linkedin.com/in/justinwilliames" target="_blank" rel="noopener">Justin Williames</a>.';
     document.body.appendChild(row);
 
-    // ...and then make room for it. Every widget sets
-    // body { height: 100vh; overflow: hidden } with a .wrap also at 100vh,
-    // so appending to <body> put this row's top edge exactly ON the fold —
-    // at every viewport height, forever, with no scrollbar to hint that
-    // anything was down there. Measured at 1400x900: top 900, bottom 938,
-    // visible pixels 0. Every DOM assertion anyone would write passed; the
-    // two screenshots in docs/images are of these very documents and the
-    // string appears in neither. Shorten the wrap by the row's MEASURED
-    // height rather than a hardcoded constant, so a host with larger text
-    // (where the row wraps to two lines) still shows all of it.
-    const wrap = document.querySelector(".wrap");
-    if (!wrap) return;
-    const fit = () => {
-      const h = Math.ceil(row.getBoundingClientRect().height);
-      if (h > 0) wrap.style.setProperty("height", "calc(100vh - " + h + "px)");
-    };
-    fit();
-    window.addEventListener("resize", fit);
+    // ...and nothing further. This used to shorten .wrap by the row's
+    // measured height, setting wrap.style.height to a calc() of the
+    // viewport minus that row. Every widget pinned body and .wrap to the
+    // viewport height, which put this row's top
+    // edge exactly ON the fold at every viewport height, forever.
+    //
+    // Removed 2026-09-09 with the pins themselves. That workaround was the
+    // 24th and worst of them: an INLINE style, so it silently re-pinned over
+    // any stylesheet edit and would have made the other 23 fixes cosmetic.
+    // The document now sizes to its content, the host's auto-resize reports
+    // that true height, and the footer lands under the content instead of
+    // on top of the fold. Verified by the dual-viewport invariant in
+    // tests/suites/28-widgets.test.mjs: a widget must report the same height
+    // at 520 and 760, which is only true when nothing here pins it.
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", apply, { once: true });
