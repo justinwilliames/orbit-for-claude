@@ -114,7 +114,8 @@ const CATEGORY_GROUPS = {
     "braze-template-sync",
     "braze-mcp-operations",
     "braze-segment-builder",
-    "braze-campaign-operations"
+    "braze-campaign-operations",
+    "braze-operator"
   ],
   "knowledge-attribution": [
     "sources"

@@ -181,6 +181,15 @@ describe("orbit_route_task answers the obvious Braze questions with the obvious 
     // Guardrail in the other direction: the packager must keep winning
     // its own request, or the fix above has just moved the error.
     ["package this for Braze", "braze-build-packager"],
+    // braze-operator arrived in 0.41.0 against a live 71-tool probe. It has to
+    // win its own doors without stealing its neighbours': the router owns
+    // surface questions, campaign-operations owns launch, and the word
+    // "operator" must not drag every Braze request into an autonomous
+    // browser job.
+    ["use Braze Operator to build the canvas", "braze-operator"],
+    ["cancel the operator job", "braze-operator"],
+    ["launch this Braze campaign via API", "braze-campaign-operations"],
+    ["which Braze tool should I use", "braze-mcp-operations"],
   ];
 
   for (const [request, expected] of routes) {

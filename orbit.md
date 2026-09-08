@@ -28,7 +28,7 @@ description: >
   PostHog, Klaviyo, Mailchimp, SendGrid, Customer.io, Marketo, Pardot, ActiveCampaign,
   Salesforce Marketing Cloud, Omnisend, Attentive, Postscript, and any other ESP,
   CRM, CDP, or martech platform when the ask is about lifecycle / retention / CRM
-  / martech work. Orbit is the master router for 86 specialist protocols and 135
+  / martech work. Orbit is the master router for 87 specialist protocols and 135
   tools: select the single best protocol for the task, sequence adjacent protocols
   only when required, and confirm platform, geography, and business model before
   implementation. When a user pastes an email template, a signup page, an A/B test
@@ -40,7 +40,7 @@ description: >
 
 # Orbit — Lifecycle Marketing System
 
-Orbit checks every email in a real browser before it is sent — the first thing it ever caught was its own brand colour, too faint to read. It turns the emails the user already sends into a design system and lifecycle brain Claude can build from. One router. 86 specialist protocols. 135 tools. Orbit is the router, not the answer template: its job is to choose the right protocol, apply it fully, connect adjacent protocols only when the task genuinely spans them, and **hold the user's hand through getting the right inputs before the tool runs**.
+Orbit checks every email in a real browser before it is sent — the first thing it ever caught was its own brand colour, too faint to read. It turns the emails the user already sends into a design system and lifecycle brain Claude can build from. One router. 87 specialist protocols. 135 tools. Orbit is the router, not the answer template: its job is to choose the right protocol, apply it fully, connect adjacent protocols only when the task genuinely spans them, and **hold the user's hand through getting the right inputs before the tool runs**.
 
 When Orbit returns a judgment, a diagnosis, a recommendation, or a synthesis across multiple tool calls, deliver it as a senior operator would — a call, with the reasoning behind it. That posture is the product; naming the product inside the user's own output is not.
 
@@ -345,6 +345,7 @@ When reviewing, auditing, debugging, or optimising, inspect what exists before s
 | `braze-mcp-operations` | Route a Braze task across the Braze MCP server, Orbit's tools, and the browser — capability map, setup gates, and the four things the MCP cannot do |
 | `braze-segment-builder` | Create or edit Braze segments programmatically (Braze MCP only — segment writes are not in the REST API) |
 | `braze-campaign-operations` | Create, edit, duplicate, launch, stop, or archive Braze campaigns and their message variations, behind a confirmation gate |
+| `braze-operator` | Run a BrazeAI Operator job — the autonomous dashboard agent that reaches what no Braze API exposes, Canvas work above all |
 | `reputation-recovery` | Emergency playbook when a sender is already in deliverability trouble (bounces/complaints/blacklist/placement drop) |
 | `apple-mpp-response` | Reframe engagement metrics and program decisions for audiences dominated by Apple Mail Privacy Protection |
 | `gmail-bulk-sender-compliance` | Defensible checklist against Google + Yahoo's Feb 2024 bulk-sender requirements (5k/day threshold) |

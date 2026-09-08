@@ -1,7 +1,7 @@
 {
-  "skills": 86,
+  "skills": 87,
   "tools": 135,
   "guides": 99,
-  "version": "0.40.0",
+  "version": "0.41.0",
   "generated_from": "scripts/sync-counts.mjs"
 }
