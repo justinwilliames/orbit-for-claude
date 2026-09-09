@@ -2050,7 +2050,17 @@ describe("widget height — no stylesheet may pin a widget to the viewport", () 
   // rendered on top of it. Strictly worse. Fix the pin, not the symptom.
   const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
   const UI_DIR = path.join(REPO_ROOT, "server", "ui");
-  const VIEWPORT_UNIT = /(?:max-|min-)?height:\s*[0-9.]+vh/g;
+  // Deliberately wider than "height: 100vh". Sentinel broke the first version
+  // of this check three ways and it stayed green: `height: calc(100vh - 38px)`,
+  // `height: 100dvh`, and — worst — the inline `wrap.style.setProperty("height",
+  // "calc(100vh - " + n + "px)")` in shell.js, which was the ENTIRE 24th site
+  // and the reason a stylesheet-only fix would have been cosmetic. A gate that
+  // misses the exact bug it was written for is the green check that compiled
+  // nothing.
+  //
+  // So: any viewport-relative unit (vh/dvh/svh/lvh) appearing anywhere near a
+  // height, in CSS or in a JS string that writes one.
+  const VIEWPORT_UNIT = /height[^;{}\n]{0,60}?[0-9.]+(?:d|s|l)?vh\b/gi;
 
   test("no viewport-relative height survives anywhere under server/ui", () => {
     const offenders = [];

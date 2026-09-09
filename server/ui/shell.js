@@ -342,9 +342,15 @@ orbitDegradeWithoutHost();
     // any stylesheet edit and would have made the other 23 fixes cosmetic.
     // The document now sizes to its content, the host's auto-resize reports
     // that true height, and the footer lands under the content instead of
-    // on top of the fold. Verified by the dual-viewport invariant in
-    // tests/suites/28-widgets.test.mjs: a widget must report the same height
-    // at 520 and 760, which is only true when nothing here pins it.
+    // on top of the fold.
+    //
+    // What actually guards this: tests/suites/28-widgets.test.mjs refuses any
+    // viewport-relative unit near a height anywhere under server/ui — CSS or a
+    // JS string that writes one, which is what the line above used to be. It is
+    // a static check, NOT a rendered dual-viewport measurement; an earlier draft
+    // of this comment claimed the latter and no such assertion was ever written.
+    // The measurement exists, but by hand: the populated ESP matrix reports 1170
+    // at both a 520 and a 760 pane, and 45/592 became 592/592.
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", apply, { once: true });
