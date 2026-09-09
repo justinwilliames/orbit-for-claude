@@ -721,15 +721,25 @@ describe("Standalone artifacts show the row that carries the product name", { co
         `only ${probe.visiblePx} of ${probe.height}px of the signature row is on screen`
       );
 
-      // And it must not depend on the viewer scrolling: these documents set
-      // body { overflow: hidden }, so there is no scrollbar to reach it with.
-      if (probe.scrollbarPx === 0) {
-        assert.equal(
-          probe.maxScrollPx,
-          0,
-          `${probe.maxScrollPx}px of content sits below an unscrollable fold — nobody can reach it`
-        );
-      }
+      // The guard that used to sit here asserted `maxScrollPx === 0` whenever
+      // `scrollbarPx === 0`, on the premise stated in its own comment: "these
+      // documents set body { overflow: hidden }, so there is no scrollbar to
+      // reach it with". Both halves of that premise died on 2026-09-09.
+      //
+      // body no longer sets overflow:hidden — that pin is what made the ESP
+      // matrix show 45px of a 592px grid — so a document can now be taller
+      // than the window and scroll perfectly well. And scrollbarPx is
+      // `innerWidth - clientWidth` (line 116), the WIDTH of a rendered
+      // scrollbar; headless Chrome draws overlay scrollbars, so it reads 0 on
+      // a document that scrolls fine. The guard therefore fired on every
+      // widget with more than a screenful of content and reported 13px or
+      // 559px of reachable content as an "unscrollable fold".
+      //
+      // Nothing is lost by removing it. The three assertions above are
+      // STRICTER than this one ever was: they demand the whole row be on
+      // screen, and they pass because the row is now position:sticky
+      // (tokens.js) rather than kept in view by clipping the widget's own
+      // content. A row below the fold still fails, at `top < viewportH`.
     });
     }
   }
