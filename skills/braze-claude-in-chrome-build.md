@@ -445,6 +445,30 @@ visually.**
 ⛔ **v1 decoys sit on the same page as v2 targets, and the number prefix is the only safe
 discriminator.** Read the prefix, every time.
 
+### ⭐ Rebinding a message step to new HTML: clipboard paste into Monaco, then verify after stripping `lid` (8 Sep 2026)
+
+A duplicated canvas keeps the OLD bodies snapshotted in its message steps, and the template picker is fuzzy (above).
+The rebind that landed first time on both steps of a duplicated announcement canvas:
+
+1. `cat compiled.html | pbcopy` (check `pbpaste | wc -c` and one `<!doctype`).
+2. Open the step → **Edit message**. Focus the editor with `monaco.editor.getEditors()[0].focus()` via
+   `javascript_tool` — a coordinate click inside the code pane lands the selection on the PAGE, so `cmd+A` selects the
+   whole document and the paste goes nowhere.
+3. `cmd+A`, `cmd+V` through the extension's `key` action. 45 KB pastes in one shot; `type` would time out.
+4. Read it back before leaving: `monaco.editor.getModels()[0].getValue().length` equals the file, `<!doctype` count 1.
+5. Editor **Done** → step **Done** → real **Save** click. Subject + preheader are NOT in the body — set them under
+   the step's Sending Settings (first rail icon) on the same visit.
+
+**Verification rule.** Braze rewrites every `href` when the step saves: it inserts `?lid=<12 chars>` (or `lid=…&`),
+unescapes `&amp;` to `&`, and on a link that already carries a query string the inserted `lid` turns `?email=` into
+`&email=`. So a raw sha256 of `messages[].body` from `/canvas/details` will never match the template. Strip
+`\?lid=[a-z0-9]+` and `lid=[a-z0-9]+&`, unescape `&amp;` on both sides, then diff; anything left is a real change.
+
+**Two more things from the same build.** `POST /canvas/duplicate` returned 202 with the standard key even though
+Orbit's `orbit_create_braze_canvas` wrapper reported 403 on the same call — try the raw endpoint before concluding the
+key lacks the scope. And the flow editor re-centres the graph on the first click after any save or zoom change, so the
+node you aimed at moves under the cursor: click, screenshot, click again at the new position.
+
 ### Verify bindings against SHIPPING COPY, not template names
 
 `get_canvas_details` returns **`title: null`** for message steps — the template name is simply not

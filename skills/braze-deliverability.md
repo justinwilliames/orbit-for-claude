@@ -24,17 +24,42 @@ Pull hard bounce and unsubscribe data from Braze and produce a health assessment
 
 ## What It Returns
 
-- **Hard bounces:** count and recent addresses
-- **Unsubscribes:** count and recent addresses
-- **Health rating:** `healthy` or `needs_attention`
+- **Hard bounces:** count, `count_is_exact`, `per_day`, and recent addresses
+- **Unsubscribes:** count, `count_is_exact`, `per_day`, and recent addresses
+- **Health rating:** `healthy` or `needs_attention`, plus `health_basis` stating what that rating can and cannot see
 - **Recommendations:** specific actions based on the data
+
+**The counts are complete.** Braze's `/email/hard_bounces` and `/email/unsubscribes` default to
+`limit=100` and carry no total and no cursor, so a naive read returns the first hundred and looks
+like an answer. Orbit pages both at `limit=500` until a short page proves the end. If a window is
+somehow bigger than 20,000 records the walk stops, `count_is_exact` goes `false`, and a TRUNCATED
+warning says so — **a count is either exact or labelled, never quietly short.**
 
 ## Health Thresholds
 
-| Metric | Healthy | Needs attention |
+Expressed per day, so the same account gets the same verdict whether you look back 7 days or 90.
+The 30-day equivalents are shown for readability.
+
+| Metric | Healthy | Warns at |
 |---|---|---|
-| Hard bounces (30 days) | < 50 | 50+ |
-| Unsubscribes (30 days) | < 100 | 100+ |
+| Hard bounces | < 0.33/day (< 10 per 30 days) | > 1.67/day (> 50 per 30 days) |
+| Unsubscribes | < 1.67/day (< 50 per 30 days) | > 3.33/day (> 100 per 30 days) |
+
+## Read the rating as VOLUME, not a rate
+
+These endpoints carry no send total, so this tool cannot tell a healthy 0.2% bounce rate from an
+alarming 5% one — **a busy account reads `needs_attention` purely for sending more.** Before acting
+on the rating:
+
+1. **Divide by actual sends.** `orbit_braze_performance`, or the Braze canvas/campaign data series,
+   gives the denominator. A bounce *rate* under ~2% is not a problem however large the count looks.
+2. **Read spam complaints separately.** Complaints, not bounces, are what Gmail and Yahoo enforce on
+   (the bulk-sender line is 0.3%), and they are not in this data at all. Google Postmaster Tools is
+   the source — see `postmaster-tools-setup` and `gmail-bulk-sender-compliance`.
+3. **Do not build a bounce-suppression segment on Braze.** Braze already flags a hard-bounced
+   address on the profile and stops sending to it. The `hard_bounce_filter` exists for reporting and
+   audience-count hygiene, not to stop sends. The real gap when bounces climb is upstream: signup
+   and import are admitting invalid addresses.
 
 ## When to Use
 

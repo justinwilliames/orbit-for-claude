@@ -571,6 +571,43 @@ export async function validateBrazeData({ config, requiredAttributes = [], requi
 // 6. Deliverability Health Check
 // ---------------------------------------------------------------------------
 
+// Braze's /email/hard_bounces and /email/unsubscribes default to limit=100 and
+// max out at 500 per request, with `offset` for the rest. Asking for neither
+// silently returns the first 100 and no indication there are more — which is
+// how a 30-day window reported exactly 100 unsubscribes while a 7-day window of
+// the same data reported 42 (observed 2026-09-16). A capped list read as a
+// count is worse than no count: it understates, plausibly, and forever.
+const EMAIL_EVENT_PAGE_SIZE = 500;
+const EMAIL_EVENT_MAX_PAGES = 40; // 20,000 records, then we say so rather than lie
+
+async function fetchAllEmailEvents({ config, endpoint, startDate, endDate }) {
+  const emails = [];
+  let truncated = false;
+  let pages = 0;
+
+  for (; pages < EMAIL_EVENT_MAX_PAGES; pages += 1) {
+    const page = await safeCall(() => brazeGet({
+      config,
+      endpoint,
+      params: {
+        start_date: startDate,
+        end_date: endDate,
+        limit: EMAIL_EVENT_PAGE_SIZE,
+        offset: pages * EMAIL_EVENT_PAGE_SIZE
+      }
+    }));
+    if (page.authFailed) return { authFailed: true, page };
+
+    const batch = page.value?.emails ?? [];
+    emails.push(...batch);
+    // A short page is the last page. Braze gives no total and no cursor.
+    if (batch.length < EMAIL_EVENT_PAGE_SIZE) return { emails, truncated, pages: pages + 1 };
+  }
+
+  truncated = true;
+  return { emails, truncated, pages };
+}
+
 export async function checkDeliverability({ config, days = 30 }) {
   const setupError = validateBrazeSetup(config);
   if (setupError) return setupError;
@@ -579,29 +616,42 @@ export async function checkDeliverability({ config, days = 30 }) {
   const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
   // Serial to share rate limiter; propagate auth failures.
-  const bounces = await safeCall(() => brazeGet({
+  const bounces = await fetchAllEmailEvents({
     config,
     endpoint: "/email/hard_bounces",
-    params: { start_date: startDate, end_date: endDate }
-  }));
-  if (bounces.authFailed) return authFailedResponse(bounces);
+    startDate,
+    endDate
+  });
+  if (bounces.authFailed) return authFailedResponse(bounces.page);
 
-  const unsubscribes = await safeCall(() => brazeGet({
+  const unsubscribes = await fetchAllEmailEvents({
     config,
     endpoint: "/email/unsubscribes",
-    params: { start_date: startDate, end_date: endDate }
-  }));
-  if (unsubscribes.authFailed) return authFailedResponse(unsubscribes);
+    startDate,
+    endDate
+  });
+  if (unsubscribes.authFailed) return authFailedResponse(unsubscribes.page);
 
-  const bounceEmails = bounces.value?.emails ?? [];
-  const unsubEmails = unsubscribes.value?.emails ?? [];
+  const bounceEmails = bounces.emails;
+  const unsubEmails = unsubscribes.emails;
+
+  // Thresholds are expressed per day so they mean the same thing at days=7 and
+  // days=90. The old fixed numbers were written for a 30-day window and applied
+  // to every window, so a long lookback always read "needs_attention" and a
+  // short one always read "healthy".
+  const perDay = (n) => n / Math.max(days, 1);
+  const bouncesPerDay = perDay(bounceEmails.length);
+  const unsubsPerDay = perDay(unsubEmails.length);
 
   const warnings = [];
-  if (bounceEmails.length > 50) {
-    warnings.push(`High bounce volume: ${bounceEmails.length} hard bounces in the last ${days} days. Review list hygiene.`);
+  if (bouncesPerDay > 50 / 30) {
+    warnings.push(`High bounce volume: ${bounceEmails.length} hard bounces in the last ${days} days (${bouncesPerDay.toFixed(1)}/day). Review list hygiene.`);
   }
-  if (unsubEmails.length > 100) {
-    warnings.push(`High unsubscribe volume: ${unsubEmails.length} unsubscribes in the last ${days} days. Review frequency and content relevance.`);
+  if (unsubsPerDay > 100 / 30) {
+    warnings.push(`High unsubscribe volume: ${unsubEmails.length} unsubscribes in the last ${days} days (${unsubsPerDay.toFixed(1)}/day). Review frequency and content relevance.`);
+  }
+  if (bounces.truncated || unsubscribes.truncated) {
+    warnings.push(`Counts are TRUNCATED at ${EMAIL_EVENT_MAX_PAGES * EMAIL_EVENT_PAGE_SIZE} records and are a floor, not a total. Narrow the window with a smaller "days".`);
   }
 
   return {
@@ -609,13 +659,19 @@ export async function checkDeliverability({ config, days = 30 }) {
     period: { start: startDate, end: endDate, days },
     hard_bounces: {
       count: bounceEmails.length,
+      count_is_exact: !bounces.truncated,
+      per_day: Number(bouncesPerDay.toFixed(2)),
       recent: bounceEmails.slice(0, 10)
     },
     unsubscribes: {
       count: unsubEmails.length,
+      count_is_exact: !unsubscribes.truncated,
+      per_day: Number(unsubsPerDay.toFixed(2)),
       recent: unsubEmails.slice(0, 10)
     },
-    health: bounceEmails.length < 10 && unsubEmails.length < 50 ? "healthy" : "needs_attention",
+    health: bouncesPerDay < 10 / 30 && unsubsPerDay < 50 / 30 ? "healthy" : "needs_attention",
+    health_basis:
+      "VOLUME, not rate. These endpoints carry no send total, so this cannot tell a healthy 0.2% bounce rate from an alarming 5% one — a busy account will read 'needs_attention' purely for sending more. Divide by sends (canvas/campaign data series) before acting, and read spam complaints in Google Postmaster Tools, which is what Gmail and Yahoo actually enforce on.",
     warnings,
     recommendations: buildDeliverabilityRecommendations(bounceEmails.length, unsubEmails.length, days)
   };
@@ -984,18 +1040,26 @@ function findMissingCommonFields(user) {
 
 function buildDeliverabilityRecommendations(bounceCount, unsubCount, days) {
   const recs = [];
-  if (bounceCount > 50) {
-    recs.push("Implement a bounce suppression segment — exclude users with hard bounces from all non-transactional sends.");
-    recs.push("Review data import and signup flows for invalid email addresses.");
+  const perDay = (n) => n / Math.max(days, 1);
+
+  if (perDay(bounceCount) > 50 / 30) {
+    // NOT "build a bounce suppression segment". Braze already flags a
+    // hard-bounced address on the profile and stops sending to it, so that
+    // advice is a no-op here and reads as a prerequisite it is not. The
+    // actionable half is upstream: bad addresses keep arriving.
+    recs.push("Fix email validation at the source — signup forms and imports are admitting invalid addresses. Braze already auto-suppresses hard bounces, so suppression is not the gap; intake is.");
   }
-  if (unsubCount > 100) {
+  if (perDay(unsubCount) > 100 / 30) {
     recs.push("Review send frequency — high unsubscribes often signal over-messaging.");
     recs.push("Audit email content relevance and personalisation quality.");
     recs.push("Consider implementing a preference center if not already in place.");
   }
-  if (bounceCount < 10 && unsubCount < 50) {
-    recs.push("Deliverability metrics look healthy. Continue monitoring.");
+  if (perDay(bounceCount) < 10 / 30 && perDay(unsubCount) < 50 / 30) {
+    recs.push("Bounce and unsubscribe volume look healthy. Continue monitoring.");
   }
+
+  // Always true, and the thing this tool cannot see for itself.
+  recs.push("Divide these counts by actual sends before judging them — volume is not a rate. Spam complaints, not bounces, are what Gmail and Yahoo enforce on; read those in Google Postmaster Tools.");
   return recs;
 }
 
