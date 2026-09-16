@@ -10,6 +10,16 @@ import { parseJsonInput, slugify, writeJson } from "./utils.js";
 const MAX_ENTRY_PROPERTIES_BYTES = 50 * 1024;
 
 /**
+ * Pull the HTTP status off a thrown Braze error. brazePost attaches `status`;
+ * the message fallback covers an error thrown from anywhere that does not.
+ */
+function extractHttpStatus(err) {
+  if (typeof err?.status === "number") return err.status;
+  const match = /Braze API (\d{3})\b/.exec(err?.message ?? String(err ?? ""));
+  return match ? Number(match[1]) : null;
+}
+
+/**
  * Validate entry properties destined for POST /canvas/trigger/send's
  * `context` object (the field Braze's live docs use today — the feature is
  * still named "canvas entry properties" and read back via the Liquid tag
@@ -132,6 +142,29 @@ export async function createBrazeCanvas({
     try {
       apiResponse = await brazePost({ config, endpoint: "/canvas/duplicate", body });
     } catch (err) {
+      // Braze answers 403 "Access Denied" at the PERMISSION layer, before it
+      // looks at the body at all — a deliberately invalid canvas_id returns 400
+      // on a key that holds canvas.duplicate and 403 on a key that does not
+      // (probed both ways, 16 Sep 2026). So a 403 here is never a malformed
+      // request and never the canvas id; it is one missing checkbox on one key,
+      // and `canvas.duplicate` is granted separately from the canvas.* read
+      // permissions that everything else in Orbit uses. Saying "Access Denied"
+      // and leaving it there cost a real user a wrong-turn diagnosis.
+      const status = extractHttpStatus(err);
+      if (status === 401 || status === 403) {
+        return {
+          status: "auth_failed",
+          missing: ["braze_api_key"],
+          braze_status: status,
+          message:
+            `Braze refused POST /canvas/duplicate with ${status}. This key can almost certainly read canvases — ` +
+            "duplicate is a SEPARATE permission. In Braze: Settings -> API Keys -> the key Orbit uses -> tick " +
+            "**canvas.duplicate**, save, and retry. Nothing is wrong with the request or the source canvas id: " +
+            "Braze rejects on permission before it validates the body, so this same error appears for any id. " +
+            "If you hold a second key that already has the permission, point ORBIT_BRAZE_API_KEY at that one instead.",
+          braze_message: err.message
+        };
+      }
       return { status: "error", code: "braze_api_error", message: err.message };
     }
 

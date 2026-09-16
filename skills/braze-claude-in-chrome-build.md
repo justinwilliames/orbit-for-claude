@@ -464,10 +464,24 @@ unescapes `&amp;` to `&`, and on a link that already carries a query string the 
 `&email=`. So a raw sha256 of `messages[].body` from `/canvas/details` will never match the template. Strip
 `\?lid=[a-z0-9]+` and `lid=[a-z0-9]+&`, unescape `&amp;` on both sides, then diff; anything left is a real change.
 
-**Two more things from the same build.** `POST /canvas/duplicate` returned 202 with the standard key even though
-Orbit's `orbit_create_braze_canvas` wrapper reported 403 on the same call — try the raw endpoint before concluding the
-key lacks the scope. And the flow editor re-centres the graph on the first click after any save or zoom change, so the
-node you aimed at moves under the cursor: click, screenshot, click again at the new position.
+**`canvas.duplicate` is its own Braze permission, and a 403 here means exactly that.** On 8 Sep a raw
+`POST /canvas/duplicate` returned 202 while `orbit_create_braze_canvas` returned 403 on the same endpoint, which read
+like an Orbit bug. It is not: those were **two different keys**. Probed both ways on 16 Sep with a deliberately invalid
+`canvas_id`, which creates nothing and separates the two layers cleanly:
+
+| Key | Response |
+|---|---|
+| holds `canvas.duplicate` | **400** `'canvas_id' must be a string of the object api identifier` |
+| does not hold it | **403** `Access Denied` |
+
+**Braze refuses on permission before it validates the body**, so a 403 is never the payload and never the source canvas
+id — the same 403 comes back for any id, valid or not. The fix is one checkbox: Settings → API Keys → the key in
+`ORBIT_BRAZE_API_KEY` → tick `canvas.duplicate`. It is granted separately from the `canvas.*` read permissions the rest
+of Orbit uses, so a key that reads canvases perfectly still fails here. Orbit now says all of this in the error itself
+(`status: auth_failed`) instead of passing "Access Denied" through.
+
+**The flow editor re-centres the graph on the first click after any save or zoom change**, so the node you aimed at
+moves under the cursor: click, screenshot, click again at the new position.
 
 ### Verify bindings against SHIPPING COPY, not template names
 

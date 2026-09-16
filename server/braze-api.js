@@ -135,7 +135,12 @@ export async function brazePost({ config, endpoint, body = {}, idempotent }) {
   const parsed = safeParseJson(text, { message: text });
   if (!response.ok) {
     const brazeMsg = parsed?.message ?? parsed?.errors?.[0] ?? text;
-    throw new Error(`Braze API ${response.status} on POST ${endpoint}: ${brazeMsg}`);
+    const err = new Error(`Braze API ${response.status} on POST ${endpoint}: ${brazeMsg}`);
+    // Carry the status structurally. Callers that need to tell a permission
+    // refusal from a bad request were re-parsing it out of the message string,
+    // which breaks the moment the wording changes.
+    err.status = response.status;
+    throw err;
   }
   // Defensive: Braze occasionally returns 2xx with a non-empty errors array.
   if (Array.isArray(parsed?.errors) && parsed.errors.length > 0) {
